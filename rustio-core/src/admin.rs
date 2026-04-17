@@ -12,7 +12,6 @@ use std::sync::Arc;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
-use crate::auth::require_admin;
 use crate::error::Error;
 use crate::http::{html, Request, Response};
 use crate::orm::{Db, Model};
@@ -155,7 +154,9 @@ impl Admin {
         router = router.get("/admin", move |req, _params| {
             let entries = index_entries.clone();
             async move {
-                require_admin(req.ctx())?;
+                if let Err(resp) = admin_guard(req.ctx()) {
+                    return Ok(resp);
+                }
                 Ok::<Response, Error>(html(admin_layout("Admin", &index_page(&entries))))
             }
         });
@@ -194,14 +195,18 @@ where
     router = router.get(&base, move |req, _params| {
         let db = list_db.clone();
         async move {
-            require_admin(req.ctx())?;
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
             let items = T::all(&db).await?;
             Ok::<Response, Error>(html(admin_layout(T::DISPLAY_NAME, &list_page::<T>(&items))))
         }
     });
 
     router = router.get(&create_path, |req, _params| async move {
-        require_admin(req.ctx())?;
+        if let Err(resp) = admin_guard(req.ctx()) {
+            return Ok(resp);
+        }
         Ok::<Response, Error>(html(admin_layout(
             &format!("New {}", T::DISPLAY_NAME),
             &form_page::<T>(None, &format!("/admin/{}/create", T::ADMIN_NAME)),
@@ -212,7 +217,9 @@ where
     router = router.post(&create_path, move |req, _params| {
         let db = create_db.clone();
         async move {
-            require_admin(req.ctx())?;
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
             let form = read_form(req).await?;
             let item = T::from_form(&form, None)?;
             item.create(&db).await?;
@@ -224,7 +231,9 @@ where
     router = router.get(&edit_path, move |req, params| {
         let db = edit_db.clone();
         async move {
-            require_admin(req.ctx())?;
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
             let id = parse_id_param(&params)?;
             let item = T::find(&db, id).await?.ok_or(Error::NotFound)?;
             Ok::<Response, Error>(html(admin_layout(
@@ -241,7 +250,9 @@ where
     router = router.post(&edit_path, move |req, params| {
         let db = update_db.clone();
         async move {
-            require_admin(req.ctx())?;
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
             let id = parse_id_param(&params)?;
             let form = read_form(req).await?;
             let item = T::from_form(&form, Some(id))?;
@@ -254,7 +265,9 @@ where
     router = router.post(&delete_path, move |req, params| {
         let db = delete_db.clone();
         async move {
-            require_admin(req.ctx())?;
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
             let id = parse_id_param(&params)?;
             T::delete(&db, id).await?;
             Ok::<Response, Error>(redirect(&format!("/admin/{}", T::ADMIN_NAME)))
@@ -435,6 +448,77 @@ fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
     )
 }
 
+/// Gate every admin request behind [`require_admin`], but convert the
+/// resulting `Error::Unauthorized` / `Error::Forbidden` into a friendly
+/// HTML response instead of the default `text/plain` body.
+///
+/// Returns `Ok(())` when the caller is admin and should continue.
+/// Returns `Err(Response)` with a ready-made HTML error page otherwise.
+//
+// `Response` is moderately large; clippy's `result_large_err` would
+// rather we box it. Each call site only constructs one per request and
+// the call count per request is at most one, so the nominal size cost
+// is irrelevant — boxing would only add noise.
+#[allow(clippy::result_large_err)]
+fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
+    match crate::auth::require_admin(ctx) {
+        Ok(_) => Ok(()),
+        Err(Error::Unauthorized) => Err(auth_error_html(401, "Authentication required")),
+        Err(Error::Forbidden) => Err(auth_error_html(403, "Forbidden")),
+        // Any other error shouldn't happen from require_admin; fall back to
+        // the default error rendering for safety.
+        Err(other) => Err(other.into_response()),
+    }
+}
+
+fn auth_error_html(status: u16, title: &str) -> Response {
+    // In development we show the bearer hint — most first-time users open
+    // /admin in a browser and need to know how to authenticate. In
+    // production we suppress the hint: RUSTIO_ENV=production means the
+    // user has opted into the strict mode where dev tokens don't work,
+    // so advertising them would be misleading.
+    let hint = if crate::auth::in_production() {
+        String::new()
+    } else {
+        String::from(
+            r#"<p class="hint"><strong>Development mode.</strong> Authenticate with a dev token, e.g.:<br>
+<code>curl -H "Authorization: Bearer dev-admin" http://127.0.0.1:8000/admin</code><br>
+For browser access, use a header-injecting extension or replace
+<code>authenticate</code> with your own middleware.</p>"#,
+        )
+    };
+
+    let body = format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{status} {title} — RustIO Admin</title>
+<style>{css}</style>
+</head>
+<body>
+<header><h1><a href="/admin">RustIO Admin</a></h1></header>
+<main class="auth-error">
+<div class="status">{status}</div>
+<p class="heading">{title}</p>
+{hint}
+</main>
+</body>
+</html>"#,
+        status = status,
+        title = escape_html(title),
+        css = ADMIN_CSS,
+        hint = hint,
+    );
+
+    hyper::Response::builder()
+        .status(status)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Full::new(Bytes::from(body)))
+        .expect("valid response")
+}
+
 fn escape_html(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for ch in s.chars() {
@@ -466,6 +550,11 @@ ul.admin-index li .label { font-weight: 600; }
 ul.admin-index li .path { color: #888; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
 p.empty { color: #666; }
 p.empty code { background: #f0f0f2; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
+.auth-error { text-align: center; padding: 3rem 2rem; max-width: 36rem; margin: 0 auto; }
+.auth-error .status { font-size: 3rem; font-weight: 700; color: #b42318; line-height: 1; }
+.auth-error .heading { font-size: 1.15rem; margin: 0.5rem 0 1.5rem; font-weight: 600; color: #222; }
+.auth-error .hint { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 0.85rem 1rem; border-radius: 6px; text-align: left; font-size: 0.92rem; line-height: 1.5; }
+.auth-error .hint code { background: #fdefe0; color: #7c2d12; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; display: inline-block; }
 main { padding: 2rem; max-width: 60rem; margin: 0 auto; }
 h2 { margin: 0; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }

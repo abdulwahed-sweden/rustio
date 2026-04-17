@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2]
+
+### Added
+
+- **Production guard on built-in auth.** `authenticate` now refuses to
+  recognize the dev tokens (`dev-admin`, `dev-user`) when
+  `RUSTIO_ENV=production` (or `RUSTIO_ENV=prod`) is set. A process that
+  boots into production mode and forgets to register a real auth
+  middleware will simply 401 every admin request instead of silently
+  accepting `dev-admin`.
+- **One-time production warning** on stderr the first time the
+  `authenticate` middleware runs under `RUSTIO_ENV=production`, pointing
+  the user at the correct fix.
+- **Friendly 401 / 403 HTML pages on the admin.** Browsers hitting
+  `/admin` without auth no longer see three characters of plain text —
+  they get a small HTML page with the status code and, in development
+  mode only, a `curl -H "Authorization: Bearer dev-admin"` hint. The
+  dev hint is suppressed under `RUSTIO_ENV=production`.
+- **First-compile hint.** The first time `rustio run` is invoked in a
+  project (no `target/` yet), the CLI prints `first run compiles
+  dependencies (~1 min). Subsequent runs are instant.` — ending the
+  common "did this hang?" moment.
+- **`rustio_core::auth::in_production()`** public helper so custom
+  middleware can branch on the same env signal.
+
+### Documentation
+
+- `SECURITY.md` updated with the precise Bearer-vs-CSRF threat model
+  and the new production guard. Note: CSRF tokens on admin forms are
+  tied to cookie-based session auth and ship with 0.3.0 — Bearer auth
+  is not directly CSRF-exploitable.
+
 ## [0.2.1]
 
 ### Added
@@ -172,7 +204,8 @@ First public release.
 - `rustio-core = "x.y.z"` in generated projects is pinned to match CLI; lockstep
   releases expected until this stabilizes.
 
-[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.1...v0.1.2

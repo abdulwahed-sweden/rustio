@@ -285,6 +285,15 @@ fn run() -> Result<(), String> {
             "no Cargo.toml in current directory — run this from inside a RustIO project".into(),
         );
     }
+
+    // First compile pulls in sqlx + hyper + tokio from scratch and takes
+    // 30–60s on a clean machine. Warn the user so they don't suspect
+    // `rustio run` has hung. Subsequent runs reuse `target/` and are
+    // effectively instant.
+    if !Path::new("target").exists() {
+        eprintln!("rustio: first run compiles dependencies (~1 min). Subsequent runs are instant.");
+    }
+
     let status = ProcessCommand::new("cargo")
         .arg("run")
         .status()

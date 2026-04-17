@@ -26,11 +26,22 @@ In-scope: issues in `rustio-cli`, `rustio-core`, `rustio-macros` published to cr
 
 Out of scope for 0.x:
 
-- The bundled dev authentication (`dev-admin`, `dev-user`) — it is explicitly not a production auth scheme.
-- Default absence of CSRF protection on admin forms — documented limitation; CSRF is planned.
-- Leaking `Error::Internal` messages to clients — documented limitation; sanitization is planned.
+- The bundled dev authentication (`dev-admin`, `dev-user`) — it is explicitly not a production auth scheme. As of 0.2.2, the built-in `authenticate` middleware refuses to recognize these tokens when `RUSTIO_ENV=production` is set. You still need to register your own auth middleware in that mode.
+- CSRF protection on admin forms — see the note below.
 
 If you find a hardening gap that falls outside scope, please still report it; we want the full picture even if the fix waits for a future release.
+
+## CSRF: current threat model
+
+RustIO 0.x admin auth uses `Authorization: Bearer` headers. Browsers **do not** automatically include custom headers on cross-origin requests, so a malicious third-party page cannot forge admin actions on a signed-in user's behalf — CSRF is not directly exploitable in this mode.
+
+When cookie-based session auth lands (planned for 0.3.0), CSRF becomes a real concern. Per-request CSRF tokens on admin forms will ship in the same release.
+
+If you deploy something that stores admin credentials in a cookie or uses same-origin fetch with credentials today, you should add your own CSRF protection.
+
+## Production guard
+
+As of 0.2.2, setting `RUSTIO_ENV=production` (or `RUSTIO_ENV=prod`) disables the built-in `dev-admin` / `dev-user` token mapping. A process that boots in production mode and doesn't register a real auth middleware will return 401 from every admin route. The first production request also emits a one-time stderr warning.
 
 ## Credit
 
