@@ -130,7 +130,7 @@ let id = require_admin(req.ctx())?;   // 401 if missing, 403 if not admin
 
 Dev tokens (`dev-admin`, `dev-user`) are provided for bootstrapping. Setting `RUSTIO_ENV=production` disables them — replace with your own middleware before deploying.
 
-Hitting `/admin` without auth in a browser renders a small HTML page with a one-line `curl` hint. Example (copy-paste ready):
+Visiting `/admin` in a browser shows a sign-in form; submit the token and a cookie authenticates subsequent requests. For API callers, Bearer auth still works:
 
 ```bash
 curl -H "Authorization: Bearer dev-admin" http://127.0.0.1:8000/admin

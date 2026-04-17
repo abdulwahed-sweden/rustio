@@ -59,8 +59,16 @@ pub async fn authenticate(mut req: Request, next: Next) -> Result<Response, Erro
         return next.run(req).await;
     }
 
-    if let Some(token) = bearer_token(&req) {
-        if let Some(identity) = dev_identity(token) {
+    // Accept the token from two places in priority order:
+    //   1. `Authorization: Bearer <token>` — used by API/curl callers.
+    //   2. `rustio_token` cookie — set by the admin login form so browser
+    //      users don't have to inject headers manually.
+    let token = bearer_token(&req)
+        .map(str::to_owned)
+        .or_else(|| req.cookie("rustio_token"));
+
+    if let Some(t) = token {
+        if let Some(identity) = dev_identity(&t) {
             req.ctx_mut().insert(identity);
         }
     }
@@ -74,7 +82,7 @@ pub fn bearer_token(req: &Request) -> Option<&str> {
         .and_then(|s| s.strip_prefix("Bearer "))
 }
 
-fn dev_identity(token: &str) -> Option<Identity> {
+pub(crate) fn dev_identity(token: &str) -> Option<Identity> {
     match token {
         "dev-admin" => Some(Identity {
             user_id: String::from("admin"),

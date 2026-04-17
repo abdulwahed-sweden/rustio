@@ -160,6 +160,17 @@ impl Admin {
                 Ok::<Response, Error>(html(admin_layout("Admin", &index_page(&entries))))
             }
         });
+
+        // Login + logout routes. These run without admin_guard: unauthenticated
+        // users *need* to reach /admin/login, and logout should work from any
+        // state (idempotent cookie expiry).
+        router = router.post("/admin/login", |req, _params| async move {
+            handle_login(req).await
+        });
+        router = router.post("/admin/logout", |_req, _params| async move {
+            Ok::<Response, Error>(handle_logout())
+        });
+
         for registrar in self.registrars {
             router = registrar(router, db);
         }
@@ -314,7 +325,12 @@ fn admin_layout(title: &str, content: &str) -> String {
 <style>{css}</style>
 </head>
 <body>
-<header><h1><a href="/admin">RustIO Admin</a></h1></header>
+<header>
+<h1><a href="/admin">RustIO Admin</a></h1>
+<form method="post" action="/admin/logout" class="header-logout">
+<button type="submit">Sign out</button>
+</form>
+</header>
 <main>{content}</main>
 </body>
 </html>"#,
@@ -461,30 +477,34 @@ fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
 // is irrelevant — boxing would only add noise.
 #[allow(clippy::result_large_err)]
 fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
+    // 401 renders a login form (so browser users can actually sign in).
+    // 403 renders a static "forbidden" page (the user is authenticated
+    // but not admin — there's nothing to type into a form that would
+    // change that).
     match crate::auth::require_admin(ctx) {
         Ok(_) => Ok(()),
-        Err(Error::Unauthorized) => Err(auth_error_html(401, "Authentication required")),
-        Err(Error::Forbidden) => Err(auth_error_html(403, "Forbidden")),
-        // Any other error shouldn't happen from require_admin; fall back to
-        // the default error rendering for safety.
+        Err(Error::Unauthorized) => Err(login_page(401, None)),
+        Err(Error::Forbidden) => Err(forbidden_page()),
         Err(other) => Err(other.into_response()),
     }
 }
 
-fn auth_error_html(status: u16, title: &str) -> Response {
-    // In development we show the bearer hint — most first-time users open
-    // /admin in a browser and need to know how to authenticate. In
-    // production we suppress the hint: RUSTIO_ENV=production means the
-    // user has opted into the strict mode where dev tokens don't work,
-    // so advertising them would be misleading.
+/// Render the login page. Status is 401 on a pure auth-gate hit and
+/// 400 on failed submissions (with `error` set to an explanation).
+fn login_page(status: u16, error: Option<&str>) -> Response {
+    let error_html = match error {
+        Some(msg) => format!(r#"<p class="error">{}</p>"#, escape_html(msg)),
+        None => String::new(),
+    };
+
+    // In production the dev-token hint is suppressed. The form is still
+    // shown — the developer might have wired a different `authenticate`
+    // middleware that accepts other tokens via the same cookie.
     let hint = if crate::auth::in_production() {
         String::new()
     } else {
         String::from(
-            r#"<p class="hint"><strong>Development mode.</strong> Authenticate with a dev token, e.g.:<br>
-<code>curl -H "Authorization: Bearer dev-admin" http://127.0.0.1:8000/admin</code><br>
-For browser access, use a header-injecting extension or replace
-<code>authenticate</code> with your own middleware.</p>"#,
+            r#"<p class="hint">Development tokens: <code>dev-admin</code> (full access) · <code>dev-user</code> (non-admin, to preview 403).</p>"#,
         )
     };
 
@@ -494,21 +514,26 @@ For browser access, use a header-injecting extension or replace
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{status} {title} — RustIO Admin</title>
+<title>Sign in — RustIO Admin</title>
 <style>{css}</style>
 </head>
 <body>
 <header><h1><a href="/admin">RustIO Admin</a></h1></header>
-<main class="auth-error">
-<div class="status">{status}</div>
-<p class="heading">{title}</p>
+<main class="auth-card">
+<h2>Sign in</h2>
+<form method="post" action="/admin/login" autocomplete="off">
+<label><span>Token</span>
+<input type="password" name="token" autofocus required>
+</label>
+{error}
+<button type="submit">Sign in</button>
+</form>
 {hint}
 </main>
 </body>
 </html>"#,
-        status = status,
-        title = escape_html(title),
         css = ADMIN_CSS,
+        error = error_html,
         hint = hint,
     );
 
@@ -517,6 +542,87 @@ For browser access, use a header-injecting extension or replace
         .header("content-type", "text/html; charset=utf-8")
         .body(Full::new(Bytes::from(body)))
         .expect("valid response")
+}
+
+fn forbidden_page() -> Response {
+    let body = format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>403 Forbidden — RustIO Admin</title>
+<style>{css}</style>
+</head>
+<body>
+<header><h1><a href="/admin">RustIO Admin</a></h1></header>
+<main class="auth-error">
+<div class="status">403</div>
+<p class="heading">Forbidden</p>
+<p class="hint">You are signed in but your account isn't an admin.</p>
+<form method="post" action="/admin/logout" class="inline">
+<button type="submit" class="secondary">Sign out</button>
+</form>
+</main>
+</body>
+</html>"#,
+        css = ADMIN_CSS,
+    );
+
+    hyper::Response::builder()
+        .status(403)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Full::new(Bytes::from(body)))
+        .expect("valid response")
+}
+
+/// `POST /admin/login` — validate the submitted token against
+/// `authenticate`'s dev token mapping (when RUSTIO_ENV != production)
+/// and set the `rustio_token` cookie so subsequent requests carry it
+/// automatically.
+async fn handle_login(req: Request) -> Result<Response, Error> {
+    let form = read_form(req).await?;
+    let token = form.get("token").unwrap_or("").trim().to_string();
+
+    if token.is_empty() {
+        return Ok(login_page(400, Some("Token is required.")));
+    }
+
+    // Production mode disables dev tokens entirely. A real deployment
+    // would replace `authenticate` with its own middleware that recognises
+    // production tokens via the same cookie; this branch is the safe
+    // default when no such middleware is installed.
+    if crate::auth::in_production() {
+        return Ok(login_page(
+            401,
+            Some("Sign-in is disabled in production until a real auth middleware is installed."),
+        ));
+    }
+
+    if crate::auth::dev_identity(&token).is_none() {
+        return Ok(login_page(401, Some("That token is not recognised.")));
+    }
+
+    // Success: drop a cookie scoped to the site and redirect to /admin.
+    // HttpOnly prevents JS read (XSS hardening), SameSite=Strict prevents
+    // cross-site submission (CSRF hardening for this cookie).
+    let mut resp = redirect("/admin");
+    crate::http::set_cookie(
+        &mut resp,
+        &format!("rustio_token={token}; Path=/; HttpOnly; SameSite=Strict"),
+    );
+    Ok(resp)
+}
+
+/// `POST /admin/logout` — clear the cookie and send the user back to
+/// `/admin` (which will re-render the login page).
+fn handle_logout() -> Response {
+    let mut resp = redirect("/admin");
+    crate::http::set_cookie(
+        &mut resp,
+        "rustio_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+    );
+    resp
 }
 
 fn escape_html(s: &str) -> String {
@@ -538,10 +644,13 @@ const ADMIN_CSS: &str = r#"
 *, *::before, *::after { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #fafafa; color: #222; margin: 0; }
-header { background: #222; color: white; padding: 1rem 2rem; }
+header { background: #222; color: white; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
 header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
 header h1 a { color: inherit; text-decoration: none; }
 header h1 a:hover { opacity: 0.9; }
+header .header-logout { margin: 0; }
+header .header-logout button { background: transparent; color: #d8d8dc; border: 1px solid #444; padding: 0.35rem 0.75rem; font-size: 0.85rem; border-radius: 4px; cursor: pointer; }
+header .header-logout button:hover { background: #2f2f33; color: white; }
 ul.admin-index { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
 ul.admin-index li { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 ul.admin-index li a { display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 1.1rem; text-decoration: none; color: #222; }
@@ -555,6 +664,18 @@ p.empty code { background: #f0f0f2; padding: 0.1rem 0.35rem; border-radius: 3px;
 .auth-error .heading { font-size: 1.15rem; margin: 0.5rem 0 1.5rem; font-weight: 600; color: #222; }
 .auth-error .hint { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 0.85rem 1rem; border-radius: 6px; text-align: left; font-size: 0.92rem; line-height: 1.5; }
 .auth-error .hint code { background: #fdefe0; color: #7c2d12; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; display: inline-block; }
+.auth-error form.inline { margin-top: 1rem; }
+.auth-error form.inline button.secondary { background: transparent; border: 1px solid #d0d0d4; color: #222; }
+.auth-card { max-width: 22rem; margin: 2.5rem auto; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+.auth-card h2 { margin: 0 0 1.25rem; font-size: 1.25rem; }
+.auth-card label { display: block; margin: 0 0 0.9rem; }
+.auth-card label span { display: block; font-weight: 500; margin-bottom: 0.25rem; font-size: 0.9rem; }
+.auth-card input[type=password] { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #d0d0d4; border-radius: 4px; font: inherit; }
+.auth-card button[type=submit] { width: 100%; padding: 0.6rem 1rem; background: #222; color: white; border: none; border-radius: 4px; font: inherit; cursor: pointer; }
+.auth-card button[type=submit]:hover { background: #000; }
+.auth-card .error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 0.6rem 0.8rem; border-radius: 4px; margin: 0 0 0.9rem; font-size: 0.9rem; }
+.auth-card .hint { color: #666; font-size: 0.85rem; margin: 1rem 0 0; line-height: 1.5; }
+.auth-card .hint code { background: #f0f0f2; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
 main { padding: 2rem; max-width: 60rem; margin: 0 auto; }
 h2 { margin: 0; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }

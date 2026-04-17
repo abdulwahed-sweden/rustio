@@ -47,6 +47,29 @@ impl Request {
         FormData::parse(self.inner.uri().query().unwrap_or(""))
     }
 
+    /// Look up a single cookie value by name.
+    ///
+    /// Returns `None` if the request has no `Cookie` header, the header is
+    /// not valid UTF-8, or no cookie with this name is present. The value
+    /// is returned as-is (not URL-decoded).
+    pub fn cookie(&self, name: &str) -> Option<String> {
+        let header = self
+            .inner
+            .headers()
+            .get(hyper::header::COOKIE)?
+            .to_str()
+            .ok()?;
+        for pair in header.split(';') {
+            let pair = pair.trim();
+            if let Some((k, v)) = pair.split_once('=') {
+                if k == name {
+                    return Some(v.to_string());
+                }
+            }
+        }
+        None
+    }
+
     /// Consume this request, returning the underlying hyper parts, body,
     /// and the attached context.
     pub fn into_parts(self) -> (hyper::http::request::Parts, hyper::body::Incoming, Context) {
@@ -97,6 +120,18 @@ pub fn status_text(status: u16, body: impl Into<String>) -> Response {
         "text/plain; charset=utf-8",
         body.into().into_bytes(),
     )
+}
+
+/// Append a `Set-Cookie` header to a response.
+///
+/// The caller is responsible for formatting `value` as a valid
+/// `Set-Cookie` string (e.g. `"name=val; Path=/; HttpOnly; SameSite=Lax"`).
+/// Returns silently if `value` contains characters that aren't valid in
+/// an HTTP header.
+pub fn set_cookie(resp: &mut Response, value: &str) {
+    if let Ok(hv) = value.parse() {
+        resp.headers_mut().append(hyper::header::SET_COOKIE, hv);
+    }
 }
 
 fn response(status: u16, content_type: &'static str, body: Vec<u8>) -> Response {

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1]
+
+### Added
+
+- **Browser-friendly admin login.** Visiting `/admin` without auth now
+  renders a proper sign-in form instead of a dead-end "paste this curl
+  command" hint. Submit the token and the admin sets an HttpOnly
+  `rustio_token` cookie so subsequent requests authenticate
+  automatically.
+- `POST /admin/login` — validates the submitted token, sets the cookie,
+  redirects to `/admin`. Empty → 400. Unknown → 401. Both render the
+  form with an inline error.
+- `POST /admin/logout` — expires the cookie, redirects back to
+  `/admin` (which re-renders the login form).
+- **Sign-out button in the admin header** — every admin page now has a
+  visible way out.
+- `rustio_core::http::Request::cookie(name)` — read a single cookie by
+  name from the request. Returns `None` for missing / malformed.
+- `rustio_core::http::set_cookie(&mut resp, value)` — append a
+  `Set-Cookie` header (user supplies the attribute string).
+- `authenticate` middleware now checks `Authorization: Bearer` **and**
+  the `rustio_token` cookie. Bearer auth for API callers remains
+  unchanged; cookie auth serves browsers.
+
+### Security
+
+- Login cookie is set with `HttpOnly; SameSite=Strict; Path=/`. JS can't
+  read it; cross-site navigations don't send it. `Secure` is not set
+  automatically (the server can't reliably tell whether the request
+  came via HTTPS); add it at your TLS terminator or reverse proxy for
+  production deployments.
+- Login is fully disabled under `RUSTIO_ENV=production` — the form
+  rejects all submissions until a real auth middleware is installed.
+  This keeps the 0.2.2 production guard intact.
+
+### Notes
+
+- 403 responses (authenticated but not admin) now render a small
+  "Forbidden" page with a sign-out button, instead of the generic auth
+  error page.
+- No breaking changes. Existing Bearer-based integrations and
+  programmatic callers work untouched.
+
 ## [0.3.0]
 
 Theme: close the "now what?" gap between scaffolding and actually using
@@ -264,7 +307,8 @@ First public release.
 - `rustio-core = "x.y.z"` in generated projects is pinned to match CLI; lockstep
   releases expected until this stabilizes.
 
-[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.0...v0.2.1
