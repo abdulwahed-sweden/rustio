@@ -2,12 +2,15 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command as ProcessCommand, ExitCode};
 
+mod wizard;
+
 const USAGE: &str = r#"rustio — the RustIO framework CLI
 
 USAGE:
     rustio <COMMAND>
 
 COMMANDS:
+    init [name]               Start the interactive wizard, or scaffold directly with a name
     new project <name>        Create a new RustIO project
     new app <name>            Create a new app inside the current project
     run                       Build and run the project in the current directory
@@ -34,6 +37,7 @@ async fn main() -> ExitCode {
             println!("rustio {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
+        Ok(Command::Init { name, preset }) => init_command(name, preset),
         Ok(Command::NewProject(name)) => new_project(&name),
         Ok(Command::NewApp(name)) => new_app(&name),
         Ok(Command::Run) => run(),
@@ -59,11 +63,19 @@ async fn main() -> ExitCode {
 
 #[derive(Debug, PartialEq)]
 enum Command {
+    /// `rustio init` — interactive wizard when no name is provided,
+    /// non-interactive scaffold when a name is given.
+    Init {
+        name: Option<String>,
+        preset: Option<wizard::Preset>,
+    },
     NewProject(String),
     NewApp(String),
     Run,
     MigrateGenerate(String),
-    MigrateApply { verbose: bool },
+    MigrateApply {
+        verbose: bool,
+    },
     MigrateStatus,
     Version,
     Help,
@@ -79,6 +91,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             }
             Ok(Command::Run)
         }
+        Some("init") => parse_init_args(&args[2..]),
         Some("new") => {
             let kind = args
                 .get(2)
@@ -121,7 +134,57 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
     }
 }
 
-fn new_project(name: &str) -> Result<(), String> {
+/// Parse arguments to `rustio init`. Accepts a positional project name
+/// and the flags `--preset <basic|blog|api>` and `--db <kind>` (the `--db`
+/// flag is reserved for future drivers; today only SQLite is supported
+/// and the value is ignored).
+fn parse_init_args(rest: &[String]) -> Result<Command, String> {
+    let mut name: Option<String> = None;
+    let mut preset: Option<wizard::Preset> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--preset" => {
+                let v = rest
+                    .get(i + 1)
+                    .ok_or("missing value for --preset (expected basic, blog, or api)")?;
+                preset = Some(v.parse::<wizard::Preset>()?);
+                i += 2;
+            }
+            "--db" => {
+                // Reserved. SQLite is the only driver today; accept any value
+                // so scripts that already specify it don't break.
+                if rest.get(i + 1).is_none() {
+                    return Err("missing value for --db".into());
+                }
+                i += 2;
+            }
+            other if !other.starts_with('-') && name.is_none() => {
+                name = Some(other.to_string());
+                i += 1;
+            }
+            other => return Err(format!("unexpected argument `{other}`")),
+        }
+    }
+    Ok(Command::Init { name, preset })
+}
+
+fn init_command(name: Option<String>, preset: Option<wizard::Preset>) -> Result<(), String> {
+    // If a name is provided, we're in non-interactive mode. Otherwise launch
+    // the wizard. The wizard will fail fast with a clear message when stdin
+    // is not a terminal (e.g. piped input, CI) — the correct fix there is to
+    // pass the arguments explicitly.
+    let plan = match name {
+        Some(n) => wizard::Plan {
+            project_name: n,
+            preset: preset.unwrap_or(wizard::Preset::Basic),
+        },
+        None => wizard::run(preset)?,
+    };
+    wizard::execute(&plan)
+}
+
+pub(crate) fn new_project(name: &str) -> Result<(), String> {
     validate_name(name)?;
     let root = Path::new(name);
     if root.exists() {
@@ -146,7 +209,7 @@ fn new_project(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn new_app(name: &str) -> Result<(), String> {
+pub(crate) fn new_app(name: &str) -> Result<(), String> {
     validate_name(name)?;
     if !Path::new("apps/mod.rs").exists() {
         return Err(
@@ -340,7 +403,7 @@ fn register_app_in_mod(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_name(name: &str) -> Result<(), String> {
+pub(crate) fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("name cannot be empty".into());
     }
@@ -430,7 +493,7 @@ tokio = {{ version = "1", features = ["rt-multi-thread", "macros"] }}
     )
 }
 
-mod out {
+pub(crate) mod out {
     use std::io::{self, IsTerminal};
 
     pub fn success(label: &str, message: &str) {
@@ -750,6 +813,74 @@ mod tests {
     #[test]
     fn parse_unknown_command() {
         assert!(parse_command(&args(&["banana"])).is_err());
+    }
+
+    #[test]
+    fn parse_init_without_args_triggers_wizard() {
+        assert_eq!(
+            parse_command(&args(&["init"])).unwrap(),
+            Command::Init {
+                name: None,
+                preset: None,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_init_with_name_is_non_interactive() {
+        assert_eq!(
+            parse_command(&args(&["init", "mysite"])).unwrap(),
+            Command::Init {
+                name: Some(String::from("mysite")),
+                preset: None,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_init_with_name_and_preset() {
+        assert_eq!(
+            parse_command(&args(&["init", "mysite", "--preset", "blog"])).unwrap(),
+            Command::Init {
+                name: Some(String::from("mysite")),
+                preset: Some(wizard::Preset::Blog),
+            },
+        );
+    }
+
+    #[test]
+    fn parse_init_preset_before_name() {
+        assert_eq!(
+            parse_command(&args(&["init", "--preset", "api", "mysite"])).unwrap(),
+            Command::Init {
+                name: Some(String::from("mysite")),
+                preset: Some(wizard::Preset::Api),
+            },
+        );
+    }
+
+    #[test]
+    fn parse_init_unknown_preset_errors() {
+        assert!(parse_command(&args(&["init", "--preset", "nope"])).is_err());
+    }
+
+    #[test]
+    fn parse_init_db_flag_is_accepted_but_ignored() {
+        // `--db sqlite` is reserved for future drivers. Accepting it today
+        // means scripts that write it don't start failing when we do add
+        // more drivers.
+        assert_eq!(
+            parse_command(&args(&["init", "mysite", "--db", "sqlite"])).unwrap(),
+            Command::Init {
+                name: Some(String::from("mysite")),
+                preset: None,
+            },
+        );
+    }
+
+    #[test]
+    fn parse_init_rejects_stray_flags() {
+        assert!(parse_command(&args(&["init", "--zzz"])).is_err());
     }
 
     #[test]
