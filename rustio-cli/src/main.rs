@@ -159,7 +159,7 @@ fn new_app(name: &str) -> Result<(), String> {
         return Err(format!("app `{name}` already exists"));
     }
 
-    let struct_name = capitalize(name);
+    let struct_name = singular_capitalize(name);
     let table_name = pluralize(name);
 
     fs::create_dir_all(&app_dir).map_err(err_str)?;
@@ -309,9 +309,8 @@ fn register_app_in_mod(name: &str) -> Result<(), String> {
     let current = fs::read_to_string(path).map_err(err_str)?;
 
     let module_line = format!("pub mod {name};\n");
-    let registrations = format!(
-        "    router = {name}::admin::register(router, db);\n    router = {name}::views::register(router);\n"
-    );
+    let admin_install = format!("    admin = {name}::admin::install(admin);\n");
+    let view_register = format!("    router = {name}::views::register(router);\n");
 
     let updated = current
         .replacen(
@@ -320,14 +319,19 @@ fn register_app_in_mod(name: &str) -> Result<(), String> {
             1,
         )
         .replacen(
-            "    // -- end registrations --",
-            &format!("{registrations}    // -- end registrations --"),
+            "    // -- end admin installs --",
+            &format!("{admin_install}    // -- end admin installs --"),
+            1,
+        )
+        .replacen(
+            "    // -- end view registrations --",
+            &format!("{view_register}    // -- end view registrations --"),
             1,
         );
 
     if updated == current {
         return Err(
-            "apps/mod.rs is missing marker comments `// -- modules --` and `// -- registrations --` — restore them or recreate the file"
+            "apps/mod.rs is missing the expected marker comments — restore them or recreate the file from `rustio new project`"
                 .into(),
         );
     }
@@ -370,6 +374,15 @@ fn pluralize(name: &str) -> String {
     } else {
         format!("{name}s")
     }
+}
+
+fn singular_capitalize(name: &str) -> String {
+    // If the scaffolded name is plural (ends with `s`), strip the `s` so the
+    // generated Rust struct is singular. Safe for the common cases; users can
+    // rename for edge cases like "news" / "status".
+    let base = name.strip_suffix('s').unwrap_or(name);
+    let base = if base.is_empty() { name } else { base };
+    capitalize(base)
 }
 
 fn render(template: &str, vars: &[(&str, &str)]) -> String {
@@ -531,15 +544,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 "#;
 
-const APPS_MOD_RS: &str = r#"use rustio_core::{Db, Router};
+const APPS_MOD_RS: &str = r#"use rustio_core::admin::Admin;
+use rustio_core::{Db, Router};
 
 // -- modules --
 // -- end modules --
 
 #[allow(unused_mut, unused_variables)]
 pub fn register_all(mut router: Router, db: &Db) -> Router {
-    // -- registrations --
-    // -- end registrations --
+    let mut admin = Admin::new();
+    // -- admin installs --
+    // -- end admin installs --
+    router = admin.register(router, db);
+
+    // -- view registrations --
+    // -- end view registrations --
     router
 }
 "#;
@@ -579,12 +598,13 @@ impl Model for {{STRUCT}} {
 }
 "#;
 
-const APP_ADMIN_RS: &str = r#"use rustio_core::{admin, Db, Router};
+const APP_ADMIN_RS: &str = r#"use rustio_core::admin::Admin;
 
 use super::models::{{STRUCT}};
 
-pub fn register(router: Router, db: &Db) -> Router {
-    admin::register::<{{STRUCT}}>(router, db)
+/// Contribute this app's models to the shared admin index.
+pub fn install(admin: Admin) -> Admin {
+    admin.model::<{{STRUCT}}>()
 }
 "#;
 
@@ -780,6 +800,24 @@ mod tests {
         assert_eq!(pluralize("posts"), "posts");
         assert_eq!(pluralize("users"), "users");
         assert_eq!(pluralize("news"), "news");
+    }
+
+    #[test]
+    fn singular_capitalize_strips_trailing_s() {
+        assert_eq!(singular_capitalize("listings"), "Listing");
+        assert_eq!(singular_capitalize("posts"), "Post");
+        assert_eq!(singular_capitalize("users"), "User");
+    }
+
+    #[test]
+    fn singular_capitalize_leaves_singular_alone() {
+        assert_eq!(singular_capitalize("blog"), "Blog");
+        assert_eq!(singular_capitalize("post"), "Post");
+    }
+
+    #[test]
+    fn singular_capitalize_keeps_single_s_name_intact() {
+        assert_eq!(singular_capitalize("s"), "S");
     }
 
     #[test]

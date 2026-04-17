@@ -1,8 +1,13 @@
 //! Auto-generated CRUD admin backed by [`crate::orm`].
 //!
-//! Apply `#[derive(RustioAdmin)]` to any struct that also implements
-//! [`crate::orm::Model`], then call [`register`] on a [`Router`] to mount
-//! list / create / edit / delete routes at `/admin/<admin_name>`.
+//! Build an [`Admin`] by chaining `.model::<T>()` calls, then mount it with
+//! [`Admin::register`]. This attaches list / create / edit / delete routes
+//! at `/admin/<admin_name>` for each model and an index page at `/admin`
+//! listing every registered model.
+//!
+//! For a single-model app, [`register`] is a convenience wrapper.
+
+use std::sync::Arc;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -40,9 +45,143 @@ pub trait AdminModel: Model {
 
     fn field_display(&self, name: &str) -> Option<String>;
     fn from_form(form: &FormData, id: Option<i64>) -> Result<Self, Error>;
+
+    /// Singular form of the display name. Used for labels like "New X" and
+    /// "Edit X". Defaults to [`DISPLAY_NAME`]; the `#[derive(RustioAdmin)]`
+    /// macro generates a proper singular form.
+    fn singular_name() -> &'static str {
+        Self::DISPLAY_NAME
+    }
 }
 
-pub fn register<T>(mut router: Router, db: &Db) -> Router
+/// Metadata about one registered admin model.
+#[derive(Debug, Clone)]
+pub struct AdminEntry {
+    pub admin_name: &'static str,
+    pub display_name: &'static str,
+    pub singular_name: &'static str,
+}
+
+type ModelRegistrar = Box<dyn FnOnce(Router, &Db) -> Router + Send + Sync>;
+
+/// Builder that collects admin models and mounts them with a shared
+/// `/admin` index page.
+///
+/// ```no_run
+/// use rustio_core::admin::Admin;
+/// # use rustio_core::{Db, Router};
+/// # fn demo(router: Router, db: &Db) -> Router {
+/// # struct Post; struct User;
+/// # impl rustio_core::Model for Post {
+/// #   const TABLE: &'static str = "posts";
+/// #   const COLUMNS: &'static [&'static str] = &[];
+/// #   const INSERT_COLUMNS: &'static [&'static str] = &[];
+/// #   fn id(&self) -> i64 { 0 }
+/// #   fn from_row(_: rustio_core::Row<'_>) -> Result<Self, rustio_core::Error> { unimplemented!() }
+/// #   fn insert_values(&self) -> Vec<rustio_core::Value> { vec![] }
+/// # }
+/// # impl rustio_core::Model for User {
+/// #   const TABLE: &'static str = "users";
+/// #   const COLUMNS: &'static [&'static str] = &[];
+/// #   const INSERT_COLUMNS: &'static [&'static str] = &[];
+/// #   fn id(&self) -> i64 { 0 }
+/// #   fn from_row(_: rustio_core::Row<'_>) -> Result<Self, rustio_core::Error> { unimplemented!() }
+/// #   fn insert_values(&self) -> Vec<rustio_core::Value> { vec![] }
+/// # }
+/// # impl rustio_core::admin::AdminModel for Post {
+/// #   const ADMIN_NAME: &'static str = "posts"; const DISPLAY_NAME: &'static str = "Posts";
+/// #   const FIELDS: &'static [rustio_core::admin::AdminField] = &[];
+/// #   fn field_display(&self, _: &str) -> Option<String> { None }
+/// #   fn from_form(_: &rustio_core::admin::FormData, _: Option<i64>) -> Result<Self, rustio_core::Error> { unimplemented!() }
+/// # }
+/// # impl rustio_core::admin::AdminModel for User {
+/// #   const ADMIN_NAME: &'static str = "users"; const DISPLAY_NAME: &'static str = "Users";
+/// #   const FIELDS: &'static [rustio_core::admin::AdminField] = &[];
+/// #   fn field_display(&self, _: &str) -> Option<String> { None }
+/// #   fn from_form(_: &rustio_core::admin::FormData, _: Option<i64>) -> Result<Self, rustio_core::Error> { unimplemented!() }
+/// # }
+/// Admin::new()
+///     .model::<Post>()
+///     .model::<User>()
+///     .register(router, db)
+/// # }
+/// ```
+pub struct Admin {
+    entries: Vec<AdminEntry>,
+    registrars: Vec<ModelRegistrar>,
+}
+
+impl Admin {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            registrars: Vec::new(),
+        }
+    }
+
+    /// Register a model on this admin. Adds its metadata to the index
+    /// and queues its CRUD routes for mounting.
+    pub fn model<T: AdminModel>(mut self) -> Self {
+        self.entries.push(AdminEntry {
+            admin_name: T::ADMIN_NAME,
+            display_name: T::DISPLAY_NAME,
+            singular_name: T::singular_name(),
+        });
+        self.registrars
+            .push(Box::new(|router, db| mount_model::<T>(router, db)));
+        self
+    }
+
+    /// Number of registered models.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Metadata for inspection.
+    pub fn entries(&self) -> &[AdminEntry] {
+        &self.entries
+    }
+
+    /// Mount the admin onto a router: installs `/admin` (index) and
+    /// CRUD routes for every registered model. Admin-only; handlers
+    /// return 401/403 via [`require_admin`].
+    pub fn register(self, mut router: Router, db: &Db) -> Router {
+        let entries = Arc::new(self.entries);
+        let index_entries = entries.clone();
+        router = router.get("/admin", move |req, _params| {
+            let entries = index_entries.clone();
+            async move {
+                require_admin(req.ctx())?;
+                Ok::<Response, Error>(html(admin_layout("Admin", &index_page(&entries))))
+            }
+        });
+        for registrar in self.registrars {
+            router = registrar(router, db);
+        }
+        router
+    }
+}
+
+impl Default for Admin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Convenience: mount CRUD routes and an `/admin` index for a single model.
+/// Equivalent to `Admin::new().model::<T>().register(router, db)`.
+pub fn register<T>(router: Router, db: &Db) -> Router
+where
+    T: AdminModel + Model,
+{
+    Admin::new().model::<T>().register(router, db)
+}
+
+fn mount_model<T>(mut router: Router, db: &Db) -> Router
 where
     T: AdminModel + Model,
 {
@@ -162,13 +301,38 @@ fn admin_layout(title: &str, content: &str) -> String {
 <style>{css}</style>
 </head>
 <body>
-<header><h1>RustIO Admin</h1></header>
+<header><h1><a href="/admin">RustIO Admin</a></h1></header>
 <main>{content}</main>
 </body>
 </html>"#,
         title = escape_html(title),
         css = ADMIN_CSS,
         content = content,
+    )
+}
+
+fn index_page(entries: &[AdminEntry]) -> String {
+    if entries.is_empty() {
+        return String::from(
+            r#"<h2>Admin</h2>
+<p class="empty">No models are registered. Add one with
+<code>Admin::new().model::&lt;YourModel&gt;()</code> or scaffold an app
+via <code>rustio new app &lt;name&gt;</code>.</p>"#,
+        );
+    }
+    let rows: String = entries
+        .iter()
+        .map(|e| {
+            format!(
+                r#"<li><a href="/admin/{name}"><span class="label">{display}</span><span class="path">/admin/{name}</span></a></li>"#,
+                name = escape_html(e.admin_name),
+                display = escape_html(e.display_name),
+            )
+        })
+        .collect();
+    format!(
+        r#"<h2>Admin</h2>
+<ul class="admin-index">{rows}</ul>"#
     )
 }
 
@@ -205,14 +369,14 @@ fn list_page<T: AdminModel>(items: &[T]) -> String {
     format!(
         r#"<div class="toolbar">
 <h2>{title}</h2>
-<a class="button" href="/admin/{name}/create">New {display}</a>
+<a class="button" href="/admin/{name}/create">New {singular}</a>
 </div>
 <table>
 <thead><tr>{headers}<th>actions</th></tr></thead>
 <tbody>{rows}</tbody>
 </table>"#,
         title = escape_html(T::DISPLAY_NAME),
-        display = escape_html(T::DISPLAY_NAME),
+        singular = escape_html(T::singular_name()),
         name = T::ADMIN_NAME,
     )
 }
@@ -224,9 +388,9 @@ fn form_page<T: AdminModel>(item: Option<&T>, action: &str) -> String {
         .map(|f| render_field::<T>(f, item))
         .collect();
     let heading = if item.is_some() {
-        format!("Edit {}", T::DISPLAY_NAME)
+        format!("Edit {}", T::singular_name())
     } else {
-        format!("New {}", T::DISPLAY_NAME)
+        format!("New {}", T::singular_name())
     };
     format!(
         r#"<h2>{heading}</h2>
@@ -292,6 +456,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
   background: #fafafa; color: #222; margin: 0; }
 header { background: #222; color: white; padding: 1rem 2rem; }
 header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
+header h1 a { color: inherit; text-decoration: none; }
+header h1 a:hover { opacity: 0.9; }
+ul.admin-index { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
+ul.admin-index li { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+ul.admin-index li a { display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 1.1rem; text-decoration: none; color: #222; }
+ul.admin-index li a:hover { background: #f4f4f5; }
+ul.admin-index li .label { font-weight: 600; }
+ul.admin-index li .path { color: #888; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+p.empty { color: #666; }
+p.empty code { background: #f0f0f2; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
 main { padding: 2rem; max-width: 60rem; margin: 0 auto; }
 h2 { margin: 0; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }

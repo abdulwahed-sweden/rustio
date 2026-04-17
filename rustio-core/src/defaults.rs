@@ -1,5 +1,9 @@
 //! Default routes that scaffolded projects mount via [`with_defaults`]:
-//! `/` (homepage), `/admin` (placeholder), `/docs` (placeholder).
+//! `/` (homepage) and `/docs` (placeholder).
+//!
+//! `/admin` is intentionally **not** registered here — it is owned by the
+//! admin layer (see [`crate::admin::Admin::register`]). If no admin models
+//! are registered, `/admin` is simply absent.
 
 use crate::error::Error;
 use crate::http::{html, text, Request, Response};
@@ -11,10 +15,6 @@ pub fn homepage() -> Response {
     html(HOME_HTML)
 }
 
-pub fn admin_placeholder() -> Response {
-    text("RustIO admin — coming soon.")
-}
-
 pub fn docs_placeholder() -> Response {
     text("RustIO docs — coming soon.")
 }
@@ -23,9 +23,6 @@ pub fn with_defaults(router: Router) -> Router {
     router
         .get("/", |_req: Request, _p: Params| async {
             Ok::<Response, Error>(homepage())
-        })
-        .get("/admin", |_req: Request, _p: Params| async {
-            Ok::<Response, Error>(admin_placeholder())
         })
         .get("/docs", |_req: Request, _p: Params| async {
             Ok::<Response, Error>(docs_placeholder())

@@ -16,5 +16,5 @@ name = "rustio"
 path = "src/main.rs"
 
 [dependencies]
-rustio-core = { path = "../rustio-core", version = "0.1.2" }
+rustio-core = { path = "../rustio-core", version = "0.2.0" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

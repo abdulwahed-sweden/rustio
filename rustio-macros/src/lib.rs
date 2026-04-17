@@ -70,6 +70,7 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
 
     let admin_name = pluralize(&name.to_string().to_lowercase());
     let display_name = pluralize(&name.to_string());
+    let singular_name = singularize(&name.to_string());
 
     let field_entries: Vec<TokenStream2> = fields
         .iter()
@@ -109,6 +110,10 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
                 #( #field_entries ),*
             ];
 
+            fn singular_name() -> &'static str {
+                #singular_name
+            }
+
             fn field_display(&self, name: &str) -> Option<String> {
                 match name {
                     #( #display_arms )*
@@ -136,6 +141,15 @@ fn pluralize(name: &str) -> String {
     } else {
         format!("{name}s")
     }
+}
+
+fn singularize(name: &str) -> String {
+    if let Some(stripped) = name.strip_suffix('s') {
+        if !stripped.is_empty() {
+            return stripped.to_string();
+        }
+    }
+    name.to_string()
 }
 
 fn classify_type(ty: &Type) -> Option<FieldKind> {
@@ -171,28 +185,44 @@ fn from_form_assignment(f: &FieldInfo) -> TokenStream2 {
     }
     match f.kind {
         FieldKind::String => quote! {
-            #ident: form.get(#name_str).unwrap_or("").to_owned(),
+            #ident: {
+                let v = form.get(#name_str).unwrap_or("").trim();
+                if v.is_empty() {
+                    return Err(::rustio_core::Error::BadRequest(
+                        format!("field `{}` is required", #name_str)
+                    ));
+                }
+                v.to_owned()
+            },
         },
         FieldKind::Bool => quote! {
             #ident: matches!(form.get(#name_str), Some(v) if v == "on" || v == "true"),
         },
         FieldKind::I64 => quote! {
-            #ident: form
-                .get(#name_str)
-                .unwrap_or("0")
-                .parse::<i64>()
-                .map_err(|_| ::rustio_core::Error::BadRequest(
-                    format!("invalid integer for field `{}`", #name_str)
-                ))?,
+            #ident: {
+                let raw = form.get(#name_str).unwrap_or("").trim();
+                if raw.is_empty() {
+                    return Err(::rustio_core::Error::BadRequest(
+                        format!("field `{}` is required", #name_str)
+                    ));
+                }
+                raw.parse::<i64>().map_err(|_| ::rustio_core::Error::BadRequest(
+                    format!("field `{}` must be a valid integer", #name_str)
+                ))?
+            },
         },
         FieldKind::I32 => quote! {
-            #ident: form
-                .get(#name_str)
-                .unwrap_or("0")
-                .parse::<i32>()
-                .map_err(|_| ::rustio_core::Error::BadRequest(
-                    format!("invalid integer for field `{}`", #name_str)
-                ))?,
+            #ident: {
+                let raw = form.get(#name_str).unwrap_or("").trim();
+                if raw.is_empty() {
+                    return Err(::rustio_core::Error::BadRequest(
+                        format!("field `{}` is required", #name_str)
+                    ));
+                }
+                raw.parse::<i32>().map_err(|_| ::rustio_core::Error::BadRequest(
+                    format!("field `{}` must be a valid integer", #name_str)
+                ))?
+            },
         },
     }
 }
