@@ -30,6 +30,10 @@ async fn main() -> ExitCode {
             print!("{USAGE}");
             Ok(())
         }
+        Ok(Command::Version) => {
+            println!("rustio {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         Ok(Command::NewProject(name)) => new_project(&name),
         Ok(Command::NewApp(name)) => new_app(&name),
         Ok(Command::Run) => run(),
@@ -61,12 +65,14 @@ enum Command {
     MigrateGenerate(String),
     MigrateApply,
     MigrateStatus,
+    Version,
     Help,
 }
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
     match args.get(1).map(String::as_str) {
         None | Some("--help") | Some("-h") | Some("help") => Ok(Command::Help),
+        Some("--version") | Some("-V") | Some("version") => Ok(Command::Version),
         Some("run") => {
             if args.len() > 2 {
                 return Err(format!("unexpected argument `{}`", args[2]));
@@ -603,6 +609,13 @@ mod tests {
         assert_eq!(parse_command(&args(&["--help"])).unwrap(), Command::Help);
         assert_eq!(parse_command(&args(&["-h"])).unwrap(), Command::Help);
         assert_eq!(parse_command(&args(&["help"])).unwrap(), Command::Help);
+    }
+
+    #[test]
+    fn parse_version_flag() {
+        assert_eq!(parse_command(&args(&["--version"])).unwrap(), Command::Version);
+        assert_eq!(parse_command(&args(&["-V"])).unwrap(), Command::Version);
+        assert_eq!(parse_command(&args(&["version"])).unwrap(), Command::Version);
     }
 
     #[test]
