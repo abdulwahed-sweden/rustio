@@ -1,10 +1,15 @@
 [package]
 name = "rustio-macros"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Procedural macros for RustIO."
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Procedural macros for RustIO, including `#[derive(RustioAdmin)]`."
 
 [lib]
 proc-macro = true

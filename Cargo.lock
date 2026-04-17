@@ -687,11 +687,15 @@ dependencies = [
 
 [[package]]
 name = "rustio-cli"
-version = "0.0.1"
+version = "0.1.0"
+dependencies = [
+ "rustio-core",
+ "tokio",
+]
 
 [[package]]
 name = "rustio-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "bytes",
  "http-body-util",
@@ -704,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "rustio-macros"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",

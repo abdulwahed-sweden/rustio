@@ -1,16 +1,21 @@
 [package]
 name = "rustio-core"
 version.workspace = true
+authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Runtime core for the RustIO web framework. Raw HTTP server + primitives."
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Runtime core for RustIO: HTTP server, router, middleware, ORM, admin, and migrations."
 
 [dependencies]
 bytes = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
-rustio-macros = { path = "../rustio-macros" }
+rustio-macros = { path = "../rustio-macros", version = "0.1.0" }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
