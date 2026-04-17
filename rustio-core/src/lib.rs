@@ -12,8 +12,8 @@ pub mod server;
 
 pub use auth::Identity;
 pub use context::Context;
-pub use error::{Error, resolve};
-pub use http::{Request, Response, html, status_text, text};
+pub use error::{resolve, Error};
+pub use http::{html, status_text, text, Request, Response};
 pub use middleware::Next;
 pub use orm::{Db, Model, Row, Value};
 pub use router::{Params, Router};

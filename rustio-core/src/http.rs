@@ -28,13 +28,7 @@ impl Request {
         &mut self.ctx
     }
 
-    pub fn into_parts(
-        self,
-    ) -> (
-        hyper::http::request::Parts,
-        hyper::body::Incoming,
-        Context,
-    ) {
+    pub fn into_parts(self) -> (hyper::http::request::Parts, hyper::body::Incoming, Context) {
         let (parts, body) = self.inner.into_parts();
         (parts, body, self.ctx)
     }
@@ -62,7 +56,11 @@ pub fn html(body: impl Into<String>) -> Response {
 }
 
 pub fn status_text(status: u16, body: impl Into<String>) -> Response {
-    response(status, "text/plain; charset=utf-8", body.into().into_bytes())
+    response(
+        status,
+        "text/plain; charset=utf-8",
+        body.into().into_bytes(),
+    )
 }
 
 fn response(status: u16, content_type: &'static str, body: Vec<u8>) -> Response {

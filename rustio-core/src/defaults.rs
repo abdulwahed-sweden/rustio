@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::http::{Request, Response, html, text};
+use crate::http::{html, text, Request, Response};
 use crate::router::{Params, Router};
 
 const HOME_HTML: &str = include_str!("../assets/home.html");

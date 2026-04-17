@@ -92,8 +92,7 @@ pub async fn apply(db: &Db, dir: &Path) -> Result<Vec<String>, Error> {
     let rows = sqlx::query(&format!("SELECT filename FROM {TRACKING_TABLE}"))
         .fetch_all(db.pool())
         .await?;
-    let already_applied: HashSet<String> =
-        rows.iter().map(|r| r.get::<String, _>(0)).collect();
+    let already_applied: HashSet<String> = rows.iter().map(|r| r.get::<String, _>(0)).collect();
 
     let files = list(dir)?;
     let mut newly_applied = Vec::new();
@@ -112,9 +111,10 @@ pub async fn apply(db: &Db, dir: &Path) -> Result<Vec<String>, Error> {
 
         let mut tx = db.pool().begin().await?;
         for stmt in split_sql(&sql) {
-            sqlx::query(stmt).execute(&mut *tx).await.map_err(|e| {
-                Error::Internal(format!("migration {filename} failed: {e}"))
-            })?;
+            sqlx::query(stmt)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| Error::Internal(format!("migration {filename} failed: {e}")))?;
         }
         sqlx::query(&format!(
             "INSERT INTO {TRACKING_TABLE} (filename) VALUES (?)"
@@ -243,7 +243,10 @@ mod tests {
     fn split_sql_handles_multiple_statements() {
         let sql = "CREATE TABLE a (id INT); CREATE TABLE b (id INT);";
         let stmts = split_sql(sql);
-        assert_eq!(stmts, vec!["CREATE TABLE a (id INT)", "CREATE TABLE b (id INT)"]);
+        assert_eq!(
+            stmts,
+            vec!["CREATE TABLE a (id INT)", "CREATE TABLE b (id INT)"]
+        );
     }
 
     #[test]
@@ -256,8 +259,16 @@ mod tests {
         let dir = tmp("gen");
         let p1 = generate(&dir, "create users", "-- one").unwrap();
         let p2 = generate(&dir, "add index", "-- two").unwrap();
-        assert!(p1.file_name().unwrap().to_string_lossy().starts_with("0001_create_users"));
-        assert!(p2.file_name().unwrap().to_string_lossy().starts_with("0002_add_index"));
+        assert!(p1
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("0001_create_users"));
+        assert!(p2
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("0002_add_index"));
         assert_eq!(fs::read_to_string(&p1).unwrap(), "-- one");
         fs::remove_dir_all(&dir).ok();
     }
@@ -265,7 +276,10 @@ mod tests {
     #[test]
     fn generate_rejects_empty_name_after_sanitization() {
         let dir = tmp("gen-empty");
-        assert!(matches!(generate(&dir, "!!!", ""), Err(Error::BadRequest(_))));
+        assert!(matches!(
+            generate(&dir, "!!!", ""),
+            Err(Error::BadRequest(_))
+        ));
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -291,7 +305,11 @@ mod tests {
         let dir = tmp("apply-idem");
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("0001_create.sql"), "CREATE TABLE t (id INTEGER);").unwrap();
-        fs::write(dir.join("0002_insert.sql"), "INSERT INTO t (id) VALUES (42);").unwrap();
+        fs::write(
+            dir.join("0002_insert.sql"),
+            "INSERT INTO t (id) VALUES (42);",
+        )
+        .unwrap();
 
         let first = apply(&db, &dir).await.unwrap();
         assert_eq!(first, vec!["0001_create.sql", "0002_insert.sql"]);
@@ -299,7 +317,10 @@ mod tests {
         let second = apply(&db, &dir).await.unwrap();
         assert!(second.is_empty());
 
-        let row = sqlx::query("SELECT id FROM t").fetch_one(db.pool()).await.unwrap();
+        let row = sqlx::query("SELECT id FROM t")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
         let id: i64 = row.get(0);
         assert_eq!(id, 42);
 
@@ -311,10 +332,18 @@ mod tests {
         let db = Db::memory().await.unwrap();
         let dir = tmp("apply-followup");
         fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("0001_first.sql"), "CREATE TABLE first (id INTEGER);").unwrap();
+        fs::write(
+            dir.join("0001_first.sql"),
+            "CREATE TABLE first (id INTEGER);",
+        )
+        .unwrap();
         apply(&db, &dir).await.unwrap();
 
-        fs::write(dir.join("0002_second.sql"), "CREATE TABLE second (id INTEGER);").unwrap();
+        fs::write(
+            dir.join("0002_second.sql"),
+            "CREATE TABLE second (id INTEGER);",
+        )
+        .unwrap();
         let applied = apply(&db, &dir).await.unwrap();
         assert_eq!(applied, vec!["0002_second.sql"]);
 
@@ -350,7 +379,10 @@ mod tests {
         let s = status(&db, &dir).await.unwrap();
         assert_eq!(s.applied.len(), 3);
         assert_eq!(
-            s.applied.iter().map(|r| r.filename.as_str()).collect::<Vec<_>>(),
+            s.applied
+                .iter()
+                .map(|r| r.filename.as_str())
+                .collect::<Vec<_>>(),
             vec!["0001_a.sql", "0002_b.sql", "0003_c.sql"]
         );
         assert_eq!(s.pending, vec!["0004_d.sql"]);

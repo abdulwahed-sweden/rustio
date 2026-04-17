@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::http::{Response, status_text};
+use crate::http::{status_text, Response};
 
 #[non_exhaustive]
 #[derive(Debug)]
@@ -101,11 +101,17 @@ mod tests {
         assert_eq!(Error::NotFound.into_response().status().as_u16(), 404);
         assert_eq!(Error::Forbidden.into_response().status().as_u16(), 403);
         assert_eq!(
-            Error::BadRequest(String::from("x")).into_response().status().as_u16(),
+            Error::BadRequest(String::from("x"))
+                .into_response()
+                .status()
+                .as_u16(),
             400,
         );
         assert_eq!(
-            Error::Internal(String::from("x")).into_response().status().as_u16(),
+            Error::Internal(String::from("x"))
+                .into_response()
+                .status()
+                .as_u16(),
             500,
         );
     }

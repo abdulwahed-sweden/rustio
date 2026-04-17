@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use rustio_core::admin;
 use rustio_core::auth::authenticate;
 use rustio_core::defaults::with_defaults;
-use rustio_core::{Db, Error, Model, Row, Router, RustioAdmin, Server, Value};
+use rustio_core::{Db, Error, Model, Router, Row, RustioAdmin, Server, Value};
 
 #[derive(Debug, RustioAdmin)]
 struct User {
@@ -47,14 +47,22 @@ async fn main() -> std::io::Result<()> {
     .await
     .expect("create schema");
 
-    User { id: 0, name: "Alice".into(), is_admin: false }
-        .create(&db)
-        .await
-        .expect("seed alice");
-    User { id: 0, name: "Bob".into(), is_admin: true }
-        .create(&db)
-        .await
-        .expect("seed bob");
+    User {
+        id: 0,
+        name: "Alice".into(),
+        is_admin: false,
+    }
+    .create(&db)
+    .await
+    .expect("seed alice");
+    User {
+        id: 0,
+        name: "Bob".into(),
+        is_admin: true,
+    }
+    .create(&db)
+    .await
+    .expect("seed bob");
 
     let router = with_defaults(Router::new()).wrap(authenticate);
     let router = admin::register::<User>(router, &db);

@@ -1,5 +1,5 @@
-use sqlx::Row as _;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
+use sqlx::Row as _;
 
 use crate::error::Error;
 
@@ -106,7 +106,10 @@ pub trait Model: Sized + Send + Sync + Unpin + 'static {
     fn from_row(row: Row<'_>) -> Result<Self, Error>;
     fn insert_values(&self) -> Vec<Value>;
 
-    fn find(db: &Db, id: i64) -> impl std::future::Future<Output = Result<Option<Self>, Error>> + Send
+    fn find(
+        db: &Db,
+        id: i64,
+    ) -> impl std::future::Future<Output = Result<Option<Self>, Error>> + Send
     where
         Self: Send,
     {
@@ -116,10 +119,7 @@ pub trait Model: Sized + Send + Sync + Unpin + 'static {
                 Self::COLUMNS.join(", "),
                 Self::TABLE,
             );
-            let row = sqlx::query(&sql)
-                .bind(id)
-                .fetch_optional(db.pool())
-                .await?;
+            let row = sqlx::query(&sql).bind(id).fetch_optional(db.pool()).await?;
             match row {
                 Some(r) => Ok(Some(Self::from_row(Row::new(&r))?)),
                 None => Ok(None),
@@ -131,9 +131,7 @@ pub trait Model: Sized + Send + Sync + Unpin + 'static {
         async move {
             let sql = format!("SELECT {} FROM {}", Self::COLUMNS.join(", "), Self::TABLE);
             let rows = sqlx::query(&sql).fetch_all(db.pool()).await?;
-            rows.iter()
-                .map(|r| Self::from_row(Row::new(r)))
-                .collect()
+            rows.iter().map(|r| Self::from_row(Row::new(r))).collect()
         }
     }
 
@@ -276,9 +274,30 @@ mod tests {
     #[tokio::test]
     async fn all_returns_every_row() {
         let db = setup().await;
-        User { id: 0, name: "a".into(), is_admin: false }.create(&db).await.unwrap();
-        User { id: 0, name: "b".into(), is_admin: true }.create(&db).await.unwrap();
-        User { id: 0, name: "c".into(), is_admin: false }.create(&db).await.unwrap();
+        User {
+            id: 0,
+            name: "a".into(),
+            is_admin: false,
+        }
+        .create(&db)
+        .await
+        .unwrap();
+        User {
+            id: 0,
+            name: "b".into(),
+            is_admin: true,
+        }
+        .create(&db)
+        .await
+        .unwrap();
+        User {
+            id: 0,
+            name: "c".into(),
+            is_admin: false,
+        }
+        .create(&db)
+        .await
+        .unwrap();
         let rows = User::all(&db).await.unwrap();
         assert_eq!(rows.len(), 3);
         let names: Vec<&str> = rows.iter().map(|u| u.name.as_str()).collect();
@@ -288,11 +307,19 @@ mod tests {
     #[tokio::test]
     async fn update_modifies_row_in_place() {
         let db = setup().await;
-        let id = User { id: 0, name: "old".into(), is_admin: false }
-            .create(&db)
-            .await
-            .unwrap();
-        let updated = User { id, name: "new".into(), is_admin: true };
+        let id = User {
+            id: 0,
+            name: "old".into(),
+            is_admin: false,
+        }
+        .create(&db)
+        .await
+        .unwrap();
+        let updated = User {
+            id,
+            name: "new".into(),
+            is_admin: true,
+        };
         updated.update(&db).await.unwrap();
         let back = User::find(&db, id).await.unwrap().unwrap();
         assert_eq!(back.name, "new");
@@ -302,10 +329,14 @@ mod tests {
     #[tokio::test]
     async fn delete_removes_row() {
         let db = setup().await;
-        let id = User { id: 0, name: "x".into(), is_admin: false }
-            .create(&db)
-            .await
-            .unwrap();
+        let id = User {
+            id: 0,
+            name: "x".into(),
+            is_admin: false,
+        }
+        .create(&db)
+        .await
+        .unwrap();
         assert!(User::find(&db, id).await.unwrap().is_some());
         User::delete(&db, id).await.unwrap();
         assert!(User::find(&db, id).await.unwrap().is_none());
@@ -314,10 +345,14 @@ mod tests {
     #[tokio::test]
     async fn row_getters_handle_wrong_type_gracefully() {
         let db = setup().await;
-        User { id: 0, name: "a".into(), is_admin: false }
-            .create(&db)
-            .await
-            .unwrap();
+        User {
+            id: 0,
+            name: "a".into(),
+            is_admin: false,
+        }
+        .create(&db)
+        .await
+        .unwrap();
         let row = sqlx::query("SELECT id, name, is_admin FROM users LIMIT 1")
             .fetch_one(db.pool())
             .await

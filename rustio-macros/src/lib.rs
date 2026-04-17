@@ -38,12 +38,9 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
     let named = match &data.fields {
         Fields::Named(n) => n,
         _ => {
-            return syn::Error::new_spanned(
-                &input.ident,
-                "RustioAdmin requires named fields",
-            )
-            .to_compile_error()
-            .into();
+            return syn::Error::new_spanned(&input.ident, "RustioAdmin requires named fields")
+                .to_compile_error()
+                .into();
         }
     };
 
@@ -101,10 +98,8 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let from_form_assignments: Vec<TokenStream2> = fields
-        .iter()
-        .map(|f| from_form_assignment(f))
-        .collect();
+    let from_form_assignments: Vec<TokenStream2> =
+        fields.iter().map(from_form_assignment).collect();
 
     let expanded = quote! {
         impl ::rustio_core::admin::AdminModel for #name {

@@ -5,7 +5,7 @@ use http_body_util::{BodyExt, Full};
 
 use crate::auth::require_admin;
 use crate::error::Error;
-use crate::http::{Request, Response, html};
+use crate::http::{html, Request, Response};
 use crate::orm::{Db, Model};
 use crate::router::Router;
 
@@ -83,10 +83,7 @@ where
         async move {
             require_admin(req.ctx())?;
             let items = T::all(&db).await?;
-            Ok::<Response, Error>(html(admin_layout(
-                T::DISPLAY_NAME,
-                &list_page::<T>(&items),
-            )))
+            Ok::<Response, Error>(html(admin_layout(T::DISPLAY_NAME, &list_page::<T>(&items))))
         }
     });
 
@@ -168,8 +165,7 @@ async fn read_form(req: Request) -> Result<FormData, Error> {
         .await
         .map_err(|e| Error::BadRequest(e.to_string()))?
         .to_bytes();
-    let body_str = std::str::from_utf8(&collected)
-        .map_err(|e| Error::BadRequest(e.to_string()))?;
+    let body_str = std::str::from_utf8(&collected).map_err(|e| Error::BadRequest(e.to_string()))?;
     Ok(FormData::parse(body_str))
 }
 
@@ -274,7 +270,9 @@ fn form_page<T: AdminModel>(item: Option<&T>, action: &str) -> String {
 }
 
 fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
-    let current = item.and_then(|i| i.field_display(f.name)).unwrap_or_default();
+    let current = item
+        .and_then(|i| i.field_display(f.name))
+        .unwrap_or_default();
     let input = match f.ty {
         FieldType::Bool => format!(
             r#"<input type="checkbox" name="{n}" {checked}>"#,

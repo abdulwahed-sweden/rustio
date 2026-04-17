@@ -9,8 +9,7 @@ use crate::http::{Request, Response};
 use crate::middleware::{MiddlewareFn, Next};
 
 type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
-type HandlerFn =
-    Arc<dyn Fn(Request, Params) -> BoxFuture<Result<Response, Error>> + Send + Sync>;
+type HandlerFn = Arc<dyn Fn(Request, Params) -> BoxFuture<Result<Response, Error>> + Send + Sync>;
 
 pub struct Params {
     pairs: Vec<(String, String)>,
@@ -231,11 +230,7 @@ mod tests {
 
     #[test]
     fn multiple_params_captured_by_name() {
-        let params = match_segments(
-            &segs("/a/:x/b/:y"),
-            &parts("/a/first/b/second"),
-        )
-        .unwrap();
+        let params = match_segments(&segs("/a/:x/b/:y"), &parts("/a/first/b/second")).unwrap();
         assert_eq!(params.get("x"), Some("first"));
         assert_eq!(params.get("y"), Some("second"));
     }

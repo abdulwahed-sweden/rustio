@@ -41,12 +41,20 @@ async fn main() -> Result<(), Error> {
     )
     .await?;
 
-    let alice_id = User { id: 0, name: "Alice".into(), is_admin: false }
-        .create(&db)
-        .await?;
-    let bob_id = User { id: 0, name: "Bob".into(), is_admin: true }
-        .create(&db)
-        .await?;
+    let alice_id = User {
+        id: 0,
+        name: "Alice".into(),
+        is_admin: false,
+    }
+    .create(&db)
+    .await?;
+    let bob_id = User {
+        id: 0,
+        name: "Bob".into(),
+        is_admin: true,
+    }
+    .create(&db)
+    .await?;
     println!("created ids: alice={alice_id} bob={bob_id}");
 
     let alice = User::find(&db, alice_id).await?.expect("alice");
@@ -55,7 +63,11 @@ async fn main() -> Result<(), Error> {
     let all = User::all(&db).await?;
     println!("all: {all:?}");
 
-    let renamed = User { id: alice_id, name: "Alicia".into(), is_admin: false };
+    let renamed = User {
+        id: alice_id,
+        name: "Alicia".into(),
+        is_admin: false,
+    };
     renamed.update(&db).await?;
     let after_update = User::find(&db, alice_id).await?.unwrap();
     println!("after update: {after_update:?}");

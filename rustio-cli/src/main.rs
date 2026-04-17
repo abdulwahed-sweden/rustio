@@ -80,8 +80,12 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             Ok(Command::Run)
         }
         Some("new") => {
-            let kind = args.get(2).ok_or("usage: rustio new <project|app> <name>")?;
-            let name = args.get(3).ok_or("usage: rustio new <project|app> <name>")?;
+            let kind = args
+                .get(2)
+                .ok_or("usage: rustio new <project|app> <name>")?;
+            let name = args
+                .get(3)
+                .ok_or("usage: rustio new <project|app> <name>")?;
             match kind.as_str() {
                 "project" => Ok(Command::NewProject(name.clone())),
                 "app" => Ok(Command::NewApp(name.clone())),
@@ -128,11 +132,7 @@ fn new_project(name: &str) -> Result<(), String> {
     fs::write(root.join("main.rs"), MAIN_RS).map_err(err_str)?;
     fs::write(root.join("apps/mod.rs"), APPS_MOD_RS).map_err(err_str)?;
     fs::write(root.join(".gitignore"), GITIGNORE).map_err(err_str)?;
-    fs::write(
-        root.join("README.md"),
-        render(README_MD, &[("NAME", name)]),
-    )
-    .map_err(err_str)?;
+    fs::write(root.join("README.md"), render(README_MD, &[("NAME", name)])).map_err(err_str)?;
 
     out::success("Created project", &format!("\"{name}\""));
     println!();
@@ -145,8 +145,7 @@ fn new_app(name: &str) -> Result<(), String> {
     validate_name(name)?;
     if !Path::new("apps/mod.rs").exists() {
         return Err(
-            "not inside a RustIO project — expected apps/mod.rs in the current directory"
-                .into(),
+            "not inside a RustIO project — expected apps/mod.rs in the current directory".into(),
         );
     }
 
@@ -162,7 +161,10 @@ fn new_app(name: &str) -> Result<(), String> {
     fs::write(app_dir.join("mod.rs"), APP_MOD_RS).map_err(err_str)?;
     fs::write(
         app_dir.join("models.rs"),
-        render(APP_MODELS_RS, &[("STRUCT", &struct_name), ("TABLE", &table_name)]),
+        render(
+            APP_MODELS_RS,
+            &[("STRUCT", &struct_name), ("TABLE", &table_name)],
+        ),
     )
     .map_err(err_str)?;
     fs::write(
@@ -195,19 +197,13 @@ fn new_app(name: &str) -> Result<(), String> {
 
     out::success("Created app", &format!("\"{name}\""));
     println!();
-    out::plain(&format!(
-        "{:<12} apps/{name}/models.rs",
-        out::dim("model")
-    ));
+    out::plain(&format!("{:<12} apps/{name}/models.rs", out::dim("model")));
     out::plain(&format!(
         "{:<12} {}",
         out::dim("migration"),
         migration_path.display()
     ));
-    out::plain(&format!(
-        "{:<12} /admin/{table_name}",
-        out::dim("admin")
-    ));
+    out::plain(&format!("{:<12} /admin/{table_name}", out::dim("admin")));
     out::plain(&format!("{:<12} /{name}", out::dim("view")));
     println!();
     out::hint("rustio migrate apply");
@@ -237,8 +233,7 @@ fn run() -> Result<(), String> {
 fn migrate_generate(name: &str) -> Result<(), String> {
     let dir = Path::new("migrations");
     let header = format!("-- migration: {name}\n\n");
-    let path =
-        rustio_core::migrations::generate(dir, name, &header).map_err(err_str)?;
+    let path = rustio_core::migrations::generate(dir, name, &header).map_err(err_str)?;
     out::success("Created migration", &path.display().to_string());
     Ok(())
 }
@@ -613,9 +608,15 @@ mod tests {
 
     #[test]
     fn parse_version_flag() {
-        assert_eq!(parse_command(&args(&["--version"])).unwrap(), Command::Version);
+        assert_eq!(
+            parse_command(&args(&["--version"])).unwrap(),
+            Command::Version
+        );
         assert_eq!(parse_command(&args(&["-V"])).unwrap(), Command::Version);
-        assert_eq!(parse_command(&args(&["version"])).unwrap(), Command::Version);
+        assert_eq!(
+            parse_command(&args(&["version"])).unwrap(),
+            Command::Version
+        );
     }
 
     #[test]
