@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1]
+
+### Added
+
+- **`rustio init` interactive wizard.** Running `rustio init` with no arguments
+  launches a three-prompt flow — project name, starter preset, confirm — and
+  calls the same scaffolding helpers as the flag-driven commands, so both
+  paths produce identical on-disk output.
+- **Presets:** `basic` (empty project), `blog` (scaffolds a `posts` app), and
+  `api` (scaffolds an `items` app). Pickable in the wizard or via
+  `rustio init <name> --preset <kind>`.
+- **Non-interactive form:** `rustio init <name>` scaffolds directly without
+  prompting. `--db sqlite` is accepted and reserved for future drivers.
+- **Off-TTY safety:** when stdin is not a terminal, the wizard exits with a
+  clear hint to pass arguments instead of hanging.
+
+### Dependencies
+
+- `inquire = "0.7"` added to `rustio-cli` for the wizard prompts.
+
 ## [0.2.0]
 
 ### Added
@@ -152,7 +172,8 @@ First public release.
 - `rustio-core = "x.y.z"` in generated projects is pinned to match CLI; lockstep
   releases expected until this stabilizes.
 
-[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.0...v0.1.1

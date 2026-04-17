@@ -552,15 +552,21 @@ const GITIGNORE: &str = "target/\napp.db\napp.db-shm\napp.db-wal\n";
 
 const README_MD: &str = r#"# {{NAME}}
 
-A RustIO project.
+A [RustIO](https://github.com/abdulwahed-sweden/rustio) project.
+
+## Run it
+
+    rustio migrate apply      # apply schema changes
+    rustio run                # build and start the server on :8000
 
 ## Commands
 
-    rustio new app <name>       # scaffold an app
-    rustio migrate generate X   # create a migration
-    rustio migrate apply        # apply pending migrations
-    rustio migrate status       # show applied & pending
-    rustio run                  # build and run the server
+    rustio new app <name>         # scaffold an app inside this project
+    rustio migrate generate <n>   # create an empty migration file
+    rustio migrate apply [-v]     # apply pending migrations
+    rustio migrate status         # show applied + pending
+    rustio run                    # build and run the server
+    rustio --version              # print CLI version
 
 ## Layout
 

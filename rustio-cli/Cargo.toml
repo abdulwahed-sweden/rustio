@@ -5,6 +5,7 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -17,5 +18,5 @@ path = "src/main.rs"
 
 [dependencies]
 inquire = "0.7"
-rustio-core = { path = "../rustio-core", version = "0.2.0" }
+rustio-core = { path = "../rustio-core", version = "0.2.1" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

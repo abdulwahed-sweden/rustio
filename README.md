@@ -15,22 +15,58 @@
 
 ```bash
 cargo install rustio-cli
-rustio new project mysite
+rustio init
+```
+
+**That's the whole setup.** `rustio init` is the doorway into RustIO — one command opens an interactive wizard that takes you from nothing to a running project with a working admin, a persisted model, and tracked migrations.
+
+```text
+  RustIO
+  Let's set up your project.
+
+> Project name: mysite
+> Choose a starting preset:
+    Basic — empty project, add apps later
+  › Blog  — scaffolds a posts app with admin + views
+    API   — scaffolds an items app with admin + views
+> Proceed? (Y/n)
+```
+
+Three prompts. One confirm. Then:
+
+```bash
 cd mysite
-rustio new app blog
 rustio migrate apply
 rustio run
 ```
 
-Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+- [http://127.0.0.1:8000/](http://127.0.0.1:8000/) — your homepage
+- [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) — auto-generated admin (send `Authorization: Bearer dev-admin`)
 
-Admin at [http://127.0.0.1:8000/admin/blogs](http://127.0.0.1:8000/admin/blogs) — send `Authorization: Bearer dev-admin`.
+### Prefer flags over prompts?
+
+Everything the wizard does is reachable non-interactively:
+
+```bash
+rustio init mysite --preset blog    # same result, zero prompts
+```
+
+Or use the granular commands the wizard builds on:
+
+```bash
+rustio new project mysite
+cd mysite
+rustio new app posts
+rustio migrate apply
+rustio run
+```
 
 ## ✨ Features
 
-- **Built-in admin** — `#[derive(RustioAdmin)]` gives you list, create, edit, delete.
+- **Interactive wizard** — `rustio init` walks you through project setup in three prompts.
+- **Built-in admin** — `#[derive(RustioAdmin)]` gives you list, create, edit, delete, and an index at `/admin`.
 - **ORM** — type-safe models over SQLite, no raw SQL in your code.
-- **Migrations** — versioned, tracked, transactional.
+- **Migrations** — versioned, tracked, transactional; `rustio migrate apply` / `status` / `generate`.
 - **Zero-config** — one command to scaffold, one to run.
 - **Single binary** — your whole app compiles to one executable.
 
@@ -56,6 +92,21 @@ mysite/
 ├── templates/
 └── app.db
 ```
+
+## 📖 Commands
+
+| Command                         | What it does                                                         |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `rustio init`                   | Interactive wizard: name + preset + confirm                          |
+| `rustio init <name>`            | Non-interactive scaffold (default preset: `basic`)                   |
+| `rustio init <name> --preset P` | Non-interactive with a preset (`basic` / `blog` / `api`)             |
+| `rustio new project <name>`     | Create a new project directly (no wizard)                            |
+| `rustio new app <name>`         | Scaffold an app inside the current project                           |
+| `rustio migrate generate <n>`   | Create a new migration file                                          |
+| `rustio migrate apply [-v]`     | Apply pending migrations (`-v` prints each statement)                |
+| `rustio migrate status`         | Show applied and pending migrations                                  |
+| `rustio run`                    | Build and run the project in the current directory                   |
+| `rustio --version`              | Print the CLI version                                                |
 
 ## 🔐 Authentication
 

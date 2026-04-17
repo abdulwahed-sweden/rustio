@@ -7,11 +7,12 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
-authors = ["Abdulwahed Mansour"]
+version = "0.2.1"
+authors = ["Abdulwahed Mansour <abdulwahed.sweden@gmail.com>"]
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/abdulwahed-sweden/rustio"
+homepage = "https://github.com/abdulwahed-sweden/rustio"
 rust-version = "1.75"
 keywords = ["web", "framework", "admin", "orm", "sqlite"]
 categories = ["web-programming::http-server"]

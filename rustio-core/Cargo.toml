@@ -5,6 +5,7 @@ authors.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 rust-version.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -16,6 +17,6 @@ bytes = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
-rustio-macros = { path = "../rustio-macros", version = "0.2.0" }
+rustio-macros = { path = "../rustio-macros", version = "0.2.1" }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite"] }
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
