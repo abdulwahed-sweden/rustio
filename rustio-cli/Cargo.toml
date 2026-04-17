@@ -1,0 +1,13 @@
+[package]
+name = "rustio-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Developer CLI for the RustIO framework (placeholder)."
+
+[[bin]]
+name = "rustio"
+path = "src/main.rs"
+
+[dependencies]
