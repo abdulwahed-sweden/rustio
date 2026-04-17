@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RustIO</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0d0d0f;
+      color: #e8e8ea;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
+    }
+    main {
+      text-align: center;
+      padding: 2rem;
+      max-width: 32rem;
+    }
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.5rem;
+    }
+    p {
+      color: #9a9aa0;
+      margin: 0 0 2.5rem;
+      font-size: 0.975rem;
+    }
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    a.btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.95rem;
+      transition: transform 0.08s ease, opacity 0.15s ease;
+    }
+    a.btn:hover { opacity: 0.9; }
+    a.btn:active { transform: translateY(1px); }
+    a.btn.primary {
+      background: #e8e8ea;
+      color: #0d0d0f;
+    }
+    a.btn.secondary {
+      background: transparent;
+      color: #e8e8ea;
+      border: 1px solid #2a2a2e;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>RustIO</h1>
+    <p>Your server is running.</p>
+    <div class="actions">
+      <a class="btn primary" href="/admin">Go to Admin</a>
+      <a class="btn secondary" href="/docs">Go to Documentation</a>
+    </div>
+  </main>
+</body>
+</html>

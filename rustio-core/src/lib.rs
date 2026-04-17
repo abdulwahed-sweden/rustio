@@ -1,5 +1,20 @@
+pub mod admin;
+pub mod auth;
+pub mod context;
+pub mod defaults;
+pub mod error;
 pub mod http;
+pub mod middleware;
+pub mod orm;
+pub mod router;
 pub mod server;
 
-pub use http::{Request, Response, html, text};
+pub use auth::Identity;
+pub use context::Context;
+pub use error::{Error, resolve};
+pub use http::{Request, Response, html, status_text, text};
+pub use middleware::Next;
+pub use orm::{Db, Model, Row, Value};
+pub use router::{Params, Router};
+pub use rustio_macros::RustioAdmin;
 pub use server::Server;

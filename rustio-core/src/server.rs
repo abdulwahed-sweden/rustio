@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -8,6 +9,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 use crate::http::{Request, Response};
+use crate::router::Router;
 
 pub struct Server {
     addr: SocketAddr,
@@ -32,9 +34,12 @@ impl Server {
             let handler = handler.clone();
 
             tokio::spawn(async move {
-                let service = service_fn(move |req: Request| {
+                let service = service_fn(move |raw: hyper::Request<hyper::body::Incoming>| {
                     let handler = handler.clone();
-                    async move { Ok::<Response, Infallible>(handler(req).await) }
+                    async move {
+                        let req = Request::new(raw);
+                        Ok::<Response, Infallible>(handler(req).await)
+                    }
                 });
 
                 if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
@@ -42,5 +47,14 @@ impl Server {
                 }
             });
         }
+    }
+
+    pub async fn serve_router(self, router: Router) -> std::io::Result<()> {
+        let router = Arc::new(router);
+        self.serve(move |req| {
+            let router = router.clone();
+            async move { router.dispatch(req).await }
+        })
+        .await
     }
 }
