@@ -37,7 +37,7 @@ async fn main() -> ExitCode {
             println!("rustio {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        Ok(Command::Init { name, preset }) => init_command(name, preset),
+        Ok(Command::Init { name, preset, app }) => init_command(name, preset, app),
         Ok(Command::NewProject(name)) => new_project(&name),
         Ok(Command::NewApp(name)) => new_app(&name),
         Ok(Command::Run) => run(),
@@ -68,6 +68,7 @@ enum Command {
     Init {
         name: Option<String>,
         preset: Option<wizard::Preset>,
+        app: Option<String>,
     },
     NewProject(String),
     NewApp(String),
@@ -135,12 +136,17 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
 }
 
 /// Parse arguments to `rustio init`. Accepts a positional project name
-/// and the flags `--preset <basic|blog|api>` and `--db <kind>` (the `--db`
-/// flag is reserved for future drivers; today only SQLite is supported
-/// and the value is ignored).
+/// and the flags:
+///
+/// - `--preset <basic|blog|api>` — starter preset.
+/// - `--app <name>` — override the first app's name (overrides the
+///   preset default). Ignored under `--preset basic`.
+/// - `--db <kind>` — reserved for future drivers; today only SQLite is
+///   supported and the value is ignored.
 fn parse_init_args(rest: &[String]) -> Result<Command, String> {
     let mut name: Option<String> = None;
     let mut preset: Option<wizard::Preset> = None;
+    let mut app: Option<String> = None;
     let mut i = 0;
     while i < rest.len() {
         match rest[i].as_str() {
@@ -149,6 +155,13 @@ fn parse_init_args(rest: &[String]) -> Result<Command, String> {
                     .get(i + 1)
                     .ok_or("missing value for --preset (expected basic, blog, or api)")?;
                 preset = Some(v.parse::<wizard::Preset>()?);
+                i += 2;
+            }
+            "--app" => {
+                let v = rest
+                    .get(i + 1)
+                    .ok_or("missing value for --app (expected a name like `books`)")?;
+                app = Some(v.clone());
                 i += 2;
             }
             "--db" => {
@@ -166,10 +179,14 @@ fn parse_init_args(rest: &[String]) -> Result<Command, String> {
             other => return Err(format!("unexpected argument `{other}`")),
         }
     }
-    Ok(Command::Init { name, preset })
+    Ok(Command::Init { name, preset, app })
 }
 
-fn init_command(name: Option<String>, preset: Option<wizard::Preset>) -> Result<(), String> {
+fn init_command(
+    name: Option<String>,
+    preset: Option<wizard::Preset>,
+    app: Option<String>,
+) -> Result<(), String> {
     // If a name is provided, we're in non-interactive mode. Otherwise launch
     // the wizard. The wizard will fail fast with a clear message when stdin
     // is not a terminal (e.g. piped input, CI) — the correct fix there is to
@@ -178,8 +195,9 @@ fn init_command(name: Option<String>, preset: Option<wizard::Preset>) -> Result<
         Some(n) => wizard::Plan {
             project_name: n,
             preset: preset.unwrap_or(wizard::Preset::Basic),
+            app_name: app,
         },
-        None => wizard::run(preset)?,
+        None => wizard::run(preset, app)?,
     };
     wizard::execute(&plan)
 }
@@ -242,7 +260,14 @@ pub(crate) fn new_app(name: &str) -> Result<(), String> {
     .map_err(err_str)?;
     fs::write(
         app_dir.join("views.rs"),
-        render(APP_VIEWS_RS, &[("NAME", name), ("STRUCT", &struct_name)]),
+        render(
+            APP_VIEWS_RS,
+            &[
+                ("NAME", name),
+                ("STRUCT", &struct_name),
+                ("TABLE", &table_name),
+            ],
+        ),
     )
     .map_err(err_str)?;
 
@@ -252,7 +277,9 @@ pub(crate) fn new_app(name: &str) -> Result<(), String> {
     let create_sql = format!(
         "CREATE TABLE {table} (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL
+    title TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    priority INTEGER NOT NULL DEFAULT 0
 );\n",
         table = table_name,
     );
@@ -648,16 +675,30 @@ pub mod views;
 
 const APP_MODELS_RS: &str = r#"use rustio_core::{Error, Model, Row, RustioAdmin, Value};
 
+/// The {{STRUCT}} model.
+///
+/// This is a starting point — edit freely. Supported field types today
+/// are `i32`, `i64`, `String`, and `bool`. To add a field:
+///
+///   1. Add it to the struct below.
+///   2. Append its column name to `COLUMNS` (and `INSERT_COLUMNS` if the
+///      DB shouldn't autofill it).
+///   3. Read it in `from_row` and emit it in `insert_values`.
+///   4. Generate a migration to update the table:
+///        rustio migrate generate alter_{{TABLE}}
+///      then write the `ALTER TABLE ...` SQL and run `rustio migrate apply`.
 #[derive(Debug, RustioAdmin)]
 pub struct {{STRUCT}} {
     pub id: i64,
-    pub name: String,
+    pub title: String,
+    pub is_active: bool,
+    pub priority: i32,
 }
 
 impl Model for {{STRUCT}} {
     const TABLE: &'static str = "{{TABLE}}";
-    const COLUMNS: &'static [&'static str] = &["id", "name"];
-    const INSERT_COLUMNS: &'static [&'static str] = &["name"];
+    const COLUMNS: &'static [&'static str] = &["id", "title", "is_active", "priority"];
+    const INSERT_COLUMNS: &'static [&'static str] = &["title", "is_active", "priority"];
 
     fn id(&self) -> i64 {
         self.id
@@ -666,12 +707,18 @@ impl Model for {{STRUCT}} {
     fn from_row(row: Row<'_>) -> Result<Self, Error> {
         Ok(Self {
             id: row.get_i64("id")?,
-            name: row.get_string("name")?,
+            title: row.get_string("title")?,
+            is_active: row.get_bool("is_active")?,
+            priority: row.get_i32("priority")?,
         })
     }
 
     fn insert_values(&self) -> Vec<Value> {
-        vec![self.name.clone().into()]
+        vec![
+            self.title.clone().into(),
+            self.is_active.into(),
+            self.priority.into(),
+        ]
     }
 }
 "#;
@@ -686,14 +733,56 @@ pub fn install(admin: Admin) -> Admin {
 }
 "#;
 
-const APP_VIEWS_RS: &str = r#"use rustio_core::{text, Error, Response, Router};
+const APP_VIEWS_RS: &str = r###"use rustio_core::{html, Error, Response, Router};
 
+/// Tutorial page for the `{{STRUCT}}` app.
+///
+/// Hitting `GET /{{NAME}}` returns the HTML below so you can confirm the
+/// app is wired up. Replace this handler with your real view — this file
+/// is yours to edit freely.
 pub fn register(router: Router) -> Router {
     router.get("/{{NAME}}", |_req, _params| async {
-        Ok::<Response, Error>(text("{{STRUCT}} views — placeholder\n"))
+        Ok::<Response, Error>(html(WELCOME_HTML))
     })
 }
-"#;
+
+const WELCOME_HTML: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{STRUCT}} — RustIO</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: #fafafa; color: #222; display: flex; align-items: center; justify-content: center; }
+  main { max-width: 32rem; padding: 2.5rem; background: white; border-radius: 8px;
+         box-shadow: 0 4px 20px rgba(0,0,0,0.05); text-align: left; }
+  h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
+  .tag { color: #888; font-size: 0.9rem; margin: 0 0 1.5rem; }
+  p { line-height: 1.55; margin: 0.75rem 0; }
+  code { background: #f0f0f2; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
+  a { color: #0366d6; }
+  .actions { margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .btn { padding: 0.55rem 1rem; border-radius: 5px; text-decoration: none; font-size: 0.95rem; font-weight: 500; }
+  .btn.primary { background: #222; color: white; }
+  .btn.secondary { background: #f0f0f2; color: #222; }
+</style>
+</head>
+<body>
+<main>
+  <h1>It works.</h1>
+  <p class="tag">{{STRUCT}} app · RustIO</p>
+  <p>Your <code>{{STRUCT}}</code> app is wired up and serving this page at <code>/{{NAME}}</code>.</p>
+  <p>To build a real view, edit <code>apps/{{NAME}}/views.rs</code>. The CRUD admin for this model is already generated and ready to use.</p>
+  <div class="actions">
+    <a class="btn primary" href="/admin/{{TABLE}}">Open admin</a>
+    <a class="btn secondary" href="/">Home</a>
+  </div>
+</main>
+</body>
+</html>"##;
+"###;
 
 #[cfg(test)]
 mod tests {
@@ -837,6 +926,7 @@ mod tests {
             Command::Init {
                 name: None,
                 preset: None,
+                app: None,
             },
         );
     }
@@ -848,6 +938,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: None,
+                app: None,
             },
         );
     }
@@ -859,6 +950,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: Some(wizard::Preset::Blog),
+                app: None,
             },
         );
     }
@@ -870,6 +962,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: Some(wizard::Preset::Api),
+                app: None,
             },
         );
     }
@@ -889,6 +982,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: None,
+                app: None,
             },
         );
     }
@@ -896,6 +990,41 @@ mod tests {
     #[test]
     fn parse_init_rejects_stray_flags() {
         assert!(parse_command(&args(&["init", "--zzz"])).is_err());
+    }
+
+    #[test]
+    fn parse_init_app_flag() {
+        assert_eq!(
+            parse_command(&args(&[
+                "init", "mysite", "--preset", "blog", "--app", "books",
+            ]))
+            .unwrap(),
+            Command::Init {
+                name: Some(String::from("mysite")),
+                preset: Some(wizard::Preset::Blog),
+                app: Some(String::from("books")),
+            },
+        );
+    }
+
+    #[test]
+    fn parse_init_app_flag_without_preset() {
+        // The wizard will default the preset to Basic; `--app` without a
+        // `--preset` on Basic is effectively a no-op (Basic ignores it).
+        // The parser accepts it either way.
+        assert_eq!(
+            parse_command(&args(&["init", "mysite", "--app", "books"])).unwrap(),
+            Command::Init {
+                name: Some(String::from("mysite")),
+                preset: None,
+                app: Some(String::from("books")),
+            },
+        );
+    }
+
+    #[test]
+    fn parse_init_app_flag_requires_value() {
+        assert!(parse_command(&args(&["init", "mysite", "--app"])).is_err());
     }
 
     #[test]

@@ -35,7 +35,7 @@ If you find a hardening gap that falls outside scope, please still report it; we
 
 RustIO 0.x admin auth uses `Authorization: Bearer` headers. Browsers **do not** automatically include custom headers on cross-origin requests, so a malicious third-party page cannot forge admin actions on a signed-in user's behalf — CSRF is not directly exploitable in this mode.
 
-When cookie-based session auth lands (planned for 0.3.0), CSRF becomes a real concern. Per-request CSRF tokens on admin forms will ship in the same release.
+When cookie-based session auth lands in a future release, CSRF becomes a real concern. Per-request CSRF tokens on admin forms will ship in the same release.
 
 If you deploy something that stores admin credentials in a cookie or uses same-origin fetch with credentials today, you should add your own CSRF protection.
 

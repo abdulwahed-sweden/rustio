@@ -32,23 +32,25 @@ rustio init
   RustIO
   Let's set up your project.
 
-> Project name: mysite
+> Project name: readlist
 > Choose a starting preset:
     Basic — empty project, add apps later
-  › Blog  — scaffolds a posts app with admin + views
-    API   — scaffolds an items app with admin + views
+  › Blog  — scaffolds one app with admin + views
+    API   — scaffolds one app with admin + views
+> What should your first model track? books
 > Proceed? (Y/n)
 ```
 
-Three prompts. One confirm. Then:
+Four prompts. One confirm. Then:
 
 ```bash
-cd mysite
+cd readlist
 rustio migrate apply
 rustio run
 ```
 
 - [http://127.0.0.1:8000/](http://127.0.0.1:8000/) — your homepage
+- [http://127.0.0.1:8000/books](http://127.0.0.1:8000/books) — your first app's view
 - [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) — auto-generated admin (send `Authorization: Bearer dev-admin`)
 
 ### Prefer flags over prompts?
@@ -56,7 +58,7 @@ rustio run
 Everything the wizard does is reachable non-interactively:
 
 ```bash
-rustio init mysite --preset blog    # same result, zero prompts
+rustio init readlist --preset blog --app books    # same result, zero prompts
 ```
 
 Or use the granular commands the wizard builds on:
@@ -108,6 +110,7 @@ mysite/
 | `rustio init`                   | Interactive wizard: name + preset + confirm                          |
 | `rustio init <name>`            | Non-interactive scaffold (default preset: `basic`)                   |
 | `rustio init <name> --preset P` | Non-interactive with a preset (`basic` / `blog` / `api`)             |
+| `rustio init <name> --app X`    | Override the scaffolded app name (e.g. `books`, `tasks`, `links`)    |
 | `rustio new project <name>`     | Create a new project directly (no wizard)                            |
 | `rustio new app <name>`         | Scaffold an app inside the current project                           |
 | `rustio migrate generate <n>`   | Create a new migration file                                          |
@@ -125,7 +128,24 @@ let id = require_auth(req.ctx())?;    // 401 if missing
 let id = require_admin(req.ctx())?;   // 401 if missing, 403 if not admin
 ```
 
-Dev tokens (`dev-admin`, `dev-user`) are provided for bootstrapping. Replace with your own middleware before production.
+Dev tokens (`dev-admin`, `dev-user`) are provided for bootstrapping. Setting `RUSTIO_ENV=production` disables them — replace with your own middleware before deploying.
+
+Hitting `/admin` without auth in a browser renders a small HTML page with a one-line `curl` hint. Example (copy-paste ready):
+
+```bash
+curl -H "Authorization: Bearer dev-admin" http://127.0.0.1:8000/admin
+```
+
+## ♻️ Starting Fresh
+
+The default SQLite database is a single file (`app.db`) in the project root. Migrations are **idempotent** and tracked in the `rustio_migrations` table — to reset everything:
+
+```bash
+rm app.db
+rustio migrate apply
+```
+
+Your schema (the `.sql` files in `migrations/`) is the source of truth; deleting `app.db` only drops rows, never code.
 
 ## 📦 Installation
 

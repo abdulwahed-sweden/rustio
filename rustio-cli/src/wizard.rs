@@ -37,10 +37,27 @@ use crate::out;
 
 /// A fully-resolved project scaffold plan produced by either the wizard
 /// or the non-interactive argument parser.
+///
+/// `app_name` controls the single app scaffolded under the chosen preset.
+/// When `None` the preset's default app is used (see [`Preset::apps`]).
+/// `Preset::Basic` ignores `app_name` entirely (no apps are scaffolded).
 #[derive(Debug, Clone)]
 pub struct Plan {
     pub project_name: String,
     pub preset: Preset,
+    pub app_name: Option<String>,
+}
+
+impl Plan {
+    /// The apps that should be scaffolded for this plan. Honors
+    /// `app_name` if set, otherwise falls back to the preset defaults.
+    pub fn apps(&self) -> Vec<String> {
+        match (&self.app_name, self.preset) {
+            (_, Preset::Basic) => Vec::new(),
+            (Some(custom), _) => vec![custom.clone()],
+            (None, preset) => preset.apps().iter().map(|s| s.to_string()).collect(),
+        }
+    }
 }
 
 /// Starter templates. Each preset maps to zero or more apps to scaffold.
@@ -95,16 +112,20 @@ impl FromStr for Preset {
 
 /// Run the interactive wizard and return the chosen plan.
 ///
-/// `default_preset` seeds the preset picker's highlight when the user
-/// passed `--preset X` without a name; it is otherwise ignored.
-pub fn run(default_preset: Option<Preset>) -> Result<Plan, String> {
+/// `default_preset` seeds the preset picker's highlight and
+/// `default_app_name` seeds the app-name prompt. Both are otherwise only
+/// used if the user chooses Enter-to-accept.
+pub fn run(
+    default_preset: Option<Preset>,
+    default_app_name: Option<String>,
+) -> Result<Plan, String> {
     // Prompt libraries need a real terminal to draw on. In CI or when
     // stdin is piped from another program, the wizard cannot function —
     // direct the user at the non-interactive form instead of hanging.
     if !std::io::stdin().is_terminal() {
         return Err(
             "`rustio init` without a name needs an interactive terminal.\n \
-             Try: rustio init <name> [--preset basic|blog|api]"
+             Try: rustio init <name> [--preset basic|blog|api] [--app <name>]"
                 .into(),
         );
     }
@@ -114,9 +135,18 @@ pub fn run(default_preset: Option<Preset>) -> Result<Plan, String> {
     let project_name = prompt_name()?;
     let preset = prompt_preset(default_preset)?;
 
+    // Only ask for an app name when the preset actually scaffolds one.
+    // Basic has no app, so an app-name prompt would be a dead question.
+    let app_name = if preset == Preset::Basic {
+        None
+    } else {
+        Some(prompt_app_name(preset, default_app_name)?)
+    };
+
     let plan = Plan {
         project_name,
         preset,
+        app_name,
     };
     print_summary(&plan);
 
@@ -139,25 +169,24 @@ pub fn execute(plan: &Plan) -> Result<(), String> {
     // Step 1: create the project directory and its files.
     crate::new_project(&plan.project_name)?;
 
-    // Step 2: scaffold preset apps inside the new project.
+    // Step 2: scaffold the chosen app(s) inside the new project.
     //
     // `new_app` looks at the current working directory (specifically for
     // `apps/mod.rs`), so we have to chdir into the generated project. This
     // only affects the running CLI process — the user's shell is unchanged.
-    if !plan.preset.apps().is_empty() {
+    let apps = plan.apps();
+    if !apps.is_empty() {
         std::env::set_current_dir(&plan.project_name)
             .map_err(|e| format!("failed to enter `{}`: {e}", plan.project_name))?;
-        for app in plan.preset.apps() {
+        for app in &apps {
             crate::new_app(app)?;
         }
     }
 
-    // Step 3: consolidated next-steps. The per-command hints emitted by
-    // `new_project` and `new_app` are useful on their own, but for the
-    // wizard flow we also print a short, opinionated "run it now" block.
+    // Step 3: consolidated next-steps.
     println!();
     println!("{}", out::bold("Next:"));
-    if plan.preset.apps().is_empty() {
+    if apps.is_empty() {
         out::hint(&format!("cd {}", plan.project_name));
         out::hint("rustio new app <name>");
         out::hint("rustio run");
@@ -182,6 +211,24 @@ fn prompt_name() -> Result<String, String> {
     Text::new("Project name:")
         .with_default("mysite")
         .with_help_message("lowercase letters, digits, and underscores")
+        .with_validator(name_validator)
+        .prompt()
+        .map_err(translate_prompt_error)
+}
+
+fn prompt_app_name(preset: Preset, default: Option<String>) -> Result<String, String> {
+    // Seed the prompt with a preset-appropriate default so Enter always
+    // yields a sensible value. The user can type their own to customize
+    // the struct name, table, and `/admin/<table>` URL in one shot.
+    let fallback = match preset {
+        Preset::Blog => "posts",
+        Preset::Api => "items",
+        Preset::Basic => "posts", // unreachable in practice — caller skips
+    };
+    let seed = default.unwrap_or_else(|| fallback.to_string());
+    Text::new("What should your first model track?")
+        .with_default(&seed)
+        .with_help_message("used as the struct / table / admin URL — e.g. books, tasks, links")
         .with_validator(name_validator)
         .prompt()
         .map_err(translate_prompt_error)
@@ -220,7 +267,7 @@ fn print_summary(plan: &Plan) {
     println!("  {}", out::bold("Ready to generate:"));
     println!("    {:<9} {}", out::dim("name"), plan.project_name);
     println!("    {:<9} {}", out::dim("preset"), plan.preset.label());
-    for app in plan.preset.apps() {
+    for app in plan.apps() {
         println!("    {:<9} {app}", out::dim("app"));
     }
     println!();
@@ -298,5 +345,44 @@ mod tests {
         sorted.sort();
         sorted.dedup();
         assert_eq!(sorted.len(), labels.len());
+    }
+
+    #[test]
+    fn plan_apps_uses_override_when_present() {
+        let plan = Plan {
+            project_name: "x".into(),
+            preset: Preset::Blog,
+            app_name: Some("books".into()),
+        };
+        assert_eq!(plan.apps(), vec!["books".to_string()]);
+    }
+
+    #[test]
+    fn plan_apps_falls_back_to_preset_default() {
+        let plan = Plan {
+            project_name: "x".into(),
+            preset: Preset::Blog,
+            app_name: None,
+        };
+        assert_eq!(plan.apps(), vec!["posts".to_string()]);
+
+        let plan = Plan {
+            project_name: "x".into(),
+            preset: Preset::Api,
+            app_name: None,
+        };
+        assert_eq!(plan.apps(), vec!["items".to_string()]);
+    }
+
+    #[test]
+    fn plan_apps_basic_is_empty_even_with_app_override() {
+        // Basic explicitly means "no app" — even if the caller sets an
+        // app_name, we honor the preset's intent.
+        let plan = Plan {
+            project_name: "x".into(),
+            preset: Preset::Basic,
+            app_name: Some("ignored".into()),
+        };
+        assert!(plan.apps().is_empty());
     }
 }

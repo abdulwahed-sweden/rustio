@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0]
+
+Theme: close the "now what?" gap between scaffolding and actually using
+the framework.
+
+### Added
+
+- **Custom app name in the wizard.** After picking a preset, the wizard
+  asks *"What should your first model track?"* — type `books` and get
+  `pub struct Book`, table `books`, and `/admin/books` end-to-end. The
+  wizard's preset default still populates (`posts` for Blog, `items` for
+  API) so Enter-to-accept keeps working.
+- **`--app <name>` flag on `rustio init`** — non-interactive equivalent
+  of the new prompt. Example:
+  `rustio init readlist --preset blog --app books`.
+- **Richer model scaffold.** The generated `models.rs` now has three
+  fields spanning the three supported types — `title: String`,
+  `is_active: bool`, `priority: i32` — instead of a lone `name: String`.
+  The scaffold is a working multi-type example out of the box.
+- **Module doc comment** on the generated `models.rs` explaining how to
+  add fields + write a follow-up migration. Replaces the silent "what
+  do I edit?" moment reported in user testing.
+- **Tutorial view page.** `GET /<app>` returns a small styled HTML page
+  confirming the wire-up is working, pointing at `apps/<app>/views.rs`
+  for customization, and linking to the admin. Replaces the prior
+  `{{STRUCT}} views — placeholder` plain-text line.
+
+### Changed
+
+- Wizard is now a **four-step flow** (name → preset → first model → confirm)
+  instead of three. Basic preset still skips the model step.
+- Preset labels in the wizard are slightly less "blog-specific" — they
+  describe shape ("one app with admin + views") rather than domain
+  ("scaffolds a posts app"). Preset enum names are unchanged.
+
+### Documentation
+
+- README: new **"♻️ Starting Fresh"** section explaining how to reset
+  `app.db` safely. Migrations are idempotent; schema lives in the `.sql`
+  files, not the database.
+- All `curl` examples are single-line (copy-paste friendly across
+  shells, including zsh with strict continuation handling).
+- CLI + main README Quick Start now shows the four-prompt wizard with a
+  custom app name as the example.
+
+### Upgrading from 0.2.x
+
+1. Bump `rustio-core` in generated projects to `"0.3.0"` and
+   `cargo update`.
+2. Existing apps generated under 0.2.x stay on disk with their old
+   `name: String`-only schema — no automatic rewrite. New apps created
+   via `rustio new app <name>` use the new scaffold.
+
+### Note on session auth / CSRF
+
+Session cookies + CSRF tokens originally targeted 0.3.0 based on the
+earlier SECURITY.md note. 0.3.0 pivoted to close visible first-run UX
+gaps first. Session auth is now targeted for a future `0.x` release;
+Bearer-based admin remains not directly CSRF-exploitable per SECURITY.md.
+
 ## [0.2.2]
 
 ### Added
@@ -204,7 +264,8 @@ First public release.
 - `rustio-core = "x.y.z"` in generated projects is pinned to match CLI; lockstep
   releases expected until this stabilizes.
 
-[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.2...v0.2.0

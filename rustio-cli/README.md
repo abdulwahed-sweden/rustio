@@ -20,18 +20,19 @@ rustio init
   RustIO
   Let's set up your project.
 
-> Project name: mysite
+> Project name: readlist
 > Choose a starting preset:
     Basic — empty project, add apps later
-  › Blog  — scaffolds a posts app with admin + views
-    API   — scaffolds an items app with admin + views
+  › Blog  — scaffolds one app with admin + views
+    API   — scaffolds one app with admin + views
+> What should your first model track? books
 > Proceed? (Y/n)
 ```
 
 Then:
 
 ```bash
-cd mysite
+cd readlist
 rustio migrate apply
 rustio run
 ```
@@ -40,12 +41,12 @@ Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). The admin lives at `/admi
 
 ## Non-interactive
 
-Skip the wizard by passing a name (and optionally a preset):
+Skip the wizard by passing a name (and optionally a preset or a custom app name):
 
 ```bash
-rustio init mysite                  # basic preset
-rustio init mysite --preset blog    # scaffold a posts app too
-rustio init mysite --preset api     # scaffold an items app too
+rustio init readlist                                  # basic preset
+rustio init readlist --preset blog                    # default app: posts
+rustio init readlist --preset blog --app books        # custom app name
 ```
 
 ## Commands
@@ -55,6 +56,7 @@ rustio init mysite --preset api     # scaffold an items app too
 | `rustio init`                   | Interactive wizard: name + preset + confirm                          |
 | `rustio init <name>`            | Non-interactive scaffold (default preset: `basic`)                   |
 | `rustio init <name> --preset P` | Non-interactive with a preset (`basic` / `blog` / `api`)             |
+| `rustio init <name> --app X`    | Override the scaffolded app name (e.g. `books`, `tasks`, `links`)    |
 | `rustio new project <name>`     | Create a new project directly (no wizard)                            |
 | `rustio new app <name>`         | Scaffold an app inside the current project                           |
 | `rustio migrate generate <n>`   | Create a new migration file                                          |
