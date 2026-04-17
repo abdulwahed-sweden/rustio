@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+//! Auto-generated CRUD admin backed by [`crate::orm`].
+//!
+//! Apply `#[derive(RustioAdmin)]` to any struct that also implements
+//! [`crate::orm::Model`], then call [`register`] on a [`Router`] to mount
+//! list / create / edit / delete routes at `/admin/<admin_name>`.
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -8,6 +12,11 @@ use crate::error::Error;
 use crate::http::{html, Request, Response};
 use crate::orm::{Db, Model};
 use crate::router::Router;
+
+// `FormData` lives in `http` and is re-exported here so that the
+// `#[derive(RustioAdmin)]`-generated code referencing
+// `::rustio_core::admin::FormData` continues to work.
+pub use crate::http::FormData;
 
 #[derive(Debug, Clone, Copy)]
 pub enum FieldType {
@@ -31,41 +40,6 @@ pub trait AdminModel: Model {
 
     fn field_display(&self, name: &str) -> Option<String>;
     fn from_form(form: &FormData, id: Option<i64>) -> Result<Self, Error>;
-}
-
-pub struct FormData {
-    map: HashMap<String, String>,
-}
-
-impl FormData {
-    pub fn parse(body: &str) -> Self {
-        let mut map = HashMap::new();
-        for pair in body.split('&') {
-            if pair.is_empty() {
-                continue;
-            }
-            let mut iter = pair.splitn(2, '=');
-            let raw_key = match iter.next() {
-                Some(k) if !k.is_empty() => k,
-                _ => continue,
-            };
-            let raw_val = iter.next().unwrap_or("");
-            map.insert(percent_decode(raw_key), percent_decode(raw_val));
-        }
-        FormData { map }
-    }
-
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.map.get(key).map(String::as_str)
-    }
-
-    pub fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.map.is_empty()
-    }
 }
 
 pub fn register<T>(mut router: Router, db: &Db) -> Router
@@ -312,40 +286,6 @@ fn escape_html(s: &str) -> String {
     out
 }
 
-fn percent_decode(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'+' {
-            out.push(b' ');
-            i += 1;
-        } else if b == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) = (hex_digit(bytes[i + 1]), hex_digit(bytes[i + 2])) {
-                out.push((h << 4) | l);
-                i += 3;
-                continue;
-            }
-            out.push(b);
-            i += 1;
-        } else {
-            out.push(b);
-            i += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex_digit(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
-}
-
 const ADMIN_CSS: &str = r#"
 *, *::before, *::after { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -383,46 +323,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn form_parse_decodes_basic_pairs() {
-        let form = FormData::parse("a=1&b=2");
-        assert_eq!(form.get("a"), Some("1"));
-        assert_eq!(form.get("b"), Some("2"));
-    }
-
-    #[test]
-    fn form_parse_decodes_plus_as_space() {
-        let form = FormData::parse("name=John+Doe");
-        assert_eq!(form.get("name"), Some("John Doe"));
-    }
-
-    #[test]
-    fn form_parse_decodes_percent_encoded() {
-        let form = FormData::parse("q=hello%20world%21");
-        assert_eq!(form.get("q"), Some("hello world!"));
-    }
-
-    #[test]
-    fn form_parse_handles_empty_values() {
-        let form = FormData::parse("a=&b=x");
-        assert_eq!(form.get("a"), Some(""));
-        assert_eq!(form.get("b"), Some("x"));
-    }
-
-    #[test]
-    fn form_parse_ignores_empty_pairs() {
-        let form = FormData::parse("&a=1&&b=2&");
-        assert_eq!(form.get("a"), Some("1"));
-        assert_eq!(form.get("b"), Some("2"));
-        assert_eq!(form.len(), 2);
-    }
-
-    #[test]
-    fn form_missing_key_is_none() {
-        let form = FormData::parse("a=1");
-        assert!(form.get("missing").is_none());
-    }
-
-    #[test]
     fn escape_html_escapes_dangerous_chars() {
         assert_eq!(
             escape_html("<script>alert(\"xss\")</script>"),
@@ -430,21 +330,5 @@ mod tests {
         );
         assert_eq!(escape_html("a & b"), "a &amp; b");
         assert_eq!(escape_html("it's"), "it&#39;s");
-    }
-
-    #[test]
-    fn percent_decode_passes_through_unreserved() {
-        assert_eq!(percent_decode("abcXYZ123-_.~"), "abcXYZ123-_.~");
-    }
-
-    #[test]
-    fn percent_decode_handles_lowercase_and_uppercase_hex() {
-        assert_eq!(percent_decode("%2f%2F"), "//");
-    }
-
-    #[test]
-    fn percent_decode_leaves_invalid_percent_sequences_alone() {
-        assert_eq!(percent_decode("%GG"), "%GG");
-        assert_eq!(percent_decode("end%"), "end%");
     }
 }

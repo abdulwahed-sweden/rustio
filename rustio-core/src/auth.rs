@@ -1,3 +1,13 @@
+//! Identity-in-context authentication.
+//!
+//! [`authenticate`] is an additive middleware: it attaches an [`Identity`]
+//! to the request context when a valid `Authorization: Bearer` token is
+//! provided, and does nothing otherwise. Handlers enforce their own
+//! requirement with [`require_auth`] / [`require_admin`].
+//!
+//! The built-in token mapping is for development only — replace it with
+//! your own middleware before deploying.
+
 use crate::context::Context;
 use crate::error::Error;
 use crate::http::{Request, Response};

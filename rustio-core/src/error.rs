@@ -1,3 +1,12 @@
+//! Unified error type for the framework.
+//!
+//! Handlers and middleware return `Result<Response, Error>`. The router
+//! converts any unhandled `Err` into an HTTP response as a final safety net.
+//!
+//! `Error::Internal(msg)` keeps the full message for logging (via [`Display`]
+//! and [`Error::message`]) but sanitizes it to a generic
+//! `"Internal Server Error"` body when converted into an HTTP response.
+
 use std::fmt;
 
 use crate::http::{status_text, Response};
@@ -14,6 +23,7 @@ pub enum Error {
 }
 
 impl Error {
+    /// HTTP status code associated with this variant.
     pub fn status(&self) -> u16 {
         match self {
             Error::NotFound => 404,
@@ -25,6 +35,11 @@ impl Error {
         }
     }
 
+    /// Human-readable message carried by the variant.
+    ///
+    /// For `Internal`, this returns the full underlying detail. That detail
+    /// is safe for logs but is *not* sent to HTTP clients — see
+    /// [`Error::into_response`].
     pub fn message(&self) -> &str {
         match self {
             Error::NotFound => "Not Found",
@@ -36,17 +51,21 @@ impl Error {
         }
     }
 
+    /// Convert this error into an HTTP response.
+    ///
+    /// The body exposed to clients is sanitized for `Internal` — it always
+    /// reads `"Internal Server Error"`, never the original detail.
     pub fn into_response(self) -> Response {
         let status = self.status();
-        let message = match self {
+        let body = match self {
             Error::NotFound => String::from("Not Found"),
             Error::MethodNotAllowed => String::from("Method Not Allowed"),
             Error::BadRequest(msg) => msg,
             Error::Unauthorized => String::from("Unauthorized"),
             Error::Forbidden => String::from("Forbidden"),
-            Error::Internal(msg) => msg,
+            Error::Internal(_) => String::from("Internal Server Error"),
         };
-        status_text(status, message)
+        status_text(status, body)
     }
 }
 
@@ -64,6 +83,11 @@ impl From<sqlx::Error> for Error {
     }
 }
 
+/// Convert a handler result into a definite `Response`.
+///
+/// Useful in middleware that needs to observe both success and error paths
+/// before returning — e.g. attaching an `X-Request-Id` header to every
+/// response regardless of outcome.
 pub fn resolve(result: Result<Response, Error>) -> Response {
     result.unwrap_or_else(Error::into_response)
 }
@@ -71,6 +95,7 @@ pub fn resolve(result: Result<Response, Error>) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http_body_util::BodyExt;
 
     #[test]
     fn status_codes_match_variant() {
@@ -137,5 +162,39 @@ mod tests {
     fn resolve_converts_err_to_response() {
         let resolved = resolve(Err(Error::Unauthorized));
         assert_eq!(resolved.status().as_u16(), 401);
+    }
+
+    #[tokio::test]
+    async fn internal_response_body_is_sanitized() {
+        let resp = Error::Internal(String::from("db password: hunter2")).into_response();
+        let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let body = std::str::from_utf8(&bytes).unwrap();
+        assert_eq!(body, "Internal Server Error");
+        assert!(!body.contains("hunter2"));
+    }
+
+    #[tokio::test]
+    async fn public_error_bodies_use_status_phrase_or_message() {
+        async fn body_of(err: Error) -> String {
+            let bytes = err
+                .into_response()
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes();
+            String::from_utf8(bytes.to_vec()).unwrap()
+        }
+        assert_eq!(body_of(Error::NotFound).await, "Not Found");
+        assert_eq!(body_of(Error::Unauthorized).await, "Unauthorized");
+        assert_eq!(body_of(Error::Forbidden).await, "Forbidden");
+        assert_eq!(body_of(Error::BadRequest(String::from("bad"))).await, "bad");
+    }
+
+    #[test]
+    fn internal_display_and_message_retain_detail_for_logging() {
+        let err = Error::Internal(String::from("leaked secret"));
+        assert_eq!(err.message(), "leaked secret");
+        assert!(format!("{err}").contains("leaked secret"));
     }
 }

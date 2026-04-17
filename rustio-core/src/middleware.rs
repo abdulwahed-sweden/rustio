@@ -1,3 +1,10 @@
+//! Around-style middleware.
+//!
+//! Each middleware is `async fn(Request, Next) -> Result<Response, Error>`
+//! and decides when to call [`Next::run`]. Short-circuiting (returning a
+//! response without calling next) is natural. [`Next`] is consumed by
+//! `run`, so the type system prevents calling it twice.
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

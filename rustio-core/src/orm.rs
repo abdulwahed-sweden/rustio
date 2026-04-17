@@ -1,3 +1,11 @@
+//! SQLite-backed ORM.
+//!
+//! Implement [`Model`] on your struct to get `find / all / create / update /
+//! delete` for free. SQLx is used internally; user code never references it.
+//!
+//! Phase 1 supports `i32`, `i64`, `String`, and `bool` field types; the id
+//! column is required to be `i64`.
+
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row as _;
 

@@ -1,3 +1,6 @@
+//! Default routes that scaffolded projects mount via [`with_defaults`]:
+//! `/` (homepage), `/admin` (placeholder), `/docs` (placeholder).
+
 use crate::error::Error;
 use crate::http::{html, text, Request, Response};
 use crate::router::{Params, Router};

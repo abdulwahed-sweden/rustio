@@ -1,3 +1,8 @@
+//! Hyper-backed HTTP/1 server.
+//!
+//! Bind an address with [`Server::bind`] and serve either a raw handler
+//! via [`Server::serve`] or a [`Router`] via [`Server::serve_router`].
+
 use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;

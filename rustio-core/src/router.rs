@@ -1,3 +1,9 @@
+//! Path router with `:param` support.
+//!
+//! Routes are registered against a [`Router`] and dispatched by path +
+//! method. Paths that match but with the wrong method produce `405 Method
+//! Not Allowed` rather than collapsing to `404`.
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

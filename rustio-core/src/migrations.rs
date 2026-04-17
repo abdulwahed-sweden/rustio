@@ -1,3 +1,10 @@
+//! Forward-only migrations tracked in a SQLite table.
+//!
+//! Migrations are plain `.sql` files in a directory, named `NNNN_<slug>.sql`
+//! (auto-numbered by [`generate`]). [`apply`] runs pending migrations in
+//! filename order, each inside its own transaction, and records applied
+//! filenames in the `rustio_migrations` table so reruns are idempotent.
+
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,6 +15,13 @@ use crate::error::Error;
 use crate::orm::Db;
 
 const TRACKING_TABLE: &str = "rustio_migrations";
+
+/// Options for [`apply_with`].
+#[derive(Default, Clone, Copy, Debug)]
+pub struct ApplyOptions {
+    /// Print each statement to stderr before execution.
+    pub verbose: bool,
+}
 
 pub fn list(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     if !dir.exists() {
@@ -87,6 +101,10 @@ pub async fn status(db: &Db, dir: &Path) -> Result<Status, Error> {
 }
 
 pub async fn apply(db: &Db, dir: &Path) -> Result<Vec<String>, Error> {
+    apply_with(db, dir, ApplyOptions::default()).await
+}
+
+pub async fn apply_with(db: &Db, dir: &Path, opts: ApplyOptions) -> Result<Vec<String>, Error> {
     ensure_tracking_table(db).await?;
 
     let rows = sqlx::query(&format!("SELECT filename FROM {TRACKING_TABLE}"))
@@ -109,9 +127,16 @@ pub async fn apply(db: &Db, dir: &Path) -> Result<Vec<String>, Error> {
         let sql = fs::read_to_string(&path)
             .map_err(|e| Error::Internal(format!("reading {filename}: {e}")))?;
 
+        if opts.verbose {
+            eprintln!("-- applying {filename}");
+        }
+
         let mut tx = db.pool().begin().await?;
         for stmt in split_sql(&sql) {
-            sqlx::query(stmt)
+            if opts.verbose {
+                eprintln!("  {}", stmt);
+            }
+            sqlx::query(&stmt)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| Error::Internal(format!("migration {filename} failed: {e}")))?;
@@ -170,11 +195,74 @@ fn sanitize_name(name: &str) -> String {
     out.trim_matches('_').to_string()
 }
 
-fn split_sql(sql: &str) -> Vec<&str> {
-    sql.split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect()
+/// Split a migration file into individual statements.
+///
+/// Preserves semicolons that appear inside single-quoted string literals,
+/// `--` line comments, and `/* ... */` block comments. Doubled single
+/// quotes (`''`) inside a literal are treated as an escape and not as a
+/// string terminator.
+fn split_sql(sql: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut chars = sql.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => {
+                current.push(c);
+                loop {
+                    match chars.next() {
+                        Some('\'') => {
+                            current.push('\'');
+                            if chars.peek() == Some(&'\'') {
+                                current.push(chars.next().unwrap());
+                                continue;
+                            }
+                            break;
+                        }
+                        Some(other) => current.push(other),
+                        None => break,
+                    }
+                }
+            }
+            '-' if chars.peek() == Some(&'-') => {
+                current.push(c);
+                while let Some(&nc) = chars.peek() {
+                    chars.next();
+                    current.push(nc);
+                    if nc == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                current.push(c);
+                current.push(chars.next().unwrap());
+                while let Some(c1) = chars.next() {
+                    current.push(c1);
+                    if c1 == '*' && chars.peek() == Some(&'/') {
+                        current.push(chars.next().unwrap());
+                        break;
+                    }
+                }
+            }
+            ';' => {
+                let trimmed = current.trim();
+                if !trimmed.is_empty() {
+                    out.push(trimmed.to_string());
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+
+    let trimmed = current.trim();
+    if !trimmed.is_empty() {
+        out.push(trimmed.to_string());
+    }
+
+    out
 }
 
 #[cfg(test)]
@@ -245,13 +333,51 @@ mod tests {
         let stmts = split_sql(sql);
         assert_eq!(
             stmts,
-            vec!["CREATE TABLE a (id INT)", "CREATE TABLE b (id INT)"]
+            vec![
+                String::from("CREATE TABLE a (id INT)"),
+                String::from("CREATE TABLE b (id INT)"),
+            ]
         );
     }
 
     #[test]
     fn split_sql_ignores_empty_trailing() {
         assert!(split_sql(";;  ;").is_empty());
+    }
+
+    #[test]
+    fn split_sql_preserves_semicolon_inside_string_literal() {
+        assert_eq!(
+            split_sql("INSERT INTO t VALUES ('a;b'); CREATE TABLE x (id INT);"),
+            vec![
+                String::from("INSERT INTO t VALUES ('a;b')"),
+                String::from("CREATE TABLE x (id INT)"),
+            ]
+        );
+    }
+
+    #[test]
+    fn split_sql_handles_escaped_single_quote() {
+        assert_eq!(
+            split_sql("INSERT VALUES ('it''s; fine');"),
+            vec![String::from("INSERT VALUES ('it''s; fine')")]
+        );
+    }
+
+    #[test]
+    fn split_sql_skips_semicolons_inside_line_comment() {
+        assert_eq!(
+            split_sql("-- first; second\nCREATE TABLE t (id INT);"),
+            vec![String::from("-- first; second\nCREATE TABLE t (id INT)")]
+        );
+    }
+
+    #[test]
+    fn split_sql_skips_semicolons_inside_block_comment() {
+        assert_eq!(
+            split_sql("/* a;b;c */ CREATE TABLE t (id INT);"),
+            vec![String::from("/* a;b;c */ CREATE TABLE t (id INT)")]
+        );
     }
 
     #[test]

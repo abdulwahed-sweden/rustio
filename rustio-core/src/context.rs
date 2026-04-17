@@ -1,3 +1,9 @@
+//! Typed per-request storage keyed by `TypeId`.
+//!
+//! Middleware writes into the context (`req.ctx_mut().insert(User { .. })`);
+//! handlers and later middleware read by type (`req.ctx().get::<User>()`).
+//! Stored values only need to be `Send + Sync + 'static` — no `Clone` bound.
+
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt;

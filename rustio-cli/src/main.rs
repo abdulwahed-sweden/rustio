@@ -12,7 +12,7 @@ COMMANDS:
     new app <name>            Create a new app inside the current project
     run                       Build and run the project in the current directory
     migrate generate <name>   Create a new migration file
-    migrate apply             Apply all pending migrations
+    migrate apply [-v]        Apply all pending migrations (verbose with -v / --verbose)
     migrate status            Show applied and pending migrations
 
 ENVIRONMENT:
@@ -38,7 +38,7 @@ async fn main() -> ExitCode {
         Ok(Command::NewApp(name)) => new_app(&name),
         Ok(Command::Run) => run(),
         Ok(Command::MigrateGenerate(name)) => migrate_generate(&name),
-        Ok(Command::MigrateApply) => migrate_apply().await,
+        Ok(Command::MigrateApply { verbose }) => migrate_apply(verbose).await,
         Ok(Command::MigrateStatus) => migrate_status().await,
         Err(msg) => {
             out::error_line(&msg);
@@ -63,7 +63,7 @@ enum Command {
     NewApp(String),
     Run,
     MigrateGenerate(String),
-    MigrateApply,
+    MigrateApply { verbose: bool },
     MigrateStatus,
     Version,
     Help,
@@ -98,10 +98,15 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                 Ok(Command::MigrateGenerate(name.clone()))
             }
             Some("apply") => {
-                if args.len() > 3 {
-                    return Err(format!("unexpected argument `{}`", args[3]));
+                let rest = &args[3..];
+                let mut verbose = false;
+                for a in rest {
+                    match a.as_str() {
+                        "-v" | "--verbose" => verbose = true,
+                        other => return Err(format!("unexpected argument `{other}`")),
+                    }
                 }
-                Ok(Command::MigrateApply)
+                Ok(Command::MigrateApply { verbose })
             }
             Some("status") => {
                 if args.len() > 3 {
@@ -238,12 +243,13 @@ fn migrate_generate(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-async fn migrate_apply() -> Result<(), String> {
+async fn migrate_apply(verbose: bool) -> Result<(), String> {
     let db = rustio_core::Db::connect(&database_url())
         .await
         .map_err(err_str)?;
     let dir = Path::new("migrations");
-    let applied = rustio_core::migrations::apply(&db, dir)
+    let opts = rustio_core::migrations::ApplyOptions { verbose };
+    let applied = rustio_core::migrations::apply_with(&db, dir, opts)
         .await
         .map_err(err_str)?;
     if applied.is_empty() {
@@ -668,7 +674,19 @@ mod tests {
     fn parse_migrate_apply() {
         assert_eq!(
             parse_command(&args(&["migrate", "apply"])).unwrap(),
-            Command::MigrateApply
+            Command::MigrateApply { verbose: false }
+        );
+    }
+
+    #[test]
+    fn parse_migrate_apply_verbose() {
+        assert_eq!(
+            parse_command(&args(&["migrate", "apply", "-v"])).unwrap(),
+            Command::MigrateApply { verbose: true }
+        );
+        assert_eq!(
+            parse_command(&args(&["migrate", "apply", "--verbose"])).unwrap(),
+            Command::MigrateApply { verbose: true }
         );
     }
 
@@ -691,8 +709,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_migrate_apply_rejects_extra() {
+    fn parse_migrate_apply_rejects_unknown_flag() {
         assert!(parse_command(&args(&["migrate", "apply", "foo"])).is_err());
+        assert!(parse_command(&args(&["migrate", "apply", "--nope"])).is_err());
     }
 
     #[test]
