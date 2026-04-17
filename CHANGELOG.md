@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Fixed
+
+- `rustio new app <name>` and `#[derive(RustioAdmin)]` no longer double the
+  trailing `s` on names that already end in `s`. Running
+  `rustio new app posts` now produces table `posts` (not `postss`), admin
+  path `/admin/posts` (not `/admin/postss`), and display name `Posts`
+  (not `Postss`).
+
 ## [0.1.1]
 
 ### Added
@@ -71,6 +81,7 @@ First public release.
 - `rustio-core = "x.y.z"` in generated projects is pinned to match CLI; lockstep
   releases expected until this stabilizes.
 
-[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/abdulwahed-sweden/rustio/releases/tag/v0.1.0

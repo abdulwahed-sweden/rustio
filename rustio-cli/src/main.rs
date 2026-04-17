@@ -160,7 +160,7 @@ fn new_app(name: &str) -> Result<(), String> {
     }
 
     let struct_name = capitalize(name);
-    let table_name = format!("{name}s");
+    let table_name = pluralize(name);
 
     fs::create_dir_all(&app_dir).map_err(err_str)?;
     fs::write(app_dir.join("mod.rs"), APP_MOD_RS).map_err(err_str)?;
@@ -361,6 +361,14 @@ fn capitalize(s: &str) -> String {
     match chars.next() {
         Some(c) => c.to_ascii_uppercase().to_string() + chars.as_str(),
         None => String::new(),
+    }
+}
+
+fn pluralize(name: &str) -> String {
+    if name.ends_with('s') {
+        name.to_string()
+    } else {
+        format!("{name}s")
     }
 }
 
@@ -758,6 +766,20 @@ mod tests {
         assert_eq!(capitalize("user"), "User");
         assert_eq!(capitalize(""), "");
         assert_eq!(capitalize("a"), "A");
+    }
+
+    #[test]
+    fn pluralize_appends_s_when_missing() {
+        assert_eq!(pluralize("blog"), "blogs");
+        assert_eq!(pluralize("user"), "users");
+        assert_eq!(pluralize("post"), "posts");
+    }
+
+    #[test]
+    fn pluralize_leaves_trailing_s_alone() {
+        assert_eq!(pluralize("posts"), "posts");
+        assert_eq!(pluralize("users"), "users");
+        assert_eq!(pluralize("news"), "news");
     }
 
     #[test]

@@ -68,8 +68,8 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
         });
     }
 
-    let admin_name = format!("{}s", name.to_string().to_lowercase());
-    let display_name = format!("{}s", name);
+    let admin_name = pluralize(&name.to_string().to_lowercase());
+    let display_name = pluralize(&name.to_string());
 
     let field_entries: Vec<TokenStream2> = fields
         .iter()
@@ -128,6 +128,14 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+fn pluralize(name: &str) -> String {
+    if name.ends_with('s') {
+        name.to_string()
+    } else {
+        format!("{name}s")
+    }
 }
 
 fn classify_type(ty: &Type) -> Option<FieldKind> {
