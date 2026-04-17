@@ -1,8 +1,16 @@
 <p align="center">
-  <img src="https://img.shields.io/crates/v/rustio-cli?style=for-the-badge&color=orange" />
-  <img src="https://img.shields.io/crates/d/rustio-cli?style=for-the-badge&color=blue" />
-  <img src="https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge" />
+  <a href="https://crates.io/crates/rustio-cli">
+    <img alt="rustio-cli on crates.io" src="https://img.shields.io/crates/v/rustio-cli?style=for-the-badge&color=orange&label=rustio-cli">
+  </a>
+  <a href="https://docs.rs/rustio-core">
+    <img alt="rustio-core on docs.rs" src="https://img.shields.io/docsrs/rustio-core?style=for-the-badge&color=blue&label=docs.rs">
+  </a>
+  <a href="https://github.com/abdulwahed-sweden/rustio/actions/workflows/ci.yml">
+    <img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/abdulwahed-sweden/rustio/ci.yml?style=for-the-badge&label=ci">
+  </a>
+  <img alt="early alpha" src="https://img.shields.io/badge/status-early%20alpha-yellow?style=for-the-badge">
+  <img alt="rust version: 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-dea584?style=for-the-badge">
+  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge">
 </p>
 
 <p align="center">
