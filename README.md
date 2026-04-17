@@ -1,26 +1,80 @@
-# RustIO
+<p align="center">
+  <img src="https://img.shields.io/crates/v/rustio-cli?style=for-the-badge&color=orange" />
+  <img src="https://img.shields.io/crates/d/rustio-cli?style=for-the-badge&color=blue" />
+  <img src="https://img.shields.io/badge/status-stable-brightgreen?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge" />
+</p>
 
-A batteries-included web framework for Rust with auto-generated admin.
+<p align="center">
+  <b>Django-like developer experience — powered by Rust.</b>
+</p>
 
-Type-safe, compile-time driven, single-binary. Inspired by Django's productivity; built from scratch for Rust.
+---
 
-## Install
+## 🚀 Quick Start
 
-    cargo install rustio-cli
+```bash
+cargo install rustio-cli
+rustio new project mysite
+cd mysite
+rustio new app blog
+rustio migrate apply
+rustio run
+```
 
-## Quick start
+Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
 
-    rustio new project mysite
-    cd mysite
-    rustio new app blog
-    rustio migrate apply
-    rustio run
+Admin at [http://127.0.0.1:8000/admin/blogs](http://127.0.0.1:8000/admin/blogs) — send `Authorization: Bearer dev-admin`.
 
-Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) for the homepage.
+## ✨ Features
 
-Open [http://127.0.0.1:8000/admin/blogs](http://127.0.0.1:8000/admin/blogs) with header `Authorization: Bearer dev-admin` for the auto-generated CRUD admin.
+- **Built-in admin** — `#[derive(RustioAdmin)]` gives you list, create, edit, delete.
+- **ORM** — type-safe models over SQLite, no raw SQL in your code.
+- **Migrations** — versioned, tracked, transactional.
+- **Zero-config** — one command to scaffold, one to run.
+- **Single binary** — your whole app compiles to one executable.
 
-## Example model
+## 🧠 Philosophy
+
+- **Simplicity.** One obvious way to do each thing. No plumbing.
+- **Performance.** No framework layers hiding the hot path.
+- **Type safety.** The compiler catches what Django catches at runtime.
+
+## 🏗 Project Structure
+
+```
+mysite/
+├── Cargo.toml
+├── main.rs
+├── apps/
+│   └── blog/
+│       ├── models.rs
+│       ├── admin.rs
+│       └── views.rs
+├── migrations/
+├── static/
+├── templates/
+└── app.db
+```
+
+## 🔐 Authentication
+
+Authentication is middleware-based. Identity lives in request context and handlers declare their own requirement:
+
+```rust
+let id = require_auth(req.ctx())?;    // 401 if missing
+let id = require_admin(req.ctx())?;   // 401 if missing, 403 if not admin
+```
+
+Dev tokens (`dev-admin`, `dev-user`) are provided for bootstrapping. Replace with your own middleware before production.
+
+## 📦 Installation
+
+```bash
+cargo install rustio-cli
+```
+
+## Example
 
 ```rust
 use rustio_core::{Error, Model, Row, RustioAdmin, Value};
@@ -53,53 +107,20 @@ impl Model for Post {
 }
 ```
 
-The admin UI at `/admin/posts` is generated from this struct. No HTML, no routing, no form handling to write.
-
-## What's included
-
-- **HTTP** — hyper-backed server, custom router with `:param` paths, middleware chain.
-- **Request context** — typed, per-request store (`req.ctx_mut().insert(X)`, `req.ctx().get::<X>()`).
-- **Errors** — unified `Error` enum mapping to HTTP status codes (400/401/403/404/405/500).
-- **Auth** — additive middleware + `require_auth` / `require_admin` helpers with `Identity` in context. Dev tokens included; swap for real auth before deploying.
-- **ORM** — `Model` trait over SQLite via `sqlx`. `User::find(&db, id)`, `User::all(&db)`, `user.create(&db)`, etc. No raw SQL in user code for CRUD.
-- **Admin** — `#[derive(RustioAdmin)]` auto-generates list/create/edit/delete pages and routes from struct fields.
-- **Migrations** — versioned `.sql` files, tracked in a `rustio_migrations` table, transactional + idempotent.
-- **CLI** — `rustio new project`, `new app`, `migrate generate/apply/status`, `run`. Colored output with `NO_COLOR` respected.
+The admin UI at `/admin/posts` is generated from this struct.
 
 ## Configuration
 
-- `RUSTIO_DATABASE_URL` — override the default `sqlite://app.db?mode=rwc`.
-- `NO_COLOR` — disable colored CLI output.
-- `RUSTIO_CORE_PATH` — when invoking the CLI, use a local path to `rustio-core` instead of the crates.io version (for RustIO contributors).
-
-## Layout of a generated project
-
-    mysite/
-    ├── Cargo.toml
-    ├── main.rs              # entry point (top-level by convention)
-    ├── apps/
-    │   ├── mod.rs           # aggregator
-    │   └── blog/
-    │       ├── mod.rs
-    │       ├── models.rs    # struct + Model impl
-    │       ├── admin.rs     # admin::register::<Blog>
-    │       └── views.rs     # custom HTTP handlers
-    ├── migrations/          # NNNN_*.sql files
-    ├── static/
-    ├── templates/
-    └── app.db               # SQLite (gitignored)
-
-## Status
-
-Early alpha. APIs are expected to change before 1.0. Pre-production only.
-
-Defaults assume dev (in-repo dev tokens, no CSRF, permissive SQLite pool). Review `rustio_core::auth` and the admin layer before deploying.
+| Variable | Purpose |
+|---|---|
+| `RUSTIO_DATABASE_URL` | Database URL (default `sqlite://app.db?mode=rwc`) |
+| `NO_COLOR` | Disable colored CLI output |
 
 ## Crates
 
-- [`rustio-cli`](rustio-cli/) — the `rustio` binary, installed via `cargo install rustio-cli`.
-- [`rustio-core`](rustio-core/) — runtime library (server, router, ORM, admin, migrations).
-- [`rustio-macros`](rustio-macros/) — procedural macros.
+- [`rustio-cli`](https://crates.io/crates/rustio-cli) — the `rustio` binary
+- [`rustio-core`](https://crates.io/crates/rustio-core) — runtime library
+- [`rustio-macros`](https://crates.io/crates/rustio-macros) — procedural macros
 
 ## License
 
