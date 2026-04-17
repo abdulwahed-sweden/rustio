@@ -29,21 +29,19 @@ cargo test --workspace --all-targets
 
 CI runs the same checks on every push.
 
+Commit messages: short, imperative, present tense, optionally prefixed with the affected area:
+
+```text
+feat(admin): add search filter
+fix(migrations): handle BOM in .sql files
+docs: clarify RUSTIO_DATABASE_URL behavior
+```
+
 ## Workspace layout
 
 - `rustio-core/` — runtime library (HTTP, router, middleware, context, errors, auth, ORM, admin, migrations).
 - `rustio-cli/` — the `rustio` binary (scaffolding, migrations, run).
 - `rustio-macros/` — procedural macros (`#[derive(RustioAdmin)]`).
-
-## Commit messages
-
-Short, imperative, present tense. Prefix with the affected area when helpful:
-
-```
-feat(admin): add search filter
-fix(migrations): handle BOM in .sql files
-docs: clarify RUSTIO_DATABASE_URL behavior
-```
 
 ## Breaking changes
 

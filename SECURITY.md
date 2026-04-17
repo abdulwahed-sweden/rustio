@@ -5,13 +5,13 @@
 RustIO is pre-1.0. Only the latest `0.x.y` release on crates.io receives security fixes.
 
 | Version | Supported |
-|---------|-----------|
-| 0.1.x   | ✅         |
-| < 0.1   | ❌         |
+| ------- | --------- |
+| 0.1.x   | ✅        |
+| < 0.1   | ❌        |
 
 ## Reporting a vulnerability
 
-Email **abdulwahed.sweden@gmail.com** with:
+Email **<abdulwahed.sweden@gmail.com>** with:
 
 - A description of the issue.
 - Steps to reproduce, or a minimal proof of concept.

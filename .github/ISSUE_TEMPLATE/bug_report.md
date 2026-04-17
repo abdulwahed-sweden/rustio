@@ -5,15 +5,15 @@ title: ""
 labels: bug
 ---
 
-**What happened**
+## What happened
 
 <!-- Short, factual description of the bug. -->
 
-**What should have happened**
+## What should have happened
 
 <!-- What you expected instead. -->
 
-**Minimal reproduction**
+## Minimal reproduction
 
 <!-- Commands, code, or the smallest project that triggers the bug. -->
 
@@ -22,20 +22,15 @@ rustio new project demo
 # ...
 ```
 
-**Environment**
+## Environment
 
 - `rustio --version`:
 - `rustc --version`:
 - OS:
 - Installed via: [crates.io | source | path]
 
-**Logs / output**
+## Logs / output
 
-<details>
-<summary>Click to expand</summary>
-
-```
+```text
 <paste relevant CLI output, panic, or stack trace here>
 ```
-
-</details>
