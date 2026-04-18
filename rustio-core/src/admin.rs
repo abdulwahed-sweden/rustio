@@ -5,6 +5,17 @@
 //! at `/admin/<admin_name>` for each model and an index page at `/admin`
 //! listing every registered model.
 //!
+//! ## UI ownership
+//!
+//! The admin HTML shell, layout, forms, tables, auth pages, and error
+//! states are **framework-owned**: there is no hook for a project to
+//! replace these templates. Visual customisation — logo mark, project
+//! display name, primary/accent colour, density — flows through the
+//! [`design::Design`] config (loaded from `rustio.design.json` if
+//! present). The public `templates/` + `static/` directories of a
+//! generated project are for public site pages, **not** for admin
+//! overrides.
+//!
 //! For a single-model app, [`register`] is a convenience wrapper.
 
 use std::sync::Arc;
@@ -14,7 +25,7 @@ use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use http_body_util::{BodyExt, Full};
 
 use crate::error::Error;
-use crate::http::{html, Request, Response};
+use crate::http::{Request, Response};
 use crate::orm::{Db, Model};
 use crate::router::Router;
 
@@ -22,6 +33,8 @@ use crate::router::Router;
 // `#[derive(RustioAdmin)]`-generated code referencing
 // `::rustio_core::admin::FormData` continues to work.
 pub use crate::http::FormData;
+
+pub mod design;
 
 /// The primitive types the admin + schema layers know how to render,
 /// validate, and serialise.
@@ -147,50 +160,97 @@ pub(crate) const USER_ENTRY: AdminEntry = AdminEntry {
     core: true,
 };
 
-type ModelRegistrar = Box<dyn FnOnce(Router, &Db) -> Router + Send + Sync>;
+// ---------------------------------------------------------------------------
+// Bundled CSS + icon assets
+// ---------------------------------------------------------------------------
+
+/// Framework-owned stylesheet. Bundled into the binary via `include_str!`
+/// and served at `/admin/assets/admin.css` so the admin pages reference
+/// it with a single `<link>`. Projects must not edit this.
+const ADMIN_CSS_BUNDLE: &str = include_str!("../assets/admin.css");
+
+// Inline Lucide SVG icon markup. Each function returns a complete
+// `<svg>` element sized by the caller's CSS (16px for toolbar,
+// 18px for nav, etc.). `currentColor` lets the surrounding class
+// (`.rio-btn-primary`, `.rio-icon-btn.rio-danger`) drive the stroke.
+fn svg(path: &str) -> String {
+    format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{path}</svg>"#
+    )
+}
+
+fn icon_layers() -> String {
+    svg(
+        r#"<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>"#,
+    )
+}
+
+fn icon_dashboard() -> String {
+    svg(
+        r#"<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>"#,
+    )
+}
+
+fn icon_plus() -> String {
+    svg(r#"<path d="M5 12h14"/><path d="M12 5v14"/>"#)
+}
+
+fn icon_search() -> String {
+    svg(r#"<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>"#)
+}
+
+fn icon_pencil() -> String {
+    svg(
+        r#"<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>"#,
+    )
+}
+
+fn icon_trash() -> String {
+    svg(
+        r#"<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>"#,
+    )
+}
+
+fn icon_chevron_right() -> String {
+    svg(r#"<polyline points="9 18 15 12 9 6"/>"#)
+}
+
+fn icon_logout() -> String {
+    svg(
+        r#"<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/>"#,
+    )
+}
+
+fn icon_shield_alert() -> String {
+    svg(
+        r#"<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/>"#,
+    )
+}
+
+fn icon_triangle_alert() -> String {
+    svg(
+        r#"<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>"#,
+    )
+}
+
+fn icon_inbox() -> String {
+    svg(
+        r#"<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>"#,
+    )
+}
+
+fn icon_arrow_left() -> String {
+    svg(r#"<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>"#)
+}
+
+// ---------------------------------------------------------------------------
+// Admin builder + route registration
+// ---------------------------------------------------------------------------
+
+type ModelRegistrar = Box<dyn FnOnce(Router, &Db, Arc<Vec<AdminEntry>>) -> Router + Send + Sync>;
 
 /// Builder that collects admin models and mounts them with a shared
 /// `/admin` index page.
-///
-/// ```no_run
-/// use rustio_core::admin::Admin;
-/// # use rustio_core::{Db, Router};
-/// # fn demo(router: Router, db: &Db) -> Router {
-/// # struct Post; struct User;
-/// # impl rustio_core::Model for Post {
-/// #   const TABLE: &'static str = "posts";
-/// #   const COLUMNS: &'static [&'static str] = &[];
-/// #   const INSERT_COLUMNS: &'static [&'static str] = &[];
-/// #   fn id(&self) -> i64 { 0 }
-/// #   fn from_row(_: rustio_core::Row<'_>) -> Result<Self, rustio_core::Error> { unimplemented!() }
-/// #   fn insert_values(&self) -> Vec<rustio_core::Value> { vec![] }
-/// # }
-/// # impl rustio_core::Model for User {
-/// #   const TABLE: &'static str = "users";
-/// #   const COLUMNS: &'static [&'static str] = &[];
-/// #   const INSERT_COLUMNS: &'static [&'static str] = &[];
-/// #   fn id(&self) -> i64 { 0 }
-/// #   fn from_row(_: rustio_core::Row<'_>) -> Result<Self, rustio_core::Error> { unimplemented!() }
-/// #   fn insert_values(&self) -> Vec<rustio_core::Value> { vec![] }
-/// # }
-/// # impl rustio_core::admin::AdminModel for Post {
-/// #   const ADMIN_NAME: &'static str = "posts"; const DISPLAY_NAME: &'static str = "Posts";
-/// #   const FIELDS: &'static [rustio_core::admin::AdminField] = &[];
-/// #   fn field_display(&self, _: &str) -> Option<String> { None }
-/// #   fn from_form(_: &rustio_core::admin::FormData, _: Option<i64>) -> Result<Self, rustio_core::Error> { unimplemented!() }
-/// # }
-/// # impl rustio_core::admin::AdminModel for User {
-/// #   const ADMIN_NAME: &'static str = "users"; const DISPLAY_NAME: &'static str = "Users";
-/// #   const FIELDS: &'static [rustio_core::admin::AdminField] = &[];
-/// #   fn field_display(&self, _: &str) -> Option<String> { None }
-/// #   fn from_form(_: &rustio_core::admin::FormData, _: Option<i64>) -> Result<Self, rustio_core::Error> { unimplemented!() }
-/// # }
-/// Admin::new()
-///     .model::<Post>()
-///     .model::<User>()
-///     .register(router, db)
-/// # }
-/// ```
 pub struct Admin {
     entries: Vec<AdminEntry>,
     registrars: Vec<ModelRegistrar>,
@@ -198,19 +258,13 @@ pub struct Admin {
 
 impl Admin {
     pub fn new() -> Self {
-        // Seed the core `User` entry unconditionally. It's infrastructure,
-        // not an application choice — every project's schema includes
-        // it and consumers rely on that invariant.
         Self {
             entries: vec![USER_ENTRY.clone()],
             registrars: Vec::new(),
         }
     }
 
-    /// Register a user-facing model on this admin. Adds its metadata
-    /// to the `/admin` index and queues its CRUD routes for mounting.
-    /// Core models (like `User`) are registered by `Admin::new` itself
-    /// and are not passed through this method.
+    /// Register a user-facing model on this admin.
     pub fn model<T: AdminModel>(mut self) -> Self {
         self.entries.push(AdminEntry {
             admin_name: T::ADMIN_NAME,
@@ -220,14 +274,13 @@ impl Admin {
             fields: T::FIELDS,
             core: false,
         });
-        self.registrars
-            .push(Box::new(|router, db| mount_model::<T>(router, db)));
+        self.registrars.push(Box::new(|router, db, entries| {
+            mount_model::<T>(router, db, entries)
+        }));
         self
     }
 
-    /// Number of user-registered models (i.e. not counting built-in
-    /// core models like `User`). The `/admin` index uses this to decide
-    /// whether to show the "no models registered yet" placeholder.
+    /// Number of user-registered models (not counting core models).
     pub fn len(&self) -> usize {
         self.entries.iter().filter(|e| !e.core).count()
     }
@@ -236,18 +289,25 @@ impl Admin {
         self.len() == 0
     }
 
-    /// All entries, including core models. Consumed by the schema
-    /// exporter; iterate with `.iter().filter(|e| !e.core)` when you
-    /// want only user-facing models.
+    /// All entries, including core models. Used by the schema exporter;
+    /// iterate with `.iter().filter(|e| !e.core)` when you want only
+    /// user-facing models.
     pub fn entries(&self) -> &[AdminEntry] {
         &self.entries
     }
 
-    /// Mount the admin onto a router: installs `/admin` (index) and
-    /// CRUD routes for every registered model. Admin-only; handlers
-    /// return 401/403 via [`require_admin`].
+    /// Mount the admin onto a router.
     pub fn register(self, mut router: Router, db: &Db) -> Router {
         let entries = Arc::new(self.entries);
+
+        // Static asset: framework-owned stylesheet. Cached for an hour
+        // because the bytes are pinned to the compiled binary — the
+        // content can only change with a redeploy.
+        router = router.get("/admin/assets/admin.css", |_req, _params| async move {
+            Ok::<Response, Error>(admin_css_response())
+        });
+
+        // Admin index.
         let index_entries = entries.clone();
         router = router.get("/admin", move |req, _params| {
             let entries = index_entries.clone();
@@ -255,17 +315,13 @@ impl Admin {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                let csrf = ctx_csrf(req.ctx());
-                Ok::<Response, Error>(admin_html("Admin", &index_page(&entries), csrf))
+                let shell = Shell::from_ctx(&entries, None, req.ctx());
+                Ok::<Response, Error>(dashboard_response(shell))
             }
         });
 
-        // Login + logout routes. These run without admin_guard: unauthenticated
-        // users *need* to reach /admin/login, and logout should work from any
-        // state (idempotent cookie expiry). Both capture `Db` so the login
-        // path can verify credentials and create a session, and the logout
-        // path can delete the session server-side — not just expire the
-        // cookie client-side.
+        // Login + logout. Unauthenticated users *need* to reach
+        // /admin/login; logout is CSRF-protected inside the handler.
         let login_db = db.clone();
         router = router.post("/admin/login", move |req, _params| {
             let db = login_db.clone();
@@ -278,7 +334,7 @@ impl Admin {
         });
 
         for registrar in self.registrars {
-            router = registrar(router, db);
+            router = registrar(router, db, entries.clone());
         }
         router
     }
@@ -291,7 +347,6 @@ impl Default for Admin {
 }
 
 /// Convenience: mount CRUD routes and an `/admin` index for a single model.
-/// Equivalent to `Admin::new().model::<T>().register(router, db)`.
 pub fn register<T>(router: Router, db: &Db) -> Router
 where
     T: AdminModel + Model,
@@ -299,7 +354,7 @@ where
     Admin::new().model::<T>().register(router, db)
 }
 
-fn mount_model<T>(mut router: Router, db: &Db) -> Router
+fn mount_model<T>(mut router: Router, db: &Db, entries: Arc<Vec<AdminEntry>>) -> Router
 where
     T: AdminModel + Model,
 {
@@ -308,33 +363,33 @@ where
     let edit_path = format!("{base}/:id/edit");
     let delete_path = format!("{base}/:id/delete");
 
+    // --- list ---
     let list_db = db.clone();
+    let list_entries = entries.clone();
     router = router.get(&base, move |req, _params| {
         let db = list_db.clone();
+        let entries = list_entries.clone();
         async move {
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
-            let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+            let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
             let items = T::all(&db).await?;
-            Ok::<Response, Error>(admin_html(
-                T::DISPLAY_NAME,
-                &list_page::<T>(&items, csrf.as_deref()),
-                csrf.as_deref(),
-            ))
+            Ok::<Response, Error>(list_response::<T>(shell, &items))
         }
     });
 
-    router = router.get(&create_path, |req, _params| async move {
-        if let Err(resp) = admin_guard(req.ctx()) {
-            return Ok(resp);
+    // --- create (GET + POST) ---
+    let create_entries = entries.clone();
+    router = router.get(&create_path, move |req, _params| {
+        let entries = create_entries.clone();
+        async move {
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
+            let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
+            Ok::<Response, Error>(form_response::<T>(shell, FormMode::Create))
         }
-        let csrf = ctx_csrf(req.ctx());
-        Ok::<Response, Error>(admin_html(
-            &format!("New {}", T::DISPLAY_NAME),
-            &form_page::<T>(None, &format!("/admin/{}/create", T::ADMIN_NAME), csrf),
-            csrf,
-        ))
     });
 
     let create_db = db.clone();
@@ -344,9 +399,6 @@ where
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
-            // Admin guard confirms an Identity; CSRF check confirms
-            // the POST actually originated from a same-origin form.
-            // Read the form first so we can compare _csrf against ctx.
             let (_, body, ctx) = req.into_parts();
             let form = read_form_from_parts(body).await?;
             require_csrf(&ctx, &form)?;
@@ -359,24 +411,22 @@ where
         }
     });
 
+    // --- edit (GET + POST) ---
     let edit_db = db.clone();
+    let edit_entries = entries.clone();
     router = router.get(&edit_path, move |req, params| {
         let db = edit_db.clone();
+        let entries = edit_entries.clone();
         async move {
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
-            let csrf = ctx_csrf(req.ctx()).map(str::to_string);
             let id = parse_id_param(&params)?;
             let item = T::find(&db, id).await?.ok_or(Error::NotFound)?;
-            Ok::<Response, Error>(admin_html(
-                &format!("Edit {}", T::DISPLAY_NAME),
-                &form_page::<T>(
-                    Some(&item),
-                    &format!("/admin/{}/{}/edit", T::ADMIN_NAME, id),
-                    csrf.as_deref(),
-                ),
-                csrf.as_deref(),
+            let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
+            Ok::<Response, Error>(form_response::<T>(
+                shell,
+                FormMode::Edit { id, item: &item },
             ))
         }
     });
@@ -401,6 +451,23 @@ where
         }
     });
 
+    // --- delete: GET = confirmation page, POST = perform delete ---
+    let delete_confirm_db = db.clone();
+    let delete_confirm_entries = entries.clone();
+    router = router.get(&delete_path, move |req, params| {
+        let db = delete_confirm_db.clone();
+        let entries = delete_confirm_entries.clone();
+        async move {
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
+            let id = parse_id_param(&params)?;
+            let item = T::find(&db, id).await?.ok_or(Error::NotFound)?;
+            let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
+            Ok::<Response, Error>(delete_confirmation_response::<T>(shell, id, &item))
+        }
+    });
+
     let delete_db = db.clone();
     router = router.post(&delete_path, move |req, params| {
         let db = delete_db.clone();
@@ -410,8 +477,6 @@ where
             }
             let id = parse_id_param(&params)?;
             let (_, body, ctx) = req.into_parts();
-            // The delete form carries only the CSRF token; validate
-            // it, then drop the form — no other fields to read.
             let form = read_form_from_parts(body).await?;
             require_csrf(&ctx, &form)?;
             T::delete(&db, id).await?;
@@ -432,30 +497,24 @@ fn parse_id_param(params: &crate::router::Params) -> Result<i64, Error> {
         .ok_or_else(|| Error::BadRequest(String::from("invalid id")))
 }
 
+// ---------------------------------------------------------------------------
+// Constants + context helpers
+// ---------------------------------------------------------------------------
+
 /// Maximum size of an admin form body.
-///
-/// Tracks the framework-wide [`crate::http::MAX_REQUEST_BODY_BYTES`]
-/// ceiling; kept as a separate constant because older call sites and
-/// downstream projects reference it by name.
 pub const MAX_FORM_BODY_BYTES: usize = crate::http::MAX_REQUEST_BODY_BYTES;
 
-/// Name of the hidden form field that carries the per-session CSRF
-/// token. Admin forms render it; admin POST handlers validate it
-/// against the token the middleware stashed in the context.
+/// Name of the hidden form field that carries the per-session CSRF token.
 pub const CSRF_FIELD: &str = "_csrf";
 
-/// Fetch the current session's CSRF token from the request context.
-/// Returns `None` for anonymous requests; handlers pass the `&str`
-/// along to the form renderers so the hidden input can be injected.
 fn ctx_csrf(ctx: &crate::context::Context) -> Option<&str> {
     ctx.get::<crate::auth::CsrfToken>().map(|t| t.0.as_str())
 }
 
-/// Render the hidden CSRF input for admin forms. Returns an empty
-/// string when no token is available (anonymous request, or middleware
-/// didn't run) — POST validation then rejects the submission, so the
-/// empty render only matters for GET-rendered forms that won't be
-/// submitted without a session.
+fn ctx_user_email(ctx: &crate::context::Context) -> Option<&str> {
+    ctx.get::<crate::auth::Identity>().map(|i| i.email.as_str())
+}
+
 fn csrf_input(csrf: Option<&str>) -> String {
     match csrf {
         Some(token) if !token.is_empty() => format!(
@@ -467,11 +526,6 @@ fn csrf_input(csrf: Option<&str>) -> String {
     }
 }
 
-/// Validate the `_csrf` field on a submitted form against the
-/// session's CSRF token attached to the context. Returns
-/// `Error::Forbidden` on any mismatch — missing token, unknown token,
-/// wrong token. Called at the top of every state-changing admin POST
-/// handler.
 fn require_csrf(ctx: &crate::context::Context, form: &FormData) -> Result<(), Error> {
     let expected = ctx
         .get::<crate::auth::CsrfToken>()
@@ -484,14 +538,6 @@ fn require_csrf(ctx: &crate::context::Context, form: &FormData) -> Result<(), Er
     Ok(())
 }
 
-/// Apply the default security headers to any admin response.
-///
-/// Adds `X-Frame-Options: DENY` (no clickjacking), `X-Content-Type-
-/// Options: nosniff` (no MIME sniffing), `Referrer-Policy: no-
-/// referrer` (don't leak admin URLs across origins), and — only when
-/// `auth::in_production()` — `Strict-Transport-Security` pinning the
-/// origin to HTTPS for a year. HSTS is deliberately off in dev so
-/// `http://localhost` flows stay usable.
 fn with_admin_headers(mut resp: Response) -> Response {
     use hyper::header::HeaderValue;
     let h = resp.headers_mut();
@@ -510,34 +556,11 @@ fn with_admin_headers(mut resp: Response) -> Response {
     resp
 }
 
-/// Build an HTML admin response: wraps the supplied title + body in
-/// [`admin_layout`], sends it through [`with_admin_headers`], and
-/// returns a `Response`. One call-site for every list / form / index
-/// page so security headers are applied uniformly.
-fn admin_html(title: &str, body: &str, csrf: Option<&str>) -> Response {
-    with_admin_headers(html(admin_layout(title, body, csrf)))
-}
-
-/// Read a form body with [`MAX_FORM_BODY_BYTES`] enforced during
-/// collection. An oversized body surfaces as [`Error::PayloadTooLarge`]
-/// before it's ever buffered into memory — [`Limited`] streams through
-/// and errors the moment the byte budget runs out.
-///
-/// Kept for handlers that don't need CSRF validation (today: login,
-/// where there is no session yet). Handlers that need the context to
-/// validate CSRF should use [`read_form_from_parts`] after
-/// `req.into_parts()` so the context stays in scope.
 async fn read_form(req: Request) -> Result<FormData, Error> {
     let (_, body, _) = req.into_parts();
     read_form_from_parts(body).await
 }
 
-/// Same body-collection pipeline as [`read_form`], but takes an
-/// already-decomposed body. Lets a POST handler do
-/// `let (_, body, ctx) = req.into_parts();` and then validate CSRF
-/// against `ctx` after parsing the form — `req.into_parts` is a
-/// consuming split, so the handler has to choose between reading
-/// `req.ctx()` first or reading the body first.
 async fn read_form_from_parts(body: hyper::body::Incoming) -> Result<FormData, Error> {
     let limited = http_body_util::Limited::new(body, MAX_FORM_BODY_BYTES);
     let collected = limited.collect().await.map_err(|e| {
@@ -562,143 +585,722 @@ fn redirect(to: &str) -> Response {
         .expect("valid redirect")
 }
 
-fn admin_layout(title: &str, content: &str, csrf: Option<&str>) -> String {
-    // The header logout form is a state-changing POST, so it needs
-    // the CSRF token. On an unauthenticated render (e.g. 401 page
-    // via admin_guard) there's no token — the hidden input is simply
-    // omitted and the user hits login before they'd ever submit.
-    let csrf_hidden = csrf_input(csrf);
+fn admin_css_response() -> Response {
+    use hyper::header::HeaderValue;
+    let mut resp = hyper::Response::builder()
+        .status(200)
+        .header("content-type", "text/css; charset=utf-8")
+        .header("cache-control", "public, max-age=3600")
+        .body(Full::new(Bytes::from_static(ADMIN_CSS_BUNDLE.as_bytes())))
+        .expect("valid css response");
+    let h = resp.headers_mut();
+    // Nosniff on the stylesheet too — an attacker who can upload to an
+    // admin-adjacent endpoint mustn't get the browser to execute it.
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    resp
+}
+
+// ---------------------------------------------------------------------------
+// Shell (sidebar + topbar) — wraps every authenticated page
+// ---------------------------------------------------------------------------
+
+/// Per-request data the shell needs: registered models (for the sidebar),
+/// which one is active (for highlight), the signed-in user email (for
+/// the sidebar footer), and the session's CSRF token (for the logout
+/// form). Cheaply constructed from a request context.
+struct Shell<'a> {
+    entries: &'a [AdminEntry],
+    active: Option<&'a str>,
+    user_email: Option<&'a str>,
+    csrf: Option<&'a str>,
+}
+
+impl<'a> Shell<'a> {
+    fn from_ctx(
+        entries: &'a [AdminEntry],
+        active: Option<&'a str>,
+        ctx: &'a crate::context::Context,
+    ) -> Self {
+        Self {
+            entries,
+            active,
+            user_email: ctx_user_email(ctx),
+            csrf: ctx_csrf(ctx),
+        }
+    }
+}
+
+/// One breadcrumb segment: `(label, optional href)`. The last segment
+/// is rendered as the current page (no link).
+type Crumb<'a> = (&'a str, Option<&'a str>);
+
+fn render_breadcrumbs(crumbs: &[Crumb<'_>]) -> String {
+    if crumbs.is_empty() {
+        return String::new();
+    }
+    let sep = format!(
+        r#"<span class="rio-crumb-sep">{}</span>"#,
+        icon_chevron_right()
+    );
+    let mut out = String::from(r#"<nav class="rio-breadcrumbs" aria-label="Breadcrumb">"#);
+    for (i, (label, href)) in crumbs.iter().enumerate() {
+        let is_last = i == crumbs.len() - 1;
+        if i > 0 {
+            out.push_str(&sep);
+        }
+        match (is_last, href) {
+            (true, _) => {
+                out.push_str(&format!(
+                    r#"<span class="rio-crumb-current" aria-current="page">{}</span>"#,
+                    escape_html(label),
+                ));
+            }
+            (false, Some(h)) => {
+                out.push_str(&format!(
+                    r#"<a href="{}">{}</a>"#,
+                    escape_html(h),
+                    escape_html(label),
+                ));
+            }
+            (false, None) => {
+                out.push_str(&escape_html(label));
+            }
+        }
+    }
+    out.push_str("</nav>");
+    out
+}
+
+fn render_sidebar(shell: &Shell<'_>) -> String {
+    let design = design::Design::global();
+    let user_facing: Vec<&AdminEntry> = shell.entries.iter().filter(|e| !e.core).collect();
+
+    let mut models_html = String::new();
+    if !user_facing.is_empty() {
+        models_html.push_str(r#"<div class="rio-nav">"#);
+        models_html.push_str(r#"<div class="rio-nav-section">Models</div>"#);
+        for e in &user_facing {
+            let active_cls = if shell.active == Some(e.admin_name) {
+                "rio-nav-link is-active"
+            } else {
+                "rio-nav-link"
+            };
+            models_html.push_str(&format!(
+                r#"<a class="{cls}" href="/admin/{name}">{icon}<span>{label}</span></a>"#,
+                cls = active_cls,
+                name = escape_html(e.admin_name),
+                icon = icon_layers(),
+                label = escape_html(e.display_name),
+            ));
+        }
+        models_html.push_str("</div>");
+    }
+
+    let dashboard_active = if shell.active.is_none() {
+        "rio-nav-link is-active"
+    } else {
+        "rio-nav-link"
+    };
+
+    let logout_form = if shell.csrf.is_some() {
+        format!(
+            r#"<form class="rio-sidebar-logout" method="post" action="/admin/logout">
+{csrf}
+<button type="submit">{icon}<span>Sign out</span></button>
+</form>"#,
+            csrf = csrf_input(shell.csrf),
+            icon = icon_logout(),
+        )
+    } else {
+        String::new()
+    };
+
+    let email = shell.user_email.unwrap_or("");
+    let avatar_initial = email
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase().to_string())
+        .unwrap_or_else(|| String::from("·"));
+
+    let user_block = if shell.user_email.is_some() {
+        format!(
+            r#"<div class="rio-sidebar-user">
+<span class="rio-avatar">{avatar}</span>
+<span class="rio-user-email">{email}</span>
+</div>"#,
+            avatar = escape_html(&avatar_initial),
+            email = escape_html(email),
+        )
+    } else {
+        String::new()
+    };
+
     format!(
+        r#"<aside class="rio-sidebar">
+<a class="rio-brand" href="/admin">
+<span class="rio-brand-mark">{logo}</span>
+<span class="rio-brand-meta">
+<span class="rio-brand-name">{project}</span>
+<span class="rio-brand-label">Admin</span>
+</span>
+</a>
+<nav class="rio-nav">
+<a class="{dash}" href="/admin">{dash_icon}<span>Dashboard</span></a>
+</nav>
+{models}
+<div class="rio-sidebar-footer">
+{user}
+{logout}
+</div>
+</aside>"#,
+        logo = escape_html(&design.logo_initial),
+        project = escape_html(&design.project_name),
+        dash = dashboard_active,
+        dash_icon = icon_dashboard(),
+        models = models_html,
+        user = user_block,
+        logout = logout_form,
+    )
+}
+
+/// Render an authenticated shell page. Used for dashboard, list, form,
+/// and delete-confirmation responses.
+#[allow(clippy::too_many_arguments)]
+fn render_shell_page(
+    shell: &Shell<'_>,
+    status: u16,
+    document_title: &str,
+    page_title: &str,
+    page_subtitle: Option<&str>,
+    breadcrumbs: &[Crumb<'_>],
+    actions: &str,
+    body: &str,
+) -> Response {
+    let design = design::Design::global();
+
+    let sidebar = render_sidebar(shell);
+    let crumbs = render_breadcrumbs(breadcrumbs);
+
+    let env_chip = if crate::auth::in_production() {
+        r#"<span class="rio-env-chip is-prod">production</span>"#.to_string()
+    } else {
+        r#"<span class="rio-env-chip">development</span>"#.to_string()
+    };
+
+    let subtitle_html = page_subtitle
+        .map(|s| format!(r#"<p class="rio-page-subtitle">{}</p>"#, escape_html(s)))
+        .unwrap_or_default();
+
+    let actions_block = if actions.is_empty() {
+        String::new()
+    } else {
+        format!(r#"<div class="rio-page-actions">{actions}</div>"#)
+    };
+
+    let theme_style = format!(
+        "\n:root {{\n  --rio-primary: {p};\n  --rio-primary-hover: {ph};\n  --rio-accent: {a};\n  --rio-accent-hover: {ah};\n}}\n",
+        p = escape_css_color(&design.primary_color),
+        ph = escape_css_color(&design.primary_color),
+        a = escape_css_color(&design.accent_color),
+        ah = escape_css_color(&design.accent_color),
+    );
+
+    let density_class = match design.density {
+        design::Density::Comfortable => "",
+        design::Density::Compact => " rio-density-compact",
+    };
+
+    let body_html = format!(
         r#"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — RustIO Admin</title>
-<style>{css}</style>
+<title>{doc_title} · {project}</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+<style>{theme}</style>
 </head>
-<body>
-<header>
-<h1><a href="/admin">RustIO Admin</a></h1>
-<form method="post" action="/admin/logout" class="header-logout">
-{csrf_hidden}
-<button type="submit">Sign out</button>
-</form>
+<body class="rio-body{density}">
+<div class="rio-app">
+{sidebar}
+<main class="rio-main">
+<header class="rio-topbar">
+{crumbs}
+{env}
 </header>
-<main>{content}</main>
+<div class="rio-page-header">
+<div>
+<h1 class="rio-page-title">{page_title}</h1>
+{subtitle}
+</div>
+{actions}
+</div>
+{body}
+</main>
+</div>
 </body>
 </html>"#,
-        title = escape_html(title),
-        css = ADMIN_CSS,
-        content = content,
+        doc_title = escape_html(document_title),
+        project = escape_html(&design.project_name),
+        theme = theme_style,
+        density = density_class,
+        sidebar = sidebar,
+        crumbs = crumbs,
+        env = env_chip,
+        page_title = escape_html(page_title),
+        subtitle = subtitle_html,
+        actions = actions_block,
+        body = body,
+    );
+
+    let resp = hyper::Response::builder()
+        .status(status)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Full::new(Bytes::from(body_html)))
+        .expect("valid response");
+    with_admin_headers(resp)
+}
+
+/// Minimal sanitiser for CSS colour tokens emitted inline in a
+/// `<style>` block. We reject any input containing `;`, `{`, `}`, `<`,
+/// or backslash to prevent a breakout from the CSS context into another
+/// attribute or the HTML parser. Returns the original string when safe,
+/// or a fallback token when suspicious.
+fn escape_css_color(s: &str) -> &str {
+    if s.contains([';', '{', '}', '<', '\\']) {
+        // Fall back to the default primary colour.
+        "#0f172a"
+    } else {
+        s
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Dashboard (admin index)
+// ---------------------------------------------------------------------------
+
+fn dashboard_response(shell: Shell<'_>) -> Response {
+    let user_facing: Vec<&AdminEntry> = shell.entries.iter().filter(|e| !e.core).collect();
+
+    let body = if user_facing.is_empty() {
+        format!(
+            r#"<div class="rio-card">
+<div class="rio-empty">
+<div class="rio-empty-icon">{icon}</div>
+<h3>No models registered yet</h3>
+<p>Register a model with <code>Admin::new().model::&lt;YourModel&gt;()</code> or scaffold a new app via <code>rustio new app &lt;name&gt;</code> to get started.</p>
+</div>
+</div>"#,
+            icon = icon_inbox(),
+        )
+    } else {
+        let cards: String = user_facing
+            .iter()
+            .map(|e| {
+                format!(
+                    r#"<a class="rio-model-card" href="/admin/{name}">
+<div class="rio-model-card-head">
+<div class="rio-model-card-icon">{icon}</div>
+</div>
+<p class="rio-model-name">{display}</p>
+<p class="rio-model-count">Stored in <code>{table}</code></p>
+<div class="rio-model-card-actions">
+<span class="rio-btn rio-btn-sm rio-btn-ghost">View</span>
+<span class="rio-btn rio-btn-sm rio-btn-primary">{plus}<span>Add</span></span>
+</div>
+</a>"#,
+                    name = escape_html(e.admin_name),
+                    display = escape_html(e.display_name),
+                    table = escape_html(e.table),
+                    icon = icon_layers(),
+                    plus = icon_plus(),
+                )
+            })
+            .collect();
+        format!(r#"<div class="rio-grid">{cards}</div>"#)
+    };
+
+    render_shell_page(
+        &shell,
+        200,
+        "Dashboard",
+        "Dashboard",
+        Some("Manage your data. Click a model to list, search, and edit."),
+        &[],
+        "",
+        &body,
     )
 }
 
-fn index_page(entries: &[AdminEntry]) -> String {
-    // Core models (built-in User) appear in the schema but not in the
-    // index — they have no routed CRUD page in 0.4.0.
-    let user_facing: Vec<&AdminEntry> = entries.iter().filter(|e| !e.core).collect();
-    if user_facing.is_empty() {
-        return String::from(
-            r#"<h2>Admin</h2>
-<p class="empty">No models are registered. Add one with
-<code>Admin::new().model::&lt;YourModel&gt;()</code> or scaffold an app
-via <code>rustio new app &lt;name&gt;</code>.</p>"#,
+// ---------------------------------------------------------------------------
+// List page
+// ---------------------------------------------------------------------------
+
+fn list_response<T: AdminModel>(shell: Shell<'_>, items: &[T]) -> Response {
+    let count = items.len();
+    let singular = T::singular_name();
+    let plural = T::DISPLAY_NAME;
+    let admin_name = T::ADMIN_NAME;
+
+    let actions = format!(
+        r#"<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{icon}<span>Add {singular}</span></a>"#,
+        name = escape_html(admin_name),
+        singular = escape_html(singular),
+        icon = icon_plus(),
+    );
+
+    let body = if items.is_empty() {
+        format!(
+            r#"<div class="rio-card">
+<div class="rio-empty">
+<div class="rio-empty-icon">{icon}</div>
+<h3>No {plural} yet</h3>
+<p>This model has no rows. Create the first one to get going.</p>
+<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Create your first {singular}</span></a>
+</div>
+</div>"#,
+            plural = escape_html(&plural.to_lowercase()),
+            icon = icon_inbox(),
+            name = escape_html(admin_name),
+            plus = icon_plus(),
+            singular = escape_html(singular),
+        )
+    } else {
+        let headers: String = T::FIELDS
+            .iter()
+            .map(|f| format!("<th>{}</th>", escape_html(f.name)))
+            .collect();
+        let rows: String = items
+            .iter()
+            .map(|item| {
+                let cells: String = T::FIELDS
+                    .iter()
+                    .map(|f| render_cell::<T>(f, item))
+                    .collect();
+                let id = item.id();
+                let actions = format!(
+                    r#"<td class="rio-cell-actions">
+<div class="rio-row-actions">
+<a class="rio-icon-btn" href="/admin/{name}/{id}/edit" title="Edit" aria-label="Edit {singular}">{pencil}</a>
+<a class="rio-icon-btn rio-danger" href="/admin/{name}/{id}/delete" title="Delete" aria-label="Delete {singular}">{trash}</a>
+</div>
+</td>"#,
+                    name = escape_html(admin_name),
+                    id = id,
+                    singular = escape_html(singular),
+                    pencil = icon_pencil(),
+                    trash = icon_trash(),
+                );
+                format!("<tr>{cells}{actions}</tr>")
+            })
+            .collect();
+
+        let count_label = if count == 1 {
+            format!("1 {}", singular.to_lowercase())
+        } else {
+            format!("{count} {}", plural.to_lowercase())
+        };
+
+        format!(
+            r#"<div class="rio-table-wrap">
+<div class="rio-table-toolbar">
+<div class="rio-search">
+{search_icon}
+<input type="search" placeholder="Search (coming soon)" aria-label="Search {plural}" disabled>
+</div>
+<div class="rio-count">{count_label}</div>
+</div>
+<table class="rio-table">
+<thead><tr>{headers}<th aria-label="Actions"></th></tr></thead>
+<tbody>{rows}</tbody>
+</table>
+</div>"#,
+            search_icon = icon_search(),
+            plural = escape_html(&plural.to_lowercase()),
+            count_label = escape_html(&count_label),
+        )
+    };
+
+    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), (plural, None)];
+
+    render_shell_page(
+        &shell,
+        200,
+        plural,
+        plural,
+        Some(&format!("Browse and manage {}.", plural.to_lowercase())),
+        crumbs,
+        &actions,
+        &body,
+    )
+}
+
+/// Render one table cell for an admin list row. Adds styling classes
+/// based on field type: the id column gets a monospace, muted style;
+/// the first non-id String field becomes the primary-weight cell; bool
+/// values render as pills; nulls render as a subtle em-dash.
+fn render_cell<T: AdminModel>(f: &AdminField, item: &T) -> String {
+    let value = item.field_display(f.name).unwrap_or_default();
+    if f.name == "id" {
+        return format!(r#"<td class="rio-cell-id">{}</td>"#, escape_html(&value));
+    }
+    if value.is_empty() && f.nullable {
+        return r#"<td class="rio-cell-muted">—</td>"#.to_string();
+    }
+    if matches!(f.ty, FieldType::Bool) {
+        let (cls, label) = match value.as_str() {
+            "true" => ("rio-pill rio-pill-emerald", "true"),
+            "false" => ("rio-pill rio-pill-slate", "false"),
+            other => ("rio-pill rio-pill-slate", other),
+        };
+        return format!(
+            r#"<td><span class="{cls}">{}</span></td>"#,
+            escape_html(label)
         );
     }
-    let rows: String = user_facing
-        .iter()
-        .map(|e| {
-            format!(
-                r#"<li><a href="/admin/{name}"><span class="label">{display}</span><span class="path">/admin/{name}</span></a></li>"#,
-                name = escape_html(e.admin_name),
-                display = escape_html(e.display_name),
-            )
-        })
-        .collect();
-    format!(
-        r#"<h2>Admin</h2>
-<ul class="admin-index">{rows}</ul>"#
-    )
+    // First field after id becomes the primary-weight cell.
+    let is_primary = f.name != "id"
+        && T::FIELDS
+            .iter()
+            .find(|x| x.name != "id")
+            .map(|first| first.name == f.name)
+            .unwrap_or(false);
+    let cls = if is_primary {
+        "rio-cell-primary"
+    } else {
+        "rio-cell-muted"
+    };
+    format!(r#"<td class="{cls}">{}</td>"#, escape_html(&value))
 }
 
-fn list_page<T: AdminModel>(items: &[T], csrf: Option<&str>) -> String {
-    let csrf_hidden = csrf_input(csrf);
-    let headers: String = T::FIELDS
-        .iter()
-        .map(|f| format!("<th>{}</th>", escape_html(f.name)))
-        .collect();
-    let rows: String = items
-        .iter()
-        .map(|item| {
-            let cells: String = T::FIELDS
-                .iter()
-                .map(|f| {
-                    let v = item.field_display(f.name).unwrap_or_default();
-                    format!("<td>{}</td>", escape_html(&v))
-                })
-                .collect();
-            let id = item.id();
-            // Each delete button is its own mini-form — every one
-            // needs the CSRF token.
-            let actions = format!(
-                r#"<td class="actions">
-<a href="/admin/{name}/{id}/edit">edit</a>
-<form method="post" action="/admin/{name}/{id}/delete">
-{csrf_hidden}
-<button type="submit" class="danger">delete</button>
-</form>
-</td>"#,
-                name = T::ADMIN_NAME,
-                id = id,
-            );
-            format!("<tr>{cells}{actions}</tr>")
-        })
-        .collect();
+// ---------------------------------------------------------------------------
+// Form page (create / edit)
+// ---------------------------------------------------------------------------
 
-    format!(
-        r#"<div class="toolbar">
-<h2>{title}</h2>
-<a class="button" href="/admin/{name}/create">New {singular}</a>
-</div>
-<table>
-<thead><tr>{headers}<th>actions</th></tr></thead>
-<tbody>{rows}</tbody>
-</table>"#,
-        title = escape_html(T::DISPLAY_NAME),
-        singular = escape_html(T::singular_name()),
-        name = T::ADMIN_NAME,
-    )
+enum FormMode<'a, T: AdminModel> {
+    Create,
+    Edit { id: i64, item: &'a T },
 }
 
-fn form_page<T: AdminModel>(item: Option<&T>, action: &str, csrf: Option<&str>) -> String {
-    let csrf_hidden = csrf_input(csrf);
+fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Response {
+    let plural = T::DISPLAY_NAME;
+    let singular = T::singular_name();
+    let admin_name = T::ADMIN_NAME;
+
+    let (heading, doc_title, subtitle, action, back_label) = match &mode {
+        FormMode::Create => (
+            format!("New {singular}"),
+            format!("New {singular}"),
+            format!("Create a new {} record.", singular.to_lowercase()),
+            format!("/admin/{admin_name}/create"),
+            format!("Back to {}", plural.to_lowercase()),
+        ),
+        FormMode::Edit { id, .. } => (
+            format!("Edit {singular}"),
+            format!("Edit {singular} #{id}"),
+            format!("Update this {} record.", singular.to_lowercase()),
+            format!("/admin/{admin_name}/{id}/edit"),
+            format!("Back to {}", plural.to_lowercase()),
+        ),
+    };
+
     let fields: String = T::FIELDS
         .iter()
         .filter(|f| f.editable)
-        .map(|f| render_field::<T>(f, item))
+        .map(|f| {
+            render_field_block::<T>(
+                f,
+                match &mode {
+                    FormMode::Create => None,
+                    FormMode::Edit { item, .. } => Some(*item),
+                },
+            )
+        })
         .collect();
-    let heading = if item.is_some() {
-        format!("Edit {}", T::singular_name())
-    } else {
-        format!("New {}", T::singular_name())
+
+    let meta_block = match &mode {
+        FormMode::Create => String::new(),
+        FormMode::Edit { id, item } => render_meta::<T>(*id, item),
     };
-    format!(
-        r#"<h2>{heading}</h2>
-<form method="post" action="{action}">
-{csrf_hidden}
-{fields}
-<div class="form-actions">
-<button type="submit">Save</button>
-<a class="cancel" href="/admin/{name}">Cancel</a>
+
+    let danger_zone = match &mode {
+        FormMode::Create => String::new(),
+        FormMode::Edit { id, .. } => format!(
+            r#"<section class="rio-danger-zone">
+<div class="rio-danger-copy">
+<h3 class="rio-danger-title">{warn} Delete this {singular}</h3>
+<p class="rio-danger-hint">This removes the record permanently. Any rows that reference it with a foreign key and <code>ON DELETE CASCADE</code> will also be deleted.</p>
 </div>
-</form>"#,
-        heading = escape_html(&heading),
-        action = escape_html(action),
-        name = T::ADMIN_NAME,
+<a class="rio-btn rio-btn-danger" href="/admin/{name}/{id}/delete">{trash}<span>Delete…</span></a>
+</section>"#,
+            warn = icon_triangle_alert(),
+            singular = escape_html(&singular.to_lowercase()),
+            name = escape_html(admin_name),
+            id = id,
+            trash = icon_trash(),
+        ),
+    };
+
+    let csrf_hidden = csrf_input(shell.csrf);
+
+    let body = format!(
+        r#"{meta}
+<form class="rio-card rio-form" method="post" action="{action}" autocomplete="off">
+{csrf}
+<div class="rio-form-section">
+<h2 class="rio-form-section-title">Details</h2>
+<p class="rio-form-section-hint">Fields marked optional accept an empty value.</p>
+{fields}
+</div>
+<div class="rio-form-footer">
+<a class="rio-btn rio-btn-ghost" href="/admin/{name}">{back_icon}<span>{back_label}</span></a>
+<div class="rio-footer-actions">
+<a class="rio-btn" href="/admin/{name}">Cancel</a>
+<button class="rio-btn rio-btn-primary" type="submit">Save</button>
+</div>
+</div>
+</form>
+{danger}"#,
+        meta = meta_block,
+        action = escape_html(&action),
+        csrf = csrf_hidden,
+        fields = fields,
+        name = escape_html(admin_name),
+        back_icon = icon_arrow_left(),
+        back_label = escape_html(&back_label),
+        danger = danger_zone,
+    );
+
+    // Bind the plural href to a local `String` so the breadcrumbs
+    // array can borrow into it. Without this, `format!` creates a
+    // temporary that's dropped before the render call.
+    let plural_href = format!("/admin/{admin_name}");
+    let crumbs: Vec<Crumb<'_>> = match &mode {
+        FormMode::Create => vec![
+            ("Admin", Some("/admin")),
+            (plural, Some(plural_href.as_str())),
+            ("New", None),
+        ],
+        FormMode::Edit { .. } => vec![
+            ("Admin", Some("/admin")),
+            (plural, Some(plural_href.as_str())),
+            ("Edit", None),
+        ],
+    };
+
+    render_shell_page(
+        &shell,
+        200,
+        &doc_title,
+        &heading,
+        Some(&subtitle),
+        &crumbs,
+        "",
+        &body,
     )
 }
 
+/// Render a `(label, input)` block for one editable admin field.
+fn render_field_block<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
+    let name = escape_html(f.name);
+    let input = render_field::<T>(f, item);
+    // Bool fields render as a single checkbox row for compactness.
+    if matches!(f.ty, FieldType::Bool) {
+        return format!(
+            r#"<div class="rio-field rio-field-row-checkbox">
+{input}
+<label for="_{name}">{label}</label>
+</div>"#,
+            input = input,
+            name = name,
+            label = humanise(f.name),
+        );
+    }
+    let optional_mark = if f.nullable {
+        r#"<span class="rio-field-optional">optional</span>"#.to_string()
+    } else {
+        String::new()
+    };
+    let hint = field_hint(f);
+    format!(
+        r#"<div class="rio-field">
+<label for="_{name}">{label}{optional}</label>
+{input}
+{hint}
+</div>"#,
+        name = name,
+        label = humanise(f.name),
+        optional = optional_mark,
+        hint = hint,
+    )
+}
+
+fn field_hint(f: &AdminField) -> String {
+    match f.ty {
+        FieldType::DateTime => r#"<p class="rio-field-hint">Interpreted as UTC.</p>"#.to_string(),
+        FieldType::Bool => String::new(),
+        _ => String::new(),
+    }
+}
+
+/// Convert snake_case to Title Case for humans.
+fn humanise(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut next_upper = true;
+    for ch in s.chars() {
+        if ch == '_' {
+            out.push(' ');
+            next_upper = true;
+        } else if next_upper {
+            out.push(ch.to_ascii_uppercase());
+            next_upper = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Render a metadata block for the edit page: id + immutable
+/// (non-editable) field values.
+fn render_meta<T: AdminModel>(id: i64, item: &T) -> String {
+    let mut items = vec![format!(
+        r#"<div class="rio-meta-item">
+<span class="rio-meta-label">ID</span>
+<span class="rio-meta-value">#{id}</span>
+</div>"#,
+    )];
+
+    for f in T::FIELDS.iter() {
+        if f.editable || f.name == "id" {
+            continue;
+        }
+        let value = item.field_display(f.name).unwrap_or_default();
+        let shown = if value.is_empty() {
+            "—".to_string()
+        } else {
+            value
+        };
+        items.push(format!(
+            r#"<div class="rio-meta-item">
+<span class="rio-meta-label">{label}</span>
+<span class="rio-meta-value">{value}</span>
+</div>"#,
+            label = escape_html(&humanise(f.name)),
+            value = escape_html(&shown),
+        ));
+    }
+
+    format!(r#"<div class="rio-meta">{}</div>"#, items.join(""))
+}
+
+/// Render the raw input widget for an admin field. Signature preserved
+/// from earlier releases because tests and downstream code depend on
+/// the exact output shape (presence/absence of `required`, the
+/// `type="datetime-local"` hook, `value=""` for None).
 fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
     let current = item
         .and_then(|i| i.field_display(f.name))
@@ -706,54 +1308,125 @@ fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
     let n = escape_html(f.name);
     let v = escape_html(&current);
 
-    // Non-nullable non-bool inputs are marked `required` so the browser
-    // enforces presence before submission. `bool` uses checkbox semantics
-    // (absent = false), so `required` would make no sense.
     let required = if !f.nullable && !matches!(f.ty, FieldType::Bool) {
         " required"
     } else {
         ""
     };
 
-    let input = match f.ty {
+    match f.ty {
         FieldType::Bool => format!(
-            r#"<input type="checkbox" name="{n}" {checked}>"#,
+            r#"<input class="rio-checkbox" id="_{n}" type="checkbox" name="{n}" {checked}>"#,
             checked = if current == "true" { "checked" } else { "" },
         ),
         FieldType::I32 | FieldType::I64 => {
-            format!(r#"<input type="number" name="{n}" value="{v}"{required}>"#)
+            format!(
+                r#"<input class="rio-input" id="_{n}" type="number" name="{n}" value="{v}"{required}>"#
+            )
         }
         FieldType::String => {
-            format!(r#"<input type="text" name="{n}" value="{v}"{required}>"#)
+            format!(
+                r#"<input class="rio-input" id="_{n}" type="text" name="{n}" value="{v}"{required}>"#
+            )
         }
-        // `datetime-local` renders a browser-native date/time picker. The
-        // value format is `YYYY-MM-DDTHH:MM`, which our parser accepts on
-        // submission and our display code emits.
         FieldType::DateTime => {
-            format!(r#"<input type="datetime-local" name="{n}" value="{v}"{required}>"#)
+            format!(
+                r#"<input class="rio-input" id="_{n}" type="datetime-local" name="{n}" value="{v}"{required}>"#
+            )
         }
-    };
-    format!(r#"<label><span>{label}</span>{input}</label>"#, label = n)
+    }
 }
 
-/// Gate every admin request behind [`require_admin`], but convert the
-/// resulting `Error::Unauthorized` / `Error::Forbidden` into a friendly
-/// HTML response instead of the default `text/plain` body.
-///
-/// Returns `Ok(())` when the caller is admin and should continue.
-/// Returns `Err(Response)` with a ready-made HTML error page otherwise.
-//
-// `Response` is moderately large; clippy's `result_large_err` would
-// rather we box it. Each call site only constructs one per request and
-// the call count per request is at most one, so the nominal size cost
-// is irrelevant — boxing would only add noise.
+// ---------------------------------------------------------------------------
+// Delete confirmation page
+// ---------------------------------------------------------------------------
+
+fn delete_confirmation_response<T: AdminModel>(shell: Shell<'_>, id: i64, item: &T) -> Response {
+    let singular = T::singular_name();
+    let plural = T::DISPLAY_NAME;
+    let admin_name = T::ADMIN_NAME;
+
+    // Pick a display value: the first editable String field, or fall
+    // back to the id. Gives the confirmation page some context beyond
+    // a bare number.
+    let summary = T::FIELDS
+        .iter()
+        .find(|f| f.editable && matches!(f.ty, FieldType::String))
+        .and_then(|f| item.field_display(f.name))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("#{id}"));
+
+    let csrf_hidden = csrf_input(shell.csrf);
+
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-card-body">
+<div class="rio-alert rio-alert-warn">
+{warn}
+<div>
+<strong>This action cannot be undone.</strong>
+Deleting this record removes it permanently. Rows that reference it via a foreign key with <code>ON DELETE CASCADE</code> will be deleted too.
+</div>
+</div>
+<p>You are about to delete <strong>{singular}</strong>:</p>
+<div class="rio-meta">
+<div class="rio-meta-item">
+<span class="rio-meta-label">ID</span>
+<span class="rio-meta-value">#{id}</span>
+</div>
+<div class="rio-meta-item">
+<span class="rio-meta-label">Summary</span>
+<span class="rio-meta-value">{summary}</span>
+</div>
+</div>
+</div>
+<div class="rio-form-footer">
+<a class="rio-btn rio-btn-ghost" href="/admin/{name}">{back}<span>Back to {plural_lower}</span></a>
+<div class="rio-footer-actions">
+<a class="rio-btn" href="/admin/{name}/{id}/edit">Cancel</a>
+<form method="post" action="/admin/{name}/{id}/delete" style="margin:0">
+{csrf}
+<button class="rio-btn rio-btn-danger" type="submit">{trash}<span>Delete {singular}</span></button>
+</form>
+</div>
+</div>
+</div>"#,
+        warn = icon_triangle_alert(),
+        singular = escape_html(singular),
+        id = id,
+        summary = escape_html(&summary),
+        name = escape_html(admin_name),
+        back = icon_arrow_left(),
+        plural_lower = escape_html(&plural.to_lowercase()),
+        csrf = csrf_hidden,
+        trash = icon_trash(),
+    );
+
+    let plural_href = format!("/admin/{admin_name}");
+    let crumbs: &[Crumb<'_>] = &[
+        ("Admin", Some("/admin")),
+        (plural, Some(&plural_href)),
+        ("Delete", None),
+    ];
+
+    render_shell_page(
+        &shell,
+        200,
+        &format!("Delete {singular}"),
+        &format!("Delete {singular}?"),
+        Some("Confirm you want to remove this record."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Admin guard + login/forbidden auth pages
+// ---------------------------------------------------------------------------
+
 #[allow(clippy::result_large_err)]
 fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
-    // 401 renders a login form (so browser users can actually sign in).
-    // 403 renders a static "forbidden" page (the user is authenticated
-    // but not admin — there's nothing to type into a form that would
-    // change that). The forbidden page's "Sign out" button needs the
-    // session's CSRF token, which is in ctx.
     match crate::auth::require_admin(ctx) {
         Ok(_) => Ok(()),
         Err(Error::Unauthorized) => Err(login_page(401, None, None)),
@@ -762,18 +1435,32 @@ fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
     }
 }
 
-/// Render the login page. Status is 401 on a pure auth-gate hit and
-/// 400 on failed submissions (with `error` set to an explanation).
-///
-/// The form is always shown — unauthenticated users need somewhere to
-/// sign in. `email` is prefilled on failed submissions so the user
-/// doesn't have to retype it; the password field never is.
+/// Render the login page. Status 401 on a pure auth-gate hit; 400 on
+/// missing fields; 403 on inactive account; 429 on rate-limit trip.
 fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response {
+    let design = design::Design::global();
+
     let error_html = match error {
-        Some(msg) => format!(r#"<p class="error">{}</p>"#, escape_html(msg)),
+        Some(msg) => format!(
+            r#"<div class="rio-alert rio-alert-error">{icon}<span>{msg}</span></div>"#,
+            icon = icon_triangle_alert(),
+            msg = escape_html(msg),
+        ),
         None => String::new(),
     };
     let email_value = email.map(escape_html).unwrap_or_default();
+
+    let theme_style = format!(
+        "\n:root {{\n  --rio-primary: {p};\n  --rio-accent: {a};\n}}\n",
+        p = escape_css_color(&design.primary_color),
+        a = escape_css_color(&design.accent_color),
+    );
+
+    let footer_hint = if crate::auth::in_production() {
+        r#"<p class="rio-auth-footer"><strong>production</strong> · only real user accounts sign in here.</p>"#.to_string()
+    } else {
+        r#"<p class="rio-auth-footer">No admin user yet? Run <code>rustio user create</code> from your project directory.</p>"#.to_string()
+    };
 
     let body = format!(
         r#"<!doctype html>
@@ -781,30 +1468,45 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in — RustIO Admin</title>
-<style>{css}</style>
+<title>Sign in · {project}</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+<style>{theme}</style>
 </head>
 <body>
-<header><h1><a href="/admin">RustIO Admin</a></h1></header>
-<main class="auth-card">
-<h2>Sign in</h2>
-<form method="post" action="/admin/login" autocomplete="on">
-<label><span>Email</span>
-<input type="email" name="email" value="{email_value}" autocomplete="username" autofocus required>
-</label>
-<label><span>Password</span>
-<input type="password" name="password" autocomplete="current-password" required>
-</label>
+<div class="rio-auth-shell">
+<div class="rio-auth-card">
+<div class="rio-auth-logo">
+<span class="rio-brand-mark">{logo}</span>
+<span class="rio-brand-meta">
+<span class="rio-brand-name">{project}</span>
+<span class="rio-brand-label">Admin</span>
+</span>
+</div>
+<h1 class="rio-auth-title">Sign in</h1>
+<p class="rio-auth-subtitle">Enter your credentials to access the admin.</p>
 {error}
-<button type="submit">Sign in</button>
+<form method="post" action="/admin/login" autocomplete="on">
+<div class="rio-field">
+<label for="_email">Email</label>
+<input class="rio-input" id="_email" type="email" name="email" value="{email}" autocomplete="username" autofocus required>
+</div>
+<div class="rio-field">
+<label for="_password">Password</label>
+<input class="rio-input" id="_password" type="password" name="password" autocomplete="current-password" required>
+</div>
+<button class="rio-btn rio-btn-primary rio-btn-block" type="submit">Sign in</button>
 </form>
-<p class="hint">No admin user yet? Run <code>rustio user create</code> from your project directory.</p>
-</main>
+{footer}
+</div>
+</div>
 </body>
 </html>"#,
-        css = ADMIN_CSS,
-        email_value = email_value,
+        project = escape_html(&design.project_name),
+        theme = theme_style,
+        logo = escape_html(&design.logo_initial),
         error = error_html,
+        email = email_value,
+        footer = footer_hint,
     );
 
     let resp = hyper::Response::builder()
@@ -816,30 +1518,46 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
 }
 
 fn forbidden_page(csrf: Option<&str>) -> Response {
+    let design = design::Design::global();
     let csrf_hidden = csrf_input(csrf);
+
+    let theme_style = format!(
+        "\n:root {{\n  --rio-primary: {p};\n}}\n",
+        p = escape_css_color(&design.primary_color),
+    );
+
     let body = format!(
         r#"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>403 Forbidden — RustIO Admin</title>
-<style>{css}</style>
+<title>403 Forbidden · {project}</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+<style>{theme}</style>
 </head>
 <body>
-<header><h1><a href="/admin">RustIO Admin</a></h1></header>
-<main class="auth-error">
-<div class="status">403</div>
-<p class="heading">Forbidden</p>
-<p class="hint">You are signed in but your account isn't an admin.</p>
-<form method="post" action="/admin/logout" class="inline">
-{csrf_hidden}
-<button type="submit" class="secondary">Sign out</button>
+<div class="rio-error-shell">
+<div class="rio-error-card">
+<div class="rio-error-icon">{icon}</div>
+<p class="rio-error-status">403 Forbidden</p>
+<h1 class="rio-error-title">You're signed in, but you don't have admin access.</h1>
+<p class="rio-error-body">Ask an administrator to promote your account, or sign out and come back with different credentials.</p>
+<div class="rio-error-actions">
+<form method="post" action="/admin/logout" style="margin:0">
+{csrf}
+<button class="rio-btn" type="submit">{logout}<span>Sign out</span></button>
 </form>
-</main>
+</div>
+</div>
+</div>
 </body>
 </html>"#,
-        css = ADMIN_CSS,
+        project = escape_html(&design.project_name),
+        theme = theme_style,
+        icon = icon_shield_alert(),
+        csrf = csrf_hidden,
+        logout = icon_logout(),
     );
 
     let resp = hyper::Response::builder()
@@ -850,54 +1568,26 @@ fn forbidden_page(csrf: Option<&str>) -> Response {
     with_admin_headers(resp)
 }
 
-/// Build the `Set-Cookie` header value used by both login (to issue
-/// the session cookie) and logout (to expire it).
-///
-/// The `Secure` attribute is added whenever `auth::in_production()`
-/// returns `true`. We can't detect HTTPS from Rust alone, so the
-/// signal has to come from the deployment environment — when
-/// `RUSTIO_ENV=production`, the operator is asserting TLS terminates
-/// in front of us and we must not emit a cleartext-safe cookie.
+// ---------------------------------------------------------------------------
+// Session cookie builder
+// ---------------------------------------------------------------------------
+
 fn build_session_cookie(name: &str, token: &str, max_age: i64) -> String {
     build_session_cookie_impl(name, token, max_age, crate::auth::in_production())
 }
 
-/// Lower half of [`build_session_cookie`]: takes the `secure` flag as
-/// an explicit bool so tests can exercise both branches without
-/// mutating the process environment.
 fn build_session_cookie_impl(name: &str, token: &str, max_age: i64, secure: bool) -> String {
     let secure = if secure { "; Secure" } else { "" };
     format!("{name}={token}; Path=/; HttpOnly; SameSite=Strict{secure}; Max-Age={max_age}")
 }
 
-/// `POST /admin/login` — authenticate email + password, create a
-/// session row, set the session cookie.
-///
-/// Three security guarantees are enforced here that are easy to get
-/// wrong in isolation:
-///
-/// 1. **Timing equalisation.** `password::verify` runs on *every*
-///    branch — against the stored hash when the user exists, and
-///    against a precomputed dummy hash otherwise. Skipping it on the
-///    "no such user" path leaks existence information via response
-///    time.
-/// 2. **Rate limiting.** Failed attempts per email are counted in a
-///    process-local `LoginRateLimiter`. After 5 failures the account
-///    is locked out for 60 seconds; a successful login clears the
-///    counter. Per-email (not per-IP) — a distributed attack is
-///    currently not defended.
-/// 3. **Generic credential error.** Invalid email and wrong password
-///    produce the same string ("Invalid email or password"), so a
-///    caller can't probe which emails exist.
-///
-/// Inactive accounts get an explicit message (administrative decision,
-/// not a secret) and are **not** counted toward the rate-limit strikes.
+// ---------------------------------------------------------------------------
+// Login / logout handlers
+// ---------------------------------------------------------------------------
+
 async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
     use crate::auth;
 
-    // Grab the peer IP **before** consuming `req` — used to scope the
-    // rate-limit key alongside the email, so a single IP mashing many
-    // emails is throttled too.
     let peer_ip = req.peer_addr().map(|a| a.ip().to_string());
 
     let form = read_form(req).await?;
@@ -911,12 +1601,6 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
             Some("Email and password are both required."),
         ));
     }
-
-    // CSRF is NOT enforced on login: by definition there is no session
-    // yet, so no CSRF token exists to compare against. SameSite=Strict
-    // on the session cookie (issued here) protects subsequent
-    // state-changing POSTs; login itself is a form submission against
-    // a public endpoint.
 
     let email_key = auth::normalise_email(&email);
     let rate_key = auth::LoginRateLimiter::compose_key(&email_key, peer_ip.as_deref());
@@ -933,15 +1617,10 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
 
     let generic = "Invalid email or password.";
 
-    // Timing equalisation: always run argon2 verify, even when the
-    // user doesn't exist. Swapping in a dummy hash keeps the "no such
-    // user" branch at ~50 ms, identical to "wrong password".
     let user = auth::user::find_by_email(db, &email).await?;
     let valid = match &user {
         Some(u) => auth::password::verify(&password, &u.password_hash),
         None => {
-            // Discarded — the dummy hash never authenticates anything.
-            // Purely for the argon2 work-factor cost.
             let _ = auth::password::verify(&password, auth::dummy_password_hash());
             false
         }
@@ -954,9 +1633,6 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
 
     let user = user.expect("valid credentials imply a found user");
     if !user.is_active {
-        // Inactive accounts are a different class of failure: the
-        // password was correct, an administrator chose to disable the
-        // account. Don't strike the rate limiter for it.
         return Ok(login_page(
             403,
             Some(&email),
@@ -964,9 +1640,6 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
         ));
     }
 
-    // Success: reset the counter and opportunistically sweep dead
-    // sessions so the table doesn't grow unbounded. Best-effort —
-    // a sweep failure must not block login.
     auth::LoginRateLimiter::global().record_success(&rate_key);
     let _ = auth::session::sweep_expired(db).await;
 
@@ -981,18 +1654,6 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
     Ok(with_admin_headers(resp))
 }
 
-/// `POST /admin/logout` — delete the server-side session row and
-/// expire the cookie. Idempotent: logging out without being logged in
-/// is not an error.
-///
-/// **CSRF-protected.** The logout endpoint mutates server-side state
-/// (deletes a session row); without a CSRF check, an attacker could
-/// silently log a target out via a cross-origin POST. The header's
-/// logout form and the forbidden page's logout form both render the
-/// token for authenticated users. An unauthenticated POST — no
-/// session cookie → no CSRF token in ctx — falls through the
-/// `require_csrf` check as 403; the cookie expiry at the bottom is a
-/// best-effort cleanup and isn't security-critical.
 async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
     use crate::auth;
 
@@ -1002,16 +1663,10 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
     require_csrf(&ctx, &form)?;
 
     if let Some(token) = cookie_token {
-        // Best-effort: a DB hiccup during logout shouldn't block the
-        // user from getting their cookie cleared. The cookie expiry
-        // below runs regardless.
         let _ = auth::session::delete(db, &token).await;
     }
 
     let mut resp = redirect("/admin");
-    // Max-Age=0 expires immediately. Mirror the production Secure
-    // flag so the browser's "attribute mismatch" heuristic doesn't
-    // leave the original cookie behind.
     crate::http::set_cookie(
         &mut resp,
         &build_session_cookie(auth::SESSION_COOKIE, "", 0),
@@ -1019,27 +1674,16 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
     Ok(with_admin_headers(resp))
 }
 
+// ---------------------------------------------------------------------------
+// DateTime parsing
+// ---------------------------------------------------------------------------
+
 /// Parse the `YYYY-MM-DDTHH:MM[:SS]` value emitted by the browser's
 /// `<input type="datetime-local">` widget into a `DateTime<Utc>`.
-///
-/// The widget has no timezone — the browser returns local-wall-clock
-/// digits. We interpret them as UTC so admin values round-trip
-/// unambiguously; a future widget layer can surface the user's timezone
-/// explicitly when that becomes necessary.
-///
-/// Called from `#[derive(RustioAdmin)]`-generated `from_form` bodies via
-/// `::rustio_core::admin::parse_datetime_local`. The generated code
-/// trims its input before calling; this function is strict and does
-/// **not** silently trim, so misuse (calling with unclean input) fails
-/// loudly rather than succeeding unpredictably.
 pub fn parse_datetime_local(raw: &str) -> Result<DateTime<Utc>, String> {
     if raw.is_empty() {
         return Err(String::from("date-time value is empty"));
     }
-    // Reject leading/trailing whitespace and any embedded timezone
-    // marker. `datetime-local` is timezone-free by spec; accepting `Z`
-    // or a `+HH:MM` suffix would mean two conflicting notions of
-    // "what wall clock is this" — refuse at the boundary.
     if raw.trim_matches(|c: char| c.is_ascii_whitespace()) != raw {
         return Err(format!("`{raw}` has surrounding whitespace"));
     }
@@ -1049,15 +1693,11 @@ pub fn parse_datetime_local(raw: &str) -> Result<DateTime<Utc>, String> {
         ));
     }
 
-    // Browsers vary on whether seconds are included. Try both, longest
-    // first, so `:SS` is preferred when present.
     let parsed = NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S")
         .or_else(|_| NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M"))
         .map_err(|_| format!("`{raw}` is not a valid date-time"))?;
     match Utc.from_local_datetime(&parsed) {
         chrono::LocalResult::Single(dt) => Ok(dt),
-        // UTC has no DST, so ambiguous/none outcomes shouldn't happen;
-        // defend against it anyway rather than unwrap.
         _ => Err(format!("`{raw}` could not be interpreted as UTC")),
     }
 }
@@ -1076,68 +1716,6 @@ fn escape_html(s: &str) -> String {
     }
     out
 }
-
-const ADMIN_CSS: &str = r#"
-*, *::before, *::after { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #fafafa; color: #222; margin: 0; }
-header { background: #222; color: white; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; }
-header h1 { margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
-header h1 a { color: inherit; text-decoration: none; }
-header h1 a:hover { opacity: 0.9; }
-header .header-logout { margin: 0; }
-header .header-logout button { background: transparent; color: #d8d8dc; border: 1px solid #444; padding: 0.35rem 0.75rem; font-size: 0.85rem; border-radius: 4px; cursor: pointer; }
-header .header-logout button:hover { background: #2f2f33; color: white; }
-ul.admin-index { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.5rem; }
-ul.admin-index li { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-ul.admin-index li a { display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 1.1rem; text-decoration: none; color: #222; }
-ul.admin-index li a:hover { background: #f4f4f5; }
-ul.admin-index li .label { font-weight: 600; }
-ul.admin-index li .path { color: #888; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
-p.empty { color: #666; }
-p.empty code { background: #f0f0f2; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
-.auth-error { text-align: center; padding: 3rem 2rem; max-width: 36rem; margin: 0 auto; }
-.auth-error .status { font-size: 3rem; font-weight: 700; color: #b42318; line-height: 1; }
-.auth-error .heading { font-size: 1.15rem; margin: 0.5rem 0 1.5rem; font-weight: 600; color: #222; }
-.auth-error .hint { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 0.85rem 1rem; border-radius: 6px; text-align: left; font-size: 0.92rem; line-height: 1.5; }
-.auth-error .hint code { background: #fdefe0; color: #7c2d12; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; display: inline-block; }
-.auth-error form.inline { margin-top: 1rem; }
-.auth-error form.inline button.secondary { background: transparent; border: 1px solid #d0d0d4; color: #222; }
-.auth-card { max-width: 22rem; margin: 2.5rem auto; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
-.auth-card h2 { margin: 0 0 1.25rem; font-size: 1.25rem; }
-.auth-card label { display: block; margin: 0 0 0.9rem; }
-.auth-card label span { display: block; font-weight: 500; margin-bottom: 0.25rem; font-size: 0.9rem; }
-.auth-card input[type=password] { width: 100%; padding: 0.55rem 0.75rem; border: 1px solid #d0d0d4; border-radius: 4px; font: inherit; }
-.auth-card button[type=submit] { width: 100%; padding: 0.6rem 1rem; background: #222; color: white; border: none; border-radius: 4px; font: inherit; cursor: pointer; }
-.auth-card button[type=submit]:hover { background: #000; }
-.auth-card .error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 0.6rem 0.8rem; border-radius: 4px; margin: 0 0 0.9rem; font-size: 0.9rem; }
-.auth-card .hint { color: #666; font-size: 0.85rem; margin: 1rem 0 0; line-height: 1.5; }
-.auth-card .hint code { background: #f0f0f2; padding: 0.1rem 0.3rem; border-radius: 3px; font-size: 0.85em; }
-main { padding: 2rem; max-width: 60rem; margin: 0 auto; }
-h2 { margin: 0; }
-.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
-table { border-collapse: collapse; width: 100%; background: white; border-radius: 6px; overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-th, td { text-align: left; padding: 0.6rem 0.9rem; border-bottom: 1px solid #eee; font-size: 0.95rem; }
-th { background: #f4f4f5; font-weight: 600; }
-tbody tr:last-child td { border-bottom: none; }
-td.actions { display: flex; gap: 0.5rem; align-items: center; }
-td.actions form { margin: 0; display: inline; }
-a { color: #0366d6; text-decoration: none; }
-a:hover { text-decoration: underline; }
-label { display: block; margin-bottom: 1rem; }
-label span { display: block; font-weight: 500; margin-bottom: 0.25rem; font-size: 0.9rem; }
-input[type=text], input[type=number] { padding: 0.5rem 0.75rem; border: 1px solid #d0d0d4;
-  border-radius: 4px; width: 24rem; max-width: 100%; font: inherit; }
-input[type=checkbox] { transform: scale(1.1); }
-button, .button { padding: 0.5rem 1rem; background: #222; color: white; border: none;
-  border-radius: 4px; cursor: pointer; font: inherit; text-decoration: none; display: inline-block; }
-button:hover, .button:hover { background: #000; text-decoration: none; }
-button.danger { background: #b42318; }
-button.danger:hover { background: #8a1c12; }
-.form-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 1rem; }
-.form-actions .cancel { color: #666; }
-"#;
 
 #[cfg(test)]
 mod tests {
@@ -1171,8 +1749,6 @@ mod tests {
 
     #[test]
     fn session_cookie_expiration_shape_is_stable() {
-        // Logout uses Max-Age=0. Shape assertion so a future "tidy"
-        // can't silently drop an attribute.
         let c = build_session_cookie_impl("rustio_session", "", 0, true);
         assert!(c.contains("rustio_session=; "));
         assert!(c.contains("HttpOnly"));
@@ -1191,16 +1767,29 @@ mod tests {
         assert_eq!(escape_html("it's"), "it&#39;s");
     }
 
+    // --- CSS colour escaper -------------------------------------------
+
+    #[test]
+    fn escape_css_color_accepts_hex_tokens() {
+        assert_eq!(escape_css_color("#0f172a"), "#0f172a");
+        assert_eq!(escape_css_color("#4f46e5"), "#4f46e5");
+    }
+
+    #[test]
+    fn escape_css_color_rejects_injection_attempts() {
+        // Any character that could break out of the CSS value context
+        // falls back to the safe default.
+        assert_eq!(escape_css_color("red; } body { display:none"), "#0f172a");
+        assert_eq!(escape_css_color("}</style><script>"), "#0f172a");
+        assert_eq!(escape_css_color("red\\0A "), "#0f172a");
+    }
+
     // --- DateTime parsing edge cases ------------------------------------
 
     #[test]
     fn parse_datetime_local_accepts_minute_precision() {
         let dt = parse_datetime_local("2026-04-18T10:12").unwrap();
         assert_eq!(dt.to_rfc3339(), "2026-04-18T10:12:00+00:00");
-        // UTC enforcement: `to_rfc3339` encodes the offset and we insist
-        // it's zero. The in-memory offset type is `Utc` by construction
-        // (return type is `DateTime<Utc>`), but the string shape is the
-        // external guarantee callers observe.
         assert!(dt.to_rfc3339().ends_with("+00:00"));
     }
 
@@ -1222,15 +1811,12 @@ mod tests {
 
     #[test]
     fn parse_datetime_local_rejects_partial_date() {
-        // Missing the time half — common copy-paste mistake.
         assert!(parse_datetime_local("2026-04-18").is_err());
     }
 
     #[test]
     fn parse_datetime_local_rejects_out_of_range_date() {
-        // Calendar-invalid: there's no 13th month.
         assert!(parse_datetime_local("2026-13-01T00:00").is_err());
-        // Calendar-invalid: April doesn't have a 31st.
         assert!(parse_datetime_local("2026-04-31T00:00").is_err());
     }
 
@@ -1242,33 +1828,17 @@ mod tests {
 
     #[test]
     fn parse_datetime_local_rejects_surrounding_whitespace() {
-        // Trimming is the caller's responsibility — the macro-generated
-        // from_form code calls .trim() before us. This test pins the
-        // boundary so no one adds implicit trimming here without thinking.
         assert!(parse_datetime_local(" 2026-04-18T10:12").is_err());
         assert!(parse_datetime_local("2026-04-18T10:12 ").is_err());
     }
 
     #[test]
     fn parse_datetime_local_rejects_timezone_suffix() {
-        // `datetime-local` is explicitly timezone-free by spec. Inputs
-        // carrying `Z`, `+00:00`, or RFC3339 shape must be refused so
-        // callers can't smuggle a second timezone source.
         assert!(parse_datetime_local("2026-04-18T10:12Z").is_err());
         assert!(parse_datetime_local("2026-04-18T10:12:00+00:00").is_err());
     }
 
     // --- Admin rendering of field widgets --------------------------------
-    //
-    // These tests pin the contract the schema.nullable flag depends on:
-    //   · nullable fields render WITHOUT `required`
-    //   · non-nullable, non-bool fields render WITH `required`
-    //   · DateTime renders as `<input type="datetime-local">`
-    //   · a None on a nullable field renders an empty value and does not
-    //     panic through any path
-    //
-    // Uses a stand-alone type because we need to drive `render_field`
-    // directly; the full Model + ORM plumbing isn't relevant here.
 
     struct Widgety;
     impl crate::orm::Model for Widgety {
@@ -1290,8 +1860,6 @@ mod tests {
         const DISPLAY_NAME: &'static str = "Widgety";
         const FIELDS: &'static [AdminField] = &[];
         fn field_display(&self, name: &str) -> Option<String> {
-            // Simulates a Some-wrapped value for "filled" and an
-            // explicit None for "empty".
             match name {
                 "filled" => Some(String::from("2026-04-18T10:12")),
                 "empty" => Some(String::new()),
@@ -1337,8 +1905,6 @@ mod tests {
 
     #[test]
     fn bool_field_never_marks_required() {
-        // Checkboxes have no "unset" UI; the render code must not mark
-        // them required regardless of nullability.
         let f = AdminField {
             name: "flag",
             ty: FieldType::Bool,
@@ -1371,8 +1937,6 @@ mod tests {
 
     #[test]
     fn nullable_field_with_none_value_does_not_panic() {
-        // `field_display` returns `Some("")` for a None value; the
-        // renderer must produce a valid empty input without panicking.
         let f = string_field("empty", true);
         let html = render_field::<Widgety>(&f, Some(&Widgety));
         assert!(html.contains(r#"value="""#));
@@ -1381,9 +1945,6 @@ mod tests {
 
     #[test]
     fn field_display_returning_none_renders_empty_value() {
-        // Simulates `field_display(name)` returning `None` (unknown
-        // field): the renderer must default to empty-string rather
-        // than panicking.
         let f = string_field("unknown_field", false);
         let html = render_field::<Widgety>(&f, Some(&Widgety));
         assert!(html.contains(r#"value="""#));
@@ -1391,7 +1952,6 @@ mod tests {
 
     #[test]
     fn parse_datetime_local_enforces_utc_for_every_valid_input() {
-        // Quick property-style check: many valid inputs, all UTC.
         let inputs = [
             "2000-01-01T00:00",
             "2026-04-18T10:12",
@@ -1410,5 +1970,15 @@ mod tests {
                 "unexpected sub-second part for `{raw}`"
             );
         }
+    }
+
+    // --- humanise helper ---
+
+    #[test]
+    fn humanise_converts_snake_case_to_title_case() {
+        assert_eq!(humanise("title"), "Title");
+        assert_eq!(humanise("is_active"), "Is Active");
+        assert_eq!(humanise("created_at"), "Created At");
+        assert_eq!(humanise("assigned_to"), "Assigned To");
     }
 }
