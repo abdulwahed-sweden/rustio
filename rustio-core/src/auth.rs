@@ -787,6 +787,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn deleting_user_cascades_to_sessions() {
+        // Guard against the class of bug where SQLite silently ignores
+        // FK constraints. The `rustio_sessions` table declares
+        // `ON DELETE CASCADE`; if the pragma isn't set on the connection,
+        // the cascade is a no-op and deleting a user leaves orphan
+        // sessions that later resolve against a missing user id.
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        let s = session::create(&db, u.id).await.unwrap();
+        assert!(session::find_valid(&db, &s.id).await.unwrap().is_some());
+
+        sqlx::query("DELETE FROM rustio_users WHERE id = ?")
+            .bind(u.id)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustio_sessions")
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(
+            count, 0,
+            "FK cascade must have removed the orphan session; is PRAGMA foreign_keys on?"
+        );
+    }
+
+    #[tokio::test]
     async fn ensure_core_tables_is_idempotent() {
         let db = setup().await; // already called ensure_core_tables once
         ensure_core_tables(&db).await.unwrap();

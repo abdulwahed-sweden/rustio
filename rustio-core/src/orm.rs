@@ -6,8 +6,10 @@
 //! Phase 1 supports `i32`, `i64`, `String`, and `bool` field types; the id
 //! column is required to be `i64`.
 
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row as _;
 
 use crate::error::Error;
@@ -18,15 +20,32 @@ pub struct Db {
 }
 
 impl Db {
+    /// Open a pool against the given SQLite URL.
+    ///
+    /// Foreign-key enforcement is **always on** (`PRAGMA foreign_keys = ON`
+    /// applied on every connection via sqlx's connect-time hook). SQLite
+    /// ignores FK constraints unless this pragma is set per-connection,
+    /// and relying on user configuration to enable it is unsafe —
+    /// `ON DELETE CASCADE` in the schema would silently do nothing.
     pub async fn connect(url: &str) -> Result<Self, Error> {
-        let pool = SqlitePool::connect(url).await?;
+        let opts = SqliteConnectOptions::from_str(url)
+            .map_err(|e| Error::Internal(format!("invalid database URL: {e}")))?
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new().connect_with(opts).await?;
         Ok(Self { pool })
     }
 
+    /// Open an in-memory pool with FK enforcement on.
+    ///
+    /// Limited to a single connection because each `:memory:` connection
+    /// opens its *own* database; multiple would not share rows.
     pub async fn memory() -> Result<Self, Error> {
+        let opts = SqliteConnectOptions::from_str("sqlite::memory:")
+            .map_err(|e| Error::Internal(format!("invalid database URL: {e}")))?
+            .foreign_keys(true);
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
-            .connect("sqlite::memory:")
+            .connect_with(opts)
             .await?;
         Ok(Self { pool })
     }

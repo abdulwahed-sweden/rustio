@@ -19,6 +19,13 @@ pub enum Error {
     BadRequest(String),
     Unauthorized,
     Forbidden,
+    /// `413 Payload Too Large`. Produced by the form parser when an
+    /// incoming body exceeds the configured limit; the ceiling is a
+    /// DoS defence, not a business rule.
+    PayloadTooLarge,
+    /// `429 Too Many Requests`. Used by the login rate limiter when a
+    /// caller has tripped the failure threshold.
+    TooManyRequests,
     Internal(String),
 }
 
@@ -31,6 +38,8 @@ impl Error {
             Error::BadRequest(_) => 400,
             Error::Unauthorized => 401,
             Error::Forbidden => 403,
+            Error::PayloadTooLarge => 413,
+            Error::TooManyRequests => 429,
             Error::Internal(_) => 500,
         }
     }
@@ -47,6 +56,8 @@ impl Error {
             Error::BadRequest(msg) => msg,
             Error::Unauthorized => "Unauthorized",
             Error::Forbidden => "Forbidden",
+            Error::PayloadTooLarge => "Payload Too Large",
+            Error::TooManyRequests => "Too Many Requests",
             Error::Internal(msg) => msg,
         }
     }
@@ -63,6 +74,8 @@ impl Error {
             Error::BadRequest(msg) => msg,
             Error::Unauthorized => String::from("Unauthorized"),
             Error::Forbidden => String::from("Forbidden"),
+            Error::PayloadTooLarge => String::from("Payload Too Large"),
+            Error::TooManyRequests => String::from("Too Many Requests"),
             Error::Internal(_) => String::from("Internal Server Error"),
         };
         status_text(status, body)

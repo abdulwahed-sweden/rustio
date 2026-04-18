@@ -392,14 +392,32 @@ fn parse_id_param(params: &crate::router::Params) -> Result<i64, Error> {
         .ok_or_else(|| Error::BadRequest(String::from("invalid id")))
 }
 
+/// Maximum size of an admin form body. Two megabytes is generous for any
+/// realistic admin submission (long text, a few small fields) and still
+/// tight enough that an attacker can't exhaust memory with one POST.
+///
+/// Kept as a `pub const` so projects can compare against it in logs or
+/// custom handlers; changing the value is a conscious choice, not a knob.
+pub const MAX_FORM_BODY_BYTES: usize = 2 * 1024 * 1024;
+
+/// Read a form body with [`MAX_FORM_BODY_BYTES`] enforced during
+/// collection. An oversized body surfaces as [`Error::PayloadTooLarge`]
+/// before it's ever buffered into memory — [`Limited`] streams through
+/// and errors the moment the byte budget runs out.
 async fn read_form(req: Request) -> Result<FormData, Error> {
     let (_, body, _) = req.into_parts();
-    let collected = body
-        .collect()
-        .await
-        .map_err(|e| Error::BadRequest(e.to_string()))?
-        .to_bytes();
-    let body_str = std::str::from_utf8(&collected).map_err(|e| Error::BadRequest(e.to_string()))?;
+    let limited = http_body_util::Limited::new(body, MAX_FORM_BODY_BYTES);
+    let collected = limited.collect().await.map_err(|e| {
+        if e.downcast_ref::<http_body_util::LengthLimitError>()
+            .is_some()
+        {
+            Error::PayloadTooLarge
+        } else {
+            Error::BadRequest(e.to_string())
+        }
+    })?;
+    let bytes = collected.to_bytes();
+    let body_str = std::str::from_utf8(&bytes).map_err(|e| Error::BadRequest(e.to_string()))?;
     Ok(FormData::parse(body_str))
 }
 
