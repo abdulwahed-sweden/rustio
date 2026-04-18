@@ -13,7 +13,11 @@ readme = "README.md"
 description = "Runtime core for RustIO: HTTP server, router, middleware, ORM, admin, and migrations."
 
 [dependencies]
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "rand"] }
 bytes = "1"
+# For OS-backed CSPRNG (salts + session tokens). rand 0.8 lines up with
+# the rand_core 0.6 that argon2 0.5's `rand` feature pulls in.
+rand = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }

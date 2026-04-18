@@ -105,6 +105,12 @@ pub async fn apply(db: &Db, dir: &Path) -> Result<Vec<String>, Error> {
 }
 
 pub async fn apply_with(db: &Db, dir: &Path, opts: ApplyOptions) -> Result<Vec<String>, Error> {
+    // Core auth tables (`rustio_users`, `rustio_sessions`) exist on
+    // every DB. They're created before any user-level migration runs
+    // so login works as soon as a project boots, regardless of what's
+    // in `migrations/`. The statements are `CREATE IF NOT EXISTS` so
+    // calling this repeatedly is safe.
+    crate::auth::ensure_core_tables(db).await?;
     ensure_tracking_table(db).await?;
 
     let rows = sqlx::query(&format!("SELECT filename FROM {TRACKING_TABLE}"))

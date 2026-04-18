@@ -2,9 +2,9 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-use rustio_core::auth::{authenticate, require_admin, require_auth};
+use rustio_core::auth::{self, authenticate, require_admin, require_auth};
 use rustio_core::defaults::with_defaults;
-use rustio_core::{resolve, text, Error, Next, Request, Response, Router, Server};
+use rustio_core::{resolve, text, Db, Error, Next, Request, Response, Router, Server};
 
 #[derive(Debug)]
 struct RequestId(u64);
@@ -25,7 +25,7 @@ async fn logger(req: Request, next: Next) -> Result<Response, Error> {
     let method = req.method().clone();
     let path = req.uri().path().to_owned();
     let id = req.ctx().get::<RequestId>().map(|r| r.0);
-    let user = rustio_core::auth::identity(req.ctx()).map(|i| i.user_id.clone());
+    let user = rustio_core::auth::identity(req.ctx()).map(|i| i.email.clone());
     let started = Instant::now();
     let result = next.run(req).await;
     let status = match &result {
@@ -49,6 +49,14 @@ async fn logger(req: Request, next: Next) -> Result<Response, Error> {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
+    let db = Db::memory().await.expect("db connect");
+    auth::ensure_core_tables(&db)
+        .await
+        .expect("create auth tables");
+    auth::user::create(&db, "admin@example.com", "admin", "admin")
+        .await
+        .expect("seed admin user");
+
     let router = with_defaults(Router::new())
         .get("/whoami", |req, _params| async move {
             let id = req
@@ -60,11 +68,11 @@ async fn main() -> std::io::Result<()> {
         })
         .get("/me", |req, _params| async move {
             let id = require_auth(req.ctx())?;
-            Ok::<Response, Error>(text(format!("hello {}\n", id.user_id)))
+            Ok::<Response, Error>(text(format!("hello {}\n", id.email)))
         })
         .get("/admin-only", |req, _params| async move {
             let id = require_admin(req.ctx())?;
-            Ok::<Response, Error>(text(format!("hello admin {}\n", id.user_id)))
+            Ok::<Response, Error>(text(format!("hello admin {}\n", id.email)))
         })
         .get("/crash", |_req, _params| async {
             Err::<Response, Error>(Error::Internal("simulated failure".into()))
@@ -73,7 +81,7 @@ async fn main() -> std::io::Result<()> {
             Err::<Response, Error>(Error::Unauthorized)
         })
         .wrap(request_id)
-        .wrap(authenticate)
+        .wrap(authenticate(db))
         .wrap(logger);
     Server::bind(addr).serve_router(router).await
 }

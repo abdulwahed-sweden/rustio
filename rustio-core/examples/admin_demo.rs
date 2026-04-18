@@ -1,21 +1,23 @@
 use std::net::SocketAddr;
 
 use rustio_core::admin;
-use rustio_core::auth::authenticate;
+use rustio_core::auth::{self, authenticate};
 use rustio_core::defaults::with_defaults;
 use rustio_core::{Db, Error, Model, Router, Row, RustioAdmin, Server, Value};
 
+// `User` is the built-in core auth model; the demo ships a different
+// admin model to avoid colliding with it.
 #[derive(Debug, RustioAdmin)]
-struct User {
+struct Member {
     id: i64,
     name: String,
-    is_admin: bool,
+    is_active: bool,
 }
 
-impl Model for User {
-    const TABLE: &'static str = "users";
-    const COLUMNS: &'static [&'static str] = &["id", "name", "is_admin"];
-    const INSERT_COLUMNS: &'static [&'static str] = &["name", "is_admin"];
+impl Model for Member {
+    const TABLE: &'static str = "members";
+    const COLUMNS: &'static [&'static str] = &["id", "name", "is_active"];
+    const INSERT_COLUMNS: &'static [&'static str] = &["name", "is_active"];
 
     fn id(&self) -> i64 {
         self.id
@@ -25,49 +27,48 @@ impl Model for User {
         Ok(Self {
             id: row.get_i64("id")?,
             name: row.get_string("name")?,
-            is_admin: row.get_bool("is_admin")?,
+            is_active: row.get_bool("is_active")?,
         })
     }
 
     fn insert_values(&self) -> Vec<Value> {
-        vec![self.name.clone().into(), self.is_admin.into()]
+        vec![self.name.clone().into(), self.is_active.into()]
     }
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let db = Db::memory().await.expect("db connect");
+    auth::ensure_core_tables(&db)
+        .await
+        .expect("create auth tables");
     db.execute(
-        "CREATE TABLE users (
+        "CREATE TABLE members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            is_admin INTEGER NOT NULL
+            is_active INTEGER NOT NULL
         )",
     )
     .await
     .expect("create schema");
 
-    User {
+    auth::user::create(&db, "admin@example.com", "admin", "admin")
+        .await
+        .expect("seed admin user");
+
+    Member {
         id: 0,
         name: "Alice".into(),
-        is_admin: false,
+        is_active: true,
     }
     .create(&db)
     .await
     .expect("seed alice");
-    User {
-        id: 0,
-        name: "Bob".into(),
-        is_admin: true,
-    }
-    .create(&db)
-    .await
-    .expect("seed bob");
 
-    let router = with_defaults(Router::new()).wrap(authenticate);
-    let router = admin::register::<User>(router, &db);
+    let router = with_defaults(Router::new()).wrap(authenticate(db.clone()));
+    let router = admin::register::<Member>(router, &db);
 
     let addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
-    eprintln!("admin demo: hit /admin/users with `Authorization: Bearer dev-admin` header");
+    eprintln!("admin demo: open http://{addr}/admin and sign in as admin@example.com / admin");
     Server::bind(addr).serve_router(router).await
 }

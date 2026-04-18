@@ -497,6 +497,11 @@ fn apply_shadow(p: &Primitive, schema: &mut Schema) {
                 singular_name: m.name.clone(),
                 fields,
                 relations: Vec::new(),
+                // New models added via AI primitives are never core —
+                // core-ness is a property of built-in infrastructure
+                // (the `User` entry seeded by `Admin::new()`), not
+                // something the AI layer can mint.
+                core: false,
             });
             schema.models.sort_by(|a, b| a.name.cmp(&b.name));
         }

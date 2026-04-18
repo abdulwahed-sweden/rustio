@@ -74,6 +74,11 @@ pub struct SchemaModel {
     /// Placeholder for Phase 2. Always empty in 0.4.0 — reserving the
     /// field now means 0.5.0 can add relations without a breaking change.
     pub relations: Vec<SchemaRelation>,
+    /// `true` for built-in infrastructure models (e.g. `User`). The AI
+    /// layer uses this to refuse destructive primitives (remove_model,
+    /// remove_field) against core models.
+    #[serde(default)]
+    pub core: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -300,6 +305,7 @@ impl SchemaModel {
             singular_name: entry.singular_name.to_string(),
             fields,
             relations: Vec::new(),
+            core: entry.core,
         }
     }
 }
@@ -392,12 +398,15 @@ mod tests {
         }
     }
 
-    struct User;
+    // A second non-core model for tests that need two entries side by
+    // side. Not called `User` because the built-in core `User` entry is
+    // already seeded by `Admin::new()`.
+    struct Book;
 
-    impl Model for User {
-        const TABLE: &'static str = "users";
-        const COLUMNS: &'static [&'static str] = &["id", "email", "is_admin"];
-        const INSERT_COLUMNS: &'static [&'static str] = &["email", "is_admin"];
+    impl Model for Book {
+        const TABLE: &'static str = "books";
+        const COLUMNS: &'static [&'static str] = &["id", "title"];
+        const INSERT_COLUMNS: &'static [&'static str] = &["title"];
         fn id(&self) -> i64 {
             0
         }
@@ -409,9 +418,9 @@ mod tests {
         }
     }
 
-    impl AdminModel for User {
-        const ADMIN_NAME: &'static str = "users";
-        const DISPLAY_NAME: &'static str = "Users";
+    impl AdminModel for Book {
+        const ADMIN_NAME: &'static str = "books";
+        const DISPLAY_NAME: &'static str = "Books";
         const FIELDS: &'static [AdminField] = &[
             AdminField {
                 name: "id",
@@ -420,20 +429,14 @@ mod tests {
                 nullable: false,
             },
             AdminField {
-                name: "email",
+                name: "title",
                 ty: FieldType::String,
-                editable: true,
-                nullable: false,
-            },
-            AdminField {
-                name: "is_admin",
-                ty: FieldType::Bool,
                 editable: true,
                 nullable: false,
             },
         ];
         fn singular_name() -> &'static str {
-            "User"
+            "Book"
         }
         fn field_display(&self, _: &str) -> Option<String> {
             None
@@ -443,22 +446,34 @@ mod tests {
         }
     }
 
+    /// Find a model by name. Used through the tests because `Admin::new()`
+    /// seeds the built-in core `User`, so `schema.models[0]` isn't a
+    /// stable reference to "the first user-registered model".
+    fn find<'a>(schema: &'a Schema, name: &str) -> &'a SchemaModel {
+        schema
+            .models
+            .iter()
+            .find(|m| m.name == name)
+            .unwrap_or_else(|| panic!("no model named `{name}` in schema"))
+    }
+
     #[test]
     fn schema_reflects_admin_registry() {
         let admin = Admin::new().model::<Post>();
         let schema = Schema::from_admin(&admin);
 
         assert_eq!(schema.version, SCHEMA_VERSION);
-        assert_eq!(schema.models.len(), 1);
+        // Core `User` + registered `Post`.
+        assert_eq!(schema.models.len(), 2);
 
-        let m = &schema.models[0];
-        assert_eq!(m.name, "Post");
+        let m = find(&schema, "Post");
         assert_eq!(m.table, "posts");
         assert_eq!(m.admin_name, "posts");
         assert_eq!(m.display_name, "Posts");
         assert_eq!(m.singular_name, "Post");
         assert_eq!(m.fields.len(), 3);
         assert!(m.relations.is_empty());
+        assert!(!m.core, "user models must not be marked core");
 
         let title = m.fields.iter().find(|f| f.name == "title").unwrap();
         assert_eq!(title.ty, "String");
@@ -469,10 +484,26 @@ mod tests {
         assert_eq!(pub_at.ty, "DateTime");
         assert!(pub_at.nullable);
         assert!(pub_at.editable);
+    }
 
-        let id = m.fields.iter().find(|f| f.name == "id").unwrap();
-        assert_eq!(id.ty, "i64");
-        assert!(!id.editable);
+    #[test]
+    fn core_user_model_is_always_present() {
+        // The spec requires User in every project's schema. This is the
+        // test that fails if someone accidentally removes the seeding
+        // from `Admin::new()`.
+        let schema = Schema::from_admin(&Admin::new());
+        let user = find(&schema, "User");
+        assert!(user.core, "User must be flagged as a core model");
+        assert_eq!(user.table, "rustio_users");
+        let pw = user
+            .fields
+            .iter()
+            .find(|f| f.name == "password_hash")
+            .unwrap();
+        assert!(
+            !pw.editable,
+            "password_hash must never be exposed as editable via admin"
+        );
     }
 
     #[test]
@@ -480,30 +511,24 @@ mod tests {
         // Admin declares id, title, published_at in that order. The
         // schema must re-emit them alphabetically so the file is a
         // diffable source-of-truth.
-        let admin = Admin::new().model::<Post>();
-        let schema = Schema::from_admin(&admin);
-        let names: Vec<&str> = schema.models[0]
-            .fields
-            .iter()
-            .map(|f| f.name.as_str())
-            .collect();
+        let schema = Schema::from_admin(&Admin::new().model::<Post>());
+        let post = find(&schema, "Post");
+        let names: Vec<&str> = post.fields.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, vec!["id", "published_at", "title"]);
     }
 
     #[test]
     fn schema_models_are_sorted_by_name() {
-        // Register in reverse-alphabetical order; expect alphabetical
-        // output.
-        let admin = Admin::new().model::<User>().model::<Post>();
-        let schema = Schema::from_admin(&admin);
+        // Register Post + Book (not User — that name collides with the
+        // core model). Expect alphabetical output: Book, Post, User.
+        let schema = Schema::from_admin(&Admin::new().model::<Post>().model::<Book>());
         let names: Vec<&str> = schema.models.iter().map(|m| m.name.as_str()).collect();
-        assert_eq!(names, vec!["Post", "User"]);
+        assert_eq!(names, vec!["Book", "Post", "User"]);
     }
 
     #[test]
     fn to_pretty_json_round_trips() {
-        let admin = Admin::new().model::<Post>();
-        let schema = Schema::from_admin(&admin);
+        let schema = Schema::from_admin(&Admin::new().model::<Post>());
         let json = schema.to_pretty_json().unwrap();
         let parsed = Schema::parse(&json).unwrap();
         assert_eq!(parsed, schema);
@@ -511,8 +536,7 @@ mod tests {
 
     #[test]
     fn to_pretty_json_ends_with_newline() {
-        let admin = Admin::new().model::<Post>();
-        let schema = Schema::from_admin(&admin);
+        let schema = Schema::from_admin(&Admin::new().model::<Post>());
         let json = schema.to_pretty_json().unwrap();
         assert!(json.ends_with('\n'), "schema JSON must end with newline");
     }
@@ -522,10 +546,10 @@ mod tests {
         // The determinism contract: identical inputs → identical bytes.
         // If this ever fails, someone added a clock, hash, or env read
         // to the serialisation path.
-        let a = Schema::from_admin(&Admin::new().model::<Post>().model::<User>())
+        let a = Schema::from_admin(&Admin::new().model::<Post>().model::<Book>())
             .to_pretty_json()
             .unwrap();
-        let b = Schema::from_admin(&Admin::new().model::<Post>().model::<User>())
+        let b = Schema::from_admin(&Admin::new().model::<Post>().model::<Book>())
             .to_pretty_json()
             .unwrap();
         assert_eq!(a, b);
@@ -540,8 +564,11 @@ mod tests {
     /// consumer in the same PR.
     #[test]
     fn schema_snapshot_is_byte_for_byte_stable() {
-        let admin = Admin::new().model::<User>().model::<Post>();
-        let schema = Schema::from_admin(&admin);
+        // Register only `Post`; the core `User` is seeded automatically
+        // by `Admin::new()`. The expected JSON below is the *complete*
+        // wire format: locking both the test model and the core User
+        // fields in place.
+        let schema = Schema::from_admin(&Admin::new().model::<Post>());
         let actual = schema.to_pretty_json().unwrap();
 
         let expected = format!(
@@ -575,11 +602,12 @@ mod tests {
           "editable": true
         }}
       ],
-      "relations": []
+      "relations": [],
+      "core": false
     }},
     {{
       "name": "User",
-      "table": "users",
+      "table": "rustio_users",
       "admin_name": "users",
       "display_name": "Users",
       "singular_name": "User",
@@ -597,13 +625,26 @@ mod tests {
           "editable": false
         }},
         {{
-          "name": "is_admin",
+          "name": "is_active",
           "type": "bool",
+          "nullable": false,
+          "editable": true
+        }},
+        {{
+          "name": "password_hash",
+          "type": "String",
+          "nullable": false,
+          "editable": false
+        }},
+        {{
+          "name": "role",
+          "type": "String",
           "nullable": false,
           "editable": true
         }}
       ],
-      "relations": []
+      "relations": [],
+      "core": true
     }}
   ]
 }}
@@ -616,7 +657,7 @@ mod tests {
 
     #[test]
     fn validate_accepts_clean_schema() {
-        let schema = Schema::from_admin(&Admin::new().model::<Post>().model::<User>());
+        let schema = Schema::from_admin(&Admin::new().model::<Post>().model::<Book>());
         assert_eq!(schema.validate(), Ok(()));
     }
 
@@ -636,7 +677,8 @@ mod tests {
     #[test]
     fn validate_rejects_duplicate_models() {
         let mut schema = Schema::from_admin(&Admin::new().model::<Post>());
-        schema.models.push(schema.models[0].clone());
+        let post = find(&schema, "Post").clone();
+        schema.models.push(post);
         assert_eq!(
             schema.validate(),
             Err(SchemaError::DuplicateModel("Post".to_string()))
@@ -646,8 +688,9 @@ mod tests {
     #[test]
     fn validate_rejects_duplicate_fields() {
         let mut schema = Schema::from_admin(&Admin::new().model::<Post>());
-        let dup = schema.models[0].fields[0].clone();
-        schema.models[0].fields.push(dup);
+        let post_idx = schema.models.iter().position(|m| m.name == "Post").unwrap();
+        let dup = schema.models[post_idx].fields[0].clone();
+        schema.models[post_idx].fields.push(dup);
         assert_eq!(
             schema.validate(),
             Err(SchemaError::DuplicateField {
@@ -660,7 +703,8 @@ mod tests {
     #[test]
     fn validate_rejects_unknown_type() {
         let mut schema = Schema::from_admin(&Admin::new().model::<Post>());
-        schema.models[0].fields[0].ty = "HyperFloat128".to_string();
+        let post_idx = schema.models.iter().position(|m| m.name == "Post").unwrap();
+        schema.models[post_idx].fields[0].ty = "HyperFloat128".to_string();
         assert_eq!(
             schema.validate(),
             Err(SchemaError::InvalidType {
@@ -674,7 +718,8 @@ mod tests {
     #[test]
     fn validate_rejects_dangling_relation() {
         let mut schema = Schema::from_admin(&Admin::new().model::<Post>());
-        schema.models[0].relations.push(SchemaRelation {
+        let post_idx = schema.models.iter().position(|m| m.name == "Post").unwrap();
+        schema.models[post_idx].relations.push(SchemaRelation {
             kind: "belongs_to".to_string(),
             to: "Ghost".to_string(),
             via: "ghost_id".to_string(),
@@ -693,7 +738,8 @@ mod tests {
         // A model may reference itself — common for tree-shaped data
         // (parent/child). Reject only *dangling* targets, not recursion.
         let mut schema = Schema::from_admin(&Admin::new().model::<Post>());
-        schema.models[0].relations.push(SchemaRelation {
+        let post_idx = schema.models.iter().position(|m| m.name == "Post").unwrap();
+        schema.models[post_idx].relations.push(SchemaRelation {
             kind: "belongs_to".to_string(),
             to: "Post".to_string(),
             via: "parent_id".to_string(),

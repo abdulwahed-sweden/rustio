@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Foundation Phase, Pass B (authentication)
+
+Real auth replaces the development token flow. Every RustIO project
+now has a `User` table, argon2id-hashed passwords, DB-backed sessions,
+and a session-cookie middleware. **Breaking** for generated projects
+(see "Upgrading" below).
+
+#### User
+
+- **`User` model in `rustio-core`** — id, email, password_hash,
+  is_active, role. Deliberately minimal; extend user data via a
+  separate `Profile` model in user code rather than widening this one.
+- Emails are **normalised** (trimmed + lowercased) on create and
+  lookup so `Alice@Example.com` and `alice@example.com` are the same
+  account.
+- Roles are a closed set in 0.4.0: `admin` or `user`. Anything else is
+  rejected at `user::create`.
+
+#### Passwords
+
+- **`auth::password::hash` / `auth::password::verify`** using argon2id
+  with RFC 9106 default parameters (m_cost=19456 KiB, t_cost=2, p=1)
+  and a 16-byte OS-entropy salt per password.
+- Verification is **constant-time** (via argon2's own comparator) and
+  **never panics** on malformed hash strings — returns `false` instead.
+- Empty passwords are refused at `hash` boundary.
+
+#### Sessions
+
+- **`rustio_sessions` table**, keyed by a 256-bit OS-random hex token.
+- **`auth::session::create` / `find_valid` / `delete` / `sweep_expired`**
+  — `find_valid` enforces expiry on every lookup; the DB is the source
+  of truth, no in-memory caching.
+- 7-day TTL (`SESSION_TTL_DAYS` const; not configurable in 0.4.0).
+- Cookie: `rustio_session=...; HttpOnly; SameSite=Strict; Max-Age=…`.
+  `Secure` is documented at the deployment boundary — see
+  `SECURITY.md`.
+
+#### Middleware
+
+- **`auth::authenticate(db)`** is now a factory returning a DB-capturing
+  closure (was a free function). The old dev-token path is gone.
+- Decision path: read `rustio_session` cookie → `session::find_valid`
+  → `user::find_by_id` → `user.is_active` check → attach `Identity`.
+  Failure at any step is silent; downstream `require_auth` /
+  `require_admin` produce 401 / 403 from the missing identity.
+- **`auth::resolve_identity(db, token)`** is the pure core of the
+  middleware, extracted so every decision branch has a direct unit
+  test (no hyper `Request` required).
+
+#### Login + logout
+
+- `POST /admin/login` — takes `email` + `password` form fields.
+  Generic error ("Invalid email or password") for both unknown email
+  and wrong password; explicit error for inactive accounts; 400 for
+  missing fields. Email is prefilled on failed submissions; the
+  password field never is.
+- `POST /admin/logout` — deletes the server-side session row and
+  expires the cookie. Idempotent.
+
+#### Schema integration
+
+- **`SchemaModel.core`** — new boolean flag. `true` for built-in
+  infrastructure models (currently just `User`). The AI layer should
+  refuse destructive primitives against core models.
+- **`User` is seeded in every `Admin::new()`** and consequently in
+  every project's `rustio.schema.json`. It does **not** get routed as
+  an admin CRUD page in 0.4.0 — the entry exists for schema fidelity.
+  The `len()` / `is_empty()` methods on `Admin` count user-registered
+  models only, so the "no models registered yet" placeholder behaves
+  as before.
+
+#### CLI
+
+- **`rustio user create`** — interactive command with masked password
+  + role picker. Non-interactive form:
+  `rustio user create --email E --password P --role admin`.
+
+#### Test coverage
+
+25 new tests in `auth::`:
+- password hashing / verification / salt uniqueness / invalid-hash
+  panic-safety / empty-password refusal;
+- user create / duplicate email / unknown role / set_password /
+  set_active;
+- session create / lookup / expiration / delete / sweep;
+- middleware decision path: no cookie / unknown token / expired
+  session / inactive user / deleted user / valid admin / valid user /
+  logout-invalidates-session.
+
+Plus an updated schema snapshot test that locks the User core entry
+into the wire format.
+
+#### Upgrading from Pass A projects
+
+1. Run `rustio migrate apply` — bootstraps `rustio_users` and
+   `rustio_sessions` automatically.
+2. Update generated `main.rs`: `authenticate` is now `authenticate(db)`
+   (factory). The CLI-regenerated template shows the exact shape.
+3. Create an admin user: `rustio user create`.
+4. `Identity.user_id` changed from `String` to `i64` and gained an
+   `email` field. If you read it in custom middleware or handlers,
+   update accordingly.
+5. Bearer-token dev auth (`dev-admin`, `dev-user`) is gone. Custom
+   middleware using `auth::bearer_token` still compiles; implement
+   your own token → identity mapping if you need Bearer auth.
+
 ### Hardened — Foundation Phase, Pass A.5
 
 Pass A landed the shape; Pass A.5 locks it down. No new features — every

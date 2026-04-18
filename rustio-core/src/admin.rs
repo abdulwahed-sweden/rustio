@@ -76,6 +76,11 @@ pub trait AdminModel: Model {
 /// Carries everything the admin index page, the router registration,
 /// and the schema exporter need — collected by [`Admin::model`] from the
 /// type's `AdminModel` / `Model` impls at registration time.
+///
+/// `core` marks infrastructure models (currently just `User`) that the
+/// schema needs to describe but that the admin router does **not**
+/// expose as CRUD pages. Core models appear in `rustio.schema.json`
+/// with `"core": true` but have no `/admin/<name>` routes.
 #[derive(Debug, Clone)]
 pub struct AdminEntry {
     pub admin_name: &'static str,
@@ -83,7 +88,56 @@ pub struct AdminEntry {
     pub singular_name: &'static str,
     pub table: &'static str,
     pub fields: &'static [AdminField],
+    pub core: bool,
 }
+
+/// Fields the built-in `User` model exposes via the schema. Kept as a
+/// `const` so tests and the schema exporter reference the same source
+/// of truth. `password_hash` is marked `editable: false` so no future
+/// UI layer accidentally surfaces the hash in a form.
+pub const USER_FIELDS: &[AdminField] = &[
+    AdminField {
+        name: "id",
+        ty: FieldType::I64,
+        editable: false,
+        nullable: false,
+    },
+    AdminField {
+        name: "email",
+        ty: FieldType::String,
+        editable: true,
+        nullable: false,
+    },
+    AdminField {
+        name: "password_hash",
+        ty: FieldType::String,
+        editable: false,
+        nullable: false,
+    },
+    AdminField {
+        name: "is_active",
+        ty: FieldType::Bool,
+        editable: true,
+        nullable: false,
+    },
+    AdminField {
+        name: "role",
+        ty: FieldType::String,
+        editable: true,
+        nullable: false,
+    },
+];
+
+/// Core `AdminEntry` for the built-in `User` model. Always present in
+/// every project's schema; not routed by the admin in 0.4.0.
+pub(crate) const USER_ENTRY: AdminEntry = AdminEntry {
+    admin_name: "users",
+    display_name: "Users",
+    singular_name: "User",
+    table: "rustio_users",
+    fields: USER_FIELDS,
+    core: true,
+};
 
 type ModelRegistrar = Box<dyn FnOnce(Router, &Db) -> Router + Send + Sync>;
 
@@ -136,14 +190,19 @@ pub struct Admin {
 
 impl Admin {
     pub fn new() -> Self {
+        // Seed the core `User` entry unconditionally. It's infrastructure,
+        // not an application choice — every project's schema includes
+        // it and consumers rely on that invariant.
         Self {
-            entries: Vec::new(),
+            entries: vec![USER_ENTRY.clone()],
             registrars: Vec::new(),
         }
     }
 
-    /// Register a model on this admin. Adds its metadata to the index
-    /// and queues its CRUD routes for mounting.
+    /// Register a user-facing model on this admin. Adds its metadata
+    /// to the `/admin` index and queues its CRUD routes for mounting.
+    /// Core models (like `User`) are registered by `Admin::new` itself
+    /// and are not passed through this method.
     pub fn model<T: AdminModel>(mut self) -> Self {
         self.entries.push(AdminEntry {
             admin_name: T::ADMIN_NAME,
@@ -151,22 +210,27 @@ impl Admin {
             singular_name: T::singular_name(),
             table: T::TABLE,
             fields: T::FIELDS,
+            core: false,
         });
         self.registrars
             .push(Box::new(|router, db| mount_model::<T>(router, db)));
         self
     }
 
-    /// Number of registered models.
+    /// Number of user-registered models (i.e. not counting built-in
+    /// core models like `User`). The `/admin` index uses this to decide
+    /// whether to show the "no models registered yet" placeholder.
     pub fn len(&self) -> usize {
-        self.entries.len()
+        self.entries.iter().filter(|e| !e.core).count()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.len() == 0
     }
 
-    /// Metadata for inspection.
+    /// All entries, including core models. Consumed by the schema
+    /// exporter; iterate with `.iter().filter(|e| !e.core)` when you
+    /// want only user-facing models.
     pub fn entries(&self) -> &[AdminEntry] {
         &self.entries
     }
@@ -189,12 +253,19 @@ impl Admin {
 
         // Login + logout routes. These run without admin_guard: unauthenticated
         // users *need* to reach /admin/login, and logout should work from any
-        // state (idempotent cookie expiry).
-        router = router.post("/admin/login", |req, _params| async move {
-            handle_login(req).await
+        // state (idempotent cookie expiry). Both capture `Db` so the login
+        // path can verify credentials and create a session, and the logout
+        // path can delete the session server-side — not just expire the
+        // cookie client-side.
+        let login_db = db.clone();
+        router = router.post("/admin/login", move |req, _params| {
+            let db = login_db.clone();
+            async move { handle_login(req, &db).await }
         });
-        router = router.post("/admin/logout", |_req, _params| async move {
-            Ok::<Response, Error>(handle_logout())
+        let logout_db = db.clone();
+        router = router.post("/admin/logout", move |req, _params| {
+            let db = logout_db.clone();
+            async move { handle_logout(req, &db).await }
         });
 
         for registrar in self.registrars {
@@ -367,7 +438,10 @@ fn admin_layout(title: &str, content: &str) -> String {
 }
 
 fn index_page(entries: &[AdminEntry]) -> String {
-    if entries.is_empty() {
+    // Core models (built-in User) appear in the schema but not in the
+    // index — they have no routed CRUD page in 0.4.0.
+    let user_facing: Vec<&AdminEntry> = entries.iter().filter(|e| !e.core).collect();
+    if user_facing.is_empty() {
         return String::from(
             r#"<h2>Admin</h2>
 <p class="empty">No models are registered. Add one with
@@ -375,7 +449,7 @@ fn index_page(entries: &[AdminEntry]) -> String {
 via <code>rustio new app &lt;name&gt;</code>.</p>"#,
         );
     }
-    let rows: String = entries
+    let rows: String = user_facing
         .iter()
         .map(|e| {
             format!(
@@ -518,7 +592,7 @@ fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
     // change that).
     match crate::auth::require_admin(ctx) {
         Ok(_) => Ok(()),
-        Err(Error::Unauthorized) => Err(login_page(401, None)),
+        Err(Error::Unauthorized) => Err(login_page(401, None, None)),
         Err(Error::Forbidden) => Err(forbidden_page()),
         Err(other) => Err(other.into_response()),
     }
@@ -526,22 +600,16 @@ fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
 
 /// Render the login page. Status is 401 on a pure auth-gate hit and
 /// 400 on failed submissions (with `error` set to an explanation).
-fn login_page(status: u16, error: Option<&str>) -> Response {
+///
+/// The form is always shown — unauthenticated users need somewhere to
+/// sign in. `email` is prefilled on failed submissions so the user
+/// doesn't have to retype it; the password field never is.
+fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response {
     let error_html = match error {
         Some(msg) => format!(r#"<p class="error">{}</p>"#, escape_html(msg)),
         None => String::new(),
     };
-
-    // In production the dev-token hint is suppressed. The form is still
-    // shown — the developer might have wired a different `authenticate`
-    // middleware that accepts other tokens via the same cookie.
-    let hint = if crate::auth::in_production() {
-        String::new()
-    } else {
-        String::from(
-            r#"<p class="hint">Development tokens: <code>dev-admin</code> (full access) · <code>dev-user</code> (non-admin, to preview 403).</p>"#,
-        )
-    };
+    let email_value = email.map(escape_html).unwrap_or_default();
 
     let body = format!(
         r#"<!doctype html>
@@ -556,20 +624,23 @@ fn login_page(status: u16, error: Option<&str>) -> Response {
 <header><h1><a href="/admin">RustIO Admin</a></h1></header>
 <main class="auth-card">
 <h2>Sign in</h2>
-<form method="post" action="/admin/login" autocomplete="off">
-<label><span>Token</span>
-<input type="password" name="token" autofocus required>
+<form method="post" action="/admin/login" autocomplete="on">
+<label><span>Email</span>
+<input type="email" name="email" value="{email_value}" autocomplete="username" autofocus required>
+</label>
+<label><span>Password</span>
+<input type="password" name="password" autocomplete="current-password" required>
 </label>
 {error}
 <button type="submit">Sign in</button>
 </form>
-{hint}
+<p class="hint">No admin user yet? Run <code>rustio user create</code> from your project directory.</p>
 </main>
 </body>
 </html>"#,
         css = ADMIN_CSS,
+        email_value = email_value,
         error = error_html,
-        hint = hint,
     );
 
     hyper::Response::builder()
@@ -611,53 +682,98 @@ fn forbidden_page() -> Response {
         .expect("valid response")
 }
 
-/// `POST /admin/login` — validate the submitted token against
-/// `authenticate`'s dev token mapping (when RUSTIO_ENV != production)
-/// and set the `rustio_token` cookie so subsequent requests carry it
-/// automatically.
-async fn handle_login(req: Request) -> Result<Response, Error> {
+/// `POST /admin/login` — authenticate email + password, create a
+/// session row, and set the session cookie.
+///
+/// Failure behaviour is deliberately narrow:
+/// - invalid email *or* wrong password → identical generic message
+///   ("invalid email or password"). This prevents user enumeration via
+///   the response text.
+/// - inactive user → explicit message. An administrator has already
+///   decided this account should not log in; telling the owner so
+///   isn't a leak.
+/// - missing fields → 400 with a targeted message.
+///
+/// On success: a cryptographically random session row is inserted, a
+/// `HttpOnly; SameSite=Strict` cookie carries the token, and the
+/// response is a 303 redirect to `/admin`.
+async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
+    use crate::auth;
+
     let form = read_form(req).await?;
-    let token = form.get("token").unwrap_or("").trim().to_string();
+    let email = form.get("email").unwrap_or("").trim().to_string();
+    let password = form.get("password").unwrap_or("").to_string();
 
-    if token.is_empty() {
-        return Ok(login_page(400, Some("Token is required.")));
-    }
-
-    // Production mode disables dev tokens entirely. A real deployment
-    // would replace `authenticate` with its own middleware that recognises
-    // production tokens via the same cookie; this branch is the safe
-    // default when no such middleware is installed.
-    if crate::auth::in_production() {
+    if email.is_empty() || password.is_empty() {
         return Ok(login_page(
-            401,
-            Some("Sign-in is disabled in production until a real auth middleware is installed."),
+            400,
+            Some(&email),
+            Some("Email and password are both required."),
         ));
     }
 
-    if crate::auth::dev_identity(&token).is_none() {
-        return Ok(login_page(401, Some("That token is not recognised.")));
+    // One generic error for both "no such user" and "wrong password"
+    // so a caller can't probe which emails exist.
+    let generic = "Invalid email or password.";
+
+    let user = match auth::user::find_by_email(db, &email).await? {
+        Some(u) => u,
+        None => return Ok(login_page(401, Some(&email), Some(generic))),
+    };
+
+    if !auth::password::verify(&password, &user.password_hash) {
+        return Ok(login_page(401, Some(&email), Some(generic)));
     }
 
-    // Success: drop a cookie scoped to the site and redirect to /admin.
-    // HttpOnly prevents JS read (XSS hardening), SameSite=Strict prevents
-    // cross-site submission (CSRF hardening for this cookie).
+    if !user.is_active {
+        return Ok(login_page(
+            403,
+            Some(&email),
+            Some("This account is inactive. Contact an administrator."),
+        ));
+    }
+
+    let session = auth::session::create(db, user.id).await?;
+
+    // HttpOnly: JS can't read the token (XSS hardening).
+    // SameSite=Strict: cross-site navigations don't send it (CSRF
+    // hardening). Max-Age matches the DB expiry so the browser drops
+    // the cookie at the same moment the server refuses it.
     let mut resp = redirect("/admin");
+    let max_age = auth::SESSION_TTL_DAYS * 24 * 3600;
     crate::http::set_cookie(
         &mut resp,
-        &format!("rustio_token={token}; Path=/; HttpOnly; SameSite=Strict"),
+        &format!(
+            "{name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}",
+            name = auth::SESSION_COOKIE,
+            token = session.id,
+        ),
     );
     Ok(resp)
 }
 
-/// `POST /admin/logout` — clear the cookie and send the user back to
-/// `/admin` (which will re-render the login page).
-fn handle_logout() -> Response {
+/// `POST /admin/logout` — delete the server-side session row and
+/// expire the cookie. Idempotent: logging out without being logged in
+/// is not an error.
+async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
+    use crate::auth;
+
+    if let Some(token) = req.cookie(auth::SESSION_COOKIE) {
+        // Best-effort: a DB hiccup during logout shouldn't block the
+        // user from getting their cookie cleared. The cookie expiry
+        // below runs regardless.
+        let _ = auth::session::delete(db, &token).await;
+    }
+
     let mut resp = redirect("/admin");
     crate::http::set_cookie(
         &mut resp,
-        "rustio_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+        &format!(
+            "{name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+            name = auth::SESSION_COOKIE,
+        ),
     );
-    resp
+    Ok(resp)
 }
 
 /// Parse the `YYYY-MM-DDTHH:MM[:SS]` value emitted by the browser's

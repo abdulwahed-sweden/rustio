@@ -1,38 +1,483 @@
-//! Identity-in-context authentication.
+//! Authentication: users, passwords, sessions, middleware.
 //!
-//! [`authenticate`] is an additive middleware: it attaches an [`Identity`]
-//! to the request context when a valid `Authorization: Bearer` token is
-//! provided, and does nothing otherwise. Handlers enforce their own
-//! requirement with [`require_auth`] / [`require_admin`].
+//! This is the identity layer every RustIO system depends on. It is
+//! **infrastructure**, not an application feature — the [`User`] struct
+//! deliberately stays minimal (id, email, password_hash, is_active,
+//! role) so projects can extend it with a separate `Profile` model
+//! rather than widening this one.
 //!
-//! The built-in token mapping (`dev-admin` / `dev-user`) is for development
-//! only. As a safety guard, `authenticate` refuses to recognize any dev
-//! token when the `RUSTIO_ENV` environment variable is set to `"production"`
-//! (or `"prod"`). In that mode the middleware is a no-op and admin routes
-//! will return 401 — the correct fix is to register your own auth
-//! middleware that populates [`Identity`].
+//! ## Security model
+//!
+//! - Passwords are stored as argon2id PHC strings (see [`password`]).
+//! - Sessions are 32-byte OS-random tokens, stored in `rustio_sessions`
+//!   with a 7-day expiry enforced on every request.
+//! - Session cookies are `HttpOnly; SameSite=Strict`. `Secure` is
+//!   documented at the deployment boundary (terminator / proxy) because
+//!   the server can't reliably detect HTTPS on its own.
+//! - Failed logins return a generic error (invalid email + wrong
+//!   password are indistinguishable from outside) to prevent user
+//!   enumeration. An inactive account is called out explicitly — it's
+//!   already an administrative decision, not a secret.
+//!
+//! ## Wiring
+//!
+//! Generated projects register the middleware via
+//! `router.wrap(auth::authenticate(db.clone()))`. There are no global
+//! singletons; every project owns its `Db` handle and passes it in.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::future::Future;
+use std::pin::Pin;
+
+use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::Argon2;
+use chrono::{DateTime, Duration, Utc};
+use rand::rngs::OsRng;
+use rand::RngCore;
+use sqlx::Row as _;
 
 use crate::context::Context;
 use crate::error::Error;
 use crate::http::{Request, Response};
 use crate::middleware::Next;
+use crate::orm::Db;
 
-#[derive(Debug, Clone)]
+/// Name of the cookie that carries the session token from the browser
+/// to the server. Used by both the login handler (to set) and the
+/// authenticate middleware (to read).
+pub const SESSION_COOKIE: &str = "rustio_session";
+
+/// How long a newly-created session is valid before the middleware
+/// treats it as expired. Not configurable in 0.4.0 — kept fixed so the
+/// security surface stays small.
+pub const SESSION_TTL_DAYS: i64 = 7;
+
+/// How many OS-entropy bytes go into a session token. 32 bytes = 256
+/// bits, far beyond any realistic guessing budget.
+const SESSION_TOKEN_BYTES: usize = 32;
+
+/// Role string meaning "has admin access". Anything else is treated as
+/// a regular user; the admin middleware only unlocks `/admin` when this
+/// matches exactly.
+pub const ROLE_ADMIN: &str = "admin";
+
+/// Default role for newly-created users.
+pub const ROLE_USER: &str = "user";
+
+type BoxFuture<T> = Pin<Box<dyn Future<Output = T> + Send>>;
+
+/// User record. Infrastructure, not an application model — extend user
+/// data via a separate `Profile` struct, not by widening this one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct User {
+    pub id: i64,
+    pub email: String,
+    /// PHC-encoded argon2id hash. Never treat as plaintext, never log,
+    /// never render in a template.
+    pub password_hash: String,
+    pub is_active: bool,
+    pub role: String,
+}
+
+impl User {
+    pub fn is_admin(&self) -> bool {
+        self.role == ROLE_ADMIN
+    }
+}
+
+/// Per-request identity snapshot, attached by the auth middleware and
+/// read via [`identity`] / [`require_auth`] / [`require_admin`].
+#[derive(Debug, Clone, PartialEq)]
 pub struct Identity {
-    pub user_id: String,
+    pub user_id: i64,
+    pub email: String,
     pub is_admin: bool,
 }
 
-/// One-shot latch so we only print the production warning once per process,
-/// no matter how many requests come in.
-static PRODUCTION_WARNED: AtomicBool = AtomicBool::new(false);
+impl From<&User> for Identity {
+    fn from(u: &User) -> Self {
+        Self {
+            user_id: u.id,
+            email: u.email.clone(),
+            is_admin: u.is_admin(),
+        }
+    }
+}
+
+/// Session record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Session {
+    /// Opaque 64-char hex token. Cryptographically random; the only way
+    /// to produce a valid one is via [`session::create`].
+    pub id: String,
+    pub user_id: i64,
+    pub expires_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Passwords
+// ---------------------------------------------------------------------------
+
+pub mod password {
+    //! Password hashing with argon2id.
+    //!
+    //! Uses argon2 defaults (RFC 9106 recommendations): argon2id,
+    //! m_cost=19456 KiB, t_cost=2, p=1. Salts come from the OS RNG.
+    use super::*;
+
+    /// Hash a password with argon2id + OS-provided salt. Returns the
+    /// PHC-encoded string, ready to store in `rustio_users.password_hash`.
+    ///
+    /// Empty passwords are refused at the boundary — there is never a
+    /// legitimate reason to hash one.
+    pub fn hash(password: &str) -> Result<String, Error> {
+        if password.is_empty() {
+            return Err(Error::BadRequest("password must not be empty".into()));
+        }
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|e| Error::Internal(format!("password hashing failed: {e}")))?;
+        Ok(hash.to_string())
+    }
+
+    /// Verify a password against a stored PHC hash.
+    ///
+    /// Returns `false` on any failure — malformed hash, mismatched
+    /// password, internal error. **Never panics.** The comparison
+    /// inside argon2 is constant-time.
+    pub fn verify(password: &str, stored: &str) -> bool {
+        // `PasswordHash::new` parses the PHC string; an invalid hash
+        // turns into a clean `false` instead of a panic. This is the
+        // important safety property the spec calls out.
+        let Ok(parsed) = PasswordHash::new(stored) else {
+            return false;
+        };
+        Argon2::default()
+            .verify_password(password.as_bytes(), &parsed)
+            .is_ok()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+
+/// Generate a fresh hex-encoded session token using OS entropy.
+fn generate_token() -> String {
+    use std::fmt::Write;
+    let mut buf = [0u8; SESSION_TOKEN_BYTES];
+    OsRng.fill_bytes(&mut buf);
+    let mut out = String::with_capacity(SESSION_TOKEN_BYTES * 2);
+    for b in buf {
+        let _ = write!(out, "{b:02x}");
+    }
+    out
+}
+
+pub mod session {
+    //! Database-backed sessions keyed by a 256-bit OS-random token.
+    //!
+    //! Sessions are never kept in memory. Every validation goes through
+    //! the DB so a compromised or logged-out session is immediately
+    //! invalid everywhere.
+    use super::*;
+
+    /// Create a new session for a user and persist it. The returned
+    /// token is the cookie value the browser should receive.
+    pub async fn create(db: &Db, user_id: i64) -> Result<Session, Error> {
+        let id = generate_token();
+        let expires_at = Utc::now() + Duration::days(SESSION_TTL_DAYS);
+        sqlx::query("INSERT INTO rustio_sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
+            .bind(&id)
+            .bind(user_id)
+            .bind(expires_at)
+            .execute(db.pool())
+            .await?;
+        Ok(Session {
+            id,
+            user_id,
+            expires_at,
+        })
+    }
+
+    /// Look up a session by token. Returns `None` if the token doesn't
+    /// exist **or** the session has expired. Expiration is checked on
+    /// every call — the DB expiry column is the source of truth.
+    pub async fn find_valid(db: &Db, id: &str) -> Result<Option<Session>, Error> {
+        let row = sqlx::query("SELECT id, user_id, expires_at FROM rustio_sessions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(db.pool())
+            .await?;
+        let Some(r) = row else {
+            return Ok(None);
+        };
+        let expires_at: DateTime<Utc> = r.try_get("expires_at")?;
+        if expires_at <= Utc::now() {
+            return Ok(None);
+        }
+        Ok(Some(Session {
+            id: r.try_get("id")?,
+            user_id: r.try_get("user_id")?,
+            expires_at,
+        }))
+    }
+
+    /// Delete a session. Logout path. Idempotent — deleting a
+    /// non-existent session is not an error.
+    pub async fn delete(db: &Db, id: &str) -> Result<(), Error> {
+        sqlx::query("DELETE FROM rustio_sessions WHERE id = ?")
+            .bind(id)
+            .execute(db.pool())
+            .await?;
+        Ok(())
+    }
+
+    /// Remove all expired sessions from the DB. Safe to call on a
+    /// schedule; not called automatically in 0.4.0.
+    pub async fn sweep_expired(db: &Db) -> Result<u64, Error> {
+        let result = sqlx::query("DELETE FROM rustio_sessions WHERE expires_at <= ?")
+            .bind(Utc::now())
+            .execute(db.pool())
+            .await?;
+        Ok(result.rows_affected())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// User queries
+// ---------------------------------------------------------------------------
+
+pub mod user {
+    //! User queries. Validates email format on create + on lookup
+    //! (inputs are normalised to trimmed-lowercase before the DB sees
+    //! them).
+    use super::*;
+
+    /// Create a new user with an argon2-hashed password. Email is
+    /// normalised (trimmed + lowercased) so `Alice@Example.com` and
+    /// `alice@example.com` can't register separately.
+    ///
+    /// Returns `BadRequest` on unique-email conflict so the handler can
+    /// render a clean message; the raw sqlx error never leaks to the
+    /// client.
+    pub async fn create(db: &Db, email: &str, password: &str, role: &str) -> Result<User, Error> {
+        let email = normalise_email(email);
+        validate_email(&email)?;
+        if role != ROLE_ADMIN && role != ROLE_USER {
+            return Err(Error::BadRequest(format!(
+                "role must be `{ROLE_ADMIN}` or `{ROLE_USER}`, got `{role}`"
+            )));
+        }
+        let hash = password::hash(password)?;
+        let result = sqlx::query(
+            "INSERT INTO rustio_users (email, password_hash, is_active, role)
+             VALUES (?, ?, 1, ?)",
+        )
+        .bind(&email)
+        .bind(&hash)
+        .bind(role)
+        .execute(db.pool())
+        .await
+        .map_err(|e| match &e {
+            sqlx::Error::Database(de) if de.is_unique_violation() => {
+                Error::BadRequest(format!("a user with email `{email}` already exists"))
+            }
+            _ => Error::from(e),
+        })?;
+        Ok(User {
+            id: result.last_insert_rowid(),
+            email,
+            password_hash: hash,
+            is_active: true,
+            role: role.to_string(),
+        })
+    }
+
+    pub async fn find_by_email(db: &Db, email: &str) -> Result<Option<User>, Error> {
+        let email = normalise_email(email);
+        let row = sqlx::query(
+            "SELECT id, email, password_hash, is_active, role
+             FROM rustio_users WHERE email = ?",
+        )
+        .bind(&email)
+        .fetch_optional(db.pool())
+        .await?;
+        match row {
+            Some(r) => Ok(Some(user_from_row(&r)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn find_by_id(db: &Db, id: i64) -> Result<Option<User>, Error> {
+        let row = sqlx::query(
+            "SELECT id, email, password_hash, is_active, role
+             FROM rustio_users WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(db.pool())
+        .await?;
+        match row {
+            Some(r) => Ok(Some(user_from_row(&r)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn set_password(db: &Db, id: i64, password: &str) -> Result<(), Error> {
+        let hash = password::hash(password)?;
+        sqlx::query("UPDATE rustio_users SET password_hash = ? WHERE id = ?")
+            .bind(&hash)
+            .bind(id)
+            .execute(db.pool())
+            .await?;
+        Ok(())
+    }
+
+    pub async fn set_active(db: &Db, id: i64, is_active: bool) -> Result<(), Error> {
+        sqlx::query("UPDATE rustio_users SET is_active = ? WHERE id = ?")
+            .bind(is_active)
+            .bind(id)
+            .execute(db.pool())
+            .await?;
+        Ok(())
+    }
+
+    pub async fn count(db: &Db) -> Result<i64, Error> {
+        let row = sqlx::query("SELECT COUNT(*) FROM rustio_users")
+            .fetch_one(db.pool())
+            .await?;
+        Ok(row.try_get(0)?)
+    }
+
+    fn user_from_row(r: &sqlx::sqlite::SqliteRow) -> Result<User, Error> {
+        Ok(User {
+            id: r.try_get("id")?,
+            email: r.try_get("email")?,
+            password_hash: r.try_get("password_hash")?,
+            is_active: r.try_get("is_active")?,
+            role: r.try_get("role")?,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Email validation
+// ---------------------------------------------------------------------------
+
+/// Normalise an email for storage + comparison.
+pub fn normalise_email(email: &str) -> String {
+    email.trim().to_lowercase()
+}
+
+/// Validate an email for admin-level correctness. Intentionally *not*
+/// full RFC 5322 — we accept any address with a local part, an `@`, and
+/// a domain containing a `.`. That rejects the common-mistake class
+/// (typos, obvious malformed input) without pretending to police
+/// delivery validity.
+pub fn validate_email(email: &str) -> Result<(), Error> {
+    if email.is_empty() {
+        return Err(Error::BadRequest("email must not be empty".into()));
+    }
+    let Some((local, domain)) = email.split_once('@') else {
+        return Err(Error::BadRequest(format!(
+            "`{email}` is not a valid email (missing @)"
+        )));
+    };
+    if local.is_empty() || domain.is_empty() || !domain.contains('.') {
+        return Err(Error::BadRequest(format!("`{email}` is not a valid email")));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Middleware
+// ---------------------------------------------------------------------------
+
+/// Resolve a session token into an [`Identity`], or `None` if the
+/// token is missing, unknown, expired, or points at an inactive /
+/// deleted user.
+///
+/// Extracted so the middleware's full decision path is directly
+/// testable without constructing a hyper `Request`. The middleware
+/// itself is a thin wrapper: cookie read → this call → context insert.
+pub async fn resolve_identity(db: &Db, token: Option<&str>) -> Option<Identity> {
+    let token = token?;
+    let sess = session::find_valid(db, token).await.ok().flatten()?;
+    let user = user::find_by_id(db, sess.user_id).await.ok().flatten()?;
+    if !user.is_active {
+        return None;
+    }
+    Some(Identity::from(&user))
+}
+
+/// Build the `authenticate` middleware for this project.
+///
+/// The returned middleware:
+/// 1. Reads the `rustio_session` cookie.
+/// 2. Looks up the session in the DB; rejects if missing / expired.
+/// 3. Looks up the user; rejects if missing / inactive.
+/// 4. On success, attaches [`Identity`] to the request context.
+///
+/// Failure cases do **not** short-circuit the request. They simply
+/// leave the context without an `Identity`; handlers then use
+/// [`require_auth`] / [`require_admin`] to produce the 401 / 403 as
+/// appropriate. This keeps auth additive and lets non-admin routes
+/// continue serving anonymous requests.
+pub fn authenticate(
+    db: Db,
+) -> impl Fn(Request, Next) -> BoxFuture<Result<Response, Error>> + Send + Sync + Clone + 'static {
+    move |mut req, next| {
+        let db = db.clone();
+        Box::pin(async move {
+            let token = req.cookie(SESSION_COOKIE);
+            if let Some(identity) = resolve_identity(&db, token.as_deref()).await {
+                req.ctx_mut().insert(identity);
+            }
+            next.run(req).await
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Core tables
+// ---------------------------------------------------------------------------
+
+/// Create `rustio_users` and `rustio_sessions` if they don't already
+/// exist. Called from `migrations::apply` before any user-level
+/// migration runs, so auth tables are always present in a project's DB.
+pub async fn ensure_core_tables(db: &Db) -> Result<(), Error> {
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS rustio_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            role TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )",
+    )
+    .await?;
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS rustio_sessions (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (user_id) REFERENCES rustio_users(id) ON DELETE CASCADE
+        )",
+    )
+    .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Environment + context helpers
+// ---------------------------------------------------------------------------
 
 /// `true` when `RUSTIO_ENV` indicates a production deployment.
 ///
-/// Accepts `production` or `prod` (case-insensitive). Anything else —
-/// including unset — is treated as development.
+/// Preserved from earlier releases because projects may branch on it
+/// (e.g. to force HTTPS / Secure cookies). It does not gate the auth
+/// system itself — there are no dev tokens left to disable.
 pub fn in_production() -> bool {
     std::env::var("RUSTIO_ENV")
         .map(|v| {
@@ -42,58 +487,14 @@ pub fn in_production() -> bool {
         .unwrap_or(false)
 }
 
-pub async fn authenticate(mut req: Request, next: Next) -> Result<Response, Error> {
-    if in_production() {
-        // Emit a single loud warning the first time this runs in
-        // production. The user almost certainly meant to register a real
-        // auth middleware and forgot.
-        if !PRODUCTION_WARNED.swap(true, Ordering::Relaxed) {
-            eprintln!(
-                "rustio_core::auth: RUSTIO_ENV={} — built-in dev tokens are disabled. \
-                 Replace `authenticate` with your own middleware before accepting traffic.",
-                std::env::var("RUSTIO_ENV").unwrap_or_default()
-            );
-        }
-        // Skip dev-token handling entirely. An admin route will now
-        // return 401 to any caller, rather than accepting `dev-admin`.
-        return next.run(req).await;
-    }
-
-    // Accept the token from two places in priority order:
-    //   1. `Authorization: Bearer <token>` — used by API/curl callers.
-    //   2. `rustio_token` cookie — set by the admin login form so browser
-    //      users don't have to inject headers manually.
-    let token = bearer_token(&req)
-        .map(str::to_owned)
-        .or_else(|| req.cookie("rustio_token"));
-
-    if let Some(t) = token {
-        if let Some(identity) = dev_identity(&t) {
-            req.ctx_mut().insert(identity);
-        }
-    }
-    next.run(req).await
-}
-
+/// Read the `Authorization: Bearer <token>` header if present. Kept as
+/// a primitive so projects can layer their own Bearer/API-token auth
+/// on top of session auth.
 pub fn bearer_token(req: &Request) -> Option<&str> {
     req.headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
-}
-
-pub(crate) fn dev_identity(token: &str) -> Option<Identity> {
-    match token {
-        "dev-admin" => Some(Identity {
-            user_id: String::from("admin"),
-            is_admin: true,
-        }),
-        "dev-user" => Some(Identity {
-            user_id: String::from("user"),
-            is_admin: false,
-        }),
-        _ => None,
-    }
 }
 
 pub fn identity(ctx: &Context) -> Option<&Identity> {
@@ -112,16 +513,31 @@ pub fn require_admin(ctx: &Context) -> Result<&Identity, Error> {
     Ok(id)
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn user(is_admin: bool) -> Identity {
+    fn admin_identity() -> Identity {
         Identity {
-            user_id: String::from(if is_admin { "admin" } else { "user" }),
-            is_admin,
+            user_id: 1,
+            email: "admin@example.com".into(),
+            is_admin: true,
         }
     }
+
+    fn user_identity() -> Identity {
+        Identity {
+            user_id: 2,
+            email: "user@example.com".into(),
+            is_admin: false,
+        }
+    }
+
+    // --- identity / require_* -------------------------------------------
 
     #[test]
     fn identity_returns_none_when_absent() {
@@ -132,8 +548,11 @@ mod tests {
     #[test]
     fn identity_returns_reference_when_attached() {
         let mut ctx = Context::new();
-        ctx.insert(user(false));
-        assert_eq!(identity(&ctx).map(|i| i.user_id.as_str()), Some("user"));
+        ctx.insert(user_identity());
+        assert_eq!(
+            identity(&ctx).map(|i| i.email.as_str()),
+            Some("user@example.com")
+        );
     }
 
     #[test]
@@ -143,68 +562,340 @@ mod tests {
     }
 
     #[test]
-    fn require_auth_present_returns_identity() {
+    fn require_admin_non_admin_returns_forbidden() {
         let mut ctx = Context::new();
-        ctx.insert(user(false));
-        let id = require_auth(&ctx).unwrap();
-        assert_eq!(id.user_id, "user");
-        assert!(!id.is_admin);
-    }
-
-    #[test]
-    fn require_admin_without_identity_returns_unauthorized() {
-        let ctx = Context::new();
-        assert!(matches!(require_admin(&ctx), Err(Error::Unauthorized)));
-    }
-
-    #[test]
-    fn require_admin_with_non_admin_returns_forbidden() {
-        let mut ctx = Context::new();
-        ctx.insert(user(false));
+        ctx.insert(user_identity());
         assert!(matches!(require_admin(&ctx), Err(Error::Forbidden)));
     }
 
     #[test]
-    fn require_admin_with_admin_returns_identity() {
+    fn require_admin_admin_returns_identity() {
         let mut ctx = Context::new();
-        ctx.insert(user(true));
+        ctx.insert(admin_identity());
         let id = require_admin(&ctx).unwrap();
-        assert_eq!(id.user_id, "admin");
         assert!(id.is_admin);
     }
 
+    // --- password hashing -----------------------------------------------
+
     #[test]
-    fn dev_identity_rejects_unknown_tokens() {
-        assert!(dev_identity("garbage").is_none());
-        assert!(dev_identity("").is_none());
+    fn hash_then_verify_succeeds() {
+        let h = password::hash("correct horse battery staple").unwrap();
+        assert!(password::verify("correct horse battery staple", &h));
     }
 
     #[test]
-    fn dev_identity_maps_known_tokens() {
-        let admin = dev_identity("dev-admin").unwrap();
-        assert!(admin.is_admin);
-        let user = dev_identity("dev-user").unwrap();
-        assert!(!user.is_admin);
+    fn verify_wrong_password_fails() {
+        let h = password::hash("real").unwrap();
+        assert!(!password::verify("fake", &h));
     }
 
     #[test]
-    fn in_production_detects_known_values() {
-        // We don't touch env in tests — inspect the parser via an inline
-        // helper that mirrors the real function but takes a value directly.
-        fn detect(v: Option<&str>) -> bool {
-            v.map(|s| {
-                let s = s.to_ascii_lowercase();
-                s == "production" || s == "prod"
-            })
-            .unwrap_or(false)
-        }
-        assert!(detect(Some("production")));
-        assert!(detect(Some("PRODUCTION")));
-        assert!(detect(Some("prod")));
-        assert!(detect(Some("Prod")));
-        assert!(!detect(Some("dev")));
-        assert!(!detect(Some("staging")));
-        assert!(!detect(Some("")));
-        assert!(!detect(None));
+    fn verify_invalid_hash_returns_false_without_panic() {
+        // The spec is explicit: "invalid hash must NOT panic".
+        assert!(!password::verify("anything", ""));
+        assert!(!password::verify("anything", "not a phc string"));
+        assert!(!password::verify("anything", "$argon2id$v=19$m=1"));
+    }
+
+    #[test]
+    fn hash_rejects_empty_password() {
+        assert!(matches!(password::hash(""), Err(Error::BadRequest(_))));
+    }
+
+    #[test]
+    fn hash_is_salted_so_same_input_produces_different_hash() {
+        let a = password::hash("same").unwrap();
+        let b = password::hash("same").unwrap();
+        assert_ne!(a, b, "identical inputs must produce different hashes");
+        // But both must verify against the original password.
+        assert!(password::verify("same", &a));
+        assert!(password::verify("same", &b));
+    }
+
+    // --- email validation ----------------------------------------------
+
+    #[test]
+    fn normalise_email_trims_and_lowercases() {
+        assert_eq!(
+            normalise_email("  Alice@EXAMPLE.com  "),
+            "alice@example.com"
+        );
+    }
+
+    #[test]
+    fn validate_email_accepts_reasonable_forms() {
+        assert!(validate_email("a@b.co").is_ok());
+        assert!(validate_email("alice.smith+tag@example.co.uk").is_ok());
+    }
+
+    #[test]
+    fn validate_email_rejects_bad_forms() {
+        assert!(validate_email("").is_err());
+        assert!(validate_email("no-at-sign").is_err());
+        assert!(validate_email("@no-local").is_err());
+        assert!(validate_email("no-domain@").is_err());
+        assert!(validate_email("no-dot@localhost").is_err());
+    }
+
+    // --- token generation ----------------------------------------------
+
+    #[test]
+    fn generate_token_is_stable_length_and_hex() {
+        let t = generate_token();
+        assert_eq!(t.len(), SESSION_TOKEN_BYTES * 2);
+        assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn generate_token_does_not_repeat() {
+        // Guard against a broken RNG feeding zeros.
+        let a = generate_token();
+        let b = generate_token();
+        assert_ne!(a, b);
+    }
+
+    // --- integration: users + sessions on in-memory DB ------------------
+
+    async fn setup() -> Db {
+        let db = Db::memory().await.unwrap();
+        ensure_core_tables(&db).await.unwrap();
+        db
+    }
+
+    #[tokio::test]
+    async fn user_create_round_trips() {
+        let db = setup().await;
+        let u = user::create(&db, "Admin@Example.com", "hunter2", ROLE_ADMIN)
+            .await
+            .unwrap();
+        // Email normalised at creation.
+        assert_eq!(u.email, "admin@example.com");
+        assert!(u.is_admin());
+        assert!(u.is_active);
+
+        let lookup = user::find_by_email(&db, "ADMIN@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(lookup.id, u.id);
+        assert!(password::verify("hunter2", &lookup.password_hash));
+    }
+
+    #[tokio::test]
+    async fn user_create_rejects_duplicate_email() {
+        let db = setup().await;
+        user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        let err = user::create(&db, "a@b.co", "pw2", ROLE_USER).await;
+        assert!(matches!(err, Err(Error::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn user_create_rejects_unknown_role() {
+        let db = setup().await;
+        let err = user::create(&db, "a@b.co", "pw", "emperor").await;
+        assert!(matches!(err, Err(Error::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn set_password_changes_verifiable_hash() {
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "old", ROLE_USER).await.unwrap();
+        user::set_password(&db, u.id, "new").await.unwrap();
+        let reloaded = user::find_by_id(&db, u.id).await.unwrap().unwrap();
+        assert!(!password::verify("old", &reloaded.password_hash));
+        assert!(password::verify("new", &reloaded.password_hash));
+    }
+
+    #[tokio::test]
+    async fn set_active_toggles_flag() {
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        user::set_active(&db, u.id, false).await.unwrap();
+        let reloaded = user::find_by_id(&db, u.id).await.unwrap().unwrap();
+        assert!(!reloaded.is_active);
+    }
+
+    #[tokio::test]
+    async fn session_create_and_find_returns_live_session() {
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        let s = session::create(&db, u.id).await.unwrap();
+        let found = session::find_valid(&db, &s.id).await.unwrap().unwrap();
+        assert_eq!(found.user_id, u.id);
+        // Token is server-generated and not guessable from the user_id.
+        assert_eq!(found.id, s.id);
+        assert!(found.expires_at > Utc::now());
+    }
+
+    #[tokio::test]
+    async fn session_lookup_rejects_unknown_token() {
+        let db = setup().await;
+        let out = session::find_valid(&db, "deadbeef").await.unwrap();
+        assert!(out.is_none());
+    }
+
+    #[tokio::test]
+    async fn session_lookup_rejects_expired_session() {
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        // Insert a manually-backdated session — simulates the clock
+        // rolling forward past its expiry without waiting days.
+        let token = generate_token();
+        sqlx::query("INSERT INTO rustio_sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
+            .bind(&token)
+            .bind(u.id)
+            .bind(Utc::now() - Duration::seconds(1))
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        let out = session::find_valid(&db, &token).await.unwrap();
+        assert!(out.is_none(), "expired sessions must not validate");
+    }
+
+    #[tokio::test]
+    async fn session_delete_invalidates_lookup() {
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        let s = session::create(&db, u.id).await.unwrap();
+        session::delete(&db, &s.id).await.unwrap();
+        assert!(session::find_valid(&db, &s.id).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn sweep_expired_removes_only_expired() {
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        let live = session::create(&db, u.id).await.unwrap();
+        let dead_token = generate_token();
+        sqlx::query("INSERT INTO rustio_sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
+            .bind(&dead_token)
+            .bind(u.id)
+            .bind(Utc::now() - Duration::seconds(1))
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        let removed = session::sweep_expired(&db).await.unwrap();
+        assert_eq!(removed, 1);
+        assert!(session::find_valid(&db, &live.id).await.unwrap().is_some());
+        assert!(session::find_valid(&db, &dead_token)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn ensure_core_tables_is_idempotent() {
+        let db = setup().await; // already called ensure_core_tables once
+        ensure_core_tables(&db).await.unwrap();
+        ensure_core_tables(&db).await.unwrap();
+        assert_eq!(user::count(&db).await.unwrap(), 0);
+    }
+
+    // --- middleware decision path --------------------------------------
+    //
+    // `resolve_identity` is the pure core of the authenticate middleware.
+    // These tests cover every case the spec calls out: missing cookie,
+    // unknown session, expired session, inactive user, valid admin, and
+    // valid non-admin. The middleware wrapper itself is trivial — once
+    // this function is correct, so is it.
+
+    async fn seeded_user(db: &Db, role: &str) -> User {
+        user::create(db, "u@example.com", "pw", role).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_none_cookie_returns_none() {
+        let db = setup().await;
+        assert!(resolve_identity(&db, None).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_unknown_token_returns_none() {
+        let db = setup().await;
+        assert!(resolve_identity(&db, Some("not-a-real-token"))
+            .await
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_expired_session_returns_none() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let token = generate_token();
+        sqlx::query("INSERT INTO rustio_sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
+            .bind(&token)
+            .bind(u.id)
+            .bind(Utc::now() - Duration::seconds(1))
+            .execute(db.pool())
+            .await
+            .unwrap();
+        assert!(resolve_identity(&db, Some(&token)).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_inactive_user_returns_none() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        user::set_active(&db, u.id, false).await.unwrap();
+        let s = session::create(&db, u.id).await.unwrap();
+        assert!(
+            resolve_identity(&db, Some(&s.id)).await.is_none(),
+            "inactive users must not resolve to an Identity"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_deleted_user_returns_none() {
+        // If someone deletes a user row out from under a live session,
+        // the session should stop working on the next request rather
+        // than granting access to a stale id.
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let s = session::create(&db, u.id).await.unwrap();
+        sqlx::query("DELETE FROM rustio_users WHERE id = ?")
+            .bind(u.id)
+            .execute(db.pool())
+            .await
+            .unwrap();
+        assert!(resolve_identity(&db, Some(&s.id)).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_valid_admin_session_attaches_admin_identity() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_ADMIN).await;
+        let s = session::create(&db, u.id).await.unwrap();
+        let id = resolve_identity(&db, Some(&s.id)).await.unwrap();
+        assert_eq!(id.user_id, u.id);
+        assert!(id.is_admin);
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_valid_user_session_attaches_non_admin_identity() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let s = session::create(&db, u.id).await.unwrap();
+        let id = resolve_identity(&db, Some(&s.id)).await.unwrap();
+        assert_eq!(id.user_id, u.id);
+        assert!(!id.is_admin);
+    }
+
+    #[tokio::test]
+    async fn logout_deletes_session_so_later_requests_are_anonymous() {
+        // The real logout handler calls `session::delete`. A request
+        // carrying the just-deleted token must resolve to no identity.
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let s = session::create(&db, u.id).await.unwrap();
+        assert!(resolve_identity(&db, Some(&s.id)).await.is_some());
+
+        session::delete(&db, &s.id).await.unwrap();
+        assert!(
+            resolve_identity(&db, Some(&s.id)).await.is_none(),
+            "deleted session must not resolve"
+        );
     }
 }

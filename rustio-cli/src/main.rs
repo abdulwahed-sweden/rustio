@@ -19,6 +19,7 @@ COMMANDS:
     migrate status            Show applied and pending migrations
     schema                    Write rustio.schema.json at the project root
     ai [intent]               (0.5.0) Extend the project via a fixed set of primitives
+    user create [opts]        Create a user in the auth tables (interactive if args omitted)
 
 ENVIRONMENT:
     RUSTIO_DATABASE_URL       Database URL (default: sqlite://app.db?mode=rwc)
@@ -48,6 +49,11 @@ async fn main() -> ExitCode {
         Ok(Command::MigrateStatus) => migrate_status().await,
         Ok(Command::Schema) => schema_command(),
         Ok(Command::Ai(intent)) => ai_command(intent),
+        Ok(Command::UserCreate {
+            email,
+            password,
+            role,
+        }) => user_create_command(email, password, role).await,
         Err(msg) => {
             out::error_line(&msg);
             eprintln!();
@@ -87,6 +93,13 @@ enum Command {
     Schema,
     /// 0.5.0 preview. Prints a description of the AI boundary today.
     Ai(Option<String>),
+    /// `rustio user create` — seeds a user in the auth tables so
+    /// someone can actually sign in to `/admin`.
+    UserCreate {
+        email: Option<String>,
+        password: Option<String>,
+        role: Option<String>,
+    },
     Version,
     Help,
 }
@@ -132,6 +145,11 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             };
             Ok(Command::Ai(intent))
         }
+        Some("user") => match args.get(2).map(String::as_str) {
+            Some("create") => parse_user_create_args(&args[3..]),
+            Some(other) => Err(format!("unknown subcommand `user {other}`")),
+            None => Err("usage: rustio user create [--email E] [--password P] [--role R]".into()),
+        },
         Some("migrate") => match args.get(2).map(String::as_str) {
             Some("generate") => {
                 let name = args.get(3).ok_or("usage: rustio migrate generate <name>")?;
@@ -475,6 +493,106 @@ fn schema_command() -> Result<(), String> {
     try_dump_schema()
 }
 
+/// Parse `--email X --password Y --role R` in any order. All three are
+/// optional at the CLI level; the `user_create_command` falls back to
+/// interactive prompts for anything that's missing.
+fn parse_user_create_args(rest: &[String]) -> Result<Command, String> {
+    let mut email: Option<String> = None;
+    let mut password: Option<String> = None;
+    let mut role: Option<String> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--email" => {
+                email = Some(
+                    rest.get(i + 1)
+                        .ok_or("missing value for --email")?
+                        .to_string(),
+                );
+                i += 2;
+            }
+            "--password" => {
+                password = Some(
+                    rest.get(i + 1)
+                        .ok_or("missing value for --password")?
+                        .to_string(),
+                );
+                i += 2;
+            }
+            "--role" => {
+                role = Some(
+                    rest.get(i + 1)
+                        .ok_or("missing value for --role (admin or user)")?
+                        .to_string(),
+                );
+                i += 2;
+            }
+            other => return Err(format!("unexpected argument `{other}`")),
+        }
+    }
+    Ok(Command::UserCreate {
+        email,
+        password,
+        role,
+    })
+}
+
+/// `rustio user create` — interactively (or non-interactively) create
+/// a user in the auth tables. Required because a fresh project has no
+/// users and otherwise nobody can sign in to `/admin`.
+///
+/// The command runs against `RUSTIO_DATABASE_URL` (default
+/// `sqlite://app.db?mode=rwc`). If the DB doesn't have `rustio_users`
+/// yet, we call `ensure_core_tables` up front so the command works
+/// even before the first `rustio migrate apply`.
+async fn user_create_command(
+    email: Option<String>,
+    password: Option<String>,
+    role: Option<String>,
+) -> Result<(), String> {
+    let email = match email {
+        Some(e) => e,
+        None => inquire::Text::new("Email:")
+            .prompt()
+            .map_err(|e| format!("prompt cancelled: {e}"))?,
+    };
+
+    let password = match password {
+        Some(p) => p,
+        None => inquire::Password::new("Password:")
+            .with_display_mode(inquire::PasswordDisplayMode::Masked)
+            .with_custom_confirmation_message("Confirm password:")
+            .with_custom_confirmation_error_message("Passwords don't match.")
+            .prompt()
+            .map_err(|e| format!("prompt cancelled: {e}"))?,
+    };
+
+    let role = match role {
+        Some(r) => r,
+        None => inquire::Select::new("Role:", vec!["admin", "user"])
+            .prompt()
+            .map_err(|e| format!("prompt cancelled: {e}"))?
+            .to_string(),
+    };
+
+    let db = rustio_core::Db::connect(&database_url())
+        .await
+        .map_err(err_str)?;
+    rustio_core::auth::ensure_core_tables(&db)
+        .await
+        .map_err(err_str)?;
+
+    let user = rustio_core::auth::user::create(&db, &email, &password, &role)
+        .await
+        .map_err(err_str)?;
+
+    out::success(
+        "Created user",
+        &format!("{} (role={}, id={})", user.email, user.role, user.id),
+    );
+    Ok(())
+}
+
 /// `rustio ai [intent]` — stub for 0.5.0. Explains the AI boundary the
 /// Phase 2 executor will enforce, without performing any edits.
 fn ai_command(intent: Option<String>) -> Result<(), String> {
@@ -741,13 +859,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    // Schema is managed by `rustio migrate apply`.
+    // Schema is managed by `rustio migrate apply`, which also creates
+    // the `rustio_users` / `rustio_sessions` tables auth depends on.
     // Override the database URL with RUSTIO_DATABASE_URL if needed.
     let url = std::env::var("RUSTIO_DATABASE_URL")
         .unwrap_or_else(|_| "sqlite://app.db?mode=rwc".to_string());
     let db = Db::connect(&url).await?;
 
-    let router = with_defaults(Router::new()).wrap(authenticate);
+    // `authenticate(db)` returns a middleware that reads the session
+    // cookie on every request, validates it against `rustio_sessions`,
+    // and attaches `Identity` to the context when valid.
+    let router = with_defaults(Router::new()).wrap(authenticate(db.clone()));
     let router = apps::register_all(router, &db);
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8000));
