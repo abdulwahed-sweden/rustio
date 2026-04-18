@@ -45,20 +45,22 @@
   --rio-surface-muted: #f9fafb;  /* zebra rows + toolbar tint */
   --rio-surface-hover: #f3f4f6;  /* row hover, ghost-button hover */
 
-  /* Borders — visible, readable, not apologetic. */
-  --rio-border: #e5e7eb;         /* gray-200 */
-  --rio-border-strong: #d1d5db;  /* gray-300 — inputs, tables */
+  /* Borders — clearly visible. */
+  --rio-border: #d1d5db;         /* gray-300 — the default border */
+  --rio-border-strong: #9ca3af;  /* gray-400 — input/table outline on focus-proximate */
 
   /* Text — AA contrast on white minimum; AAA where it matters. */
-  --rio-text:        #111827;    /* gray-900, 17:1 */
-  --rio-text-label:  #374151;    /* gray-700, 11:1 */
-  --rio-text-muted:  #4b5563;    /* gray-600, 8:1  */
+  --rio-text:        #111827;    /* gray-900, 17:1 — primary */
+  --rio-text-label:  #374151;    /* gray-700, 11:1 — labels, secondary */
+  --rio-text-muted:  #4b5563;    /* gray-600, 8:1  — muted readable */
   --rio-text-subtle: #6b7280;    /* gray-500, 4.9:1 — AA for normal body */
 
-  /* Brand — overrideable inline per-project via rustio.design.json */
-  --rio-primary: #111827;
-  --rio-primary-hover: #1f2937;
-  --rio-accent: #005293;         /* deep blue — calmer than indigo, AAA on white */
+  /* Brand — the primary action is deep blue (Django-admin-ish),
+     overrideable via rustio.design.json. Sidebar logo mark + active
+     nav highlight both inherit from this. */
+  --rio-primary: #005293;
+  --rio-primary-hover: #003d6e;
+  --rio-accent: #005293;
   --rio-accent-hover: #003d6e;
   --rio-accent-ring: rgba(0, 82, 147, 0.22);
 
@@ -160,24 +162,20 @@ code {
   flex-shrink: 0;
 }
 
-.rio-brand-meta { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.rio-brand-meta { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
 .rio-brand-name { font-weight: 500; font-size: 16px; color: var(--rio-text); }
 .rio-brand-label {
   color: var(--rio-text-muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-top: 3px;
-  font-weight: 500;
+  font-size: 13px;
+  margin-top: 2px;
+  font-weight: 400;
 }
 
 .rio-nav { display: flex; flex-direction: column; gap: 4px; }
 .rio-nav-section {
   color: var(--rio-text-muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 16px 12px 6px;
+  font-size: 13px;
+  padding: 18px 12px 6px;
   font-weight: 500;
 }
 .rio-nav-link {
@@ -272,12 +270,13 @@ code {
   align-items: center;
 }
 
-/* Wide content column — 1320px max. Keeps tables comfortable on
-   1440+ screens without running long lines into unreadable widths. */
+/* Centered content column. 1200px max — the Django-admin sweet spot
+   for table density vs. line length. Padding gives visible
+   breathing room without wasting screen width. */
 .rio-container {
-  max-width: 1320px;
+  max-width: 1200px;
   width: 100%;
-  padding: 32px 32px 64px;
+  padding: 28px 32px 56px;
 }
 
 /* ────── Topbar + page header ────── */
@@ -317,15 +316,13 @@ code {
 
 .rio-env-chip {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 14px;
+  padding: 5px 14px;
   background: white;
-  border: 1px solid var(--rio-border-strong);
+  border: 1px solid var(--rio-border);
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--rio-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--rio-text-label);
 }
 .rio-env-chip::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%;
@@ -342,18 +339,20 @@ code {
   flex-wrap: wrap;
 }
 .rio-page-title {
-  margin: 0 0 8px;
-  font-size: 28px;
-  font-weight: 500;
-  line-height: 1.2;
+  /* The single h1 per page is the one place 600 is permitted —
+     everything else stays at 400/500 so the page stays calm. */
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
   color: var(--rio-text);
 }
 .rio-page-subtitle {
   color: var(--rio-text-label);
   margin: 0;
-  font-size: 16px;
-  line-height: 1.6;
-  max-width: 66ch;
+  font-size: 15px;
+  line-height: 1.55;
+  max-width: 68ch;
   font-weight: 400;
 }
 .rio-page-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -482,7 +481,6 @@ code {
   font-size: 13px;
   font-weight: 500;
   line-height: 1.5;
-  text-transform: lowercase;
   border: 1px solid transparent;
 }
 .rio-pill-slate   { background: #f3f4f6; color: #374151; border-color: #e5e7eb; }
@@ -586,21 +584,22 @@ code {
   padding: var(--rio-row-y) var(--rio-row-x);
   text-align: left;
   border-bottom: 1px solid var(--rio-border);
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.5;
   vertical-align: middle;
   color: var(--rio-text);
 }
+/* Table headers: readable Title Case, not shouty uppercase. Slight
+   background tint so the header row is visually distinct without
+   looking like a totally separate bar. */
 .rio-table thead th {
   background: var(--rio-surface-muted);
   color: var(--rio-text-label);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--rio-border-strong);
-  padding-top: 14px;
-  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rio-border);
+  padding-top: 12px;
+  padding-bottom: 12px;
 }
 /* Zebra rows — every other row gets a gentle tint so long tables
    don't bleed into one undifferentiated grid. */
@@ -679,8 +678,6 @@ code {
   color: var(--rio-text-muted);
   font-weight: 400;
   font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 .rio-field-hint {
   color: var(--rio-text-muted);
@@ -747,14 +744,12 @@ code {
 }
 .rio-meta-item { display: flex; flex-direction: column; gap: 4px; }
 .rio-meta-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--rio-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   font-weight: 500;
 }
 .rio-meta-value {
-  font-size: 16px;
+  font-size: 15px;
   color: var(--rio-text);
   font-variant-numeric: tabular-nums;
   font-weight: 400;
@@ -1018,12 +1013,9 @@ code {
 .rio-error-icon svg { width: 28px; height: 28px; stroke-width: 1.75; }
 .rio-error-status {
   font-size: 13px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
   color: var(--rio-text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-weight: 500;
-  font-family: var(--rio-font-mono);
 }
 .rio-error-title {
   font-size: 22px;
