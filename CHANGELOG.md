@@ -7,6 +7,129 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Hardened — Foundation Phase, Pass C (security + integrity)
+
+Post-audit hardening. No new surface beyond the stated scope; every
+change closes a specific issue identified in the Pass-B review.
+
+#### Critical fixes
+
+- **SQLite foreign keys are now on.** `Db::connect` and `Db::memory`
+  use `SqliteConnectOptions::foreign_keys(true)` so every connection
+  runs with `PRAGMA foreign_keys = ON`. The `ON DELETE CASCADE` on
+  `rustio_sessions.user_id` now actually fires — verified by a
+  delete-user-cascades-to-sessions test.
+- **Login is constant-time against user existence.**
+  `auth::dummy_password_hash()` returns a cached argon2id hash that
+  the login handler verifies against on the "user not found" branch,
+  matching the ~50 ms cost of the "user found, wrong password"
+  branch. Email enumeration via response time is closed.
+- **AI plans reject `CreateMigration`.** `Primitive::is_developer_only()`
+  marks the raw-SQL primitive as developer-only; `Plan::validate`
+  refuses any step where that's true, emitting
+  `PrimitiveError::DeveloperOnlyNotAllowedInPlan`. The variant stays
+  in the enum for direct project/tooling use — only the AI boundary
+  is tightened. Project maintainers can still emit migrations;
+  `rustio ai` cannot.
+- **Request bodies are capped at 2 MB.** Form parsing wraps the hyper
+  body with `http_body_util::Limited`; overflow surfaces as the new
+  `Error::PayloadTooLarge` → HTTP 413. Stops unauthenticated DoS via
+  single large POST. `admin::MAX_FORM_BODY_BYTES` is the public
+  constant projects can compare against.
+- **Production cookies are `Secure`.** `build_session_cookie` appends
+  `Secure` whenever `auth::in_production()` is true. Dev mode is
+  unchanged so `http://localhost` flows still work.
+
+#### High-priority security
+
+- **Per-email login rate limit.** `auth::LoginRateLimiter` (in-memory,
+  process-wide singleton) blocks further attempts for 60 s after 5
+  failed logins on the same email, and clears the counter on
+  successful login. Returns `Error::TooManyRequests` (HTTP 429) with
+  a retry-after hint in the response body. **Per-IP is deferred** —
+  adding the client address to `Request` requires a server-pipeline
+  change outside Pass C scope; per-email still defeats targeted
+  brute force against a single account.
+- **Password change invalidates every session.**
+  `auth::user::set_password` now runs the UPDATE and a
+  `DELETE FROM rustio_sessions WHERE user_id = ?` in one transaction.
+  Stolen cookies do not survive a password rotation.
+- **Expired sessions self-clean on lookup.** `auth::session::find_valid`
+  deletes the offending row inline when it sees an expiry in the past;
+  `handle_login` also calls `sweep_expired` after a successful login.
+  No background worker required.
+- **Schema reflects `User.created_at`.** Added to `USER_FIELDS` so
+  `rustio.schema.json` no longer under-describes the real
+  `rustio_users` shape. Schema determinism preserved; snapshot test
+  updated.
+
+#### AI primitive vocabulary
+
+Four new structured primitives land as **definitions + validation
+only** (no executor):
+
+- **`RenameModel`** and **`RenameField`** — data-preserving renames
+  the AI boundary can actually express.
+- **`ChangeFieldType`** — validates the target type name against
+  `VALID_TYPE_NAMES`; a lossy-conversion check lives in the future
+  0.5.0 executor.
+- **`ChangeFieldNullability`** — flip `Option<T>` ↔ `T` at the schema
+  layer.
+
+All four have `#[serde(deny_unknown_fields)]`, round-trip through
+JSON, and update `apply_shadow` so multi-step plans that rename then
+mutate the renamed entity validate correctly. New
+`PrimitiveError::NoOpRename` catches `from == to` early.
+
+#### Testing
+
+- `full_login_flow_admin_cookie_auth_logout` — end-to-end HTTP test
+  (raw TCP client, `Server::serve_router_on` on a kernel-assigned
+  port). Covers anonymous 401, wrong password / unknown email
+  symmetric 401, successful 303 + HttpOnly/SameSite=Strict cookie,
+  authenticated 200, logout 303 + Max-Age=0, and replay-after-logout
+  401.
+- `oversized_form_body_returns_413` — 3 MB POST to `/admin/login`
+  must produce 413.
+- `login_rate_limiter_triggers_lockout` — 6th failed attempt returns
+  429.
+- Unit coverage added for: FK cascade on user delete, inline cleanup
+  of expired sessions on lookup, password-change invalidates all
+  sessions, rate limiter (threshold, reset, lockout expiry,
+  independent keys), dummy-hash shape + safety, the 4 new primitives
+  (structural and plan-chained validation), cookie builder in dev
+  and prod modes, `Plan` rejection of `CreateMigration`.
+
+Test count: **197 → 230** (+33).
+
+#### Public API additions (all additive)
+
+- `Error::PayloadTooLarge` (413), `Error::TooManyRequests` (429).
+- `auth::dummy_password_hash()` — precomputed filler hash.
+- `auth::LoginRateLimiter` — struct + `global()` singleton.
+- `auth::resolve_identity` already existed; no change.
+- `admin::MAX_FORM_BODY_BYTES` — the 2 MB constant.
+- `Primitive::is_developer_only()`, `Primitive::op_name()`.
+- `Primitive::{RenameModel, RenameField, ChangeFieldType,
+  ChangeFieldNullability}` variants + their payload structs.
+- `PrimitiveError::{DeveloperOnlyNotAllowedInPlan, NoOpRename}`.
+- `Server::serve_router_on(listener, router)` — serve on a
+  pre-bound `TcpListener`. Required for the integration test; also
+  useful for privilege-drop hosts.
+
+#### Unresolved / deferred
+
+- **Per-IP rate limiting** requires `Request` to carry the client
+  address, which means changing `http::Request::new` and threading
+  the peer addr through `server::Server::serve` → `Router::dispatch`.
+  Not in Pass C scope. Per-email limit is the interim defence.
+- **CSRF tokens** still absent. `SameSite=Strict` remains the only
+  barrier. Revisit before 0.5.0.
+- **Body size limit** applies to admin form parsing only. Custom
+  handlers that do their own body collection are on their own;
+  `MAX_FORM_BODY_BYTES` is exported so projects can adopt the same
+  ceiling.
+
 ### Added — Foundation Phase, Pass B (authentication)
 
 Real auth replaces the development token flow. Every RustIO project

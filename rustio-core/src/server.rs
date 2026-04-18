@@ -62,4 +62,32 @@ impl Server {
         })
         .await
     }
+
+    /// Serve a router on an already-bound `TcpListener`.
+    ///
+    /// Use when the caller needs to own the socket — for example to
+    /// bind to port 0 and read back the kernel-assigned address
+    /// before spawning the server (integration tests, pre-fork
+    /// servers that drop privileges after binding).
+    pub async fn serve_router_on(listener: TcpListener, router: Router) -> std::io::Result<()> {
+        let router = Arc::new(router);
+        loop {
+            let (stream, _peer) = listener.accept().await?;
+            let io = TokioIo::new(stream);
+            let router = router.clone();
+
+            tokio::spawn(async move {
+                let service = service_fn(move |raw: hyper::Request<hyper::body::Incoming>| {
+                    let router = router.clone();
+                    async move {
+                        let req = Request::new(raw);
+                        Ok::<Response, Infallible>(router.dispatch(req).await)
+                    }
+                });
+                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                    eprintln!("rustio-core: connection error: {err}");
+                }
+            });
+        }
+    }
 }

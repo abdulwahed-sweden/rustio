@@ -41,12 +41,58 @@ use crate::schema::{
 pub enum Primitive {
     AddModel(AddModel),
     RemoveModel(RemoveModel),
+    RenameModel(RenameModel),
     AddField(AddField),
     RemoveField(RemoveField),
+    RenameField(RenameField),
+    ChangeFieldType(ChangeFieldType),
+    ChangeFieldNullability(ChangeFieldNullability),
     AddRelation(AddRelation),
     RemoveRelation(RemoveRelation),
     UpdateAdmin(UpdateAdmin),
+    /// Attach a raw SQL migration. **Developer-only** — this primitive
+    /// bypasses the AI boundary's "no free-form code" rule and is
+    /// rejected by [`Plan::validate`]. Project maintainers can still
+    /// emit migrations through this type directly; the AI executor
+    /// must not.
     CreateMigration(CreateMigration),
+}
+
+impl Primitive {
+    /// `true` if this primitive is permitted only from developer /
+    /// tooling code, not from any AI-emitted [`Plan`].
+    ///
+    /// Today, only [`Primitive::CreateMigration`] qualifies: it
+    /// accepts arbitrary SQL, which violates the AI boundary rule
+    /// that every change must be expressible as a structured
+    /// primitive. [`Plan::validate`] rejects any step for which this
+    /// returns `true`.
+    ///
+    /// Kept as a method (not a `const`) so future variants can opt
+    /// in explicitly.
+    pub fn is_developer_only(&self) -> bool {
+        matches!(self, Primitive::CreateMigration(_))
+    }
+
+    /// Stable short name of this variant, suitable for error
+    /// messages. Matches the serde tag so callers can cross-reference
+    /// the wire format.
+    pub fn op_name(&self) -> &'static str {
+        match self {
+            Primitive::AddModel(_) => "add_model",
+            Primitive::RemoveModel(_) => "remove_model",
+            Primitive::RenameModel(_) => "rename_model",
+            Primitive::AddField(_) => "add_field",
+            Primitive::RemoveField(_) => "remove_field",
+            Primitive::RenameField(_) => "rename_field",
+            Primitive::ChangeFieldType(_) => "change_field_type",
+            Primitive::ChangeFieldNullability(_) => "change_field_nullability",
+            Primitive::AddRelation(_) => "add_relation",
+            Primitive::RemoveRelation(_) => "remove_relation",
+            Primitive::UpdateAdmin(_) => "update_admin",
+            Primitive::CreateMigration(_) => "create_migration",
+        }
+    }
 }
 
 /// A single field on an `add_model` / `add_field` primitive.
@@ -98,6 +144,47 @@ pub struct AddField {
 pub struct RemoveField {
     pub model: String,
     pub field: String,
+}
+
+/// Rename a model (schema-level). Data-preserving: the AI executor
+/// must translate this into a table rename, not a drop+recreate.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RenameModel {
+    pub from: String,
+    pub to: String,
+}
+
+/// Rename a single field of a model (schema-level). Data-preserving.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RenameField {
+    pub model: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// Change a field's Rust type. The executor is responsible for
+/// translating the change into a migration (and refusing lossy
+/// conversions); this primitive only records the intent at the
+/// schema layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChangeFieldType {
+    pub model: String,
+    pub field: String,
+    /// Target type name from [`VALID_TYPE_NAMES`]. Anything else is
+    /// rejected by [`validate_primitive`].
+    pub new_type: String,
+}
+
+/// Flip a field's nullability (`Option<T>` ↔ `T`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChangeFieldNullability {
+    pub model: String,
+    pub field: String,
+    pub nullable: bool,
 }
 
 /// The kind of relation an `AddRelation` primitive describes.
@@ -191,6 +278,14 @@ pub enum PrimitiveError {
     UnknownRelationTarget { from: String, to: String },
     /// `UpdateAdmin` referenced an attribute outside the accepted vocabulary.
     UnknownAdminAttribute { attr: String },
+    /// A rename primitive was given identical `from` and `to`.
+    /// Rejecting no-ops early keeps plans honest and diff-reviewable.
+    NoOpRename { what: &'static str, name: String },
+    /// A developer-only primitive appeared inside a [`Plan`]. Plans
+    /// represent the AI boundary; anything with
+    /// [`Primitive::is_developer_only`] set must be rejected before
+    /// an executor touches it.
+    DeveloperOnlyNotAllowedInPlan { op: &'static str },
     /// `validate_plan` annotates inner errors with the step index so a
     /// caller can point the user at "step 3 failed because …".
     InStep {
@@ -220,6 +315,13 @@ impl std::fmt::Display for PrimitiveError {
             Self::UnknownAdminAttribute { attr } => {
                 write!(f, "unknown admin attribute `{attr}`")
             }
+            Self::NoOpRename { what, name } => {
+                write!(f, "rename of {what} `{name}` is a no-op (from == to)")
+            }
+            Self::DeveloperOnlyNotAllowedInPlan { op } => write!(
+                f,
+                "`{op}` is developer-only and cannot appear in an AI plan"
+            ),
             Self::InStep { step, inner } => write!(f, "step {step}: {inner}"),
         }
     }
@@ -263,6 +365,46 @@ pub fn validate_primitive(p: &Primitive) -> Result<(), PrimitiveError> {
         Primitive::RemoveField(rf) => {
             require_nonempty(&rf.model, "model name")?;
             require_nonempty(&rf.field, "field name")?;
+            Ok(())
+        }
+        Primitive::RenameModel(rm) => {
+            require_nonempty(&rm.from, "from")?;
+            require_nonempty(&rm.to, "to")?;
+            if rm.from == rm.to {
+                return Err(PrimitiveError::NoOpRename {
+                    what: "model",
+                    name: rm.from.clone(),
+                });
+            }
+            Ok(())
+        }
+        Primitive::RenameField(rf) => {
+            require_nonempty(&rf.model, "model name")?;
+            require_nonempty(&rf.from, "from")?;
+            require_nonempty(&rf.to, "to")?;
+            if rf.from == rf.to {
+                return Err(PrimitiveError::NoOpRename {
+                    what: "field",
+                    name: format!("{}.{}", rf.model, rf.from),
+                });
+            }
+            Ok(())
+        }
+        Primitive::ChangeFieldType(c) => {
+            require_nonempty(&c.model, "model name")?;
+            require_nonempty(&c.field, "field name")?;
+            if !VALID_TYPE_NAMES.contains(&c.new_type.as_str()) {
+                return Err(PrimitiveError::UnknownType {
+                    model: c.model.clone(),
+                    field: c.field.clone(),
+                    ty: c.new_type.clone(),
+                });
+            }
+            Ok(())
+        }
+        Primitive::ChangeFieldNullability(c) => {
+            require_nonempty(&c.model, "model name")?;
+            require_nonempty(&c.field, "field name")?;
             Ok(())
         }
         Primitive::AddRelation(r) => {
@@ -352,9 +494,23 @@ impl Plan {
     ///
     /// The shadow is pure in-memory data — no filesystem, no DB. This
     /// stays consistent with the 0.4.0 boundary rule: **no execution**.
+    ///
+    /// Additionally, any step whose primitive returns `true` from
+    /// [`Primitive::is_developer_only`] is rejected up front. Plans
+    /// represent the AI boundary; developer-only primitives
+    /// (currently `CreateMigration`) are reserved for direct tooling
+    /// use and must never appear in an AI-emitted plan.
     pub fn validate(&self, initial: &Schema) -> Result<(), PrimitiveError> {
         let mut state = initial.clone();
         for (idx, step) in self.steps.iter().enumerate() {
+            if step.is_developer_only() {
+                return Err(PrimitiveError::InStep {
+                    step: idx,
+                    inner: Box::new(PrimitiveError::DeveloperOnlyNotAllowedInPlan {
+                        op: step.op_name(),
+                    }),
+                });
+            }
             if let Err(inner) = validate_primitive(step) {
                 return Err(PrimitiveError::InStep {
                     step: idx,
@@ -412,6 +568,52 @@ pub fn validate_against(p: &Primitive, schema: &Schema) -> Result<(), PrimitiveE
                 return Err(PrimitiveError::NotFound {
                     what: "field",
                     name: format!("{}.{}", rf.model, rf.field),
+                });
+            }
+            Ok(())
+        }
+        Primitive::RenameModel(rm) => {
+            let _ = find_model(schema, &rm.from)?;
+            if schema.models.iter().any(|m| m.name == rm.to) {
+                return Err(PrimitiveError::AlreadyExists {
+                    what: "model",
+                    name: rm.to.clone(),
+                });
+            }
+            Ok(())
+        }
+        Primitive::RenameField(rf) => {
+            let model = find_model(schema, &rf.model)?;
+            if !model.fields.iter().any(|f| f.name == rf.from) {
+                return Err(PrimitiveError::NotFound {
+                    what: "field",
+                    name: format!("{}.{}", rf.model, rf.from),
+                });
+            }
+            if model.fields.iter().any(|f| f.name == rf.to) {
+                return Err(PrimitiveError::AlreadyExists {
+                    what: "field",
+                    name: format!("{}.{}", rf.model, rf.to),
+                });
+            }
+            Ok(())
+        }
+        Primitive::ChangeFieldType(c) => {
+            let model = find_model(schema, &c.model)?;
+            if !model.fields.iter().any(|f| f.name == c.field) {
+                return Err(PrimitiveError::NotFound {
+                    what: "field",
+                    name: format!("{}.{}", c.model, c.field),
+                });
+            }
+            Ok(())
+        }
+        Primitive::ChangeFieldNullability(c) => {
+            let model = find_model(schema, &c.model)?;
+            if !model.fields.iter().any(|f| f.name == c.field) {
+                return Err(PrimitiveError::NotFound {
+                    what: "field",
+                    name: format!("{}.{}", c.model, c.field),
                 });
             }
             Ok(())
@@ -522,6 +724,35 @@ fn apply_shadow(p: &Primitive, schema: &mut Schema) {
         Primitive::RemoveField(rf) => {
             if let Some(model) = schema.models.iter_mut().find(|m| m.name == rf.model) {
                 model.fields.retain(|f| f.name != rf.field);
+            }
+        }
+        Primitive::RenameModel(rm) => {
+            if let Some(model) = schema.models.iter_mut().find(|m| m.name == rm.from) {
+                model.name = rm.to.clone();
+                model.singular_name = rm.to.clone();
+            }
+            schema.models.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+        Primitive::RenameField(rf) => {
+            if let Some(model) = schema.models.iter_mut().find(|m| m.name == rf.model) {
+                if let Some(field) = model.fields.iter_mut().find(|f| f.name == rf.from) {
+                    field.name = rf.to.clone();
+                }
+                model.fields.sort_by(|a, b| a.name.cmp(&b.name));
+            }
+        }
+        Primitive::ChangeFieldType(c) => {
+            if let Some(model) = schema.models.iter_mut().find(|m| m.name == c.model) {
+                if let Some(field) = model.fields.iter_mut().find(|f| f.name == c.field) {
+                    field.ty = c.new_type.clone();
+                }
+            }
+        }
+        Primitive::ChangeFieldNullability(c) => {
+            if let Some(model) = schema.models.iter_mut().find(|m| m.name == c.model) {
+                if let Some(field) = model.fields.iter_mut().find(|f| f.name == c.field) {
+                    field.nullable = c.nullable;
+                }
             }
         }
         Primitive::AddRelation(r) => {
@@ -893,6 +1124,239 @@ mod tests {
     #[test]
     fn empty_plan_is_always_valid() {
         assert_eq!(Plan::new(Vec::new()).validate(&schema()), Ok(()));
+    }
+
+    #[test]
+    fn create_migration_is_developer_only() {
+        let m = Primitive::CreateMigration(CreateMigration {
+            name: "add_books".to_string(),
+            sql: "CREATE TABLE books (id INTEGER);".to_string(),
+        });
+        assert!(m.is_developer_only());
+        assert!(!Primitive::RemoveModel(RemoveModel {
+            name: "X".to_string()
+        })
+        .is_developer_only());
+    }
+
+    #[test]
+    fn validate_primitive_still_accepts_create_migration_for_direct_use() {
+        // The developer-only gate lives on `Plan::validate`, not on
+        // `validate_primitive`. Tooling code calling the latter
+        // directly must still accept CreateMigration.
+        let m = Primitive::CreateMigration(CreateMigration {
+            name: "add_books".to_string(),
+            sql: "CREATE TABLE books (id INTEGER);".to_string(),
+        });
+        assert_eq!(validate_primitive(&m), Ok(()));
+    }
+
+    #[test]
+    fn plan_rejects_create_migration_even_when_structurally_valid() {
+        let plan = Plan::new(vec![Primitive::CreateMigration(CreateMigration {
+            name: "add_books".to_string(),
+            sql: "CREATE TABLE books (id INTEGER);".to_string(),
+        })]);
+        let err = plan.validate(&schema()).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                PrimitiveError::InStep { step: 0, inner }
+                    if matches!(
+                        **inner,
+                        PrimitiveError::DeveloperOnlyNotAllowedInPlan { op: "create_migration" },
+                    )
+            ),
+            "got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn plan_rejects_create_migration_at_the_offending_step() {
+        let plan = Plan::new(vec![
+            Primitive::RemoveModel(RemoveModel {
+                name: "Post".to_string(),
+            }),
+            Primitive::CreateMigration(CreateMigration {
+                name: "tidy".to_string(),
+                sql: "DROP TABLE posts;".to_string(),
+            }),
+        ]);
+        let err = plan.validate(&schema()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                PrimitiveError::InStep { step: 1, inner }
+                    if matches!(*inner, PrimitiveError::DeveloperOnlyNotAllowedInPlan { .. })
+            ),
+            "developer-only check must locate the offending step index"
+        );
+    }
+
+    // --- RenameModel / RenameField / ChangeFieldType / ChangeFieldNullability
+
+    fn rename_model(from: &str, to: &str) -> Primitive {
+        Primitive::RenameModel(RenameModel {
+            from: from.to_string(),
+            to: to.to_string(),
+        })
+    }
+
+    fn rename_field(model: &str, from: &str, to: &str) -> Primitive {
+        Primitive::RenameField(RenameField {
+            model: model.to_string(),
+            from: from.to_string(),
+            to: to.to_string(),
+        })
+    }
+
+    fn change_type(model: &str, field: &str, new_type: &str) -> Primitive {
+        Primitive::ChangeFieldType(ChangeFieldType {
+            model: model.to_string(),
+            field: field.to_string(),
+            new_type: new_type.to_string(),
+        })
+    }
+
+    fn change_nullable(model: &str, field: &str, nullable: bool) -> Primitive {
+        Primitive::ChangeFieldNullability(ChangeFieldNullability {
+            model: model.to_string(),
+            field: field.to_string(),
+            nullable,
+        })
+    }
+
+    #[test]
+    fn rename_primitives_round_trip_through_json() {
+        for p in [
+            rename_model("Post", "Article"),
+            rename_field("Post", "title", "heading"),
+            change_type("Post", "priority", "i64"),
+            change_nullable("Post", "title", true),
+        ] {
+            let json = serde_json::to_string(&p).unwrap();
+            let back: Primitive = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.op_name(), p.op_name());
+        }
+    }
+
+    #[test]
+    fn rename_model_rejects_noop() {
+        let p = rename_model("Post", "Post");
+        assert!(matches!(
+            validate_primitive(&p),
+            Err(PrimitiveError::NoOpRename { what: "model", .. })
+        ));
+    }
+
+    #[test]
+    fn rename_field_rejects_noop() {
+        let p = rename_field("Post", "title", "title");
+        assert!(matches!(
+            validate_primitive(&p),
+            Err(PrimitiveError::NoOpRename { what: "field", .. })
+        ));
+    }
+
+    #[test]
+    fn rename_model_rejects_empty_names() {
+        let p = rename_model("", "X");
+        assert!(matches!(
+            validate_primitive(&p),
+            Err(PrimitiveError::EmptyIdentifier(_))
+        ));
+    }
+
+    #[test]
+    fn change_field_type_rejects_unknown_type() {
+        let p = change_type("Post", "priority", "HyperFloat128");
+        assert!(matches!(
+            validate_primitive(&p),
+            Err(PrimitiveError::UnknownType { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_against_rejects_rename_of_missing_model() {
+        let err = validate_against(&rename_model("Ghost", "Wraith"), &schema()).unwrap_err();
+        assert!(matches!(
+            err,
+            PrimitiveError::NotFound { what: "model", .. }
+        ));
+    }
+
+    #[test]
+    fn validate_against_rejects_rename_to_existing_model() {
+        // schema() has one model "Post". Renaming something TO "Post"
+        // must collide (here we have to synthesize a second model so
+        // there's something to rename; use an AddModel step first in
+        // a plan).
+        let plan = Plan::new(vec![
+            Primitive::AddModel(AddModel {
+                name: "Draft".to_string(),
+                table: "drafts".to_string(),
+                fields: Vec::new(),
+            }),
+            rename_model("Draft", "Post"),
+        ]);
+        let err = plan.validate(&schema()).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                PrimitiveError::InStep { step: 1, inner }
+                    if matches!(*inner, PrimitiveError::AlreadyExists { what: "model", .. })
+            ),
+            "must reject rename-over-existing-name"
+        );
+    }
+
+    #[test]
+    fn validate_against_rejects_rename_field_to_existing_name() {
+        // schema() has Post with fields [id, title]. Renaming id → title collides.
+        let err = validate_against(&rename_field("Post", "id", "title"), &schema()).unwrap_err();
+        assert!(matches!(
+            err,
+            PrimitiveError::AlreadyExists { what: "field", .. }
+        ));
+    }
+
+    #[test]
+    fn validate_against_rejects_change_type_on_missing_field() {
+        let err = validate_against(&change_type("Post", "ghost", "i32"), &schema()).unwrap_err();
+        assert!(matches!(
+            err,
+            PrimitiveError::NotFound { what: "field", .. }
+        ));
+    }
+
+    #[test]
+    fn validate_against_rejects_change_nullability_on_missing_field() {
+        let err = validate_against(&change_nullable("Post", "ghost", true), &schema()).unwrap_err();
+        assert!(matches!(
+            err,
+            PrimitiveError::NotFound { what: "field", .. }
+        ));
+    }
+
+    #[test]
+    fn plan_chains_rename_then_change_type_correctly() {
+        // After renaming a model, subsequent steps must reference the
+        // new name — proves that rename_model's apply_shadow actually
+        // updates the schema copy.
+        let plan = Plan::new(vec![
+            rename_model("Post", "Article"),
+            change_type("Article", "title", "String"),
+        ]);
+        assert_eq!(plan.validate(&schema()), Ok(()));
+    }
+
+    #[test]
+    fn plan_chains_rename_field_then_change_nullability() {
+        let plan = Plan::new(vec![
+            rename_field("Post", "title", "heading"),
+            change_nullable("Post", "heading", true),
+        ]);
+        assert_eq!(plan.validate(&schema()), Ok(()));
     }
 
     #[test]

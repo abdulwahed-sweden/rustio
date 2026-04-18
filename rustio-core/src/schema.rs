@@ -504,6 +504,11 @@ mod tests {
             !pw.editable,
             "password_hash must never be exposed as editable via admin"
         );
+        // created_at mirrors the real DB column — guards against the
+        // schema under-describing the actual table shape.
+        let created_at = user.fields.iter().find(|f| f.name == "created_at").unwrap();
+        assert_eq!(created_at.ty, "DateTime");
+        assert!(!created_at.editable);
     }
 
     #[test]
@@ -612,6 +617,12 @@ mod tests {
       "display_name": "Users",
       "singular_name": "User",
       "fields": [
+        {{
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }},
         {{
           "name": "email",
           "type": "String",

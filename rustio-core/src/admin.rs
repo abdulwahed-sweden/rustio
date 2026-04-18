@@ -94,7 +94,9 @@ pub struct AdminEntry {
 /// Fields the built-in `User` model exposes via the schema. Kept as a
 /// `const` so tests and the schema exporter reference the same source
 /// of truth. `password_hash` is marked `editable: false` so no future
-/// UI layer accidentally surfaces the hash in a form.
+/// UI layer accidentally surfaces the hash in a form; `created_at`
+/// mirrors the `rustio_users.created_at` column so the schema doesn't
+/// under-describe the actual table shape.
 pub const USER_FIELDS: &[AdminField] = &[
     AdminField {
         name: "id",
@@ -124,6 +126,12 @@ pub const USER_FIELDS: &[AdminField] = &[
         name: "role",
         ty: FieldType::String,
         editable: true,
+        nullable: false,
+    },
+    AdminField {
+        name: "created_at",
+        ty: FieldType::DateTime,
+        editable: false,
         nullable: false,
     },
 ];
@@ -700,21 +708,48 @@ fn forbidden_page() -> Response {
         .expect("valid response")
 }
 
+/// Build the `Set-Cookie` header value used by both login (to issue
+/// the session cookie) and logout (to expire it).
+///
+/// The `Secure` attribute is added whenever `auth::in_production()`
+/// returns `true`. We can't detect HTTPS from Rust alone, so the
+/// signal has to come from the deployment environment — when
+/// `RUSTIO_ENV=production`, the operator is asserting TLS terminates
+/// in front of us and we must not emit a cleartext-safe cookie.
+fn build_session_cookie(name: &str, token: &str, max_age: i64) -> String {
+    build_session_cookie_impl(name, token, max_age, crate::auth::in_production())
+}
+
+/// Lower half of [`build_session_cookie`]: takes the `secure` flag as
+/// an explicit bool so tests can exercise both branches without
+/// mutating the process environment.
+fn build_session_cookie_impl(name: &str, token: &str, max_age: i64, secure: bool) -> String {
+    let secure = if secure { "; Secure" } else { "" };
+    format!("{name}={token}; Path=/; HttpOnly; SameSite=Strict{secure}; Max-Age={max_age}")
+}
+
 /// `POST /admin/login` — authenticate email + password, create a
-/// session row, and set the session cookie.
+/// session row, set the session cookie.
 ///
-/// Failure behaviour is deliberately narrow:
-/// - invalid email *or* wrong password → identical generic message
-///   ("invalid email or password"). This prevents user enumeration via
-///   the response text.
-/// - inactive user → explicit message. An administrator has already
-///   decided this account should not log in; telling the owner so
-///   isn't a leak.
-/// - missing fields → 400 with a targeted message.
+/// Three security guarantees are enforced here that are easy to get
+/// wrong in isolation:
 ///
-/// On success: a cryptographically random session row is inserted, a
-/// `HttpOnly; SameSite=Strict` cookie carries the token, and the
-/// response is a 303 redirect to `/admin`.
+/// 1. **Timing equalisation.** `password::verify` runs on *every*
+///    branch — against the stored hash when the user exists, and
+///    against a precomputed dummy hash otherwise. Skipping it on the
+///    "no such user" path leaks existence information via response
+///    time.
+/// 2. **Rate limiting.** Failed attempts per email are counted in a
+///    process-local `LoginRateLimiter`. After 5 failures the account
+///    is locked out for 60 seconds; a successful login clears the
+///    counter. Per-email (not per-IP) — a distributed attack is
+///    currently not defended.
+/// 3. **Generic credential error.** Invalid email and wrong password
+///    produce the same string ("Invalid email or password"), so a
+///    caller can't probe which emails exist.
+///
+/// Inactive accounts get an explicit message (administrative decision,
+/// not a secret) and are **not** counted toward the rate-limit strikes.
 async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
     use crate::auth;
 
@@ -730,20 +765,44 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
         ));
     }
 
-    // One generic error for both "no such user" and "wrong password"
-    // so a caller can't probe which emails exist.
+    let rate_key = auth::normalise_email(&email);
+    if let Err(remaining) = auth::LoginRateLimiter::global().check(&rate_key) {
+        return Ok(login_page(
+            429,
+            Some(&email),
+            Some(&format!(
+                "Too many failed attempts. Try again in {}s.",
+                remaining.as_secs().max(1),
+            )),
+        ));
+    }
+
     let generic = "Invalid email or password.";
 
-    let user = match auth::user::find_by_email(db, &email).await? {
-        Some(u) => u,
-        None => return Ok(login_page(401, Some(&email), Some(generic))),
+    // Timing equalisation: always run argon2 verify, even when the
+    // user doesn't exist. Swapping in a dummy hash keeps the "no such
+    // user" branch at ~50 ms, identical to "wrong password".
+    let user = auth::user::find_by_email(db, &email).await?;
+    let valid = match &user {
+        Some(u) => auth::password::verify(&password, &u.password_hash),
+        None => {
+            // Discarded — the dummy hash never authenticates anything.
+            // Purely for the argon2 work-factor cost.
+            let _ = auth::password::verify(&password, auth::dummy_password_hash());
+            false
+        }
     };
 
-    if !auth::password::verify(&password, &user.password_hash) {
+    if !valid {
+        auth::LoginRateLimiter::global().record_failure(&rate_key);
         return Ok(login_page(401, Some(&email), Some(generic)));
     }
 
+    let user = user.expect("valid credentials imply a found user");
     if !user.is_active {
+        // Inactive accounts are a different class of failure: the
+        // password was correct, an administrator chose to disable the
+        // account. Don't strike the rate limiter for it.
         return Ok(login_page(
             403,
             Some(&email),
@@ -751,21 +810,19 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
         ));
     }
 
+    // Success: reset the counter and opportunistically sweep dead
+    // sessions so the table doesn't grow unbounded. Best-effort —
+    // a sweep failure must not block login.
+    auth::LoginRateLimiter::global().record_success(&rate_key);
+    let _ = auth::session::sweep_expired(db).await;
+
     let session = auth::session::create(db, user.id).await?;
 
-    // HttpOnly: JS can't read the token (XSS hardening).
-    // SameSite=Strict: cross-site navigations don't send it (CSRF
-    // hardening). Max-Age matches the DB expiry so the browser drops
-    // the cookie at the same moment the server refuses it.
     let mut resp = redirect("/admin");
     let max_age = auth::SESSION_TTL_DAYS * 24 * 3600;
     crate::http::set_cookie(
         &mut resp,
-        &format!(
-            "{name}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}",
-            name = auth::SESSION_COOKIE,
-            token = session.id,
-        ),
+        &build_session_cookie(auth::SESSION_COOKIE, &session.id, max_age),
     );
     Ok(resp)
 }
@@ -784,12 +841,12 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
     }
 
     let mut resp = redirect("/admin");
+    // Max-Age=0 expires immediately. Mirror the production Secure
+    // flag so the browser's "attribute mismatch" heuristic doesn't
+    // leave the original cookie behind.
     crate::http::set_cookie(
         &mut resp,
-        &format!(
-            "{name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
-            name = auth::SESSION_COOKIE,
-        ),
+        &build_session_cookie(auth::SESSION_COOKIE, "", 0),
     );
     Ok(resp)
 }
@@ -918,6 +975,43 @@ button.danger:hover { background: #8a1c12; }
 mod tests {
     use super::*;
     use chrono::Timelike;
+
+    // --- session cookie builder -----------------------------------------
+    //
+    // Drive both branches by passing `secure` explicitly. Avoids
+    // mutating RUSTIO_ENV, which is read by tests in other modules
+    // and would introduce non-determinism under parallel test runs.
+
+    #[test]
+    fn session_cookie_dev_has_no_secure_flag() {
+        let c = build_session_cookie_impl("rustio_session", "TOK", 600, false);
+        assert_eq!(
+            c,
+            "rustio_session=TOK; Path=/; HttpOnly; SameSite=Strict; Max-Age=600"
+        );
+        assert!(!c.contains("Secure"));
+    }
+
+    #[test]
+    fn session_cookie_production_has_secure_flag() {
+        let c = build_session_cookie_impl("rustio_session", "TOK", 600, true);
+        assert_eq!(
+            c,
+            "rustio_session=TOK; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=600"
+        );
+    }
+
+    #[test]
+    fn session_cookie_expiration_shape_is_stable() {
+        // Logout uses Max-Age=0. Shape assertion so a future "tidy"
+        // can't silently drop an attribute.
+        let c = build_session_cookie_impl("rustio_session", "", 0, true);
+        assert!(c.contains("rustio_session=; "));
+        assert!(c.contains("HttpOnly"));
+        assert!(c.contains("SameSite=Strict"));
+        assert!(c.contains("Secure"));
+        assert!(c.contains("Max-Age=0"));
+    }
 
     #[test]
     fn escape_html_escapes_dangerous_chars() {

@@ -25,8 +25,11 @@
 //! `router.wrap(auth::authenticate(db.clone()))`. There are no global
 //! singletons; every project owns its `Db` handle and passes it in.
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration as StdDuration, Instant};
 
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
@@ -203,6 +206,11 @@ pub mod session {
     /// Look up a session by token. Returns `None` if the token doesn't
     /// exist **or** the session has expired. Expiration is checked on
     /// every call — the DB expiry column is the source of truth.
+    ///
+    /// When an expired row is encountered it is **deleted inline** so
+    /// the table doesn't accumulate stale sessions indefinitely. The
+    /// delete is best-effort; a failure to clean up doesn't mask the
+    /// "expired" verdict.
     pub async fn find_valid(db: &Db, id: &str) -> Result<Option<Session>, Error> {
         let row = sqlx::query("SELECT id, user_id, expires_at FROM rustio_sessions WHERE id = ?")
             .bind(id)
@@ -213,6 +221,7 @@ pub mod session {
         };
         let expires_at: DateTime<Utc> = r.try_get("expires_at")?;
         if expires_at <= Utc::now() {
+            let _ = delete(db, id).await;
             return Ok(None);
         }
         Ok(Some(Session {
@@ -322,13 +331,26 @@ pub mod user {
         }
     }
 
+    /// Replace a user's password hash and **invalidate every live
+    /// session** for that user in the same transaction.
+    ///
+    /// Without the session sweep, a cookie stolen before the password
+    /// change would survive the rotation. After this call, the user
+    /// must sign in again on every device — which is the intent of a
+    /// password change.
     pub async fn set_password(db: &Db, id: i64, password: &str) -> Result<(), Error> {
         let hash = password::hash(password)?;
+        let mut tx = db.pool().begin().await?;
         sqlx::query("UPDATE rustio_users SET password_hash = ? WHERE id = ?")
             .bind(&hash)
             .bind(id)
-            .execute(db.pool())
+            .execute(&mut *tx)
             .await?;
+        sqlx::query("DELETE FROM rustio_sessions WHERE user_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -386,6 +408,136 @@ pub fn validate_email(email: &str) -> Result<(), Error> {
         return Err(Error::BadRequest(format!("`{email}` is not a valid email")));
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Timing-attack mitigation
+// ---------------------------------------------------------------------------
+
+/// A precomputed argon2id hash used by the login handler to equalise
+/// the wall-clock cost of "user doesn't exist" and "user exists, wrong
+/// password". Without this, an attacker can enumerate valid emails by
+/// measuring response time (the verify branch costs ~50 ms; the
+/// skip-verify branch is a few ms).
+///
+/// The plaintext is arbitrary and never exposed; only the hash matters.
+/// Cached lazily so the first login pays the ~50 ms hash cost and every
+/// subsequent login just runs a verify against the stored string.
+pub fn dummy_password_hash() -> &'static str {
+    static DUMMY: OnceLock<String> = OnceLock::new();
+    DUMMY.get_or_init(|| {
+        password::hash("timing-attack-filler-not-a-real-password").expect("dummy hash must succeed")
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Login rate limiter
+// ---------------------------------------------------------------------------
+
+/// One entry in the [`LoginRateLimiter`] map.
+struct FailureEntry {
+    count: u32,
+    /// Instant at which the lockout expires. Set when `count` hits
+    /// [`LoginRateLimiter::MAX_FAILURES`]; ignored otherwise.
+    locked_until: Instant,
+}
+
+/// In-memory counter of recent failed login attempts, keyed by email.
+///
+/// After [`LoginRateLimiter::MAX_FAILURES`] failures, further attempts
+/// for the same key are rejected for [`LoginRateLimiter::LOCKOUT`]. A
+/// single successful login clears the counter.
+///
+/// **Scope:** per-email, not per-IP. Stops targeted brute force against
+/// a single account. A distributed attack (many emails, many sources)
+/// is not defended; per-IP rate limiting requires the server pipeline
+/// to propagate the client address into the request context, which is
+/// deferred to a later pass.
+pub struct LoginRateLimiter {
+    failures: Mutex<HashMap<String, FailureEntry>>,
+    max_failures: u32,
+    lockout: StdDuration,
+}
+
+impl LoginRateLimiter {
+    /// Lock an account's login attempts for 60s after 5 failures in
+    /// the current lockout window. Conservative defaults; tune via
+    /// [`LoginRateLimiter::with_params`] in tests or forks.
+    pub const MAX_FAILURES: u32 = 5;
+    pub const LOCKOUT: StdDuration = StdDuration::from_secs(60);
+
+    pub fn new() -> Self {
+        Self::with_params(Self::MAX_FAILURES, Self::LOCKOUT)
+    }
+
+    /// Construct with custom thresholds. Used by tests to exercise
+    /// lockout behaviour on a shorter clock.
+    pub fn with_params(max_failures: u32, lockout: StdDuration) -> Self {
+        Self {
+            failures: Mutex::new(HashMap::new()),
+            max_failures,
+            lockout,
+        }
+    }
+
+    /// Process-wide shared limiter used by the login handler. Lazily
+    /// created on first access. In-process only — resets on restart,
+    /// which is a deliberate trade-off for simplicity in 0.4.0.
+    pub fn global() -> &'static Self {
+        static INSTANCE: OnceLock<LoginRateLimiter> = OnceLock::new();
+        INSTANCE.get_or_init(LoginRateLimiter::new)
+    }
+
+    /// Return `Ok(())` if a login attempt is permitted for this key.
+    /// If the key is currently locked out, return the time remaining
+    /// until the lockout expires.
+    pub fn check(&self, key: &str) -> Result<(), StdDuration> {
+        let mut map = self.failures.lock().expect("rate-limiter mutex poisoned");
+        match map.get(key) {
+            Some(entry) if entry.count >= self.max_failures => {
+                let now = Instant::now();
+                if entry.locked_until > now {
+                    Err(entry.locked_until - now)
+                } else {
+                    // Lockout elapsed — clean up and allow this attempt.
+                    map.remove(key);
+                    Ok(())
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Record a failed login for `key`. On the transition to the
+    /// threshold, stamps `locked_until` to "now + LOCKOUT" so `check`
+    /// will reject further attempts until the clock advances.
+    pub fn record_failure(&self, key: &str) {
+        let mut map = self.failures.lock().expect("rate-limiter mutex poisoned");
+        let entry = map.entry(key.to_string()).or_insert(FailureEntry {
+            count: 0,
+            locked_until: Instant::now(),
+        });
+        entry.count = entry.count.saturating_add(1);
+        if entry.count >= self.max_failures {
+            entry.locked_until = Instant::now() + self.lockout;
+        }
+    }
+
+    /// Clear the counter for `key`. Called on every successful login
+    /// so a user who mistypes once then logs in isn't held to the
+    /// strike count.
+    pub fn record_success(&self, key: &str) {
+        self.failures
+            .lock()
+            .expect("rate-limiter mutex poisoned")
+            .remove(key);
+    }
+}
+
+impl Default for LoginRateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -909,6 +1061,155 @@ mod tests {
         let id = resolve_identity(&db, Some(&s.id)).await.unwrap();
         assert_eq!(id.user_id, u.id);
         assert!(!id.is_admin);
+    }
+
+    // --- password change invalidates sessions --------------------------
+
+    #[tokio::test]
+    async fn changing_password_invalidates_all_user_sessions() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let s1 = session::create(&db, u.id).await.unwrap();
+        let s2 = session::create(&db, u.id).await.unwrap();
+        assert!(session::find_valid(&db, &s1.id).await.unwrap().is_some());
+        assert!(session::find_valid(&db, &s2.id).await.unwrap().is_some());
+
+        user::set_password(&db, u.id, "new password").await.unwrap();
+
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM rustio_sessions WHERE user_id = ?")
+                .bind(u.id)
+                .fetch_one(db.pool())
+                .await
+                .unwrap();
+        assert_eq!(
+            remaining, 0,
+            "password change must wipe every live session for the user"
+        );
+        assert!(session::find_valid(&db, &s1.id).await.unwrap().is_none());
+        assert!(session::find_valid(&db, &s2.id).await.unwrap().is_none());
+    }
+
+    // --- expired session cleanup on lookup -----------------------------
+
+    #[tokio::test]
+    async fn find_valid_cleans_up_expired_row_inline() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let token = generate_token();
+        sqlx::query("INSERT INTO rustio_sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
+            .bind(&token)
+            .bind(u.id)
+            .bind(Utc::now() - Duration::seconds(1))
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        assert!(session::find_valid(&db, &token).await.unwrap().is_none());
+
+        // The row should have been deleted as a side effect.
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustio_sessions WHERE id = ?")
+            .bind(&token)
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "find_valid must purge expired rows inline");
+    }
+
+    // --- rate limiter --------------------------------------------------
+
+    #[test]
+    fn rate_limiter_allows_up_to_threshold() {
+        let limiter = LoginRateLimiter::with_params(3, StdDuration::from_secs(60));
+        assert!(limiter.check("alice@example.com").is_ok());
+        limiter.record_failure("alice@example.com");
+        limiter.record_failure("alice@example.com");
+        assert!(limiter.check("alice@example.com").is_ok());
+    }
+
+    #[test]
+    fn rate_limiter_locks_out_at_threshold() {
+        let limiter = LoginRateLimiter::with_params(3, StdDuration::from_secs(60));
+        for _ in 0..3 {
+            limiter.record_failure("alice@example.com");
+        }
+        let result = limiter.check("alice@example.com");
+        assert!(result.is_err(), "3rd failure must trip the lockout");
+        let remaining = result.unwrap_err();
+        assert!(remaining > StdDuration::ZERO);
+        assert!(remaining <= StdDuration::from_secs(60));
+    }
+
+    #[test]
+    fn rate_limiter_resets_on_successful_login() {
+        let limiter = LoginRateLimiter::with_params(3, StdDuration::from_secs(60));
+        for _ in 0..3 {
+            limiter.record_failure("alice@example.com");
+        }
+        assert!(limiter.check("alice@example.com").is_err());
+
+        limiter.record_success("alice@example.com");
+        assert!(
+            limiter.check("alice@example.com").is_ok(),
+            "a successful login must clear the lockout counter"
+        );
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_lockout_expires_after_duration() {
+        let limiter = LoginRateLimiter::with_params(3, StdDuration::from_millis(50));
+        for _ in 0..3 {
+            limiter.record_failure("bob@example.com");
+        }
+        assert!(limiter.check("bob@example.com").is_err());
+
+        tokio::time::sleep(StdDuration::from_millis(80)).await;
+
+        assert!(
+            limiter.check("bob@example.com").is_ok(),
+            "lockout must lift after the configured duration"
+        );
+    }
+
+    #[test]
+    fn rate_limiter_tracks_keys_independently() {
+        let limiter = LoginRateLimiter::with_params(2, StdDuration::from_secs(60));
+        limiter.record_failure("alice@example.com");
+        limiter.record_failure("alice@example.com");
+        assert!(limiter.check("alice@example.com").is_err());
+        // A different key is untouched by Alice's lockout.
+        assert!(limiter.check("bob@example.com").is_ok());
+    }
+
+    // --- dummy hash for timing equalisation ----------------------------
+
+    #[test]
+    fn dummy_password_hash_is_stable_across_calls() {
+        // Memoised; the first call pays the argon2 cost, subsequent
+        // calls return the same string.
+        let a = dummy_password_hash();
+        let b = dummy_password_hash();
+        assert!(std::ptr::eq(a, b));
+    }
+
+    #[test]
+    fn dummy_password_hash_is_a_valid_phc_string() {
+        // Must be parsable so `verify(wrong_pw, dummy_hash)` takes the
+        // full ~50 ms path and actually exercises the timing-equalising
+        // branch.
+        assert!(PasswordHash::new(dummy_password_hash()).is_ok());
+    }
+
+    #[test]
+    fn verify_against_dummy_hash_rejects_arbitrary_inputs() {
+        // The login handler treats the dummy-hash verify as "always
+        // false, purely for timing". The result is ignored — we never
+        // authenticate against the dummy hash. This test pins that
+        // arbitrary user passwords don't match it (safety belt even
+        // though the handler already sets `valid = false`).
+        assert!(!password::verify("", dummy_password_hash()));
+        assert!(!password::verify("wrong password", dummy_password_hash()));
+        assert!(!password::verify("admin", dummy_password_hash()));
     }
 
     #[tokio::test]
