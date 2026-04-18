@@ -7,6 +7,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Hardened — Foundation Phase, Pass D (pre-Intelligence hardening)
+
+Final security pass before the 0.5.0 Intelligence phase. Closes the
+structural gaps the Pass-C audit flagged, without expanding feature
+surface.
+
+#### CSRF protection
+
+- **Per-session CSRF tokens.** Every new session row carries its own
+  256-bit random token in `rustio_sessions.csrf_token`, independent
+  of the session id. Older databases get the column back-filled
+  idempotently by `ensure_core_tables` (`pragma_table_info` check +
+  conditional `ALTER TABLE ADD COLUMN`).
+- **`auth::csrf::generate_token` / `verify_token`** — the latter is
+  constant-time (length check + XOR accumulator). Empty strings on
+  either side fail.
+- **`auth::CsrfToken`** context item, attached by `authenticate`
+  alongside `Identity` via the new
+  `resolve_identity_with_session(db, token)` helper.
+- **Admin forms render `<input type="hidden" name="_csrf" value=…>`**
+  everywhere a state-changing POST originates: the header logout
+  form, per-row delete buttons, create and edit forms, and the
+  forbidden page's sign-out button.
+- **`require_csrf` check at the top of every admin POST handler** —
+  create, edit, delete, logout. Missing or mismatched token → 403.
+  Login is deliberately left unprotected (no session exists yet);
+  its defence is `SameSite=Strict` on the session cookie.
+
+#### Request peer address
+
+- **`Request::peer_addr() -> Option<SocketAddr>`** — socket address
+  the TCP connection came from. Populated by `Server::serve` and
+  `Server::serve_router_on` from the `TcpListener::accept` result.
+  `None` when the request is constructed outside the server (tests
+  that bypass the pipeline).
+- **Used by the login handler** for multi-axis rate limiting (see
+  below). The `X-Forwarded-For` header is **not** parsed here —
+  projects behind reverse proxies must do that themselves to avoid
+  spoofable trust.
+
+#### Global body-size limit
+
+- **`http::MAX_REQUEST_BODY_BYTES = 2 MB`** — framework-wide ceiling.
+  `admin::MAX_FORM_BODY_BYTES` is now a re-export of the same
+  constant.
+- **`defaults::body_limit` middleware** wired by `with_defaults`
+  checks `Content-Length` upfront and rejects oversized requests
+  with 413 before any handler runs. Applies to admin, user, and
+  default routes uniformly — no per-handler opt-in needed. Chunked
+  / under-reported bodies still pay the ceiling at the body reader
+  (`admin::read_form`), which wraps the body in
+  `http_body_util::Limited`.
+
+#### Rate limiter extension point
+
+- **`LoginRateLimiter::compose_key(email, ip)`** — the documented
+  extension point for multi-axis limiting. Email-only yields
+  `"email:X"`; with an IP yields `"email:X|ip:Y"`. The login handler
+  now passes the peer IP when available, so one attacker hammering
+  many emails is also throttled per-IP. Three independent compose_key
+  tests lock the format.
+
+#### Admin security headers
+
+- **`with_admin_headers`** wraps every admin response with:
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer`. In production only
+  (`RUSTIO_ENV=production`), also `Strict-Transport-Security:
+  max-age=31536000; includeSubDomains`. Dev mode is deliberately
+  HSTS-free so `http://localhost` flows stay usable.
+- Applied at every admin response site: index page, per-model
+  list/create/edit, login redirect, logout redirect, login page,
+  forbidden page.
+
+#### Session struct
+
+- **`Session` is now `#[non_exhaustive]`** and carries
+  `csrf_token: String`. Internal-facing struct; downstream code that
+  constructs it directly (none known in the wild) must switch to
+  `session::create` or pattern-match with `..`.
+
+#### Tests
+
+20 new tests:
+
+**Integration (`tests/login_flow.rs`):**
+`logout_without_csrf_returns_403`,
+`anonymous_post_admin_logout_is_rejected`,
+`global_body_limit_rejects_large_non_admin_post`,
+`admin_response_headers_are_present`. The existing
+`full_login_flow_admin_cookie_auth_logout` test was updated to
+scrape the `_csrf` token from the admin page and include it on
+logout, plus assert the full header set on the authenticated
+render.
+
+**Unit (auth.rs):** `compose_key_email_only_is_stable`,
+`compose_key_with_ip_is_distinct_from_email_only`,
+`compose_key_distinct_ips_produce_distinct_keys`,
+`csrf_generate_returns_hex_of_expected_length`,
+`csrf_generate_produces_unique_tokens`,
+`csrf_verify_matching_returns_true`,
+`csrf_verify_mismatched_returns_false`,
+`csrf_verify_empty_either_side_returns_false`,
+`csrf_verify_rejects_different_lengths`,
+`csrf_verify_rejects_single_byte_difference`,
+`session_create_generates_unique_csrf_per_session`,
+`session_find_valid_returns_csrf_token`,
+`resolve_identity_with_session_exposes_csrf`.
+
+**Unit (defaults.rs):**
+`content_length_at_limit_is_accepted`,
+`content_length_over_limit_is_rejected`,
+`content_length_way_over_limit_is_rejected`.
+
+Test count: **230 → 250** (+20).
+
+#### Trade-offs
+
+- **Logout now requires CSRF.** Projects that scripted logout via
+  plain `curl -X POST /admin/logout` without scraping the token will
+  get 403. Documented migration: GET `/admin`, scrape `_csrf` hidden
+  input, include in the logout body.
+- **`Session { id, user_id, expires_at }` destructuring breaks** if
+  any project did that directly. `#[non_exhaustive]` forces `..` or
+  named access. No known caller in the wild.
+- **CSRF token is process-stable but not rotated on privilege
+  change.** Today a role change (user → admin) keeps the same CSRF
+  token for the active session. Acceptable because the token is
+  bound to the session, and the session is the authoritative state.
+
+#### Deferred
+
+- **Per-IP rate limiting for non-login routes** — the infrastructure
+  (`peer_addr`, `compose_key`) is in place, but the login handler is
+  the only call site in 0.4.0. Extending to API endpoints is a
+  project-level concern.
+- **Content-Security-Policy header** — listed as optional in the
+  Pass-D spec; skipped because a default CSP tight enough to matter
+  would block the inline `<style>` tag used by admin pages. A
+  follow-up pass should externalise the CSS and then add a strict
+  CSP.
+- **`X-Forwarded-For` parsing** — when a project runs behind a
+  reverse proxy, `peer_addr()` returns the proxy's IP. Parsing
+  `X-Forwarded-For` / `Forwarded` safely is project-specific (whose
+  proxies do you trust?) and belongs in user middleware, not the
+  framework.
+
 ### Hardened — Foundation Phase, Pass C (security + integrity)
 
 Post-audit hardening. No new surface beyond the stated scope; every

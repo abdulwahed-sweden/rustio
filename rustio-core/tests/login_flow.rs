@@ -115,6 +115,20 @@ fn form_post(path: &str, body: &str) -> String {
     )
 }
 
+fn form_post_with_cookie(path: &str, body: &str, cookie: &str) -> String {
+    format!(
+        "POST {path} HTTP/1.1\r\n\
+         Host: test.local\r\n\
+         Connection: close\r\n\
+         Cookie: rustio_session={cookie}\r\n\
+         Content-Type: application/x-www-form-urlencoded\r\n\
+         Content-Length: {len}\r\n\
+         \r\n\
+         {body}",
+        len = body.len(),
+    )
+}
+
 fn get_with_cookie(path: &str, cookie: &str) -> String {
     format!(
         "GET {path} HTTP/1.1\r\n\
@@ -123,6 +137,25 @@ fn get_with_cookie(path: &str, cookie: &str) -> String {
          Cookie: rustio_session={cookie}\r\n\
          \r\n"
     )
+}
+
+/// Scrape the `_csrf` hidden input out of a rendered admin page.
+/// Matches `<input ... name="_csrf" value="HEX">` with either attribute
+/// order. Returns `None` if no such input is found.
+fn extract_csrf(html: &str) -> Option<String> {
+    for input in html.split("<input") {
+        if !input.contains(r#"name="_csrf""#) {
+            continue;
+        }
+        // Find value="..."; accept any order of attributes.
+        if let Some(value_start) = input.find("value=\"") {
+            let rest = &input[value_start + "value=\"".len()..];
+            if let Some(end) = rest.find('"') {
+                return Some(rest[..end].to_string());
+            }
+        }
+    }
+    None
 }
 
 #[tokio::test]
@@ -182,20 +215,48 @@ async fn full_login_flow_admin_cookie_auth_logout() {
         "session cookie must be SameSite=Strict"
     );
 
-    // 5. GET /admin with cookie → 200.
+    // 5. GET /admin with cookie → 200. Scrape the CSRF token out of
+    //    the rendered admin index so we can use it in logout below.
     let resp = send(addr, &get_with_cookie("/admin", &token)).await;
     assert_eq!(status_of(&resp), 200, "cookie must grant admin access");
+    let csrf = extract_csrf(&resp).expect("admin index must render _csrf input");
+    assert!(!csrf.is_empty());
 
-    // 6. POST /admin/logout → 303, cookie expired.
-    let logout = format!(
-        "POST /admin/logout HTTP/1.1\r\n\
-         Host: test.local\r\n\
-         Connection: close\r\n\
-         Content-Length: 0\r\n\
-         Cookie: rustio_session={token}\r\n\
-         \r\n"
+    // 5a. Security headers must be present on the rendered admin
+    //     index (dev mode — no HSTS).
+    let lower = resp.to_lowercase();
+    assert!(
+        lower.contains("x-frame-options: deny"),
+        "admin responses must ship X-Frame-Options: DENY"
     );
-    let resp = send(addr, &logout).await;
+    assert!(
+        lower.contains("x-content-type-options: nosniff"),
+        "admin responses must ship X-Content-Type-Options: nosniff"
+    );
+    assert!(
+        lower.contains("referrer-policy: no-referrer"),
+        "admin responses must ship Referrer-Policy: no-referrer"
+    );
+    assert!(
+        !lower.contains("strict-transport-security"),
+        "dev mode must not emit HSTS"
+    );
+
+    // 6. POST /admin/logout without CSRF → 403 (new Pass D guarantee).
+    let resp = send(addr, &form_post_with_cookie("/admin/logout", "", &token)).await;
+    assert_eq!(
+        status_of(&resp),
+        403,
+        "logout without CSRF must be rejected; response was:\n{resp}",
+    );
+
+    // 6a. POST /admin/logout WITH CSRF → 303, cookie expired.
+    let logout_body = format!("_csrf={csrf}");
+    let resp = send(
+        addr,
+        &form_post_with_cookie("/admin/logout", &logout_body, &token),
+    )
+    .await;
     assert_eq!(status_of(&resp), 303);
     assert!(
         resp.contains("Max-Age=0"),
@@ -223,6 +284,102 @@ async fn oversized_form_body_returns_413() {
         413,
         "oversized form bodies must be rejected with 413"
     );
+}
+
+// --- Pass D coverage -----------------------------------------------------
+
+#[tokio::test]
+async fn logout_without_csrf_returns_403() {
+    // Guards against CSRF regressions: a valid session cookie is
+    // not sufficient to log the user out. The POST body must carry
+    // the session's `_csrf` token.
+    let addr = spawn_test_server().await;
+
+    // Log in to get a valid session cookie.
+    let resp = send(
+        addr,
+        &form_post("/admin/login", "email=admin@example.com&password=hunter2"),
+    )
+    .await;
+    assert_eq!(status_of(&resp), 303);
+    let token = extract_cookie(&resp, "rustio_session").unwrap();
+
+    // No _csrf in body → 403.
+    let resp = send(addr, &form_post_with_cookie("/admin/logout", "", &token)).await;
+    assert_eq!(
+        status_of(&resp),
+        403,
+        "logout without _csrf must be 403; response was:\n{resp}",
+    );
+
+    // Wrong _csrf in body → 403.
+    let resp = send(
+        addr,
+        &form_post_with_cookie("/admin/logout", "_csrf=not-the-token", &token),
+    )
+    .await;
+    assert_eq!(
+        status_of(&resp),
+        403,
+        "logout with wrong _csrf must be 403; response was:\n{resp}",
+    );
+
+    // The session must still be live — a rejected CSRF request does
+    // not accidentally invalidate it.
+    let resp = send(addr, &get_with_cookie("/admin", &token)).await;
+    assert_eq!(
+        status_of(&resp),
+        200,
+        "failed CSRF logout must not delete the underlying session",
+    );
+}
+
+#[tokio::test]
+async fn anonymous_post_admin_logout_is_rejected() {
+    // An unauthenticated cross-origin POST — no session cookie, no
+    // CSRF token — hits `require_csrf` with an empty expected token,
+    // which verify_token rejects. 403 regardless of body content.
+    let addr = spawn_test_server().await;
+    let resp = send(addr, &form_post("/admin/logout", "_csrf=anything")).await;
+    assert_eq!(
+        status_of(&resp),
+        403,
+        "unauthenticated logout POST must be 403",
+    );
+}
+
+#[tokio::test]
+async fn global_body_limit_rejects_large_non_admin_post() {
+    // The Pass D body-limit middleware sits at `with_defaults`, so a
+    // 3 MB POST to a non-admin route (e.g. `/` which doesn't accept
+    // bodies but still sees the request) must be rejected upfront.
+    let addr = spawn_test_server().await;
+    let big = "a".repeat(3 * 1024 * 1024);
+    let resp = send(addr, &form_post("/", &big)).await;
+    assert_eq!(
+        status_of(&resp),
+        413,
+        "oversized body on ANY route must be 413"
+    );
+}
+
+#[tokio::test]
+async fn admin_response_headers_are_present() {
+    // Dedicated assertion that every admin render ships the full
+    // Pass D header set. The login-flow test already checks the
+    // authenticated admin index; this repeats the check against the
+    // 401 login page so the guard path is covered too.
+    let addr = spawn_test_server().await;
+    let resp = send(
+        addr,
+        "GET /admin HTTP/1.1\r\nHost: test.local\r\nConnection: close\r\n\r\n",
+    )
+    .await;
+    assert_eq!(status_of(&resp), 401);
+    let lower = resp.to_lowercase();
+    assert!(lower.contains("x-frame-options: deny"));
+    assert!(lower.contains("x-content-type-options: nosniff"));
+    assert!(lower.contains("referrer-policy: no-referrer"));
 }
 
 #[tokio::test]

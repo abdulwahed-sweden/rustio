@@ -107,6 +107,11 @@ impl From<&User> for Identity {
 }
 
 /// Session record.
+///
+/// `#[non_exhaustive]` because we expect to add fields (device
+/// fingerprint, last-seen IP) in future releases; downstream callers
+/// must not rely on exhaustive destructuring.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct Session {
     /// Opaque 64-char hex token. Cryptographically random; the only way
@@ -114,6 +119,11 @@ pub struct Session {
     pub id: String,
     pub user_id: i64,
     pub expires_at: DateTime<Utc>,
+    /// Per-session CSRF token. Separately random from `id`; bound to
+    /// the session so rotating either invalidates the other. Rendered
+    /// as a hidden form input by the admin and verified on every
+    /// state-changing POST.
+    pub csrf_token: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +187,66 @@ fn generate_token() -> String {
     out
 }
 
+// ---------------------------------------------------------------------------
+// CSRF tokens
+// ---------------------------------------------------------------------------
+
+/// Newtype wrapper stored in the per-request [`Context`] by the
+/// authenticate middleware after a successful session lookup. Admin
+/// form renderers read it to inject `<input name="_csrf">`; admin POST
+/// handlers compare it (constant-time) against the submitted value
+/// before mutating anything.
+///
+/// Kept separate from [`Identity`] so unauthenticated handlers that
+/// happen to sit behind the same middleware don't leak a token.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CsrfToken(pub String);
+
+pub mod csrf {
+    //! Per-session CSRF tokens.
+    //!
+    //! Each session carries its own 256-bit random token, distinct
+    //! from the session id. Admin forms render it in a hidden
+    //! `_csrf` input; POST handlers validate it with a constant-time
+    //! compare before touching persistent state.
+    //!
+    //! The design is stateful — the token lives alongside the
+    //! session in `rustio_sessions.csrf_token`. Logging out or
+    //! rotating the session (via password change) invalidates the
+    //! token together with the session.
+
+    /// Generate a fresh CSRF token with the same entropy as a session
+    /// id. Called by [`super::session::create`] for every new session.
+    pub fn generate_token() -> String {
+        // Reuse the session-token generator: same 256 bits of OS
+        // entropy, same hex encoding, same length — callers that
+        // length-check the token don't need to branch.
+        super::generate_token()
+    }
+
+    /// Constant-time comparison of two token strings.
+    ///
+    /// Returns `false` if either side is empty or lengths differ;
+    /// otherwise a byte-level XOR accumulator avoids the short-circuit
+    /// behaviour of `==`. Guards against timing side-channels even
+    /// though the tokens themselves aren't secret enough for it to
+    /// matter much in practice — the cost is one extra loop and the
+    /// code clarity is worth it.
+    pub fn verify_token(expected: &str, provided: &str) -> bool {
+        if expected.is_empty() || provided.is_empty() {
+            return false;
+        }
+        if expected.len() != provided.len() {
+            return false;
+        }
+        let mut diff: u8 = 0;
+        for (a, b) in expected.bytes().zip(provided.bytes()) {
+            diff |= a ^ b;
+        }
+        diff == 0
+    }
+}
+
 pub mod session {
     //! Database-backed sessions keyed by a 256-bit OS-random token.
     //!
@@ -187,19 +257,30 @@ pub mod session {
 
     /// Create a new session for a user and persist it. The returned
     /// token is the cookie value the browser should receive.
+    ///
+    /// A fresh CSRF token is generated alongside the session id and
+    /// written to the same row. The two tokens share entropy source
+    /// and length but are independent — neither is derivable from
+    /// the other.
     pub async fn create(db: &Db, user_id: i64) -> Result<Session, Error> {
         let id = generate_token();
+        let csrf_token = csrf::generate_token();
         let expires_at = Utc::now() + Duration::days(SESSION_TTL_DAYS);
-        sqlx::query("INSERT INTO rustio_sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
-            .bind(&id)
-            .bind(user_id)
-            .bind(expires_at)
-            .execute(db.pool())
-            .await?;
+        sqlx::query(
+            "INSERT INTO rustio_sessions (id, user_id, expires_at, csrf_token)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(user_id)
+        .bind(expires_at)
+        .bind(&csrf_token)
+        .execute(db.pool())
+        .await?;
         Ok(Session {
             id,
             user_id,
             expires_at,
+            csrf_token,
         })
     }
 
@@ -212,10 +293,13 @@ pub mod session {
     /// delete is best-effort; a failure to clean up doesn't mask the
     /// "expired" verdict.
     pub async fn find_valid(db: &Db, id: &str) -> Result<Option<Session>, Error> {
-        let row = sqlx::query("SELECT id, user_id, expires_at FROM rustio_sessions WHERE id = ?")
-            .bind(id)
-            .fetch_optional(db.pool())
-            .await?;
+        let row = sqlx::query(
+            "SELECT id, user_id, expires_at, csrf_token
+             FROM rustio_sessions WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(db.pool())
+        .await?;
         let Some(r) = row else {
             return Ok(None);
         };
@@ -228,6 +312,7 @@ pub mod session {
             id: r.try_get("id")?,
             user_id: r.try_get("user_id")?,
             expires_at,
+            csrf_token: r.try_get("csrf_token")?,
         }))
     }
 
@@ -532,6 +617,27 @@ impl LoginRateLimiter {
             .expect("rate-limiter mutex poisoned")
             .remove(key);
     }
+
+    /// Compose a multi-axis rate-limit key from an email (required)
+    /// and an optional IP.
+    ///
+    /// The login handler calls this with whatever it has in hand —
+    /// `peer_addr()` is available when the server provided it,
+    /// otherwise we fall back to email-only. Including the IP means
+    /// one attacker hammering many emails is throttled by IP too,
+    /// and one email being hit from many IPs is still throttled by
+    /// email.
+    ///
+    /// This is the documented extension point for future per-IP
+    /// limiting beyond the login path. Wrap the key any way a
+    /// caller sees fit (e.g. `format!("api:{user_id}")`); the
+    /// limiter itself only compares strings.
+    pub fn compose_key(email: &str, ip: Option<&str>) -> String {
+        match ip {
+            Some(ip) => format!("email:{email}|ip:{ip}"),
+            None => format!("email:{email}"),
+        }
+    }
 }
 
 impl Default for LoginRateLimiter {
@@ -544,6 +650,26 @@ impl Default for LoginRateLimiter {
 // Middleware
 // ---------------------------------------------------------------------------
 
+/// Resolve a session token into an [`Identity`] plus the live
+/// [`Session`] it came from, or `None` if the token is missing,
+/// unknown, expired, or points at an inactive / deleted user.
+///
+/// Returning the session lets callers access the per-session CSRF
+/// token without a second DB round-trip. Most handlers only want the
+/// identity; [`resolve_identity`] is a convenience over this.
+pub async fn resolve_identity_with_session(
+    db: &Db,
+    token: Option<&str>,
+) -> Option<(Identity, Session)> {
+    let token = token?;
+    let sess = session::find_valid(db, token).await.ok().flatten()?;
+    let user = user::find_by_id(db, sess.user_id).await.ok().flatten()?;
+    if !user.is_active {
+        return None;
+    }
+    Some((Identity::from(&user), sess))
+}
+
 /// Resolve a session token into an [`Identity`], or `None` if the
 /// token is missing, unknown, expired, or points at an inactive /
 /// deleted user.
@@ -552,13 +678,9 @@ impl Default for LoginRateLimiter {
 /// testable without constructing a hyper `Request`. The middleware
 /// itself is a thin wrapper: cookie read → this call → context insert.
 pub async fn resolve_identity(db: &Db, token: Option<&str>) -> Option<Identity> {
-    let token = token?;
-    let sess = session::find_valid(db, token).await.ok().flatten()?;
-    let user = user::find_by_id(db, sess.user_id).await.ok().flatten()?;
-    if !user.is_active {
-        return None;
-    }
-    Some(Identity::from(&user))
+    resolve_identity_with_session(db, token)
+        .await
+        .map(|(identity, _)| identity)
 }
 
 /// Build the `authenticate` middleware for this project.
@@ -581,7 +703,14 @@ pub fn authenticate(
         let db = db.clone();
         Box::pin(async move {
             let token = req.cookie(SESSION_COOKIE);
-            if let Some(identity) = resolve_identity(&db, token.as_deref()).await {
+            if let Some((identity, session)) =
+                resolve_identity_with_session(&db, token.as_deref()).await
+            {
+                // Attach both `CsrfToken` and `Identity`. Admin
+                // renderers read the CSRF token to inject the hidden
+                // form input; admin POST handlers compare it against
+                // the submitted `_csrf` field.
+                req.ctx_mut().insert(CsrfToken(session.csrf_token));
                 req.ctx_mut().insert(identity);
             }
             next.run(req).await
@@ -596,6 +725,15 @@ pub fn authenticate(
 /// Create `rustio_users` and `rustio_sessions` if they don't already
 /// exist. Called from `migrations::apply` before any user-level
 /// migration runs, so auth tables are always present in a project's DB.
+///
+/// Also performs a **minimal, idempotent schema upgrade** for the
+/// 0.4.0 Pass D addition: the `csrf_token` column on
+/// `rustio_sessions`. Older databases (written by Pass B/C) keep
+/// their rows; new rows get a non-empty token written by
+/// [`session::create`]. Any session that predates the column has an
+/// empty `csrf_token`, which the admin's constant-time verifier
+/// treats as "never matches" — effectively forcing those users to
+/// sign in once after the upgrade. That's the desired behaviour.
 pub async fn ensure_core_tables(db: &Db) -> Result<(), Error> {
     db.execute(
         "CREATE TABLE IF NOT EXISTS rustio_users (
@@ -613,11 +751,25 @@ pub async fn ensure_core_tables(db: &Db) -> Result<(), Error> {
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL,
             expires_at TEXT NOT NULL,
+            csrf_token TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             FOREIGN KEY (user_id) REFERENCES rustio_users(id) ON DELETE CASCADE
         )",
     )
     .await?;
+
+    // Back-port the `csrf_token` column for DBs created before Pass D.
+    // `pragma_table_info` returns one row per column; if the column
+    // is missing we add it in place. SQLite's `ALTER TABLE ADD
+    // COLUMN` is O(1) and uses the DEFAULT for existing rows.
+    let cols: Vec<String> =
+        sqlx::query_scalar::<_, String>("SELECT name FROM pragma_table_info('rustio_sessions')")
+            .fetch_all(db.pool())
+            .await?;
+    if !cols.iter().any(|c| c == "csrf_token") {
+        db.execute("ALTER TABLE rustio_sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''")
+            .await?;
+    }
     Ok(())
 }
 
@@ -1169,6 +1321,129 @@ mod tests {
             limiter.check("bob@example.com").is_ok(),
             "lockout must lift after the configured duration"
         );
+    }
+
+    // --- rate limiter compose_key --------------------------------------
+
+    #[test]
+    fn compose_key_email_only_is_stable() {
+        let k = LoginRateLimiter::compose_key("alice@example.com", None);
+        assert_eq!(k, "email:alice@example.com");
+    }
+
+    #[test]
+    fn compose_key_with_ip_is_distinct_from_email_only() {
+        let a = LoginRateLimiter::compose_key("alice@example.com", None);
+        let b = LoginRateLimiter::compose_key("alice@example.com", Some("203.0.113.5"));
+        assert_ne!(a, b);
+        assert_eq!(b, "email:alice@example.com|ip:203.0.113.5");
+    }
+
+    #[test]
+    fn compose_key_distinct_ips_produce_distinct_keys() {
+        // Same email from two IPs → two independent counters. Confirms
+        // an attacker rotating IPs is throttled per-IP, not globally.
+        let a = LoginRateLimiter::compose_key("a@b.co", Some("10.0.0.1"));
+        let b = LoginRateLimiter::compose_key("a@b.co", Some("10.0.0.2"));
+        assert_ne!(a, b);
+    }
+
+    // --- CSRF token generation + verify --------------------------------
+
+    #[test]
+    fn csrf_generate_returns_hex_of_expected_length() {
+        let t = csrf::generate_token();
+        // Matches session token shape: 32 bytes hex = 64 chars.
+        assert_eq!(t.len(), 64);
+        assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn csrf_generate_produces_unique_tokens() {
+        let a = csrf::generate_token();
+        let b = csrf::generate_token();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn csrf_verify_matching_returns_true() {
+        let t = csrf::generate_token();
+        assert!(csrf::verify_token(&t, &t));
+    }
+
+    #[test]
+    fn csrf_verify_mismatched_returns_false() {
+        let t = csrf::generate_token();
+        let other = csrf::generate_token();
+        assert!(!csrf::verify_token(&t, &other));
+    }
+
+    #[test]
+    fn csrf_verify_empty_either_side_returns_false() {
+        let t = csrf::generate_token();
+        assert!(!csrf::verify_token("", &t));
+        assert!(!csrf::verify_token(&t, ""));
+        assert!(!csrf::verify_token("", ""));
+    }
+
+    #[test]
+    fn csrf_verify_rejects_different_lengths() {
+        // Length check is an early return; catches the easy case
+        // without leaking timing information through the byte loop.
+        assert!(!csrf::verify_token("abc", "abcd"));
+        assert!(!csrf::verify_token("abcd", "abc"));
+    }
+
+    #[test]
+    fn csrf_verify_rejects_single_byte_difference() {
+        let a = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+        let mut b = String::from(a);
+        // Flip the last hex char.
+        b.pop();
+        b.push('0');
+        assert!(!csrf::verify_token(a, &b));
+    }
+
+    // --- session carries CSRF token ------------------------------------
+
+    #[tokio::test]
+    async fn session_create_generates_unique_csrf_per_session() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let s1 = session::create(&db, u.id).await.unwrap();
+        let s2 = session::create(&db, u.id).await.unwrap();
+        assert_eq!(s1.csrf_token.len(), 64);
+        assert_ne!(
+            s1.csrf_token, s2.csrf_token,
+            "each session must get an independent CSRF token"
+        );
+        assert_ne!(
+            s1.csrf_token, s1.id,
+            "session id and csrf token must not be the same value"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_find_valid_returns_csrf_token() {
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_USER).await;
+        let s = session::create(&db, u.id).await.unwrap();
+        let found = session::find_valid(&db, &s.id).await.unwrap().unwrap();
+        assert_eq!(found.csrf_token, s.csrf_token);
+    }
+
+    #[tokio::test]
+    async fn resolve_identity_with_session_exposes_csrf() {
+        // The middleware relies on this to hand CsrfToken to the
+        // context — tested by mirroring what the middleware does.
+        let db = setup().await;
+        let u = seeded_user(&db, ROLE_ADMIN).await;
+        let s = session::create(&db, u.id).await.unwrap();
+        let (id, sess) = resolve_identity_with_session(&db, Some(&s.id))
+            .await
+            .unwrap();
+        assert_eq!(id.user_id, u.id);
+        assert_eq!(sess.csrf_token, s.csrf_token);
     }
 
     #[test]

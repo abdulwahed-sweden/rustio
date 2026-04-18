@@ -255,7 +255,8 @@ impl Admin {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                Ok::<Response, Error>(html(admin_layout("Admin", &index_page(&entries))))
+                let csrf = ctx_csrf(req.ctx());
+                Ok::<Response, Error>(admin_html("Admin", &index_page(&entries), csrf))
             }
         });
 
@@ -314,8 +315,13 @@ where
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
+            let csrf = ctx_csrf(req.ctx()).map(str::to_string);
             let items = T::all(&db).await?;
-            Ok::<Response, Error>(html(admin_layout(T::DISPLAY_NAME, &list_page::<T>(&items))))
+            Ok::<Response, Error>(admin_html(
+                T::DISPLAY_NAME,
+                &list_page::<T>(&items, csrf.as_deref()),
+                csrf.as_deref(),
+            ))
         }
     });
 
@@ -323,10 +329,12 @@ where
         if let Err(resp) = admin_guard(req.ctx()) {
             return Ok(resp);
         }
-        Ok::<Response, Error>(html(admin_layout(
+        let csrf = ctx_csrf(req.ctx());
+        Ok::<Response, Error>(admin_html(
             &format!("New {}", T::DISPLAY_NAME),
-            &form_page::<T>(None, &format!("/admin/{}/create", T::ADMIN_NAME)),
-        )))
+            &form_page::<T>(None, &format!("/admin/{}/create", T::ADMIN_NAME), csrf),
+            csrf,
+        ))
     });
 
     let create_db = db.clone();
@@ -336,10 +344,18 @@ where
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
-            let form = read_form(req).await?;
+            // Admin guard confirms an Identity; CSRF check confirms
+            // the POST actually originated from a same-origin form.
+            // Read the form first so we can compare _csrf against ctx.
+            let (_, body, ctx) = req.into_parts();
+            let form = read_form_from_parts(body).await?;
+            require_csrf(&ctx, &form)?;
             let item = T::from_form(&form, None)?;
             item.create(&db).await?;
-            Ok::<Response, Error>(redirect(&format!("/admin/{}", T::ADMIN_NAME)))
+            Ok::<Response, Error>(with_admin_headers(redirect(&format!(
+                "/admin/{}",
+                T::ADMIN_NAME
+            ))))
         }
     });
 
@@ -350,15 +366,18 @@ where
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
+            let csrf = ctx_csrf(req.ctx()).map(str::to_string);
             let id = parse_id_param(&params)?;
             let item = T::find(&db, id).await?.ok_or(Error::NotFound)?;
-            Ok::<Response, Error>(html(admin_layout(
+            Ok::<Response, Error>(admin_html(
                 &format!("Edit {}", T::DISPLAY_NAME),
                 &form_page::<T>(
                     Some(&item),
                     &format!("/admin/{}/{}/edit", T::ADMIN_NAME, id),
+                    csrf.as_deref(),
                 ),
-            )))
+                csrf.as_deref(),
+            ))
         }
     });
 
@@ -370,10 +389,15 @@ where
                 return Ok(resp);
             }
             let id = parse_id_param(&params)?;
-            let form = read_form(req).await?;
+            let (_, body, ctx) = req.into_parts();
+            let form = read_form_from_parts(body).await?;
+            require_csrf(&ctx, &form)?;
             let item = T::from_form(&form, Some(id))?;
             item.update(&db).await?;
-            Ok::<Response, Error>(redirect(&format!("/admin/{}", T::ADMIN_NAME)))
+            Ok::<Response, Error>(with_admin_headers(redirect(&format!(
+                "/admin/{}",
+                T::ADMIN_NAME
+            ))))
         }
     });
 
@@ -385,8 +409,16 @@ where
                 return Ok(resp);
             }
             let id = parse_id_param(&params)?;
+            let (_, body, ctx) = req.into_parts();
+            // The delete form carries only the CSRF token; validate
+            // it, then drop the form — no other fields to read.
+            let form = read_form_from_parts(body).await?;
+            require_csrf(&ctx, &form)?;
             T::delete(&db, id).await?;
-            Ok::<Response, Error>(redirect(&format!("/admin/{}", T::ADMIN_NAME)))
+            Ok::<Response, Error>(with_admin_headers(redirect(&format!(
+                "/admin/{}",
+                T::ADMIN_NAME
+            ))))
         }
     });
 
@@ -400,20 +432,113 @@ fn parse_id_param(params: &crate::router::Params) -> Result<i64, Error> {
         .ok_or_else(|| Error::BadRequest(String::from("invalid id")))
 }
 
-/// Maximum size of an admin form body. Two megabytes is generous for any
-/// realistic admin submission (long text, a few small fields) and still
-/// tight enough that an attacker can't exhaust memory with one POST.
+/// Maximum size of an admin form body.
 ///
-/// Kept as a `pub const` so projects can compare against it in logs or
-/// custom handlers; changing the value is a conscious choice, not a knob.
-pub const MAX_FORM_BODY_BYTES: usize = 2 * 1024 * 1024;
+/// Tracks the framework-wide [`crate::http::MAX_REQUEST_BODY_BYTES`]
+/// ceiling; kept as a separate constant because older call sites and
+/// downstream projects reference it by name.
+pub const MAX_FORM_BODY_BYTES: usize = crate::http::MAX_REQUEST_BODY_BYTES;
+
+/// Name of the hidden form field that carries the per-session CSRF
+/// token. Admin forms render it; admin POST handlers validate it
+/// against the token the middleware stashed in the context.
+pub const CSRF_FIELD: &str = "_csrf";
+
+/// Fetch the current session's CSRF token from the request context.
+/// Returns `None` for anonymous requests; handlers pass the `&str`
+/// along to the form renderers so the hidden input can be injected.
+fn ctx_csrf(ctx: &crate::context::Context) -> Option<&str> {
+    ctx.get::<crate::auth::CsrfToken>().map(|t| t.0.as_str())
+}
+
+/// Render the hidden CSRF input for admin forms. Returns an empty
+/// string when no token is available (anonymous request, or middleware
+/// didn't run) — POST validation then rejects the submission, so the
+/// empty render only matters for GET-rendered forms that won't be
+/// submitted without a session.
+fn csrf_input(csrf: Option<&str>) -> String {
+    match csrf {
+        Some(token) if !token.is_empty() => format!(
+            r#"<input type="hidden" name="{name}" value="{value}">"#,
+            name = CSRF_FIELD,
+            value = escape_html(token),
+        ),
+        _ => String::new(),
+    }
+}
+
+/// Validate the `_csrf` field on a submitted form against the
+/// session's CSRF token attached to the context. Returns
+/// `Error::Forbidden` on any mismatch — missing token, unknown token,
+/// wrong token. Called at the top of every state-changing admin POST
+/// handler.
+fn require_csrf(ctx: &crate::context::Context, form: &FormData) -> Result<(), Error> {
+    let expected = ctx
+        .get::<crate::auth::CsrfToken>()
+        .map(|t| t.0.as_str())
+        .unwrap_or("");
+    let provided = form.get(CSRF_FIELD).unwrap_or("");
+    if !crate::auth::csrf::verify_token(expected, provided) {
+        return Err(Error::Forbidden);
+    }
+    Ok(())
+}
+
+/// Apply the default security headers to any admin response.
+///
+/// Adds `X-Frame-Options: DENY` (no clickjacking), `X-Content-Type-
+/// Options: nosniff` (no MIME sniffing), `Referrer-Policy: no-
+/// referrer` (don't leak admin URLs across origins), and — only when
+/// `auth::in_production()` — `Strict-Transport-Security` pinning the
+/// origin to HTTPS for a year. HSTS is deliberately off in dev so
+/// `http://localhost` flows stay usable.
+fn with_admin_headers(mut resp: Response) -> Response {
+    use hyper::header::HeaderValue;
+    let h = resp.headers_mut();
+    h.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    if crate::auth::in_production() {
+        h.insert(
+            "strict-transport-security",
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        );
+    }
+    resp
+}
+
+/// Build an HTML admin response: wraps the supplied title + body in
+/// [`admin_layout`], sends it through [`with_admin_headers`], and
+/// returns a `Response`. One call-site for every list / form / index
+/// page so security headers are applied uniformly.
+fn admin_html(title: &str, body: &str, csrf: Option<&str>) -> Response {
+    with_admin_headers(html(admin_layout(title, body, csrf)))
+}
 
 /// Read a form body with [`MAX_FORM_BODY_BYTES`] enforced during
 /// collection. An oversized body surfaces as [`Error::PayloadTooLarge`]
 /// before it's ever buffered into memory — [`Limited`] streams through
 /// and errors the moment the byte budget runs out.
+///
+/// Kept for handlers that don't need CSRF validation (today: login,
+/// where there is no session yet). Handlers that need the context to
+/// validate CSRF should use [`read_form_from_parts`] after
+/// `req.into_parts()` so the context stays in scope.
 async fn read_form(req: Request) -> Result<FormData, Error> {
     let (_, body, _) = req.into_parts();
+    read_form_from_parts(body).await
+}
+
+/// Same body-collection pipeline as [`read_form`], but takes an
+/// already-decomposed body. Lets a POST handler do
+/// `let (_, body, ctx) = req.into_parts();` and then validate CSRF
+/// against `ctx` after parsing the form — `req.into_parts` is a
+/// consuming split, so the handler has to choose between reading
+/// `req.ctx()` first or reading the body first.
+async fn read_form_from_parts(body: hyper::body::Incoming) -> Result<FormData, Error> {
     let limited = http_body_util::Limited::new(body, MAX_FORM_BODY_BYTES);
     let collected = limited.collect().await.map_err(|e| {
         if e.downcast_ref::<http_body_util::LengthLimitError>()
@@ -437,7 +562,12 @@ fn redirect(to: &str) -> Response {
         .expect("valid redirect")
 }
 
-fn admin_layout(title: &str, content: &str) -> String {
+fn admin_layout(title: &str, content: &str, csrf: Option<&str>) -> String {
+    // The header logout form is a state-changing POST, so it needs
+    // the CSRF token. On an unauthenticated render (e.g. 401 page
+    // via admin_guard) there's no token — the hidden input is simply
+    // omitted and the user hits login before they'd ever submit.
+    let csrf_hidden = csrf_input(csrf);
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -451,6 +581,7 @@ fn admin_layout(title: &str, content: &str) -> String {
 <header>
 <h1><a href="/admin">RustIO Admin</a></h1>
 <form method="post" action="/admin/logout" class="header-logout">
+{csrf_hidden}
 <button type="submit">Sign out</button>
 </form>
 </header>
@@ -491,7 +622,8 @@ via <code>rustio new app &lt;name&gt;</code>.</p>"#,
     )
 }
 
-fn list_page<T: AdminModel>(items: &[T]) -> String {
+fn list_page<T: AdminModel>(items: &[T], csrf: Option<&str>) -> String {
+    let csrf_hidden = csrf_input(csrf);
     let headers: String = T::FIELDS
         .iter()
         .map(|f| format!("<th>{}</th>", escape_html(f.name)))
@@ -507,10 +639,13 @@ fn list_page<T: AdminModel>(items: &[T]) -> String {
                 })
                 .collect();
             let id = item.id();
+            // Each delete button is its own mini-form — every one
+            // needs the CSRF token.
             let actions = format!(
                 r#"<td class="actions">
 <a href="/admin/{name}/{id}/edit">edit</a>
 <form method="post" action="/admin/{name}/{id}/delete">
+{csrf_hidden}
 <button type="submit" class="danger">delete</button>
 </form>
 </td>"#,
@@ -536,7 +671,8 @@ fn list_page<T: AdminModel>(items: &[T]) -> String {
     )
 }
 
-fn form_page<T: AdminModel>(item: Option<&T>, action: &str) -> String {
+fn form_page<T: AdminModel>(item: Option<&T>, action: &str, csrf: Option<&str>) -> String {
+    let csrf_hidden = csrf_input(csrf);
     let fields: String = T::FIELDS
         .iter()
         .filter(|f| f.editable)
@@ -550,6 +686,7 @@ fn form_page<T: AdminModel>(item: Option<&T>, action: &str) -> String {
     format!(
         r#"<h2>{heading}</h2>
 <form method="post" action="{action}">
+{csrf_hidden}
 {fields}
 <div class="form-actions">
 <button type="submit">Save</button>
@@ -615,11 +752,12 @@ fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
     // 401 renders a login form (so browser users can actually sign in).
     // 403 renders a static "forbidden" page (the user is authenticated
     // but not admin — there's nothing to type into a form that would
-    // change that).
+    // change that). The forbidden page's "Sign out" button needs the
+    // session's CSRF token, which is in ctx.
     match crate::auth::require_admin(ctx) {
         Ok(_) => Ok(()),
         Err(Error::Unauthorized) => Err(login_page(401, None, None)),
-        Err(Error::Forbidden) => Err(forbidden_page()),
+        Err(Error::Forbidden) => Err(forbidden_page(ctx_csrf(ctx))),
         Err(other) => Err(other.into_response()),
     }
 }
@@ -669,14 +807,16 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
         error = error_html,
     );
 
-    hyper::Response::builder()
+    let resp = hyper::Response::builder()
         .status(status)
         .header("content-type", "text/html; charset=utf-8")
         .body(Full::new(Bytes::from(body)))
-        .expect("valid response")
+        .expect("valid response");
+    with_admin_headers(resp)
 }
 
-fn forbidden_page() -> Response {
+fn forbidden_page(csrf: Option<&str>) -> Response {
+    let csrf_hidden = csrf_input(csrf);
     let body = format!(
         r#"<!doctype html>
 <html lang="en">
@@ -693,6 +833,7 @@ fn forbidden_page() -> Response {
 <p class="heading">Forbidden</p>
 <p class="hint">You are signed in but your account isn't an admin.</p>
 <form method="post" action="/admin/logout" class="inline">
+{csrf_hidden}
 <button type="submit" class="secondary">Sign out</button>
 </form>
 </main>
@@ -701,11 +842,12 @@ fn forbidden_page() -> Response {
         css = ADMIN_CSS,
     );
 
-    hyper::Response::builder()
+    let resp = hyper::Response::builder()
         .status(403)
         .header("content-type", "text/html; charset=utf-8")
         .body(Full::new(Bytes::from(body)))
-        .expect("valid response")
+        .expect("valid response");
+    with_admin_headers(resp)
 }
 
 /// Build the `Set-Cookie` header value used by both login (to issue
@@ -753,6 +895,11 @@ fn build_session_cookie_impl(name: &str, token: &str, max_age: i64, secure: bool
 async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
     use crate::auth;
 
+    // Grab the peer IP **before** consuming `req` — used to scope the
+    // rate-limit key alongside the email, so a single IP mashing many
+    // emails is throttled too.
+    let peer_ip = req.peer_addr().map(|a| a.ip().to_string());
+
     let form = read_form(req).await?;
     let email = form.get("email").unwrap_or("").trim().to_string();
     let password = form.get("password").unwrap_or("").to_string();
@@ -765,7 +912,14 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
         ));
     }
 
-    let rate_key = auth::normalise_email(&email);
+    // CSRF is NOT enforced on login: by definition there is no session
+    // yet, so no CSRF token exists to compare against. SameSite=Strict
+    // on the session cookie (issued here) protects subsequent
+    // state-changing POSTs; login itself is a form submission against
+    // a public endpoint.
+
+    let email_key = auth::normalise_email(&email);
+    let rate_key = auth::LoginRateLimiter::compose_key(&email_key, peer_ip.as_deref());
     if let Err(remaining) = auth::LoginRateLimiter::global().check(&rate_key) {
         return Ok(login_page(
             429,
@@ -824,16 +978,30 @@ async fn handle_login(req: Request, db: &crate::orm::Db) -> Result<Response, Err
         &mut resp,
         &build_session_cookie(auth::SESSION_COOKIE, &session.id, max_age),
     );
-    Ok(resp)
+    Ok(with_admin_headers(resp))
 }
 
 /// `POST /admin/logout` — delete the server-side session row and
 /// expire the cookie. Idempotent: logging out without being logged in
 /// is not an error.
+///
+/// **CSRF-protected.** The logout endpoint mutates server-side state
+/// (deletes a session row); without a CSRF check, an attacker could
+/// silently log a target out via a cross-origin POST. The header's
+/// logout form and the forbidden page's logout form both render the
+/// token for authenticated users. An unauthenticated POST — no
+/// session cookie → no CSRF token in ctx — falls through the
+/// `require_csrf` check as 403; the cookie expiry at the bottom is a
+/// best-effort cleanup and isn't security-critical.
 async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
     use crate::auth;
 
-    if let Some(token) = req.cookie(auth::SESSION_COOKIE) {
+    let cookie_token = req.cookie(auth::SESSION_COOKIE);
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    if let Some(token) = cookie_token {
         // Best-effort: a DB hiccup during logout shouldn't block the
         // user from getting their cookie cleared. The cookie expiry
         // below runs regardless.
@@ -848,7 +1016,7 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
         &mut resp,
         &build_session_cookie(auth::SESSION_COOKIE, "", 0),
     );
-    Ok(resp)
+    Ok(with_admin_headers(resp))
 }
 
 /// Parse the `YYYY-MM-DDTHH:MM[:SS]` value emitted by the browser's

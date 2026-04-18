@@ -7,6 +7,7 @@
 //! available directly.
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::ops::{Deref, DerefMut};
 
 use bytes::Bytes;
@@ -16,18 +17,46 @@ use crate::context::Context;
 
 pub type Response = hyper::Response<Full<Bytes>>;
 
-/// Incoming HTTP request with an attached per-request [`Context`].
+/// Maximum bytes accepted from a request body across the framework.
+///
+/// The global body-limit middleware rejects any request whose
+/// `Content-Length` exceeds this value with `Error::PayloadTooLarge`
+/// (HTTP 413); the admin form reader enforces the same cap while
+/// collecting the body so chunked or mis-labelled requests can't slip
+/// past. Custom handlers that read bodies directly should use the
+/// same constant.
+pub const MAX_REQUEST_BODY_BYTES: usize = 2 * 1024 * 1024;
+
+/// Incoming HTTP request with an attached per-request [`Context`]
+/// and, when known, the peer address the TCP connection came from.
 pub struct Request {
     inner: hyper::Request<hyper::body::Incoming>,
     ctx: Context,
+    peer: Option<SocketAddr>,
 }
 
 impl Request {
-    pub(crate) fn new(inner: hyper::Request<hyper::body::Incoming>) -> Self {
+    pub(crate) fn new(
+        inner: hyper::Request<hyper::body::Incoming>,
+        peer: Option<SocketAddr>,
+    ) -> Self {
         Self {
             inner,
             ctx: Context::new(),
+            peer,
         }
+    }
+
+    /// The client's socket address, if the server could determine it.
+    ///
+    /// Populated by [`crate::server::Server`] from the accept result.
+    /// May be `None` when the request is constructed from a source
+    /// that doesn't carry it (tests, reverse proxies that terminate
+    /// the connection — the `X-Forwarded-For` header is not parsed
+    /// here; projects that need the upstream IP must parse it
+    /// themselves).
+    pub fn peer_addr(&self) -> Option<SocketAddr> {
+        self.peer
     }
 
     /// Read-only access to the per-request [`Context`].

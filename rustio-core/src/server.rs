@@ -34,7 +34,7 @@ impl Server {
         eprintln!("rustio-core: listening on http://{}", self.addr);
 
         loop {
-            let (stream, _peer) = listener.accept().await?;
+            let (stream, peer) = listener.accept().await?;
             let io = TokioIo::new(stream);
             let handler = handler.clone();
 
@@ -42,7 +42,11 @@ impl Server {
                 let service = service_fn(move |raw: hyper::Request<hyper::body::Incoming>| {
                     let handler = handler.clone();
                     async move {
-                        let req = Request::new(raw);
+                        // `peer` is captured by `Copy` (SocketAddr is
+                        // Copy); attached to every request off this
+                        // connection so handlers can read it via
+                        // `Request::peer_addr`.
+                        let req = Request::new(raw, Some(peer));
                         Ok::<Response, Infallible>(handler(req).await)
                     }
                 });
@@ -72,7 +76,7 @@ impl Server {
     pub async fn serve_router_on(listener: TcpListener, router: Router) -> std::io::Result<()> {
         let router = Arc::new(router);
         loop {
-            let (stream, _peer) = listener.accept().await?;
+            let (stream, peer) = listener.accept().await?;
             let io = TokioIo::new(stream);
             let router = router.clone();
 
@@ -80,7 +84,7 @@ impl Server {
                 let service = service_fn(move |raw: hyper::Request<hyper::body::Incoming>| {
                     let router = router.clone();
                     async move {
-                        let req = Request::new(raw);
+                        let req = Request::new(raw, Some(peer));
                         Ok::<Response, Infallible>(router.dispatch(req).await)
                     }
                 });
