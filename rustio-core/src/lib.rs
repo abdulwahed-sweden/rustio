@@ -17,6 +17,7 @@
 //! - [`server`] — hyper-backed [`Server`] that serves a router.
 
 pub mod admin;
+pub mod ai;
 pub mod auth;
 pub mod context;
 pub mod defaults;
@@ -26,9 +27,14 @@ pub mod middleware;
 pub mod migrations;
 pub mod orm;
 pub mod router;
+pub mod schema;
 pub mod server;
 
 pub use auth::Identity;
+// Re-export the chrono types user models reach for. This lets generated
+// and user code write `use rustio_core::{DateTime, Utc};` without adding
+// chrono to their own `Cargo.toml`.
+pub use chrono::{DateTime, Utc};
 pub use context::Context;
 pub use error::{resolve, Error};
 pub use http::{html, json_raw, status_text, text, FormData, Request, Response};
@@ -36,4 +42,5 @@ pub use middleware::Next;
 pub use orm::{Db, Model, Row, Value};
 pub use router::{Params, Router};
 pub use rustio_macros::RustioAdmin;
+pub use schema::Schema;
 pub use server::Server;

@@ -6,6 +6,7 @@
 //! Phase 1 supports `i32`, `i64`, `String`, and `bool` field types; the id
 //! column is required to be `i64`.
 
+use chrono::{DateTime, Utc};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::Row as _;
 
@@ -64,14 +65,49 @@ impl<'a> Row<'a> {
     pub fn get_bool(&self, name: &str) -> Result<bool, Error> {
         self.inner.try_get(name).map_err(Error::from)
     }
+
+    pub fn get_datetime(&self, name: &str) -> Result<DateTime<Utc>, Error> {
+        self.inner.try_get(name).map_err(Error::from)
+    }
+
+    // Nullable variants. Each returns `None` when the column is SQL NULL;
+    // any other decode failure still surfaces as `Error::Internal`.
+
+    pub fn get_optional_i32(&self, name: &str) -> Result<Option<i32>, Error> {
+        self.inner.try_get(name).map_err(Error::from)
+    }
+
+    pub fn get_optional_i64(&self, name: &str) -> Result<Option<i64>, Error> {
+        self.inner.try_get(name).map_err(Error::from)
+    }
+
+    pub fn get_optional_string(&self, name: &str) -> Result<Option<String>, Error> {
+        self.inner.try_get(name).map_err(Error::from)
+    }
+
+    pub fn get_optional_bool(&self, name: &str) -> Result<Option<bool>, Error> {
+        self.inner.try_get(name).map_err(Error::from)
+    }
+
+    pub fn get_optional_datetime(&self, name: &str) -> Result<Option<DateTime<Utc>>, Error> {
+        self.inner.try_get(name).map_err(Error::from)
+    }
 }
 
+/// A typed value ready to bind to a SQL placeholder.
+///
+/// `#[non_exhaustive]` because we expect to add variants (`Uuid`, `Json`,
+/// `Bytes`, `Decimal`) in later releases. The `bind_value` matcher below
+/// must be updated in lockstep with additions here.
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum Value {
     I32(i32),
     I64(i64),
     String(String),
     Bool(bool),
+    DateTime(DateTime<Utc>),
+    /// NULL. Produced from `None` via the `From<Option<T>>` impls.
     Null,
 }
 
@@ -102,6 +138,27 @@ impl From<&str> for Value {
 impl From<bool> for Value {
     fn from(v: bool) -> Self {
         Value::Bool(v)
+    }
+}
+
+impl From<DateTime<Utc>> for Value {
+    fn from(v: DateTime<Utc>) -> Self {
+        Value::DateTime(v)
+    }
+}
+
+// Blanket `Option<T>` support: any type that converts into `Value` can
+// also be wrapped in `Option` for nullable columns. `None` becomes
+// `Value::Null`, `Some(x)` becomes whatever `x` converts to.
+impl<T> From<Option<T>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(v: Option<T>) -> Self {
+        match v {
+            Some(inner) => inner.into(),
+            None => Value::Null,
+        }
     }
 }
 
@@ -206,6 +263,7 @@ fn bind_value<'q>(
         Value::I64(v) => query.bind(v),
         Value::String(v) => query.bind(v),
         Value::Bool(v) => query.bind(v),
+        Value::DateTime(v) => query.bind(v),
         Value::Null => query.bind(Option::<i64>::None),
     }
 }

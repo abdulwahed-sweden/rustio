@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Foundation Phase, Pass A (schema + typed core)
+
+- **`rustio.schema.json`** — a deterministic, machine-readable description
+  of every model, field, and admin behavior in a RustIO project. This is
+  **the** interface the Phase 2 AI layer will consume. Shape is versioned
+  (`SCHEMA_VERSION = 1`) and stable across patch releases.
+- **`rustio schema`** — new CLI command. Compiles the project with
+  `--dump-schema`, introspects the live `Admin` registry, and writes
+  `rustio.schema.json` at the project root. Not generated on every
+  `cargo build` — explicit, fast, and on demand.
+- **Auto-dump on `rustio migrate apply`.** After a successful apply, the
+  CLI regenerates `rustio.schema.json` best-effort (skipped with a hint
+  if the project doesn't compile yet).
+- **`DateTime<Utc>` field type.** Supported end-to-end: admin rendering
+  (`<input type="datetime-local">`), form parse, SQLite storage, schema
+  export. Re-exported as `rustio_core::DateTime` / `rustio_core::Utc`
+  so models don't need to depend on chrono directly.
+- **`Option<T>` field support.** Any supported scalar wrapped in
+  `Option` becomes a nullable column — NULL in DB, `None` in Rust,
+  empty input in admin. `nullable: true` in the exported schema.
+- **Row readers for optional types**: `get_optional_i32`,
+  `get_optional_i64`, `get_optional_string`, `get_optional_bool`,
+  `get_optional_datetime`.
+- **`Value::DateTime` + `Value::Null`** plus a blanket
+  `From<Option<T>>` so `None` binds as NULL automatically.
+- **`AdminField.nullable`** metadata, surfaced in schema and used to
+  relax form-level `required` for nullable fields.
+- **`rustio_core::ai`** — *definitions only*. The `Primitive` enum fixes
+  the vocabulary the 0.5.0 AI layer will be allowed to emit
+  (`add_model`, `remove_model`, `add_field`, `remove_field`,
+  `add_relation`, `remove_relation`, `update_admin`,
+  `create_migration`). No executor ships in 0.4.0 — the hard rule for
+  Phase 2 is that anything not expressible as a primitive is rejected.
+- **`rustio ai`** — CLI stub. Prints the primitive vocabulary and
+  explains the refusal rule. Accepts an intent string which is logged
+  but not acted on until 0.5.0.
+
+### Changed
+
+- `FieldType` is now `#[non_exhaustive]`. Downstream matchers must add a
+  wildcard arm; inside rustio-core the compiler checks exhaustiveness so
+  new variants can't silently miss the schema mapping.
+- `AdminEntry` grew `table` and `fields` so the schema exporter can
+  introspect it without a second trait-object round trip.
+- Generated `apps/mod.rs` now defines a `build_admin()` helper so
+  `main.rs --dump-schema` can introspect the admin without connecting
+  to the DB or binding a port. `register_all` delegates to it.
+
+### Upgrading from 0.3.x
+
+Projects scaffolded under 0.3.x will keep working at runtime but can't
+emit `rustio.schema.json` until their `main.rs` and `apps/mod.rs` learn
+the `--dump-schema` and `build_admin` shape. Either:
+
+1. Re-scaffold with `rustio init <name> --preset <kind>` and copy your
+   apps across, or
+2. Hand-merge the two snippets from the generated templates — they are
+   ~10 lines each.
+
 ## [0.3.1]
 
 ### Added

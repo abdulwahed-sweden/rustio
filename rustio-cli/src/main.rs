@@ -17,6 +17,8 @@ COMMANDS:
     migrate generate <name>   Create a new migration file
     migrate apply [-v]        Apply all pending migrations (verbose with -v / --verbose)
     migrate status            Show applied and pending migrations
+    schema                    Write rustio.schema.json at the project root
+    ai [intent]               (0.5.0) Extend the project via a fixed set of primitives
 
 ENVIRONMENT:
     RUSTIO_DATABASE_URL       Database URL (default: sqlite://app.db?mode=rwc)
@@ -44,6 +46,8 @@ async fn main() -> ExitCode {
         Ok(Command::MigrateGenerate(name)) => migrate_generate(&name),
         Ok(Command::MigrateApply { verbose }) => migrate_apply(verbose).await,
         Ok(Command::MigrateStatus) => migrate_status().await,
+        Ok(Command::Schema) => schema_command(),
+        Ok(Command::Ai(intent)) => ai_command(intent),
         Err(msg) => {
             out::error_line(&msg);
             eprintln!();
@@ -78,6 +82,11 @@ enum Command {
         verbose: bool,
     },
     MigrateStatus,
+    /// Emit `rustio.schema.json` at the project root by running the
+    /// built binary with `--dump-schema`.
+    Schema,
+    /// 0.5.0 preview. Prints a description of the AI boundary today.
+    Ai(Option<String>),
     Version,
     Help,
 }
@@ -105,6 +114,23 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                 "app" => Ok(Command::NewApp(name.clone())),
                 other => Err(format!("unknown subcommand `new {other}`")),
             }
+        }
+        Some("schema") => {
+            if args.len() > 2 {
+                return Err(format!("unexpected argument `{}`", args[2]));
+            }
+            Ok(Command::Schema)
+        }
+        Some("ai") => {
+            // Everything after `ai` is the free-form intent, joined with
+            // spaces. In 0.4.0 the intent is informational only — we print
+            // the boundary rules and exit without touching the project.
+            let intent = if args.len() > 2 {
+                Some(args[2..].join(" "))
+            } else {
+                None
+            };
+            Ok(Command::Ai(intent))
         }
         Some("migrate") => match args.get(2).map(String::as_str) {
             Some("generate") => {
@@ -353,14 +379,47 @@ async fn migrate_apply(verbose: bool) -> Result<(), String> {
         .map_err(err_str)?;
     if applied.is_empty() {
         out::info("No pending migrations.");
-    } else {
-        for f in &applied {
-            println!("  {} applied {f}", out::check());
+        return Ok(());
+    }
+
+    for f in &applied {
+        println!("  {} applied {f}", out::check());
+    }
+    let n = applied.len();
+    let noun = if n == 1 { "migration" } else { "migrations" };
+    println!();
+    out::success(&format!("Applied {n}"), noun);
+
+    // Auto-dump the schema so rustio.schema.json stays in sync with the
+    // persisted shape. Best-effort: if the project doesn't compile (or
+    // doesn't have a --dump-schema handler — true for 0.3.x-era layouts),
+    // we print a hint and let the user regenerate explicitly. Migration
+    // success is not gated on this.
+    println!();
+    out::plain("Regenerating rustio.schema.json …");
+    if let Err(msg) = try_dump_schema() {
+        out::info("  skipped (run `rustio schema` once your project compiles)");
+        if verbose {
+            eprintln!("  reason: {msg}");
         }
-        let n = applied.len();
-        let noun = if n == 1 { "migration" } else { "migrations" };
-        println!();
-        out::success(&format!("Applied {n}"), noun);
+    }
+    Ok(())
+}
+
+/// Shell out to `cargo run -- --dump-schema`. Returns an error if the
+/// user's project doesn't compile or its `main.rs` is pre-0.4.0 and
+/// doesn't handle the flag. Callers may treat the error as a hint, not
+/// a hard failure — persisted schema changes stay applied regardless.
+fn try_dump_schema() -> Result<(), String> {
+    let status = ProcessCommand::new("cargo")
+        .args(["run", "--quiet", "--", "--dump-schema"])
+        .status()
+        .map_err(|e| format!("failed to spawn cargo: {e}"))?;
+    if !status.success() {
+        return Err(format!(
+            "cargo run --dump-schema exited with {}",
+            status.code().unwrap_or(-1)
+        ));
     }
     Ok(())
 }
@@ -400,6 +459,40 @@ async fn migrate_status() -> Result<(), String> {
         }
     }
 
+    Ok(())
+}
+
+/// `rustio schema` — compile + run the project with `--dump-schema`.
+/// The generated `main.rs` watches for that flag, invokes
+/// `rustio_core::Schema::from_admin`, and writes `rustio.schema.json`
+/// before returning. This CLI command is a thin driver over that.
+fn schema_command() -> Result<(), String> {
+    if !Path::new("Cargo.toml").exists() {
+        return Err(
+            "no Cargo.toml in current directory — run this from inside a RustIO project".into(),
+        );
+    }
+    try_dump_schema()
+}
+
+/// `rustio ai [intent]` — stub for 0.5.0. Explains the AI boundary the
+/// Phase 2 executor will enforce, without performing any edits.
+fn ai_command(intent: Option<String>) -> Result<(), String> {
+    out::info("rustio ai is scheduled for 0.5.0.");
+    println!();
+    if let Some(msg) = intent {
+        out::plain(&format!("intent recorded: {msg}"));
+        out::plain("(not executed — the 0.5.0 executor isn't wired up yet)");
+        println!();
+    }
+    out::plain("The AI layer reads rustio.schema.json and emits one of a fixed");
+    out::plain("set of primitives:");
+    out::plain("  add_model · remove_model · add_field · remove_field");
+    out::plain("  add_relation · remove_relation · update_admin · create_migration");
+    out::plain("Anything that can't be expressed as a primitive is rejected — no");
+    out::plain("free-form code generation. This is the guarantee 0.5.0 is built on.");
+    println!();
+    out::hint("rustio schema   # generate rustio.schema.json (available today)");
     Ok(())
 }
 
@@ -627,12 +720,27 @@ Replace before deploying.
 
 const MAIN_RS: &str = r#"use rustio_core::auth::authenticate;
 use rustio_core::defaults::with_defaults;
-use rustio_core::{Db, Router, Server};
+use rustio_core::{Db, Router, Schema, Server};
 
 mod apps;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // `rustio schema` invokes this binary with --dump-schema. We emit
+    // rustio.schema.json from the in-memory admin registry and exit
+    // before doing any I/O — no DB connect, no bound port.
+    if std::env::args().any(|a| a == "--dump-schema") {
+        let admin = apps::build_admin();
+        let schema = Schema::from_admin(&admin);
+        schema.write_to(std::path::Path::new("rustio.schema.json"))?;
+        eprintln!(
+            "wrote rustio.schema.json ({} model{})",
+            schema.models.len(),
+            if schema.models.len() == 1 { "" } else { "s" },
+        );
+        return Ok(());
+    }
+
     // Schema is managed by `rustio migrate apply`.
     // Override the database URL with RUSTIO_DATABASE_URL if needed.
     let url = std::env::var("RUSTIO_DATABASE_URL")
@@ -655,12 +763,21 @@ use rustio_core::{Db, Router};
 // -- modules --
 // -- end modules --
 
-#[allow(unused_mut, unused_variables)]
-pub fn register_all(mut router: Router, db: &Db) -> Router {
+/// Build the admin registry.
+///
+/// Split from [`register_all`] so `main.rs --dump-schema` can introspect
+/// the admin model list without touching the database or binding a port.
+#[allow(unused_mut)]
+pub fn build_admin() -> Admin {
     let mut admin = Admin::new();
     // -- admin installs --
     // -- end admin installs --
-    router = admin.register(router, db);
+    admin
+}
+
+#[allow(unused_mut, unused_variables)]
+pub fn register_all(mut router: Router, db: &Db) -> Router {
+    router = build_admin().register(router, db);
 
     // -- view registrations --
     // -- end view registrations --
