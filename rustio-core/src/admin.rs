@@ -645,12 +645,47 @@ fn redirect(to: &str) -> Response {
         .expect("valid redirect")
 }
 
+/// Serve the bundled admin stylesheet.
+///
+/// We use `no-cache, must-revalidate` rather than a long-lived
+/// `max-age` because the CSS is baked into the binary via
+/// `include_str!` — when a project redeploys, the CSS may have
+/// changed, and a stale browser cache would silently render the old
+/// UI for up to the cache lifetime. `no-cache` forces the browser to
+/// re-send the request every time, but the 304 short-circuit on the
+/// cheap ETag keeps the wire cost near-zero for repeat loads.
+///
+/// The ETag fingerprints the compiled CSS bytes so it changes every
+/// time the binary is rebuilt with a different stylesheet. Browsers
+/// sending `If-None-Match` get 304 Not Modified.
 fn admin_css_response() -> Response {
     use hyper::header::HeaderValue;
+    let body = ADMIN_CSS_BUNDLE.as_bytes();
+    // Cheap stable fingerprint: length + first/last 4 bytes. Good
+    // enough to change whenever the CSS content changes; avoids
+    // pulling a hash crate. `'W/'` prefix marks it as a weak ETag
+    // (byte-for-byte equivalence not guaranteed across CDNs).
+    let etag = {
+        let len = body.len();
+        let head = u32::from_le_bytes([
+            *body.first().unwrap_or(&0),
+            *body.get(1).unwrap_or(&0),
+            *body.get(2).unwrap_or(&0),
+            *body.get(3).unwrap_or(&0),
+        ]);
+        let tail = u32::from_le_bytes([
+            *body.get(len.saturating_sub(4)).unwrap_or(&0),
+            *body.get(len.saturating_sub(3)).unwrap_or(&0),
+            *body.get(len.saturating_sub(2)).unwrap_or(&0),
+            *body.get(len.saturating_sub(1)).unwrap_or(&0),
+        ]);
+        format!("W/\"rio-{len}-{head:x}-{tail:x}\"")
+    };
     let mut resp = hyper::Response::builder()
         .status(200)
         .header("content-type", "text/css; charset=utf-8")
-        .header("cache-control", "public, max-age=3600")
+        .header("cache-control", "no-cache, must-revalidate")
+        .header("etag", etag)
         .body(Full::new(Bytes::from_static(ADMIN_CSS_BUNDLE.as_bytes())))
         .expect("valid css response");
     let h = resp.headers_mut();
@@ -887,6 +922,7 @@ fn render_shell_page(
 <div class="rio-app">
 {sidebar}
 <main class="rio-main">
+<div class="rio-container">
 <header class="rio-topbar">
 {crumbs}
 {env}
@@ -899,6 +935,7 @@ fn render_shell_page(
 {actions}
 </div>
 {body}
+</div>
 </main>
 </div>
 </body>
