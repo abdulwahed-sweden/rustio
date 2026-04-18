@@ -213,9 +213,17 @@ code {
 }
 .rio-sidebar-user {
   display: flex; align-items: center; gap: 12px;
-  padding: 8px;
+  padding: 8px 10px;
   font-size: 14px;
-  color: var(--rio-text-muted);
+  color: var(--rio-text-label);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+a.rio-sidebar-user:hover {
+  background: var(--rio-surface-hover);
+  color: var(--rio-text);
+  text-decoration: none;
 }
 .rio-avatar {
   width: 30px; height: 30px; border-radius: 50%;
@@ -1058,4 +1066,109 @@ code {
 @media (max-width: 520px) {
   .rio-page-title { font-size: 22px; }
   .rio-table th, .rio-table td { padding: 12px 14px; font-size: 15px; }
+}
+
+/* ----------------------------------------------------------------- */
+/* Bulk actions (list page)                                           */
+/* ----------------------------------------------------------------- */
+.rio-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rio-border);
+  background: #f9fafb;
+  flex-wrap: wrap;
+}
+.rio-bulk-label {
+  font-size: 14px;
+  color: var(--rio-text-label, #374151);
+  font-weight: 500;
+}
+.rio-bulk-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--rio-text-subtle, #6b7280);
+}
+.rio-cell-check {
+  width: 36px;
+  padding-left: 16px !important;
+  padding-right: 0 !important;
+}
+.rio-cell-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--rio-primary);
+  cursor: pointer;
+}
+.rio-bulk-form { margin: 0; }
+.rio-bulk-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 1px solid var(--rio-border);
+  border-radius: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.rio-bulk-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--rio-border);
+  font-size: 14px;
+  color: var(--rio-text, #111827);
+}
+.rio-bulk-item:last-child { border-bottom: 0; }
+
+/* ----------------------------------------------------------------- */
+/* Audit timeline (object history + /admin/actions)                   */
+/* ----------------------------------------------------------------- */
+.rio-audit-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rio-border);
+}
+.rio-audit-item {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--rio-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rio-audit-item:last-child { border-bottom: 0; }
+.rio-audit-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rio-audit-object {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--rio-primary);
+  text-decoration: none;
+}
+.rio-audit-object:hover { text-decoration: underline; }
+.rio-audit-when {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--rio-text-subtle, #6b7280);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.rio-audit-summary {
+  margin: 0;
+  font-size: 15px;
+  color: var(--rio-text, #111827);
+  line-height: 1.5;
+}
+.rio-audit-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--rio-text-subtle, #6b7280);
+}
+.rio-audit-who { font-weight: 500; color: var(--rio-text-label, #374151); }
+.rio-audit-ip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }

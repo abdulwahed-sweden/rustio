@@ -770,6 +770,36 @@ pub async fn ensure_core_tables(db: &Db) -> Result<(), Error> {
         db.execute("ALTER TABLE rustio_sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''")
             .await?;
     }
+
+    // Admin action log (audit trail). One row per create / update /
+    // delete driven through the admin. Object history and the
+    // /admin/actions timeline both read from this table. FK cascade
+    // on user delete so wiping a user wipes the log rows they
+    // produced (matches the session cascade).
+    db.execute(
+        "CREATE TABLE IF NOT EXISTS rustio_admin_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            action_type TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            object_id INTEGER NOT NULL,
+            timestamp TEXT NOT NULL,
+            ip_address TEXT NULL,
+            summary TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES rustio_users(id) ON DELETE CASCADE
+        )",
+    )
+    .await?;
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rustio_admin_actions_model_object
+         ON rustio_admin_actions(model_name, object_id)",
+    )
+    .await?;
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rustio_admin_actions_timestamp
+         ON rustio_admin_actions(timestamp DESC)",
+    )
+    .await?;
     Ok(())
 }
 

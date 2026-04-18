@@ -34,6 +34,7 @@ use crate::router::Router;
 // `::rustio_core::admin::FormData` continues to work.
 pub use crate::http::FormData;
 
+pub mod audit;
 pub mod design;
 
 /// The primitive types the admin + schema layers know how to render,
@@ -243,6 +244,12 @@ fn icon_arrow_left() -> String {
     svg(r#"<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>"#)
 }
 
+fn icon_activity() -> String {
+    svg(
+        r#"<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.95 0L9.24 2.18a.5.5 0 0 0-.95 0L5.94 10.54A2 2 0 0 1 4.01 12H2"/>"#,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Admin builder + route registration
 // ---------------------------------------------------------------------------
@@ -300,6 +307,53 @@ impl Admin {
     pub fn register(self, mut router: Router, db: &Db) -> Router {
         let entries = Arc::new(self.entries);
 
+        // Error shell: catch unhandled NotFound / Internal errors that
+        // come out of `/admin/*` handlers and render them in-shell.
+        // Public (non-admin) paths fall through to the router default.
+        let err_entries = entries.clone();
+        router = router.wrap(move |req, next| {
+            let entries = err_entries.clone();
+            async move {
+                let is_admin = req.uri().path().starts_with("/admin");
+                if !is_admin {
+                    return next.run(req).await;
+                }
+                // Skip the stylesheet — it's not HTML and shouldn't
+                // ever render a shell page.
+                if req.uri().path() == "/admin/assets/admin.css" {
+                    return next.run(req).await;
+                }
+                let user_email = req
+                    .ctx()
+                    .get::<crate::auth::Identity>()
+                    .map(|i| i.email.clone());
+                let csrf = req
+                    .ctx()
+                    .get::<crate::auth::CsrfToken>()
+                    .map(|t| t.0.clone());
+
+                let res = next.run(req).await;
+                match res {
+                    Err(Error::NotFound) => Ok(admin_not_found_response(
+                        &entries,
+                        user_email.as_deref(),
+                        csrf.as_deref(),
+                    )),
+                    Err(Error::Internal(msg)) => {
+                        let req_id = new_request_id();
+                        eprintln!("admin 500 [{req_id}]: {msg}");
+                        Ok(admin_server_error_response(
+                            &entries,
+                            user_email.as_deref(),
+                            csrf.as_deref(),
+                            &req_id,
+                        ))
+                    }
+                    other => other,
+                }
+            }
+        });
+
         // Static asset: framework-owned stylesheet. Cached for an hour
         // because the bytes are pinned to the compiled binary — the
         // content can only change with a redeploy.
@@ -321,7 +375,11 @@ impl Admin {
         });
 
         // Login + logout. Unauthenticated users *need* to reach
-        // /admin/login; logout is CSRF-protected inside the handler.
+        // /admin/login; POST /admin/logout is CSRF-protected inside
+        // the handler. GET /admin/logout is **public** — Django uses
+        // it both for the "confirm sign out" prompt (when a session
+        // is live) and for the post-logout "you have signed out"
+        // page (after POST clears the session).
         let login_db = db.clone();
         router = router.post("/admin/login", move |req, _params| {
             let db = login_db.clone();
@@ -331,6 +389,102 @@ impl Admin {
         router = router.post("/admin/logout", move |req, _params| {
             let db = logout_db.clone();
             async move { handle_logout(req, &db).await }
+        });
+        router = router.get("/admin/logout", move |req, _params| async move {
+            let signed_in = req.ctx().get::<crate::auth::Identity>().is_some();
+            let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+            Ok::<Response, Error>(logout_confirmation_response(signed_in, csrf.as_deref()))
+        });
+
+        // Password change (self-service). GET renders the form, POST
+        // validates + rotates the hash + re-issues the session cookie.
+        let pw_get_entries = entries.clone();
+        router = router.get("/admin/password_change", move |req, _params| {
+            let entries = pw_get_entries.clone();
+            async move {
+                if let Err(resp) = admin_guard(req.ctx()) {
+                    return Ok(resp);
+                }
+                let shell = Shell::from_ctx(&entries, None, req.ctx());
+                Ok::<Response, Error>(password_change_response(&shell, None))
+            }
+        });
+        let pw_post_entries = entries.clone();
+        let pw_post_db = db.clone();
+        router = router.post("/admin/password_change", move |req, _params| {
+            let entries = pw_post_entries.clone();
+            let db = pw_post_db.clone();
+            async move {
+                if let Err(resp) = admin_guard(req.ctx()) {
+                    return Ok(resp);
+                }
+                handle_password_change_post(req, &db, &entries).await
+            }
+        });
+        let pw_done_entries = entries.clone();
+        router = router.get("/admin/password_change/done", move |req, _params| {
+            let entries = pw_done_entries.clone();
+            async move {
+                if let Err(resp) = admin_guard(req.ctx()) {
+                    return Ok(resp);
+                }
+                let shell = Shell::from_ctx(&entries, None, req.ctx());
+                Ok::<Response, Error>(password_change_done_response(&shell))
+            }
+        });
+
+        // Profile (self-service identity card).
+        let profile_entries = entries.clone();
+        let profile_db = db.clone();
+        router = router.get("/admin/profile", move |req, _params| {
+            let entries = profile_entries.clone();
+            let db = profile_db.clone();
+            async move {
+                if let Err(resp) = admin_guard(req.ctx()) {
+                    return Ok(resp);
+                }
+                let shell = Shell::from_ctx(&entries, None, req.ctx());
+                let user_id = req.ctx().get::<crate::auth::Identity>().map(|i| i.user_id);
+                let user = match user_id {
+                    Some(id) => crate::auth::user::find_by_id(&db, id).await?,
+                    None => None,
+                };
+                Ok::<Response, Error>(profile_response(&shell, user.as_ref()))
+            }
+        });
+
+        // Recent actions (project-wide audit timeline).
+        let actions_entries = entries.clone();
+        let actions_db = db.clone();
+        router = router.get("/admin/actions", move |req, _params| {
+            let entries = actions_entries.clone();
+            let db = actions_db.clone();
+            async move {
+                if let Err(resp) = admin_guard(req.ctx()) {
+                    return Ok(resp);
+                }
+                let query = req.query();
+                let model_filter = query
+                    .get("model")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let action_filter = query
+                    .get("action")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let actions =
+                    audit::recent(&db, 200, model_filter.as_deref(), action_filter.as_deref())
+                        .await?;
+                let shell = Shell::from_ctx(&entries, None, req.ctx());
+                Ok::<Response, Error>(recent_actions_response(
+                    &shell,
+                    &actions,
+                    model_filter.as_deref(),
+                    action_filter.as_deref(),
+                ))
+            }
         });
 
         for registrar in self.registrars {
@@ -362,6 +516,8 @@ where
     let create_path = format!("{base}/create");
     let edit_path = format!("{base}/:id/edit");
     let delete_path = format!("{base}/:id/delete");
+    let history_path = format!("{base}/:id/history");
+    let bulk_path = format!("{base}/bulk_action");
 
     // --- list (with search + filter via ?q=&status=&priority=) ---
     let list_db = db.clone();
@@ -459,11 +615,39 @@ where
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
+            // Peer IP + user id must be captured before `req.into_parts()`
+            // consumes the request.
+            let peer_ip = req.peer_addr().map(|a| a.ip().to_string());
             let (_, body, ctx) = req.into_parts();
             let form = read_form_from_parts(body).await?;
             require_csrf(&ctx, &form)?;
+            let user_id = ctx
+                .get::<crate::auth::Identity>()
+                .map(|i| i.user_id)
+                .unwrap_or(0);
+
             let item = T::from_form(&form, None)?;
-            item.create(&db).await?;
+            let primary = primary_string_value::<T>(&item);
+            let new_id = item.create(&db).await?;
+
+            audit::record(
+                &db,
+                audit::LogEntry {
+                    user_id,
+                    action_type: audit::ActionType::Create,
+                    model_name: T::ADMIN_NAME,
+                    object_id: new_id,
+                    ip_address: peer_ip.as_deref(),
+                    summary: audit_summary(
+                        audit::ActionType::Create,
+                        T::singular_name(),
+                        new_id,
+                        &primary,
+                    ),
+                },
+            )
+            .await?;
+
             Ok::<Response, Error>(with_admin_headers(redirect(&format!(
                 "/admin/{}",
                 T::ADMIN_NAME
@@ -499,11 +683,37 @@ where
                 return Ok(resp);
             }
             let id = parse_id_param(&params)?;
+            let peer_ip = req.peer_addr().map(|a| a.ip().to_string());
             let (_, body, ctx) = req.into_parts();
             let form = read_form_from_parts(body).await?;
             require_csrf(&ctx, &form)?;
+            let user_id = ctx
+                .get::<crate::auth::Identity>()
+                .map(|i| i.user_id)
+                .unwrap_or(0);
+
             let item = T::from_form(&form, Some(id))?;
+            let primary = primary_string_value::<T>(&item);
             item.update(&db).await?;
+
+            audit::record(
+                &db,
+                audit::LogEntry {
+                    user_id,
+                    action_type: audit::ActionType::Update,
+                    model_name: T::ADMIN_NAME,
+                    object_id: id,
+                    ip_address: peer_ip.as_deref(),
+                    summary: audit_summary(
+                        audit::ActionType::Update,
+                        T::singular_name(),
+                        id,
+                        &primary,
+                    ),
+                },
+            )
+            .await?;
+
             Ok::<Response, Error>(with_admin_headers(redirect(&format!(
                 "/admin/{}",
                 T::ADMIN_NAME
@@ -536,10 +746,158 @@ where
                 return Ok(resp);
             }
             let id = parse_id_param(&params)?;
+            let peer_ip = req.peer_addr().map(|a| a.ip().to_string());
             let (_, body, ctx) = req.into_parts();
             let form = read_form_from_parts(body).await?;
             require_csrf(&ctx, &form)?;
+            let user_id = ctx
+                .get::<crate::auth::Identity>()
+                .map(|i| i.user_id)
+                .unwrap_or(0);
+
+            // Fetch the record first so the audit summary can describe
+            // what was deleted; the row is gone after `T::delete`.
+            let primary = match T::find(&db, id).await? {
+                Some(item) => primary_string_value::<T>(&item),
+                None => String::new(),
+            };
+
             T::delete(&db, id).await?;
+
+            audit::record(
+                &db,
+                audit::LogEntry {
+                    user_id,
+                    action_type: audit::ActionType::Delete,
+                    model_name: T::ADMIN_NAME,
+                    object_id: id,
+                    ip_address: peer_ip.as_deref(),
+                    summary: audit_summary(
+                        audit::ActionType::Delete,
+                        T::singular_name(),
+                        id,
+                        &primary,
+                    ),
+                },
+            )
+            .await?;
+
+            Ok::<Response, Error>(with_admin_headers(redirect(&format!(
+                "/admin/{}",
+                T::ADMIN_NAME
+            ))))
+        }
+    });
+
+    // --- per-object history (Django parity). Reads from
+    // `rustio_admin_actions` so every add / change / delete that went
+    // through the admin is visible, newest first.
+    let history_db = db.clone();
+    let history_entries = entries.clone();
+    router = router.get(&history_path, move |req, params| {
+        let db = history_db.clone();
+        let entries = history_entries.clone();
+        async move {
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
+            let id = parse_id_param(&params)?;
+            let item = T::find(&db, id).await?.ok_or(Error::NotFound)?;
+            let actions = audit::for_object(&db, T::ADMIN_NAME, id).await?;
+            let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
+            Ok::<Response, Error>(object_history_response::<T>(shell, id, &item, &actions))
+        }
+    });
+
+    // --- bulk actions (Django parity). POST with `_selected` + `action`.
+    // First POST → render a confirmation page listing the records that
+    // will be touched. Second POST (with `_confirm=yes`) → perform it.
+    // Individual audit entries are written per record so per-object
+    // history stays complete even for bulk operations.
+    let bulk_db = db.clone();
+    let bulk_entries = entries.clone();
+    router = router.post(&bulk_path, move |req, _params| {
+        let db = bulk_db.clone();
+        let entries = bulk_entries.clone();
+        async move {
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
+            let peer_ip = req.peer_addr().map(|a| a.ip().to_string());
+            let (_, body, ctx) = req.into_parts();
+            let form = read_form_from_parts(body).await?;
+            require_csrf(&ctx, &form)?;
+            let user_id = ctx
+                .get::<crate::auth::Identity>()
+                .map(|i| i.user_id)
+                .unwrap_or(0);
+
+            let action = form.get("action").unwrap_or("").trim().to_string();
+            let selected_raw = form.get("_selected").unwrap_or("").to_string();
+            let ids: Vec<i64> = selected_raw
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .filter_map(|s| s.parse::<i64>().ok())
+                .collect();
+            let confirmed = form.get("_confirm").map(|v| v == "yes").unwrap_or(false);
+
+            if ids.is_empty() || action.is_empty() {
+                return Ok::<Response, Error>(with_admin_headers(redirect(&format!(
+                    "/admin/{}",
+                    T::ADMIN_NAME
+                ))));
+            }
+
+            if action != "delete" {
+                return Err(Error::BadRequest(
+                    format!("Unknown bulk action `{action}`",),
+                ));
+            }
+
+            // First POST (no `_confirm=yes`): render the intermediate
+            // confirmation page. User reviews the items and posts again.
+            if !confirmed {
+                let mut items: Vec<(i64, String)> = Vec::with_capacity(ids.len());
+                for id in &ids {
+                    if let Some(item) = T::find(&db, *id).await? {
+                        let primary = primary_string_value::<T>(&item);
+                        items.push((*id, primary));
+                    }
+                }
+                let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), &ctx);
+                return Ok::<Response, Error>(bulk_delete_confirmation_response::<T>(
+                    &shell, &items,
+                ));
+            }
+
+            // Confirmed: delete each record, record an audit entry per
+            // row so object history remains per-record complete.
+            for id in &ids {
+                let primary = match T::find(&db, *id).await? {
+                    Some(item) => primary_string_value::<T>(&item),
+                    None => continue, // already gone; skip silently
+                };
+                T::delete(&db, *id).await?;
+
+                let mut summary =
+                    audit_summary(audit::ActionType::Delete, T::singular_name(), *id, &primary);
+                summary.push_str(" (via bulk action)");
+
+                audit::record(
+                    &db,
+                    audit::LogEntry {
+                        user_id,
+                        action_type: audit::ActionType::Delete,
+                        model_name: T::ADMIN_NAME,
+                        object_id: *id,
+                        ip_address: peer_ip.as_deref(),
+                        summary,
+                    },
+                )
+                .await?;
+            }
+
             Ok::<Response, Error>(with_admin_headers(redirect(&format!(
                 "/admin/{}",
                 T::ADMIN_NAME
@@ -555,6 +913,29 @@ fn parse_id_param(params: &crate::router::Params) -> Result<i64, Error> {
         .get("id")
         .and_then(|s| s.parse::<i64>().ok())
         .ok_or_else(|| Error::BadRequest(String::from("invalid id")))
+}
+
+/// Best-effort display string for an item's primary identifier, used in
+/// audit summaries. Returns the first editable `String` field's value,
+/// or an empty string when none is available.
+fn primary_string_value<T: AdminModel>(item: &T) -> String {
+    T::FIELDS
+        .iter()
+        .find(|f| f.editable && matches!(f.ty, FieldType::String))
+        .and_then(|f| item.field_display(f.name))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_default()
+}
+
+/// Compose a human-readable audit line, e.g.
+/// `Created Task #5: Ship 0.4.0` or `Deleted User #12`.
+fn audit_summary(action: audit::ActionType, singular: &str, id: i64, primary: &str) -> String {
+    let verb = action.label();
+    if primary.is_empty() {
+        format!("{verb} {singular} #{id}")
+    } else {
+        format!("{verb} {singular} #{id}: {primary}")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -821,11 +1202,14 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
         .unwrap_or_else(|| String::from("·"));
 
     let user_block = if shell.user_email.is_some() {
+        // The user chip is clickable → /admin/profile. Matches
+        // Django's "Welcome, name" dropdown in the header, but fits
+        // our sidebar footer.
         format!(
-            r#"<div class="rio-sidebar-user">
+            r#"<a class="rio-sidebar-user" href="/admin/profile" title="Your profile">
 <span class="rio-avatar">{avatar}</span>
 <span class="rio-user-email">{email}</span>
-</div>"#,
+</a>"#,
             avatar = escape_html(&avatar_initial),
             email = escape_html(email),
         )
@@ -844,6 +1228,7 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
 </a>
 <nav class="rio-nav">
 <a class="{dash}" href="/admin">{dash_icon}<span>Dashboard</span></a>
+<a class="rio-nav-link" href="/admin/actions">{actions_icon}<span>Recent actions</span></a>
 </nav>
 {models}
 <div class="rio-sidebar-footer">
@@ -855,6 +1240,7 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
         project = escape_html(&design.project_name),
         dash = dashboard_active,
         dash_icon = icon_dashboard(),
+        actions_icon = icon_activity(),
         models = models_html,
         user = user_block,
         logout = logout_form,
@@ -1141,18 +1527,56 @@ fn list_response<T: AdminModel>(
                         pencil = icon_pencil(),
                         trash = icon_trash(),
                     );
-                    format!("<tr>{cells}{row_actions}</tr>")
+                    let checkbox = format!(
+                        r#"<td class="rio-cell-check"><input type="checkbox" class="rio-bulk-row" value="{id}" aria-label="Select row {id}"></td>"#,
+                    );
+                    format!("<tr>{checkbox}{cells}{row_actions}</tr>")
                 })
                 .collect();
+
+            let csrf = csrf_input(shell.csrf);
+            let bulk_bar = format!(
+                r#"<div class="rio-bulk-bar">
+<label class="rio-bulk-label" for="rio-bulk-action">Action</label>
+<select class="rio-select" id="rio-bulk-action" name="action">
+<option value="">-- Select an action --</option>
+<option value="delete">Delete selected {plural_lower}</option>
+</select>
+<button type="submit" class="rio-btn">Go</button>
+<span class="rio-bulk-count" data-rio-bulk-count>0 selected</span>
+</div>"#,
+                plural_lower = escape_html(&plural.to_lowercase()),
+            );
 
             format!(
                 r#"<div class="rio-table-wrap">
 {toolbar}
+<form method="post" action="/admin/{name}/bulk_action" class="rio-bulk-form">
+{csrf}
+<input type="hidden" name="_selected" value="">
+{bulk_bar}
 <table class="rio-table">
-<thead><tr>{headers}<th aria-label="Actions"></th></tr></thead>
+<thead><tr><th class="rio-cell-check"><input type="checkbox" class="rio-bulk-all" aria-label="Select all"></th>{headers}<th aria-label="Actions"></th></tr></thead>
 <tbody>{rows}</tbody>
 </table>
+</form>
+<script>
+(function(){{
+var form=document.querySelector('.rio-bulk-form');if(!form)return;
+var all=form.querySelector('.rio-bulk-all');
+var rows=form.querySelectorAll('.rio-bulk-row');
+var count=form.querySelector('[data-rio-bulk-count]');
+var hidden=form.querySelector('input[name="_selected"]');
+function collect(){{var ids=[];rows.forEach(function(cb){{if(cb.checked)ids.push(cb.value);}});return ids;}}
+function update(){{var ids=collect();if(hidden)hidden.value=ids.join(',');if(count)count.textContent=ids.length+' selected';}}
+if(all)all.addEventListener('change',function(){{rows.forEach(function(cb){{cb.checked=all.checked;}});update();}});
+rows.forEach(function(cb){{cb.addEventListener('change',update);}});
+form.addEventListener('submit',function(e){{update();var ids=collect();var act=form.querySelector('[name="action"]');if(!ids.length||!act.value){{e.preventDefault();alert('Select one or more rows and an action, then click Go.');}}}});
+update();
+}})();
+</script>
 </div>"#,
+                name = escape_html(admin_name),
             )
         }
     };
@@ -1499,6 +1923,18 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
         ],
     };
 
+    // On edit mode, surface the "History" action in the page header
+    // so operators can navigate to the per-object history page
+    // without scrolling down to the metadata block.
+    let page_actions = match &mode {
+        FormMode::Create => String::new(),
+        FormMode::Edit { id, .. } => format!(
+            r#"<a class="rio-btn" href="/admin/{name}/{id}/history">History</a>"#,
+            name = escape_html(admin_name),
+            id = id,
+        ),
+    };
+
     render_shell_page(
         &shell,
         200,
@@ -1506,7 +1942,7 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
         &heading,
         Some(&subtitle),
         &crumbs,
-        "",
+        &page_actions,
         &body,
     )
 }
@@ -1729,6 +2165,216 @@ Deleting this record removes it permanently. Rows that reference it via a foreig
     )
 }
 
+/// Intermediate confirmation page for a bulk delete. Shows the list of
+/// records that will be deleted and posts back to the same URL with
+/// `_confirm=yes` when the operator commits. Mirrors Django's "Are
+/// you sure?" step.
+fn bulk_delete_confirmation_response<T: AdminModel>(
+    shell: &Shell<'_>,
+    items: &[(i64, String)],
+) -> Response {
+    let singular = T::singular_name();
+    let plural = T::DISPLAY_NAME;
+    let admin_name = T::ADMIN_NAME;
+    let csrf_hidden = csrf_input(shell.csrf);
+
+    let count = items.len();
+    let count_label = if count == 1 {
+        format!("1 {}", singular.to_lowercase())
+    } else {
+        format!("{count} {}", plural.to_lowercase())
+    };
+
+    // Hidden `_selected` carries the IDs forward. Each row shows the
+    // id + the primary string value so the operator can verify.
+    let selected_csv: String = items
+        .iter()
+        .map(|(id, _)| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let rows: String = items
+        .iter()
+        .map(|(id, primary)| {
+            let label = if primary.is_empty() {
+                format!("#{id}")
+            } else {
+                format!("#{id} · {primary}")
+            };
+            format!(
+                r#"<li class="rio-bulk-item">{label}</li>"#,
+                label = escape_html(&label),
+            )
+        })
+        .collect();
+
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-card-body">
+<div class="rio-alert rio-alert-warn">
+{warn}
+<div>
+<strong>This action cannot be undone.</strong>
+You are about to delete <strong>{count_label}</strong>. Each record removed here is logged individually in <a href="/admin/actions">Recent actions</a>.
+</div>
+</div>
+<p>Review the list, then confirm:</p>
+<ul class="rio-bulk-list">{rows}</ul>
+</div>
+<form method="post" action="/admin/{name}/bulk_action" class="rio-form-footer">
+{csrf}
+<input type="hidden" name="action" value="delete">
+<input type="hidden" name="_selected" value="{selected}">
+<input type="hidden" name="_confirm" value="yes">
+<a class="rio-btn rio-btn-ghost" href="/admin/{name}">{back}<span>Cancel</span></a>
+<div class="rio-footer-actions">
+<button class="rio-btn rio-btn-danger" type="submit">{trash}<span>Yes, delete {count_label}</span></button>
+</div>
+</form>
+</div>"#,
+        warn = icon_triangle_alert(),
+        count_label = escape_html(&count_label),
+        rows = rows,
+        name = escape_html(admin_name),
+        csrf = csrf_hidden,
+        selected = escape_html(&selected_csv),
+        back = icon_arrow_left(),
+        trash = icon_trash(),
+    );
+
+    let plural_href = format!("/admin/{admin_name}");
+    let crumbs: &[Crumb<'_>] = &[
+        ("Admin", Some("/admin")),
+        (plural, Some(&plural_href)),
+        ("Delete selected", None),
+    ];
+
+    render_shell_page(
+        shell,
+        200,
+        &format!("Delete selected {}", plural.to_lowercase()),
+        &format!("Delete selected {}?", plural.to_lowercase()),
+        Some("Confirm you want to remove these records."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Styled 404 + 500 (rendered inside the admin shell)
+// ---------------------------------------------------------------------------
+
+fn new_request_id() -> String {
+    use rand::RngCore as _;
+    let mut buf = [0u8; 6];
+    rand::rngs::OsRng.fill_bytes(&mut buf);
+    let mut s = String::with_capacity(12);
+    for b in buf {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+/// Minimal shell built without a live `Context`. Used by the admin
+/// error middleware when the request has already been consumed.
+fn error_shell<'a>(
+    entries: &'a [AdminEntry],
+    email: Option<&'a str>,
+    csrf: Option<&'a str>,
+) -> Shell<'a> {
+    Shell {
+        entries,
+        active: None,
+        user_email: email,
+        csrf,
+    }
+}
+
+fn admin_not_found_response(
+    entries: &[AdminEntry],
+    email: Option<&str>,
+    csrf: Option<&str>,
+) -> Response {
+    let shell = error_shell(entries, email, csrf);
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-empty">
+<div class="rio-empty-icon">{icon}</div>
+<h3>We couldn't find that page</h3>
+<p>The URL you requested doesn't match any admin route or record. It may have been moved, deleted, or you may have arrived via a stale link.</p>
+<div class="rio-error-actions" style="margin-top:16px">
+<a class="rio-btn" href="/admin">{back}<span>Back to dashboard</span></a>
+<a class="rio-btn" href="/admin/actions">View recent actions</a>
+</div>
+</div>
+</div>"#,
+        icon = icon_inbox(),
+        back = icon_arrow_left(),
+    );
+    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Not found", None)];
+    render_shell_page(
+        &shell,
+        404,
+        "404 Not Found",
+        "404 · Not found",
+        Some("We couldn't find that page or record."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+fn admin_server_error_response(
+    entries: &[AdminEntry],
+    email: Option<&str>,
+    csrf: Option<&str>,
+    request_id: &str,
+) -> Response {
+    let shell = error_shell(entries, email, csrf);
+    let when = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-card-body">
+<div class="rio-alert rio-alert-error">
+{icon}
+<div>
+<strong>Something went wrong.</strong>
+The admin could not complete your request. The detail has been logged server-side; the summary below is what to share when reporting.
+</div>
+</div>
+<div class="rio-meta">
+<div class="rio-meta-item">
+<span class="rio-meta-label">Request ID</span>
+<span class="rio-meta-value"><code>{rid}</code></span>
+</div>
+<div class="rio-meta-item">
+<span class="rio-meta-label">Timestamp</span>
+<span class="rio-meta-value">{when}</span>
+</div>
+</div>
+<div class="rio-error-actions" style="margin-top:16px">
+<a class="rio-btn" href="/admin">{back}<span>Back to dashboard</span></a>
+</div>
+</div>
+</div>"#,
+        icon = icon_triangle_alert(),
+        rid = escape_html(request_id),
+        when = escape_html(&when),
+        back = icon_arrow_left(),
+    );
+    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Server error", None)];
+    render_shell_page(
+        &shell,
+        500,
+        "500 Server Error",
+        "500 · Server error",
+        Some("The admin could not complete your request."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Admin guard + login/forbidden auth pages
 // ---------------------------------------------------------------------------
@@ -1877,6 +2523,528 @@ fn forbidden_page(csrf: Option<&str>) -> Response {
 }
 
 // ---------------------------------------------------------------------------
+// Password change (self-service) — Django parity
+// ---------------------------------------------------------------------------
+
+/// Render the `/admin/password_change` form. `error` is rendered in
+/// an inline alert when the previous submission failed; the email-like
+/// prefill behaviour of the login form doesn't apply because passwords
+/// are never preserved across renders.
+fn password_change_response(shell: &Shell<'_>, error: Option<&str>) -> Response {
+    let csrf = csrf_input(shell.csrf);
+    let error_html = match error {
+        Some(msg) => format!(
+            r#"<div class="rio-alert rio-alert-error">{icon}<span>{msg}</span></div>"#,
+            icon = icon_triangle_alert(),
+            msg = escape_html(msg),
+        ),
+        None => String::new(),
+    };
+
+    let body = format!(
+        r#"<form class="rio-card rio-form" method="post" action="/admin/password_change" autocomplete="off">
+{csrf}
+<div class="rio-form-section">
+<p class="rio-form-section-hint">For security, enter your current password first. Then choose a new password and enter it twice to confirm.</p>
+{error_html}
+<div class="rio-field">
+<label for="_old_password">Current password</label>
+<input class="rio-input" id="_old_password" type="password" name="old_password" autocomplete="current-password" autofocus required>
+</div>
+<div class="rio-field">
+<label for="_new_password1">New password</label>
+<input class="rio-input" id="_new_password1" type="password" name="new_password1" autocomplete="new-password" minlength="8" required>
+<p class="rio-field-hint">At least 8 characters. All other active sessions on your account will be signed out.</p>
+</div>
+<div class="rio-field">
+<label for="_new_password2">New password confirmation</label>
+<input class="rio-input" id="_new_password2" type="password" name="new_password2" autocomplete="new-password" minlength="8" required>
+</div>
+</div>
+<div class="rio-form-footer">
+<a class="rio-btn" href="/admin/profile">Cancel</a>
+<div class="rio-footer-actions">
+<button class="rio-btn rio-btn-primary" type="submit">Change password</button>
+</div>
+</div>
+</form>"#,
+    );
+
+    let crumbs: &[Crumb<'_>] = &[
+        ("Admin", Some("/admin")),
+        ("Profile", Some("/admin/profile")),
+        ("Change password", None),
+    ];
+
+    render_shell_page(
+        shell,
+        200,
+        "Change password",
+        "Change password",
+        Some("Pick a new password for your account."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+/// Success confirmation shown after a password change. Mirrors
+/// Django's `password_change_done.html`.
+fn password_change_done_response(shell: &Shell<'_>) -> Response {
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-card-body">
+<div class="rio-alert rio-alert-info">
+{icon}
+<div><strong>Your password was changed.</strong>
+All other sessions for your account have been signed out; this one was re-issued so you stay logged in here.</div>
+</div>
+<p style="margin: 16px 0 0"><a class="rio-btn rio-btn-primary" href="/admin">Return to the admin</a></p>
+</div>
+</div>"#,
+        icon = icon_triangle_alert(),
+    );
+
+    let crumbs: &[Crumb<'_>] = &[
+        ("Admin", Some("/admin")),
+        ("Profile", Some("/admin/profile")),
+        ("Change password", Some("/admin/password_change")),
+        ("Done", None),
+    ];
+
+    render_shell_page(
+        shell,
+        200,
+        "Password change done",
+        "Password changed",
+        None,
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Profile (self-service) — mirrors Django's "Welcome, name" header options
+// ---------------------------------------------------------------------------
+
+/// Per-user profile page. Read-only view of the caller's own account,
+/// plus links to change their password or sign out.
+fn profile_response(shell: &Shell<'_>, user: Option<&crate::auth::User>) -> Response {
+    let (email, role, user_id, is_active) = match user {
+        Some(u) => (
+            u.email.clone(),
+            u.role.clone(),
+            u.id.to_string(),
+            u.is_active,
+        ),
+        None => (
+            "unknown".to_string(),
+            "?".to_string(),
+            "?".to_string(),
+            false,
+        ),
+    };
+    let role_pill = match role.as_str() {
+        "admin" => r#"<span class="rio-pill rio-pill-emerald">admin</span>"#,
+        "user" => r#"<span class="rio-pill rio-pill-slate">user</span>"#,
+        _ => r#"<span class="rio-pill rio-pill-slate">unknown</span>"#,
+    };
+    let status_pill = if is_active {
+        r#"<span class="rio-pill rio-pill-emerald">active</span>"#
+    } else {
+        r#"<span class="rio-pill rio-pill-rose">inactive</span>"#
+    };
+
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-card-header">
+<div>
+<h2 class="rio-card-title">Your account</h2>
+<p class="rio-card-subtitle">Identity, role, and account actions.</p>
+</div>
+</div>
+<div class="rio-meta" style="margin:0;border:0;border-radius:0">
+<div class="rio-meta-item">
+<span class="rio-meta-label">Email</span>
+<span class="rio-meta-value">{email}</span>
+</div>
+<div class="rio-meta-item">
+<span class="rio-meta-label">User ID</span>
+<span class="rio-meta-value">#{user_id}</span>
+</div>
+<div class="rio-meta-item">
+<span class="rio-meta-label">Role</span>
+<span class="rio-meta-value">{role_pill}</span>
+</div>
+<div class="rio-meta-item">
+<span class="rio-meta-label">Status</span>
+<span class="rio-meta-value">{status_pill}</span>
+</div>
+</div>
+<div class="rio-form-footer">
+<a class="rio-btn" href="/admin">Back to admin</a>
+<div class="rio-footer-actions">
+<a class="rio-btn" href="/admin/logout">Sign out</a>
+<a class="rio-btn rio-btn-primary" href="/admin/password_change">Change password</a>
+</div>
+</div>
+</div>"#,
+        email = escape_html(&email),
+        user_id = escape_html(&user_id),
+        role_pill = role_pill,
+        status_pill = status_pill,
+    );
+
+    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Profile", None)];
+
+    render_shell_page(
+        shell,
+        200,
+        "Profile",
+        "Your profile",
+        Some("Identity, role, and account actions."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Logout confirmation (GET /admin/logout) — Django parity
+// ---------------------------------------------------------------------------
+
+/// Render the logout page. Two branches:
+///
+/// - Signed-in (session cookie valid) → show "Sign out" confirmation
+///   with a POST form. The user confirms; POST /admin/logout then
+///   deletes the session and redirects back here where the other
+///   branch renders.
+/// - Signed-out → show the Django-style "Thanks for your time" page
+///   with a link back to the login screen.
+fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response {
+    let d = design::Design::global();
+
+    let theme_style = format!(
+        "\n:root {{\n  --rio-primary: {p};\n  --rio-accent: {a};\n}}\n",
+        p = escape_css_color(&d.primary_color),
+        a = escape_css_color(&d.accent_color),
+    );
+
+    let card_body = if signed_in {
+        let csrf_hidden = csrf_input(csrf);
+        format!(
+            r#"<h1 class="rio-auth-title">Sign out</h1>
+<p class="rio-auth-subtitle">You're about to sign out of the admin.</p>
+<form method="post" action="/admin/logout">
+{csrf}
+<button class="rio-btn rio-btn-primary rio-btn-block" type="submit">Sign out</button>
+</form>
+<p class="rio-auth-footer"><a href="/admin">Cancel and return to the admin</a></p>"#,
+            csrf = csrf_hidden,
+        )
+    } else {
+        String::from(
+            r#"<h1 class="rio-auth-title">You have signed out</h1>
+<p class="rio-auth-subtitle">Thanks for your time. Sessions are already revoked server-side.</p>
+<a class="rio-btn rio-btn-primary rio-btn-block" href="/admin">Sign in again</a>"#,
+        )
+    };
+
+    let body = format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign out · {project}</title>
+<link rel="stylesheet" href="/admin/assets/admin.css">
+<style>{theme}</style>
+</head>
+<body>
+<div class="rio-auth-shell">
+<div class="rio-auth-card">
+<div class="rio-auth-logo">
+<span class="rio-brand-mark">{logo}</span>
+<span class="rio-brand-meta">
+<span class="rio-brand-name">{project}</span>
+<span class="rio-brand-label">Admin</span>
+</span>
+</div>
+{card_body}
+</div>
+</div>
+</body>
+</html>"#,
+        project = escape_html(&d.project_name),
+        theme = theme_style,
+        logo = escape_html(&d.logo_initial),
+        card_body = card_body,
+    );
+
+    let resp = hyper::Response::builder()
+        .status(200)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Full::new(Bytes::from(body)))
+        .expect("valid response");
+    with_admin_headers(resp)
+}
+
+// ---------------------------------------------------------------------------
+// Per-object history (GET /admin/<model>/<id>/history) — Django parity
+// ---------------------------------------------------------------------------
+
+/// Stub history page. In 0.4 we don't persist an admin `LogEntry`
+/// table, so the page confirms the record exists and explains the
+/// feature isn't live yet. The route exists so the edit page's
+/// "History" link has somewhere to land, and so projects that layer
+/// their own audit table can drop in the rendering later.
+fn object_history_response<T: AdminModel>(
+    shell: Shell<'_>,
+    id: i64,
+    item: &T,
+    actions: &[audit::AdminAction],
+) -> Response {
+    let plural = T::DISPLAY_NAME;
+    let singular = T::singular_name();
+    let admin_name = T::ADMIN_NAME;
+
+    let summary = T::FIELDS
+        .iter()
+        .find(|f| f.editable && matches!(f.ty, FieldType::String))
+        .and_then(|f| item.field_display(f.name))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| format!("#{id}"));
+
+    let inner = if actions.is_empty() {
+        format!(
+            r#"<div class="rio-empty">
+<div class="rio-empty-icon">{icon}</div>
+<h3>No change history yet</h3>
+<p>Every add, change, or delete made through the admin will appear here. This record has no entries yet — the most likely reason is that it predates the audit log, or no one has edited it through the admin.</p>
+</div>"#,
+            icon = icon_inbox(),
+        )
+    } else {
+        render_actions_timeline(actions, /* show_object_link = */ false)
+    };
+
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-card-header">
+<div>
+<h2 class="rio-card-title">Change history — {singular_hdr} {summary}</h2>
+<p class="rio-card-subtitle">Every add / change / delete that happened to this record, newest first.</p>
+</div>
+<a class="rio-btn" href="/admin/{name}/{id}/edit">Back to record</a>
+</div>
+{inner}
+</div>"#,
+        singular_hdr = escape_html(singular),
+        summary = escape_html(&summary),
+        name = escape_html(admin_name),
+        id = id,
+        inner = inner,
+    );
+
+    let plural_href = format!("/admin/{admin_name}");
+    let edit_href = format!("/admin/{admin_name}/{id}/edit");
+    let crumbs: &[Crumb<'_>] = &[
+        ("Admin", Some("/admin")),
+        (plural, Some(&plural_href)),
+        (singular, Some(&edit_href)),
+        ("History", None),
+    ];
+
+    render_shell_page(
+        &shell,
+        200,
+        &format!("History — {singular} {summary}"),
+        "Change history",
+        Some("Every add / change / delete that happened to this record."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+/// Project-wide audit timeline at `GET /admin/actions`. Mirrors
+/// Django's "Recent actions" sidebar block but as a dedicated page
+/// with filters by model and action type.
+fn recent_actions_response(
+    shell: &Shell<'_>,
+    actions: &[audit::AdminAction],
+    model_filter: Option<&str>,
+    action_filter: Option<&str>,
+) -> Response {
+    // Build a model-name dropdown from the registered user-facing
+    // entries so operators can pick anything they have admin for.
+    let model_options: String =
+        std::iter::once(r#"<option value="">All models</option>"#.to_string())
+            .chain(shell.entries.iter().filter(|e| !e.core).map(|e| {
+                let selected = if model_filter == Some(e.admin_name) {
+                    " selected"
+                } else {
+                    ""
+                };
+                format!(
+                    r#"<option value="{v}"{selected}>{label}</option>"#,
+                    v = escape_html(e.admin_name),
+                    label = escape_html(e.display_name),
+                )
+            }))
+            .collect();
+
+    let action_options: String = [
+        ("", "All actions"),
+        ("create", "Created"),
+        ("update", "Updated"),
+        ("delete", "Deleted"),
+    ]
+    .iter()
+    .map(|(value, label)| {
+        let is_selected = match value {
+            &"" => action_filter.is_none(),
+            v => action_filter == Some(*v),
+        };
+        let selected = if is_selected { " selected" } else { "" };
+        format!(
+            r#"<option value="{v}"{selected}>{label}</option>"#,
+            v = escape_html(value),
+            label = escape_html(label),
+        )
+    })
+    .collect();
+
+    let active = model_filter.is_some() || action_filter.is_some();
+    let reset = if active {
+        r#"<a class="rio-btn rio-btn-ghost" href="/admin/actions">Reset</a>"#.to_string()
+    } else {
+        String::new()
+    };
+
+    let count_label = if actions.len() == 1 {
+        "1 action".to_string()
+    } else {
+        format!("{} actions", actions.len())
+    };
+
+    let toolbar = format!(
+        r#"<form class="rio-table-toolbar" method="get" action="/admin/actions" aria-label="Filter actions">
+<select class="rio-select" name="model" aria-label="Filter by model">{model_options}</select>
+<select class="rio-select" name="action" aria-label="Filter by action type">{action_options}</select>
+<div class="rio-toolbar-actions">
+<button type="submit" class="rio-btn rio-btn-primary"><span>Apply</span></button>
+{reset}
+</div>
+<div class="rio-count">{count}</div>
+</form>"#,
+        count = escape_html(&count_label),
+    );
+
+    let body_inner = if actions.is_empty() {
+        format!(
+            r#"<div class="rio-empty">
+<div class="rio-empty-icon">{icon}</div>
+<h3>No actions match these filters</h3>
+<p>Once operators start creating, editing, or deleting records through the admin, their actions will show up here.</p>
+</div>"#,
+            icon = icon_inbox(),
+        )
+    } else {
+        render_actions_timeline(actions, /* show_object_link = */ true)
+    };
+
+    let body = format!(
+        r#"<div class="rio-card">
+<div class="rio-card-header">
+<div>
+<h2 class="rio-card-title">Recent actions</h2>
+<p class="rio-card-subtitle">Every create, update, and delete performed through the admin, newest first.</p>
+</div>
+</div>
+{toolbar}
+{body_inner}
+</div>"#,
+    );
+
+    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Recent actions", None)];
+    render_shell_page(
+        shell,
+        200,
+        "Recent actions",
+        "Recent actions",
+        Some("Project-wide audit timeline across every model."),
+        crumbs,
+        "",
+        &body,
+    )
+}
+
+/// Render a list of audit actions as a compact timeline. Used by both
+/// the per-object history page and the project-wide `/admin/actions`
+/// page. When `show_object_link` is true, each entry links to
+/// `/admin/<model>/<id>/history` so the operator can drill into one
+/// record; when false (already on that page) the link is omitted.
+fn render_actions_timeline(actions: &[audit::AdminAction], show_object_link: bool) -> String {
+    if actions.is_empty() {
+        return String::new();
+    }
+    let rows: String = actions
+        .iter()
+        .map(|a| {
+            let action = audit::ActionType::parse(&a.action_type);
+            let (pill_class, label) = match action {
+                Some(at) => (at.pill_class(), at.label()),
+                None => ("rio-pill rio-pill-slate", "Action"),
+            };
+            let when = a.timestamp.format("%Y-%m-%d %H:%M UTC").to_string();
+            let who = a
+                .user_email
+                .clone()
+                .unwrap_or_else(|| format!("user #{}", a.user_id));
+            let ip = match &a.ip_address {
+                Some(ip) if !ip.is_empty() => {
+                    format!(r#"<span class="rio-audit-ip">{}</span>"#, escape_html(ip))
+                }
+                _ => String::new(),
+            };
+            let object_link = if show_object_link {
+                format!(
+                    r#"<a class="rio-audit-object" href="/admin/{name}/{id}/history">{name} #{id}</a>"#,
+                    name = escape_html(&a.model_name),
+                    id = a.object_id,
+                )
+            } else {
+                String::new()
+            };
+            format!(
+                r#"<li class="rio-audit-item">
+<div class="rio-audit-head">
+<span class="{pill}">{label}</span>
+{object_link}
+<span class="rio-audit-when">{when}</span>
+</div>
+<p class="rio-audit-summary">{summary}</p>
+<div class="rio-audit-meta">
+<span class="rio-audit-who">{who}</span>
+{ip}
+</div>
+</li>"#,
+                pill = pill_class,
+                label = label,
+                object_link = object_link,
+                when = escape_html(&when),
+                summary = escape_html(&a.summary),
+                who = escape_html(&who),
+                ip = ip,
+            )
+        })
+        .collect();
+    format!(r#"<ul class="rio-audit-timeline">{rows}</ul>"#)
+}
+
+// ---------------------------------------------------------------------------
 // Session cookie builder
 // ---------------------------------------------------------------------------
 
@@ -1974,10 +3142,98 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
         let _ = auth::session::delete(db, &token).await;
     }
 
-    let mut resp = redirect("/admin");
+    // Redirect to GET /admin/logout which renders the Django-style
+    // "You have been signed out" confirmation page (no session now,
+    // so the page shows the signed-out branch, not the confirm-sign-out
+    // form).
+    let mut resp = redirect("/admin/logout");
     crate::http::set_cookie(
         &mut resp,
         &build_session_cookie(auth::SESSION_COOKIE, "", 0),
+    );
+    Ok(with_admin_headers(resp))
+}
+
+/// `POST /admin/password_change` — self-service password change.
+///
+/// Flow (Django-parity):
+/// 1. Read the form + verify CSRF (must match current session).
+/// 2. Pull `Identity` out of ctx to find the user id — the admin
+///    guard in the GET already confirmed the user is admin, the POST
+///    reaches this point the same way.
+/// 3. Fetch the user fresh, verify the submitted old password with
+///    argon2 (constant-time, never panics on bad hash).
+/// 4. Enforce matching new-password fields and an 8-char minimum.
+/// 5. Call `auth::user::set_password` — this wipes every session for
+///    this user, including the caller's.
+/// 6. Create a fresh session for the same user and set a new cookie
+///    so the caller stays logged in; redirect to /done.
+async fn handle_password_change_post(
+    req: Request,
+    db: &crate::orm::Db,
+    entries: &[AdminEntry],
+) -> Result<Response, Error> {
+    use crate::auth;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    // Must be authenticated — reuse the same guard logic so the
+    // error rendering stays consistent with other admin routes.
+    let user_id = match ctx.get::<auth::Identity>() {
+        Some(i) => i.user_id,
+        None => return Ok(login_page(401, None, None)),
+    };
+    let shell = Shell::from_ctx(entries, None, &ctx);
+
+    let old = form.get("old_password").unwrap_or("").to_string();
+    let new1 = form.get("new_password1").unwrap_or("").to_string();
+    let new2 = form.get("new_password2").unwrap_or("").to_string();
+
+    // Validation. All re-renders return the form with an inline alert.
+    if old.is_empty() || new1.is_empty() || new2.is_empty() {
+        return Ok(password_change_response(
+            &shell,
+            Some("All three fields are required."),
+        ));
+    }
+    if new1 != new2 {
+        return Ok(password_change_response(
+            &shell,
+            Some("The two new password fields did not match. Try again."),
+        ));
+    }
+    if new1.len() < 8 {
+        return Ok(password_change_response(
+            &shell,
+            Some("Your new password must be at least 8 characters."),
+        ));
+    }
+
+    // Verify old password against the current hash. Fetch fresh
+    // because the session-attached `Identity` doesn't carry the hash.
+    let user = match auth::user::find_by_id(db, user_id).await? {
+        Some(u) => u,
+        None => return Ok(login_page(401, None, None)),
+    };
+    if !auth::password::verify(&old, &user.password_hash) {
+        return Ok(password_change_response(
+            &shell,
+            Some("Your old password was entered incorrectly. Please try again."),
+        ));
+    }
+
+    // Rotate the hash + wipe every session for this user. Then
+    // re-issue a new session so the caller doesn't get booted out
+    // of their own password-change form.
+    auth::user::set_password(db, user.id, &new1).await?;
+    let session = auth::session::create(db, user.id).await?;
+    let max_age = auth::SESSION_TTL_DAYS * 24 * 3600;
+    let mut resp = redirect("/admin/password_change/done");
+    crate::http::set_cookie(
+        &mut resp,
+        &build_session_cookie(auth::SESSION_COOKIE, &session.id, max_age),
     );
     Ok(with_admin_headers(resp))
 }
