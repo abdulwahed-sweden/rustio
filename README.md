@@ -14,14 +14,14 @@
 </p>
 
 <p align="center">
-  <b>Django-like developer experience — powered by Rust.</b>
+  <b>The fastest way to build real systems — and evolve them safely with AI.</b>
 </p>
 
 ---
 
-RustIO is a small, opinionated web framework that gives you Django's "scaffold a project, get a working admin, ship a feature in an afternoon" workflow — built from scratch for Rust.
+RustIO is a system builder with a strict, typed core. The shape of every model, field, and relationship is captured in a deterministic, machine-readable schema. That determinism is the foundation for both the admin layer you see today and the AI-assisted extension layer coming next.
 
-One installer. One command. A real server, a real database, a real admin, with the safety of the Rust compiler underneath.
+This is not a clone of Django. It is a different kind of tool: one that treats your Rust struct as the complete definition of a working system, and that a well-scoped AI can safely extend.
 
 ---
 
@@ -32,7 +32,7 @@ cargo install rustio-cli
 rustio init
 ```
 
-That's the whole setup. `rustio init` opens a four-prompt wizard:
+`rustio init` opens a four-prompt wizard:
 
 ```text
   RustIO
@@ -55,60 +55,88 @@ rustio migrate apply
 rustio run
 ```
 
-Open these in your browser:
+Open these:
 
 - [http://127.0.0.1:8000/](http://127.0.0.1:8000/) — homepage
 - [http://127.0.0.1:8000/tasks](http://127.0.0.1:8000/tasks) — your app's tutorial view
-- [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) — sign-in form, then the admin
+- [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) — sign-in form → admin index
 
-To sign in: type **`dev-admin`** and press Enter. You're in.
+To sign in from a browser: type **`dev-admin`** and press Enter. You're in.
 
-### Prefer flags over prompts?
+For non-interactive scaffolding:
 
 ```bash
 rustio init taskwire --preset blog --app tasks
 ```
 
-Or use the granular commands the wizard builds on:
+---
 
-```bash
-rustio new project taskwire
-cd taskwire
-rustio new app tasks
-rustio migrate apply
-rustio run
-```
+## What's shipped in 0.3.1
+
+| capability | how it works |
+|---|---|
+| **HTTP + router** | hyper-backed server, `:param` path matching, 401/405 discrimination |
+| **Middleware** | `async fn(Request, Next) -> Result<Response, Error>` · typed per-request context |
+| **Admin** | `#[derive(RustioAdmin)]` generates list / create / edit / delete + an index at `/admin` |
+| **Browser auth** | Sign-in form at `/admin`, `HttpOnly; SameSite=Strict` session cookie |
+| **API auth** | `Authorization: Bearer <token>` — works alongside the cookie flow |
+| **ORM** | `Model` trait over SQLite via `sqlx` (hidden from user code) |
+| **Field types** | `i32 · i64 · String · bool` (DateTime, Option, Uuid land in 0.4.0) |
+| **Migrations** | Versioned `.sql` in `migrations/`, tracked, transactional, idempotent |
+| **Production guard** | `RUSTIO_ENV=production` disables dev tokens entirely |
+| **CLI** | `init` wizard · `new project` · `new app` · `migrate generate/apply/status` · `run` |
+| **Deploy** | One ~15 MB binary, sub-50 ms cold start, 10–30 MB resident memory |
 
 ---
 
-## ✨ What you get
+## Where we're going
 
-| capability | shipped today | how it works |
-|---|---|---|
-| **Interactive setup** | ✅ | `rustio init` — name, preset, model, confirm |
-| **Built-in admin** | ✅ | `#[derive(RustioAdmin)]` → list / create / edit / delete + an index page at `/admin` |
-| **Browser sign-in** | ✅ | `/admin` shows a sign-in form; submit a token, get an `HttpOnly` cookie |
-| **Bearer auth** | ✅ | `Authorization: Bearer <token>` for API/curl callers — both paths work side by side |
-| **ORM** | ✅ | `Model` trait over SQLite via `sqlx` (sqlx hidden from your code). `User::find(&db, id).await` style API |
-| **Migrations** | ✅ | Versioned `.sql` files in `migrations/`, tracked in `rustio_migrations`, transactional + idempotent |
-| **Production guard** | ✅ | `RUSTIO_ENV=production` disables dev tokens entirely |
-| **Single binary deploy** | ✅ | Your whole app compiles to one ~15 MB executable |
-| **Auto migrations from model diffs** | 🛠 0.6.0 | See [ROADMAP.md](ROADMAP.md) |
-| **Relations (ForeignKey, has_many)** | 🛠 0.5.0 | See [ROADMAP.md](ROADMAP.md) |
-| **`DateTime`, `Option<T>`, `Uuid`** | 🛠 0.4.0–0.6.0 | See [ROADMAP.md](ROADMAP.md) |
-| **Real user accounts (passwords, sessions)** | 🛠 0.4.0 | See [ROADMAP.md](ROADMAP.md) |
-| **PostgreSQL** | 🛠 0.8.0 | See [ROADMAP.md](ROADMAP.md) |
+Three phases, in strict order. See [**ROADMAP.md**](ROADMAP.md) for the full plan.
 
-The full plan — what's next, what's deliberately out of scope, and the version-by-version horizon to 1.0 — is in [**ROADMAP.md**](ROADMAP.md).
+### Phase 1 · Foundation — v0.4.0
+
+Make the core deterministic, typed, and schema-exportable.
+
+- Production-grade auth: built-in `User` table, `argon2` passwords, DB-backed sessions, login form upgraded to email + password.
+- Core types: `DateTime<Utc>`, `Option<T>`.
+- **`rustio.schema.json`** — a stable, machine-readable description of every model, field, type, and admin behavior in the project. This file is the contract the AI layer will consume.
+
+### Phase 2 · Intelligence — v0.5.0
+
+Make the system safely extensible by AI agents.
+
+- `rustio ai "add a published bool to Post"` — reads the schema, emits a reviewable diff, runs `cargo build`, writes only if it compiles.
+- A fixed set of edit primitives (add-field, add-model, add-relation, add-migration, add-admin-attribute). No free-form code generation.
+- Relations: `belongs_to`, `has_many`. Inline forms in admin. Reflected into the schema.
+
+### Phase 3 · Systems — v0.6.0 and beyond
+
+`rustio init <system>` scaffolds a running vertical solution, not a blank project.
+
+- `clinic`, `crm`, `inventory`, `workflow`, `registry`.
+- Each is a complete project + apps + migrations + admin configuration.
+- Built only after Phases 1 and 2 are final.
 
 ---
 
-## 🧠 Philosophy
+## Design principle
 
-- **Simplicity.** One obvious way to do each thing. No plumbing.
-- **Performance.** No framework layers hiding the hot path. ~50–100× more throughput than Django, ~10× less memory, sub-50 ms cold start.
-- **Type safety.** The compiler catches what Django catches at runtime. Rename a column and the build breaks at the read site.
-- **Single-binary deploy.** No virtualenv, no `pip install`, no Python version games. `cargo build --release && scp` is the deploy script.
+Every feature must answer:
+
+> *Does it make building a real system faster, clearer, or safer?*
+
+If the answer is no, it does not belong in RustIO.
+
+---
+
+## What RustIO is NOT
+
+- Not a Django clone.
+- Not a generic framework (Axum / Actix / Rocket cover that space).
+- Not a microframework — opinionated defaults are the product.
+- Not a frontend framework.
+- Not a sync framework.
+- Not an AI toy. The AI layer is enabled by the typed core; it is not the core.
 
 ---
 
@@ -119,11 +147,11 @@ The full plan — what's next, what's deliberately out of scope, and the version
 | `rustio init` | Interactive wizard: name + preset + model + confirm |
 | `rustio init <name>` | Non-interactive scaffold (default preset: `basic`) |
 | `rustio init <name> --preset P` | Non-interactive with a preset (`basic` / `blog` / `api`) |
-| `rustio init <name> --app X` | Override the scaffolded app name (e.g. `books`, `tasks`, `links`) |
+| `rustio init <name> --app X` | Override the scaffolded app name |
 | `rustio new project <name>` | Create a project directly (no wizard) |
 | `rustio new app <name>` | Scaffold an app inside the current project |
-| `rustio migrate generate <n>` | Create a new migration file |
-| `rustio migrate apply [-v]` | Apply pending migrations (`-v` prints each statement) |
+| `rustio migrate generate <n>` | Create a migration file |
+| `rustio migrate apply [-v]` | Apply pending migrations |
 | `rustio migrate status` | Show applied + pending migrations |
 | `rustio run` | Build and run the project in the current directory |
 | `rustio --version` | Print the CLI version |
@@ -132,23 +160,18 @@ The full plan — what's next, what's deliberately out of scope, and the version
 
 ## 🔐 Authentication
 
-RustIO ships with a development auth layer so you have a working admin from minute one. There are **two ways to authenticate**, both backed by the same token mapping:
+RustIO ships with a development auth layer so the admin is usable from minute one. Two entry points share one token mapping:
 
-```rust
-let id = require_auth(req.ctx())?;    // 401 if missing
-let id = require_admin(req.ctx())?;   // 401 if missing, 403 if not admin
-```
+- **Browser flow.** `/admin` shows a sign-in form. Submit `dev-admin` or `dev-user`; an `HttpOnly; SameSite=Strict` cookie is set and subsequent requests authenticate via the cookie.
+- **API / curl flow.** `Authorization: Bearer dev-admin`.
 
-- **Browser flow.** Visit `/admin`, you'll see a sign-in form. Submit a token (`dev-admin` or `dev-user`) and an `HttpOnly; SameSite=Strict` cookie is set. All subsequent requests authenticate via the cookie.
-- **API / curl flow.** Send `Authorization: Bearer dev-admin`. No cookie required.
+Both paths work in parallel. Setting `RUSTIO_ENV=production` disables the built-in dev tokens — a real auth middleware is required in that mode.
 
-Both paths work simultaneously. Real session-based auth (a `User` table, password hashing, password reset) lands in 0.4.0 — see [ROADMAP.md](ROADMAP.md).
-
-`RUSTIO_ENV=production` disables the dev tokens entirely. A real auth middleware is required to recognise any tokens in that mode; the `authenticate` middleware logs a one-time warning if you forget.
+Phase 1 replaces the dev tokens with a real `User` table, `argon2` password hashing, and session storage. The form shape stays; only what's behind it changes.
 
 ---
 
-## ♻️ Starting Fresh
+## ♻️ Starting fresh
 
 The default SQLite database is a single file (`app.db`) in the project root. Migrations are **idempotent** and tracked in the `rustio_migrations` table. To reset:
 
@@ -157,7 +180,7 @@ rm app.db
 rustio migrate apply
 ```
 
-Your schema (the `.sql` files in `migrations/`) is the source of truth; deleting `app.db` only drops rows, never code.
+Your schema lives in the `.sql` files in `migrations/` — the source of truth. Deleting `app.db` drops rows, not code.
 
 ---
 
@@ -167,7 +190,7 @@ Your schema (the `.sql` files in `migrations/`) is the source of truth; deleting
 cargo install rustio-cli
 ```
 
-This installs the `rustio` binary to `~/.cargo/bin/rustio`. Generated projects depend on the matching `rustio-core` from crates.io.
+Installs the `rustio` binary to `~/.cargo/bin/rustio`. Generated projects depend on the matching `rustio-core` from crates.io.
 
 ---
 
@@ -206,7 +229,7 @@ impl Model for Task {
 }
 ```
 
-This is the entire model. The admin UI at `/admin/tasks` (list, create, edit, delete + a `Task` entry on the index page) is generated from it. No HTML, no routing, no form handling to write.
+This struct is the entire model. The admin UI at `/admin/tasks` — list, create, edit, delete, plus an entry on the admin index — is generated from it. Once 0.4.0 ships, this same struct will also be the content of `rustio.schema.json`, which is what the AI layer will read.
 
 ---
 
@@ -218,42 +241,28 @@ mysite/
 ├── README.md
 ├── main.rs                    # entry point (top-level by convention)
 ├── apps/
-│   ├── mod.rs                 # aggregator: builds the Admin + mounts views
+│   ├── mod.rs                 # aggregator — builds the Admin + mounts views
 │   └── tasks/
 │       ├── mod.rs
 │       ├── models.rs          # struct + Model + RustioAdmin derive
 │       ├── admin.rs           # `install(admin)` — adds this app to the index
 │       └── views.rs           # tutorial page + your custom routes
 ├── migrations/                # versioned .sql files
-├── static/                    # static asset directory (you wire it up)
-├── templates/                 # template directory (you wire it up)
+├── static/                    # static assets
+├── templates/                 # template directory
 └── app.db                     # SQLite (gitignored)
 ```
 
 ---
 
-## 🗺 Roadmap
-
-The full plan is in [**ROADMAP.md**](ROADMAP.md). The headline targets, ordered by impact:
-
-- **0.4.0** — Real user auth (User table, argon2, sessions, password reset) + `DateTime`
-- **0.5.0** — Relations (ForeignKey / has_many) + admin inline forms
-- **0.6.0** — Auto-generated migrations + `Option<T>`, `f64`, `Uuid`
-- **0.7.0** — Admin search + filter + pagination + field attributes
-- **0.8.0** — PostgreSQL + form validation framework
-- **0.9.0** — File uploads + JSON request body + CSRF tokens
-- **1.0.0** — API freeze + hot reload + test client + structured logging + docs site
-
----
-
 ## ⚙️ Configuration
 
-| Variable | Purpose |
+| variable | purpose |
 |---|---|
 | `RUSTIO_DATABASE_URL` | Database URL (default `sqlite://app.db?mode=rwc`) |
 | `RUSTIO_ENV` | Set to `production` (or `prod`) to disable built-in dev tokens |
 | `NO_COLOR` | Disable colored CLI output |
-| `RUSTIO_CORE_PATH` | Use a local `rustio-core` path in generated projects (for RustIO contributors only) |
+| `RUSTIO_CORE_PATH` | Use a local `rustio-core` path in generated projects (for contributors) |
 
 ---
 
@@ -275,7 +284,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-targets
 ```
 
-CI runs the same checks on every push. For Tier 0 items in the roadmap, please open a design issue or email before starting — those need alignment.
+CI runs the same checks on every push. For Phase 1 work, please align on design first — open an issue before writing code.
 
 ---
 
