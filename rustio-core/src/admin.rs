@@ -363,7 +363,7 @@ where
     let edit_path = format!("{base}/:id/edit");
     let delete_path = format!("{base}/:id/delete");
 
-    // --- list ---
+    // --- list (with search + filter via ?q=&status=&priority=) ---
     let list_db = db.clone();
     let list_entries = entries.clone();
     router = router.get(&base, move |req, _params| {
@@ -373,9 +373,69 @@ where
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
             }
+            let query = req.query();
+            let q = query
+                .get("q")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let status = query
+                .get("status")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+            let priority = query
+                .get("priority")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+
             let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
-            let items = T::all(&db).await?;
-            Ok::<Response, Error>(list_response::<T>(shell, &items))
+            let all_items = T::all(&db).await?;
+            let total = all_items.len();
+
+            // Gather distinct filter-values from the unfiltered set so
+            // the dropdown options reflect what actually exists in the
+            // data, not a hard-coded list.
+            let status_options = distinct_values::<T>(&all_items, "status");
+            let priority_options = distinct_values::<T>(&all_items, "priority");
+
+            // In-memory filter. Fine for the dev admin's typical row
+            // counts; graduates to DB WHERE clauses when a project adds
+            // an index or pagination layer.
+            let filtered: Vec<&T> = all_items
+                .iter()
+                .filter(|item| {
+                    if let Some(qs) = &q {
+                        if !matches_query::<T>(item, qs) {
+                            return false;
+                        }
+                    }
+                    if let Some(s) = &status {
+                        let v = item.field_display("status").unwrap_or_default();
+                        if &v != s {
+                            return false;
+                        }
+                    }
+                    if let Some(p) = &priority {
+                        let v = item.field_display("priority").unwrap_or_default();
+                        if &v != p {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .collect();
+
+            let filters = ListFilters {
+                q: q.as_deref(),
+                status: status.as_deref(),
+                status_options: &status_options,
+                priority: priority.as_deref(),
+                priority_options: &priority_options,
+            };
+
+            Ok::<Response, Error>(list_response::<T>(shell, &filtered, total, filters))
         }
     });
 
@@ -939,89 +999,125 @@ fn dashboard_response(shell: Shell<'_>) -> Response {
 // List page
 // ---------------------------------------------------------------------------
 
-fn list_response<T: AdminModel>(shell: Shell<'_>, items: &[T]) -> Response {
+/// All filter state for a list page in one bundle — lets the handler
+/// pass params cleanly and lets the renderer reflect them back in the
+/// form (so the search box keeps its value after submission).
+struct ListFilters<'a> {
+    q: Option<&'a str>,
+    status: Option<&'a str>,
+    status_options: &'a [String],
+    priority: Option<&'a str>,
+    priority_options: &'a [String],
+}
+
+impl ListFilters<'_> {
+    fn is_active(&self) -> bool {
+        self.q.is_some() || self.status.is_some() || self.priority.is_some()
+    }
+}
+
+fn list_response<T: AdminModel>(
+    shell: Shell<'_>,
+    items: &[&T],
+    total: usize,
+    filters: ListFilters<'_>,
+) -> Response {
     let count = items.len();
     let singular = T::singular_name();
     let plural = T::DISPLAY_NAME;
     let admin_name = T::ADMIN_NAME;
 
-    let actions = format!(
+    let page_actions = format!(
         r#"<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{icon}<span>Add {singular}</span></a>"#,
         name = escape_html(admin_name),
         singular = escape_html(singular),
         icon = icon_plus(),
     );
 
-    let body = if items.is_empty() {
+    // --- Empty states: two flavours ---
+    // 1. Table has zero rows, period → encourage creation.
+    // 2. Filter returned zero of N → explain the filter is the reason.
+    let body = if total == 0 {
         format!(
             r#"<div class="rio-card">
 <div class="rio-empty">
 <div class="rio-empty-icon">{icon}</div>
-<h3>No {plural} yet</h3>
-<p>This model has no rows. Create the first one to get going.</p>
-<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Create your first {singular}</span></a>
+<h3>No {plural_lower} yet</h3>
+<p>This table is empty. Create the first record to get started.</p>
+<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Create first {singular_lower}</span></a>
 </div>
 </div>"#,
-            plural = escape_html(&plural.to_lowercase()),
+            plural_lower = escape_html(&plural.to_lowercase()),
             icon = icon_inbox(),
             name = escape_html(admin_name),
             plus = icon_plus(),
-            singular = escape_html(singular),
+            singular_lower = escape_html(&singular.to_lowercase()),
         )
     } else {
-        let headers: String = T::FIELDS
-            .iter()
-            .map(|f| format!("<th>{}</th>", escape_html(f.name)))
-            .collect();
-        let rows: String = items
-            .iter()
-            .map(|item| {
-                let cells: String = T::FIELDS
-                    .iter()
-                    .map(|f| render_cell::<T>(f, item))
-                    .collect();
-                let id = item.id();
-                let actions = format!(
-                    r#"<td class="rio-cell-actions">
+        let toolbar = render_list_toolbar::<T>(&filters, count, total);
+
+        if items.is_empty() {
+            format!(
+                r#"<div class="rio-table-wrap">
+{toolbar}
+<div class="rio-empty">
+<div class="rio-empty-icon">{icon}</div>
+<h3>No records match these filters</h3>
+<p>Try a different search term, clear the filters, or add a new {singular_lower}.</p>
+<div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
+<a class="rio-btn" href="/admin/{name}">{reset}<span>Clear filters</span></a>
+<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
+</div>
+</div>
+</div>"#,
+                icon = icon_search(),
+                singular_lower = escape_html(&singular.to_lowercase()),
+                name = escape_html(admin_name),
+                reset = icon_arrow_left(),
+                plus = icon_plus(),
+            )
+        } else {
+            let headers: String = T::FIELDS
+                .iter()
+                .map(|f| format!("<th>{}</th>", escape_html(&humanise(f.name))))
+                .collect();
+            let rows: String = items
+                .iter()
+                .map(|item| {
+                    let cells: String = T::FIELDS
+                        .iter()
+                        .map(|f| render_cell::<T>(f, *item))
+                        .collect();
+                    let id = item.id();
+                    // Icon + label actions — obvious to non-technical
+                    // users. Delete uses a danger-ghost style so the
+                    // destructive path reads but doesn't scream.
+                    let row_actions = format!(
+                        r#"<td class="rio-cell-actions">
 <div class="rio-row-actions">
-<a class="rio-icon-btn" href="/admin/{name}/{id}/edit" title="Edit" aria-label="Edit {singular}">{pencil}</a>
-<a class="rio-icon-btn rio-danger" href="/admin/{name}/{id}/delete" title="Delete" aria-label="Delete {singular}">{trash}</a>
+<a class="rio-btn rio-btn-sm" href="/admin/{name}/{id}/edit">{pencil}<span>Edit</span></a>
+<a class="rio-btn rio-btn-sm rio-btn-danger-ghost" href="/admin/{name}/{id}/delete">{trash}<span>Delete</span></a>
 </div>
 </td>"#,
-                    name = escape_html(admin_name),
-                    id = id,
-                    singular = escape_html(singular),
-                    pencil = icon_pencil(),
-                    trash = icon_trash(),
-                );
-                format!("<tr>{cells}{actions}</tr>")
-            })
-            .collect();
+                        name = escape_html(admin_name),
+                        id = id,
+                        pencil = icon_pencil(),
+                        trash = icon_trash(),
+                    );
+                    format!("<tr>{cells}{row_actions}</tr>")
+                })
+                .collect();
 
-        let count_label = if count == 1 {
-            format!("1 {}", singular.to_lowercase())
-        } else {
-            format!("{count} {}", plural.to_lowercase())
-        };
-
-        format!(
-            r#"<div class="rio-table-wrap">
-<div class="rio-table-toolbar">
-<div class="rio-search">
-{search_icon}
-<input type="search" placeholder="Search (coming soon)" aria-label="Search {plural}" disabled>
-</div>
-<div class="rio-count">{count_label}</div>
-</div>
+            format!(
+                r#"<div class="rio-table-wrap">
+{toolbar}
 <table class="rio-table">
 <thead><tr>{headers}<th aria-label="Actions"></th></tr></thead>
 <tbody>{rows}</tbody>
 </table>
 </div>"#,
-            search_icon = icon_search(),
-            plural = escape_html(&plural.to_lowercase()),
-            count_label = escape_html(&count_label),
-        )
+            )
+        }
     };
 
     let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), (plural, None)];
@@ -1031,29 +1127,190 @@ fn list_response<T: AdminModel>(shell: Shell<'_>, items: &[T]) -> Response {
         200,
         plural,
         plural,
-        Some(&format!("Browse and manage {}.", plural.to_lowercase())),
+        Some(&format!(
+            "Browse, search, and manage {}.",
+            plural.to_lowercase()
+        )),
         crumbs,
-        &actions,
+        &page_actions,
         &body,
     )
 }
 
-/// Render one table cell for an admin list row. Adds styling classes
-/// based on field type: the id column gets a monospace, muted style;
-/// the first non-id String field becomes the primary-weight cell; bool
-/// values render as pills; nulls render as a subtle em-dash.
+/// Render the search + filters + submit/reset toolbar. Posts as a GET
+/// to the same list URL, so the current filter state is carried in the
+/// URL and bookmarkable.
+fn render_list_toolbar<T: AdminModel>(
+    filters: &ListFilters<'_>,
+    shown: usize,
+    total: usize,
+) -> String {
+    let admin_name = T::ADMIN_NAME;
+    let plural = T::DISPLAY_NAME;
+
+    let q_value = filters.q.map(escape_html).unwrap_or_default();
+
+    // Status filter dropdown — only rendered when the model has a
+    // String field named "status" (detected by non-empty options).
+    let status_select = if !filters.status_options.is_empty() {
+        let options: String =
+            std::iter::once(r#"<option value="">All status</option>"#.to_string())
+                .chain(filters.status_options.iter().map(|v| {
+                    let selected = if filters.status.map(|s| s == v).unwrap_or(false) {
+                        " selected"
+                    } else {
+                        ""
+                    };
+                    format!(
+                        r#"<option value="{v}"{selected}>{label}</option>"#,
+                        v = escape_html(v),
+                        label = escape_html(v),
+                    )
+                }))
+                .collect();
+        format!(
+            r#"<select class="rio-select" name="status" aria-label="Filter by status">{options}</select>"#,
+        )
+    } else {
+        String::new()
+    };
+
+    // Priority filter — numeric, so render values as-is.
+    let priority_select = if !filters.priority_options.is_empty() {
+        let options: String =
+            std::iter::once(r#"<option value="">All priorities</option>"#.to_string())
+                .chain(filters.priority_options.iter().map(|v| {
+                    let selected = if filters.priority.map(|p| p == v).unwrap_or(false) {
+                        " selected"
+                    } else {
+                        ""
+                    };
+                    format!(
+                        r#"<option value="{v}"{selected}>Priority {v}</option>"#,
+                        v = escape_html(v),
+                    )
+                }))
+                .collect();
+        format!(
+            r#"<select class="rio-select" name="priority" aria-label="Filter by priority">{options}</select>"#,
+        )
+    } else {
+        String::new()
+    };
+
+    let reset_btn = if filters.is_active() {
+        format!(
+            r#"<a class="rio-btn rio-btn-ghost" href="/admin/{name}">Reset</a>"#,
+            name = escape_html(admin_name),
+        )
+    } else {
+        String::new()
+    };
+
+    let count_label = if filters.is_active() {
+        format!("Showing {shown} of {total}")
+    } else if total == 1 {
+        "1 record".to_string()
+    } else {
+        format!("{total} records")
+    };
+
+    format!(
+        r#"<form class="rio-table-toolbar" method="get" action="/admin/{name}" role="search" aria-label="Search {plural}">
+<div class="rio-search">
+{search_icon}
+<input type="search" name="q" value="{q}" placeholder="Search by title, ID…" aria-label="Search text">
+</div>
+{status}
+{priority}
+<div class="rio-toolbar-actions">
+<button type="submit" class="rio-btn rio-btn-primary">{submit_icon}<span>Search</span></button>
+{reset}
+</div>
+<div class="rio-count">{count}</div>
+</form>"#,
+        name = escape_html(admin_name),
+        plural = escape_html(plural),
+        search_icon = icon_search(),
+        q = q_value,
+        status = status_select,
+        priority = priority_select,
+        submit_icon = icon_search(),
+        reset = reset_btn,
+        count = escape_html(&count_label),
+    )
+}
+
+/// In-memory substring match — scans every String field, plus the
+/// id, for `needle` (case-insensitive). Good enough for the dev
+/// admin's typical row counts; DB-backed LIKE comes once a project
+/// adds pagination.
+fn matches_query<T: AdminModel>(item: &T, needle: &str) -> bool {
+    let needle = needle.to_lowercase();
+    if item.id().to_string().contains(&needle) {
+        return true;
+    }
+    for f in T::FIELDS.iter() {
+        if matches!(f.ty, FieldType::String) {
+            if let Some(v) = item.field_display(f.name) {
+                if v.to_lowercase().contains(&needle) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Collect the distinct non-empty values for a named field, sorted.
+/// Returns empty when the field doesn't exist on the model — which
+/// lets the toolbar renderer skip the filter entirely.
+fn distinct_values<T: AdminModel>(items: &[T], field_name: &str) -> Vec<String> {
+    if !T::FIELDS.iter().any(|f| f.name == field_name) {
+        return Vec::new();
+    }
+    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for item in items {
+        if let Some(v) = item.field_display(field_name) {
+            if !v.is_empty() {
+                set.insert(v);
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+/// Map common status / lifecycle strings to a semantic pill colour.
+/// Unknown values fall through to neutral slate. Keeping this small
+/// and known is deliberate — no ad-hoc colour explosions.
+fn status_pill_class(value: &str) -> &'static str {
+    match value {
+        "done" | "complete" | "completed" | "finished" | "resolved" => "rio-pill rio-pill-emerald",
+        "active" | "approved" | "published" | "live" => "rio-pill rio-pill-emerald",
+        "pending" | "todo" | "queued" | "open" | "new" => "rio-pill rio-pill-amber",
+        "in_progress" | "doing" | "working" | "review" | "in_review" => "rio-pill rio-pill-indigo",
+        "archived" | "inactive" | "closed" | "cancelled" | "canceled" => "rio-pill rio-pill-slate",
+        "blocked" | "failed" | "rejected" | "error" => "rio-pill rio-pill-rose",
+        _ => "rio-pill rio-pill-slate",
+    }
+}
+
+/// Render one table cell with styling driven by the field's role and
+/// type. Designed for scanning: id monospace-muted, primary column
+/// bolded, bools + status strings become pills, nullable empties
+/// render as a subtle em-dash.
 fn render_cell<T: AdminModel>(f: &AdminField, item: &T) -> String {
     let value = item.field_display(f.name).unwrap_or_default();
     if f.name == "id" {
-        return format!(r#"<td class="rio-cell-id">{}</td>"#, escape_html(&value));
+        return format!(r#"<td class="rio-cell-id">#{}</td>"#, escape_html(&value));
     }
     if value.is_empty() && f.nullable {
         return r#"<td class="rio-cell-muted">—</td>"#.to_string();
     }
     if matches!(f.ty, FieldType::Bool) {
         let (cls, label) = match value.as_str() {
-            "true" => ("rio-pill rio-pill-emerald", "true"),
-            "false" => ("rio-pill rio-pill-slate", "false"),
+            "true" => ("rio-pill rio-pill-emerald", "active"),
+            "false" => ("rio-pill rio-pill-slate", "inactive"),
             other => ("rio-pill rio-pill-slate", other),
         };
         return format!(
@@ -1061,7 +1318,21 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T) -> String {
             escape_html(label)
         );
     }
-    // First field after id becomes the primary-weight cell.
+    // Status-like String fields get a coloured pill. Keeps tables
+    // scannable at a glance without requiring per-project config.
+    if f.name == "status" && matches!(f.ty, FieldType::String) {
+        let cls = status_pill_class(&value);
+        let label = value.replace('_', " ");
+        return format!(
+            r#"<td><span class="{cls}">{}</span></td>"#,
+            escape_html(&label)
+        );
+    }
+    // Numeric fields get tabular numerics + muted colour.
+    if matches!(f.ty, FieldType::I32 | FieldType::I64) {
+        return format!(r#"<td class="rio-cell-num">{}</td>"#, escape_html(&value));
+    }
+    // First non-id field becomes the primary-weight cell.
     let is_primary = f.name != "id"
         && T::FIELDS
             .iter()
@@ -1131,10 +1402,10 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
         FormMode::Edit { id, .. } => format!(
             r#"<section class="rio-danger-zone">
 <div class="rio-danger-copy">
-<h3 class="rio-danger-title">{warn} Delete this {singular}</h3>
-<p class="rio-danger-hint">This removes the record permanently. Any rows that reference it with a foreign key and <code>ON DELETE CASCADE</code> will also be deleted.</p>
+<h3 class="rio-danger-title">{warn}<span>Delete this {singular}</span></h3>
+<p class="rio-danger-hint">Permanently removes this record. Rows that reference it with <code>ON DELETE CASCADE</code> will also be deleted.</p>
 </div>
-<a class="rio-btn rio-btn-danger" href="/admin/{name}/{id}/delete">{trash}<span>Delete…</span></a>
+<a class="rio-btn rio-btn-danger" href="/admin/{name}/{id}/delete">{trash}<span>Delete record</span></a>
 </section>"#,
             warn = icon_triangle_alert(),
             singular = escape_html(&singular.to_lowercase()),
