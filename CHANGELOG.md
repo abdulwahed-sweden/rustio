@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Hardened — Foundation Phase, Pass A.5
+
+Pass A landed the shape; Pass A.5 locks it down. No new features — every
+change here tightens an existing invariant.
+
+#### Schema
+
+- **Byte-for-byte determinism.** `Schema::from_admin` now sorts models
+  by name and fields within each model by name. Two calls on the same
+  registry produce identical JSON. The admin UI's display order is
+  unchanged — only the exported file is sorted.
+- **No clocks in the file.** Removed `generated_at` from the schema
+  document entirely. The filesystem's mtime records when it was
+  written; the JSON content is now purely structural.
+- **`Schema::validate()`** — fail-fast checks for duplicate model names,
+  duplicate field names, invalid type names, dangling relation targets,
+  and version mismatches. `SchemaError` is a named enum; tooling can
+  branch on the failure kind.
+- **Version lock.** `Schema::parse` rejects documents whose `version`
+  field doesn't match `SCHEMA_VERSION`. Consumers of `rustio.schema.json`
+  (including the future AI layer) refuse to load anything they weren't
+  built to understand.
+- **Strict deserialization.** `#[serde(deny_unknown_fields)]` on every
+  schema struct. Extra keys fail to load.
+- **Atomic writes.** `Schema::write_to` validates before persisting, and
+  cleans up the temp file on rename failure so no `.json.tmp` is left
+  next to the target on retry.
+- Trailing newline on the emitted JSON so `git diff` stops warning
+  about "no newline at end of file".
+
+#### AI primitives
+
+- **`validate_primitive`** — structural check: non-empty identifiers,
+  type names in `VALID_TYPE_NAMES`, no duplicate fields inside
+  `add_model`, `update_admin.attr` in the allow-list.
+- **`validate_against(&Primitive, &Schema)`** — semantic check: target
+  models and fields exist, `add_*` doesn't collide with existing
+  entries, relations resolve to real models.
+- **`Plan { steps: Vec<Primitive> }`** with **`Plan::validate(&Schema)`**
+  — shadow-applies each primitive to an in-memory schema copy so later
+  steps validate against the expected post-state. All-or-nothing: the
+  first invalid step rejects the plan. No filesystem, no DB — pure
+  simulation, consistent with the 0.4.0 "definitions only" rule.
+- **Strict deserialization.** `#[serde(deny_unknown_fields)]` on every
+  primitive payload and `Plan`. Unknown ops, unknown keys, and missing
+  required fields all fail to parse.
+- **`PrimitiveError::InStep`** annotates plan failures with the step
+  index so callers can report "step 3 failed because …".
+
+#### DateTime
+
+- `parse_datetime_local` now explicitly rejects empty strings, leading
+  or trailing whitespace, timezone suffixes (`Z`, `+HH:MM`), out-of-range
+  calendar values, and partial dates. UTC enforcement verified for
+  every valid input via `to_rfc3339().ends_with("+00:00")`.
+- Input-side contract pinned in tests: the macro trims before calling;
+  `parse_datetime_local` itself does not.
+
+#### Option<T>
+
+- ORM round-trip coverage for `Option<String>`, `Option<i32>`, and
+  `Option<DateTime<Utc>>`: `None` writes as SQL NULL (verified via
+  `IS NULL` on the raw row), `Some` reads back identical to input,
+  and the update path flips both directions without data loss.
+
+#### Admin rendering
+
+- Unit tests pin the `required` attribute rules:
+  - nullable → never required,
+  - non-nullable non-bool → required,
+  - bool → never required (no "unset" UI for checkboxes).
+- DateTime fields render as `<input type="datetime-local">` with the
+  stored value round-tripped into the `value=` attribute.
+- `field_display` returning `None` or `Some(String::new())` renders an
+  empty value without panicking.
+
+#### Tests
+
+~50 new tests across `schema::`, `ai::`, `admin::`, and `orm::`,
+including a **byte-for-byte schema snapshot** that will fail on any
+future change to ordering, type-name mapping, or JSON punctuation.
+
 ### Added — Foundation Phase, Pass A (schema + typed core)
 
 - **`rustio.schema.json`** — a deterministic, machine-readable description

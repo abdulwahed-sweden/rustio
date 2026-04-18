@@ -669,8 +669,27 @@ fn handle_logout() -> Response {
 /// explicitly when that becomes necessary.
 ///
 /// Called from `#[derive(RustioAdmin)]`-generated `from_form` bodies via
-/// `::rustio_core::admin::parse_datetime_local`.
+/// `::rustio_core::admin::parse_datetime_local`. The generated code
+/// trims its input before calling; this function is strict and does
+/// **not** silently trim, so misuse (calling with unclean input) fails
+/// loudly rather than succeeding unpredictably.
 pub fn parse_datetime_local(raw: &str) -> Result<DateTime<Utc>, String> {
+    if raw.is_empty() {
+        return Err(String::from("date-time value is empty"));
+    }
+    // Reject leading/trailing whitespace and any embedded timezone
+    // marker. `datetime-local` is timezone-free by spec; accepting `Z`
+    // or a `+HH:MM` suffix would mean two conflicting notions of
+    // "what wall clock is this" — refuse at the boundary.
+    if raw.trim_matches(|c: char| c.is_ascii_whitespace()) != raw {
+        return Err(format!("`{raw}` has surrounding whitespace"));
+    }
+    if raw.ends_with('Z') || raw.contains('+') || (raw.matches('-').count() > 2) {
+        return Err(format!(
+            "`{raw}` looks like a timezoned date-time; expected YYYY-MM-DDTHH:MM"
+        ));
+    }
+
     // Browsers vary on whether seconds are included. Try both, longest
     // first, so `:SS` is preferred when present.
     let parsed = NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S")
@@ -764,6 +783,7 @@ button.danger:hover { background: #8a1c12; }
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Timelike;
 
     #[test]
     fn escape_html_escapes_dangerous_chars() {
@@ -773,5 +793,226 @@ mod tests {
         );
         assert_eq!(escape_html("a & b"), "a &amp; b");
         assert_eq!(escape_html("it's"), "it&#39;s");
+    }
+
+    // --- DateTime parsing edge cases ------------------------------------
+
+    #[test]
+    fn parse_datetime_local_accepts_minute_precision() {
+        let dt = parse_datetime_local("2026-04-18T10:12").unwrap();
+        assert_eq!(dt.to_rfc3339(), "2026-04-18T10:12:00+00:00");
+        // UTC enforcement: `to_rfc3339` encodes the offset and we insist
+        // it's zero. The in-memory offset type is `Utc` by construction
+        // (return type is `DateTime<Utc>`), but the string shape is the
+        // external guarantee callers observe.
+        assert!(dt.to_rfc3339().ends_with("+00:00"));
+    }
+
+    #[test]
+    fn parse_datetime_local_accepts_second_precision() {
+        let dt = parse_datetime_local("2026-04-18T10:12:33").unwrap();
+        assert_eq!(dt.to_rfc3339(), "2026-04-18T10:12:33+00:00");
+    }
+
+    #[test]
+    fn parse_datetime_local_rejects_empty_string() {
+        assert!(parse_datetime_local("").is_err());
+    }
+
+    #[test]
+    fn parse_datetime_local_rejects_free_text() {
+        assert!(parse_datetime_local("tomorrow at noon").is_err());
+    }
+
+    #[test]
+    fn parse_datetime_local_rejects_partial_date() {
+        // Missing the time half — common copy-paste mistake.
+        assert!(parse_datetime_local("2026-04-18").is_err());
+    }
+
+    #[test]
+    fn parse_datetime_local_rejects_out_of_range_date() {
+        // Calendar-invalid: there's no 13th month.
+        assert!(parse_datetime_local("2026-13-01T00:00").is_err());
+        // Calendar-invalid: April doesn't have a 31st.
+        assert!(parse_datetime_local("2026-04-31T00:00").is_err());
+    }
+
+    #[test]
+    fn parse_datetime_local_rejects_out_of_range_time() {
+        assert!(parse_datetime_local("2026-04-18T25:00").is_err());
+        assert!(parse_datetime_local("2026-04-18T10:99").is_err());
+    }
+
+    #[test]
+    fn parse_datetime_local_rejects_surrounding_whitespace() {
+        // Trimming is the caller's responsibility — the macro-generated
+        // from_form code calls .trim() before us. This test pins the
+        // boundary so no one adds implicit trimming here without thinking.
+        assert!(parse_datetime_local(" 2026-04-18T10:12").is_err());
+        assert!(parse_datetime_local("2026-04-18T10:12 ").is_err());
+    }
+
+    #[test]
+    fn parse_datetime_local_rejects_timezone_suffix() {
+        // `datetime-local` is explicitly timezone-free by spec. Inputs
+        // carrying `Z`, `+00:00`, or RFC3339 shape must be refused so
+        // callers can't smuggle a second timezone source.
+        assert!(parse_datetime_local("2026-04-18T10:12Z").is_err());
+        assert!(parse_datetime_local("2026-04-18T10:12:00+00:00").is_err());
+    }
+
+    // --- Admin rendering of field widgets --------------------------------
+    //
+    // These tests pin the contract the schema.nullable flag depends on:
+    //   · nullable fields render WITHOUT `required`
+    //   · non-nullable, non-bool fields render WITH `required`
+    //   · DateTime renders as `<input type="datetime-local">`
+    //   · a None on a nullable field renders an empty value and does not
+    //     panic through any path
+    //
+    // Uses a stand-alone type because we need to drive `render_field`
+    // directly; the full Model + ORM plumbing isn't relevant here.
+
+    struct Widgety;
+    impl crate::orm::Model for Widgety {
+        const TABLE: &'static str = "widgety";
+        const COLUMNS: &'static [&'static str] = &["id"];
+        const INSERT_COLUMNS: &'static [&'static str] = &[];
+        fn id(&self) -> i64 {
+            0
+        }
+        fn from_row(_: crate::orm::Row<'_>) -> Result<Self, Error> {
+            unimplemented!()
+        }
+        fn insert_values(&self) -> Vec<crate::orm::Value> {
+            Vec::new()
+        }
+    }
+    impl AdminModel for Widgety {
+        const ADMIN_NAME: &'static str = "widgety";
+        const DISPLAY_NAME: &'static str = "Widgety";
+        const FIELDS: &'static [AdminField] = &[];
+        fn field_display(&self, name: &str) -> Option<String> {
+            // Simulates a Some-wrapped value for "filled" and an
+            // explicit None for "empty".
+            match name {
+                "filled" => Some(String::from("2026-04-18T10:12")),
+                "empty" => Some(String::new()),
+                _ => None,
+            }
+        }
+        fn from_form(_: &FormData, _: Option<i64>) -> Result<Self, Error> {
+            unimplemented!()
+        }
+    }
+
+    fn string_field(name: &'static str, nullable: bool) -> AdminField {
+        AdminField {
+            name,
+            ty: FieldType::String,
+            editable: true,
+            nullable,
+        }
+    }
+
+    fn datetime_field(name: &'static str, nullable: bool) -> AdminField {
+        AdminField {
+            name,
+            ty: FieldType::DateTime,
+            editable: true,
+            nullable,
+        }
+    }
+
+    #[test]
+    fn nullable_string_field_omits_required_attribute() {
+        let f = string_field("note", true);
+        let html = render_field::<Widgety>(&f, None);
+        assert!(!html.contains("required"), "html was: {html}");
+    }
+
+    #[test]
+    fn non_nullable_string_field_marks_required() {
+        let f = string_field("title", false);
+        let html = render_field::<Widgety>(&f, None);
+        assert!(html.contains("required"), "html was: {html}");
+    }
+
+    #[test]
+    fn bool_field_never_marks_required() {
+        // Checkboxes have no "unset" UI; the render code must not mark
+        // them required regardless of nullability.
+        let f = AdminField {
+            name: "flag",
+            ty: FieldType::Bool,
+            editable: true,
+            nullable: false,
+        };
+        let html = render_field::<Widgety>(&f, None);
+        assert!(!html.contains("required"), "html was: {html}");
+    }
+
+    #[test]
+    fn datetime_field_uses_datetime_local_input() {
+        let f = datetime_field("starts_at", false);
+        let html = render_field::<Widgety>(&f, None);
+        assert!(
+            html.contains(r#"type="datetime-local""#),
+            "html was: {html}"
+        );
+    }
+
+    #[test]
+    fn datetime_field_renders_existing_value() {
+        let f = datetime_field("filled", true);
+        let html = render_field::<Widgety>(&f, Some(&Widgety));
+        assert!(
+            html.contains(r#"value="2026-04-18T10:12""#),
+            "html was: {html}"
+        );
+    }
+
+    #[test]
+    fn nullable_field_with_none_value_does_not_panic() {
+        // `field_display` returns `Some("")` for a None value; the
+        // renderer must produce a valid empty input without panicking.
+        let f = string_field("empty", true);
+        let html = render_field::<Widgety>(&f, Some(&Widgety));
+        assert!(html.contains(r#"value="""#));
+        assert!(!html.contains("required"));
+    }
+
+    #[test]
+    fn field_display_returning_none_renders_empty_value() {
+        // Simulates `field_display(name)` returning `None` (unknown
+        // field): the renderer must default to empty-string rather
+        // than panicking.
+        let f = string_field("unknown_field", false);
+        let html = render_field::<Widgety>(&f, Some(&Widgety));
+        assert!(html.contains(r#"value="""#));
+    }
+
+    #[test]
+    fn parse_datetime_local_enforces_utc_for_every_valid_input() {
+        // Quick property-style check: many valid inputs, all UTC.
+        let inputs = [
+            "2000-01-01T00:00",
+            "2026-04-18T10:12",
+            "2026-04-18T10:12:33",
+            "2099-12-31T23:59",
+        ];
+        for raw in inputs {
+            let dt = parse_datetime_local(raw).unwrap_or_else(|e| panic!("`{raw}`: {e}"));
+            assert!(
+                dt.to_rfc3339().ends_with("+00:00"),
+                "non-UTC offset in output for `{raw}`: {}",
+                dt.to_rfc3339(),
+            );
+            assert!(
+                dt.nanosecond() == 0,
+                "unexpected sub-second part for `{raw}`"
+            );
+        }
     }
 }

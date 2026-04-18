@@ -271,6 +271,7 @@ fn bind_value<'q>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone as _;
 
     #[derive(Debug, PartialEq)]
     struct User {
@@ -426,5 +427,169 @@ mod tests {
         let wrapped = Row::new(&row);
         assert!(wrapped.get_i64("id").is_ok());
         assert!(wrapped.get_string("nonexistent_column").is_err());
+    }
+
+    // --- Option<T> NULL ↔ None round-trip ------------------------------
+    //
+    // Proves that the *whole* chain — `Value::Null`, the nullable getters
+    // on `Row`, and the `From<Option<T>>` blanket impl — stays coherent
+    // in both directions. If any piece drifts, `Some`/`None` start
+    // leaking into each other silently and the admin forms misbehave.
+
+    #[derive(Debug, PartialEq)]
+    struct Event {
+        id: i64,
+        title: String,
+        note: Option<String>,
+        priority: Option<i32>,
+        starts_at: Option<DateTime<Utc>>,
+    }
+
+    impl Model for Event {
+        const TABLE: &'static str = "events";
+        const COLUMNS: &'static [&'static str] = &["id", "title", "note", "priority", "starts_at"];
+        const INSERT_COLUMNS: &'static [&'static str] = &["title", "note", "priority", "starts_at"];
+
+        fn id(&self) -> i64 {
+            self.id
+        }
+
+        fn from_row(row: Row<'_>) -> Result<Self, Error> {
+            Ok(Self {
+                id: row.get_i64("id")?,
+                title: row.get_string("title")?,
+                note: row.get_optional_string("note")?,
+                priority: row.get_optional_i32("priority")?,
+                starts_at: row.get_optional_datetime("starts_at")?,
+            })
+        }
+
+        fn insert_values(&self) -> Vec<Value> {
+            vec![
+                self.title.clone().into(),
+                self.note.clone().into(),
+                self.priority.into(),
+                self.starts_at.into(),
+            ]
+        }
+    }
+
+    async fn setup_events() -> Db {
+        let db = Db::memory().await.unwrap();
+        db.execute(
+            "CREATE TABLE events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                note TEXT NULL,
+                priority INTEGER NULL,
+                starts_at TEXT NULL
+            )",
+        )
+        .await
+        .unwrap();
+        db
+    }
+
+    #[tokio::test]
+    async fn option_none_round_trips_as_null() {
+        let db = setup_events().await;
+        let id = Event {
+            id: 0,
+            title: "empty".into(),
+            note: None,
+            priority: None,
+            starts_at: None,
+        }
+        .create(&db)
+        .await
+        .unwrap();
+
+        let back = Event::find(&db, id).await.unwrap().unwrap();
+        assert_eq!(back.note, None);
+        assert_eq!(back.priority, None);
+        assert_eq!(back.starts_at, None);
+
+        // The raw row must actually be NULL, not the empty string — a
+        // string that round-trips as Some("") would silently break the
+        // admin's "no value" semantics.
+        let row = sqlx::query(
+            "SELECT note IS NULL AS note_is_null,
+                    priority IS NULL AS priority_is_null,
+                    starts_at IS NULL AS starts_is_null
+             FROM events WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(row.get::<i64, _>(0), 1);
+        assert_eq!(row.get::<i64, _>(1), 1);
+        assert_eq!(row.get::<i64, _>(2), 1);
+    }
+
+    #[tokio::test]
+    async fn option_some_round_trips_without_data_loss() {
+        let db = setup_events().await;
+        let when = Utc.with_ymd_and_hms(2026, 4, 18, 10, 12, 33).unwrap();
+        let id = Event {
+            id: 0,
+            title: "full".into(),
+            note: Some("hello".into()),
+            priority: Some(7),
+            starts_at: Some(when),
+        }
+        .create(&db)
+        .await
+        .unwrap();
+
+        let back = Event::find(&db, id).await.unwrap().unwrap();
+        assert_eq!(back.note.as_deref(), Some("hello"));
+        assert_eq!(back.priority, Some(7));
+        assert_eq!(back.starts_at, Some(when));
+    }
+
+    #[tokio::test]
+    async fn option_update_flips_null_to_some_and_back() {
+        let db = setup_events().await;
+        let id = Event {
+            id: 0,
+            title: "t".into(),
+            note: None,
+            priority: None,
+            starts_at: None,
+        }
+        .create(&db)
+        .await
+        .unwrap();
+
+        Event {
+            id,
+            title: "t".into(),
+            note: Some("filled".into()),
+            priority: Some(1),
+            starts_at: None,
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        let mid = Event::find(&db, id).await.unwrap().unwrap();
+        assert_eq!(mid.note.as_deref(), Some("filled"));
+        assert_eq!(mid.priority, Some(1));
+        assert_eq!(mid.starts_at, None);
+
+        Event {
+            id,
+            title: "t".into(),
+            note: None,
+            priority: None,
+            starts_at: None,
+        }
+        .update(&db)
+        .await
+        .unwrap();
+        let after = Event::find(&db, id).await.unwrap().unwrap();
+        assert_eq!(after.note, None);
+        assert_eq!(after.priority, None);
+        assert_eq!(after.starts_at, None);
     }
 }
