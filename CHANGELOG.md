@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.7.3 Runtime Truth Layer
+
+Closes the 0.7.2 gap where the schema cache was populated but the
+dashboard still derived suggestions from compile-time
+`AdminEntry[]`. After this pass, the dashboard's **alerts** +
+**suggestion engine** + **suggestion routes** read from the schema
+on disk; clicking `[Reload schema]` actually updates the UI without
+a restart.
+
+#### New module: `rustio-core::admin::entry_builder`
+
+- `DynamicAdminEntry` / `DynamicAdminField` — owned-string mirrors
+  of the compile-time `AdminEntry` / `AdminField`. Built either
+  from a schema model or from a compile-time entry.
+- `build_admin_entries(&Schema) -> Vec<DynamicAdminEntry>` — the
+  canonical schema → admin-entry projection.
+- `field_type_from_str(&str) -> FieldType` — total mapping; an
+  unknown type string falls through to `FieldType::String`
+  (PlainText). The admin never panics on an unfamiliar type.
+- `entries_effective(&[AdminEntry]) -> Vec<DynamicAdminEntry>` —
+  the single call every renderer uses. Returns schema-derived
+  entries when the cache is warm; falls back to the compile-time
+  slice otherwise. Preserves `core: true` from the compile-time
+  side so core-model protection stays intact.
+
+#### Suggestion engine upgrade
+
+- `derive_suggestions_from_entries(&[DynamicAdminEntry], context)`
+  — the schema-driven sibling of `derive_suggestions`.
+- `find_suggestion_from_entries` — the route-guard sibling of
+  `find_suggestion`.
+- Old functions kept for backward compatibility; no breaking
+  changes.
+
+#### Admin handler wiring
+
+- `render_dashboard_alerts` now calls `entries_effective(...)` and
+  feeds the result into `derive_suggestions_from_entries`. After a
+  `[Reload schema]` click, missing-field suggestions correctly
+  disappear on the next dashboard render.
+- Suggestion review + apply handlers use
+  `find_suggestion_from_entries` so a URL that was valid yesterday
+  (but is covered in today's schema) correctly 404s.
+- The GDPR-inventory loop still iterates compile-time entries —
+  it lists sensitive fields the live admin can actually display,
+  which is bound to what's compiled in. Documented.
+- Route registration stays compile-time: the admin needs real
+  `AdminModel` impls to read row values, so registering a route
+  for a schema-only model isn't possible today. No change there.
+
+#### Safety posture
+
+- Unknown type strings render as `PlainText`, never panic.
+- Deterministic ordering: schema path follows `schema.models`
+  order; fallback path follows the compile-time slice order.
+- No breaking API changes — only additions.
+
+#### Tests
+
+5 new tests in `suggestions_tests.rs` alongside the existing
+10-test suite, plus 3 new tests inside `entry_builder`:
+- `field_type_fallback_is_string_for_unknown` — the defence-in-
+  depth canary.
+- `build_admin_entries_mirrors_the_schema` — round-trip invariant.
+- `entry_from_admin_round_trips_compile_time_shape` — the
+  "existing behaviour unchanged when schema matches compiled
+  structs" invariant.
+- `schema_driven_suggestion_fires_for_missing_field` — happy path
+  through the new function.
+- `schema_driven_suggestion_disappears_when_field_present` — the
+  **self-heal** property the whole pass exists to prove.
+- `schema_driven_and_compile_time_derivations_agree_when_shapes_match`
+  — dual-path consistency canary.
+- `schema_driven_find_rejects_crafted_urls` — URL-safety on the
+  new path.
+- `schema_driven_skips_core_models` — core-protection parity.
+
+#### Smoke-tested end-to-end
+
+Against `~/Desktop/sveahousing` with housing context and
+`annual_income` removed from both struct and schema:
+1. Dashboard before reload: `missing 1 housing` alert + `[Add
+   annual_income]` button.
+2. External edit to `rustio.schema.json` adds `annual_income`.
+3. Dashboard still stale (cache hasn't refreshed).
+4. `POST /admin/schema/reload` → 303.
+5. Dashboard **after reload**: alert gone, button gone.
+6. Crafted URL `/admin/suggestions/applicants/annual_income` now
+   returns **404** (the `(admin_name, field)` pair isn't in the
+   fresh suggestion list).
+
 ### Added — 0.7.2 Trust & Feedback Layer
 
 Makes every action understandable and predictable. The operator

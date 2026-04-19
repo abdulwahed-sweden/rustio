@@ -94,18 +94,21 @@ fn task_schema() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
+                relation: None,
                 },
                 SchemaField {
                     name: "title".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
+                relation: None,
                 },
                 SchemaField {
                     name: "is_active".into(),
                     ty: "bool".into(),
                     nullable: false,
                     editable: true,
+                relation: None,
                 },
             ],
             relations: vec![],
@@ -547,6 +550,7 @@ fn stale_plan_is_refused_with_clear_reason() {
         ty: "i32".into(),
         nullable: false,
         editable: true,
+                relation: None,
     });
     let err = plan_execution(
         &schema_now,
@@ -597,6 +601,7 @@ fn applying_same_plan_twice_against_patched_source_fails_cleanly() {
         ty: "i32".into(),
         nullable: false,
         editable: true,
+                relation: None,
     });
     let mut project_after = project_with_task("/p");
     project_after.models_files.get_mut("tasks").unwrap().source = patched;

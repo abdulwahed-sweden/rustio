@@ -36,6 +36,7 @@ pub use crate::http::FormData;
 
 pub mod audit;
 pub mod design;
+pub mod entry_builder;
 pub mod intelligence;
 pub mod schema_cache;
 pub mod suggestions;
@@ -1593,12 +1594,25 @@ fn empty_state_hint<T: AdminModel>(context: Option<&crate::ai::ContextConfig>) -
 /// alert is justified by a concrete `(context, schema)` fact — no
 /// speculative warnings. Returns an empty string when there's
 /// nothing to say.
+///
+/// 0.7.3: iterates the *effective* entries built by
+/// [`entry_builder::entries_effective`] — when the schema cache has
+/// a fresh `rustio.schema.json`, alerts (and the suggestion buttons
+/// they carry) reflect the on-disk schema, not the compiled slice.
+/// After an apply + `rustio schema` + `[Reload schema]`, the just-
+/// added field stops showing up as a suggestion on the next
+/// dashboard render, no restart required.
 fn render_dashboard_alerts(entries: &[&AdminEntry]) -> String {
     let ctx = match intelligence::context_global() {
         Some(c) => c,
         None => return String::new(),
     };
     let mut alerts: Vec<String> = Vec::new();
+
+    // Project the input to owned entries, then let entries_effective
+    // decide whether to read the cache or the compile-time list.
+    let compiled: Vec<AdminEntry> = entries.iter().copied().cloned().collect();
+    let effective = entry_builder::entries_effective(&compiled);
 
     // Industry convention gaps: when an industry is declared, check
     // every model for the required-field list. A model that covers
@@ -1607,11 +1621,9 @@ fn render_dashboard_alerts(entries: &[&AdminEntry]) -> String {
     // can review and apply — routed through the normal planner /
     // review / executor chain.
     if let Some(schema) = ctx.industry_schema() {
-        // Collect AdminEntry copies to feed the suggestion engine.
-        let owned: Vec<AdminEntry> = entries.iter().map(|e| (*e).clone()).collect();
-        let suggestions = suggestions::derive_suggestions(&owned, Some(ctx));
-        for entry in entries {
-            let field_names: Vec<&str> = entry.fields.iter().map(|f| f.name).collect();
+        let suggestions = suggestions::derive_suggestions_from_entries(&effective, Some(ctx));
+        for entry in effective.iter().filter(|e| !e.core) {
+            let field_names: Vec<&str> = entry.fields.iter().map(|f| f.name.as_str()).collect();
             let covers_any = schema
                 .required_fields
                 .iter()
@@ -1655,7 +1667,7 @@ fn render_dashboard_alerts(entries: &[&AdminEntry]) -> String {
                  or justify the deviation in code review.</p>\
                  <div class=\"rio-suggestion-actions\">{actions}</div>\
                  </div>",
-                model = escape_html(entry.display_name),
+                model = escape_html(&entry.display_name),
                 missing_n = missing.len(),
                 industry = escape_html(ctx.industry.as_deref().unwrap_or("")),
                 s = if missing.len() == 1 { "" } else { "s" },
@@ -3255,7 +3267,14 @@ fn suggestion_review_response(
     error: Option<&str>,
 ) -> Response {
     let ctx = intelligence::context_global();
-    let Some(suggestion) = suggestions::find_suggestion(entries, ctx, admin_name, field) else {
+    // 0.7.3: resolve the suggestion against the effective entries —
+    // when the schema cache is warm, that's the on-disk schema, so
+    // a field just applied + schema regenerated + cache reloaded
+    // correctly 404s here instead of re-offering the suggestion.
+    let effective = entry_builder::entries_effective(entries);
+    let Some(suggestion) =
+        suggestions::find_suggestion_from_entries(&effective, ctx, admin_name, field)
+    else {
         // Either the URL is crafted or the schema has changed since
         // the dashboard rendered. Either way: 404 in-shell.
         return admin_not_found_response(entries, shell.user_email, shell.csrf);
@@ -3451,7 +3470,10 @@ fn suggestion_apply_response(
     field: &str,
 ) -> Response {
     let ctx = intelligence::context_global();
-    let Some(suggestion) = suggestions::find_suggestion(entries, ctx, admin_name, field) else {
+    let effective = entry_builder::entries_effective(entries);
+    let Some(suggestion) =
+        suggestions::find_suggestion_from_entries(&effective, ctx, admin_name, field)
+    else {
         return admin_not_found_response(entries, shell.user_email, shell.csrf);
     };
     // Build a fresh plan document on every apply so the executor

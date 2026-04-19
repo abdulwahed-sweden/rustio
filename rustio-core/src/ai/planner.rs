@@ -337,8 +337,87 @@ const PARSERS: &[Parser] = &[
     try_remove_field,
     try_change_type,
     try_change_nullability,
+    // Relation parsers have more specific prefixes than `add `,
+    // so they run before `try_add_field` to avoid swallowing
+    // "add relation from …" as a generic add-field.
+    try_add_relation,
     try_add_field,
 ];
+
+/// 0.8.0 — parse "add relation from <model> to <target>",
+/// "link <model> to <target>", or "connect <model> to <target>".
+/// The owning column name is inferred as `<target_admin_name>_id`
+/// (singularised). Refuses when either model is unknown, when the
+/// field already exists, or when a relation with the same `via`
+/// is already recorded on the model.
+fn try_add_relation(
+    raw: &str,
+    lower: &str,
+    schema: &Schema,
+    _context: Option<&ContextConfig>,
+) -> Result<Option<PlanResult>, PlanError> {
+    // Accept three prefixes. The longest wins — `add relation from`
+    // must be tried before `add `, which belongs to `try_add_field`.
+    let after = if let Some(rest) = lower.strip_prefix("add relation from ") {
+        slice_original(raw, "add relation from ").unwrap_or(rest)
+    } else if let Some(rest) = lower.strip_prefix("link ") {
+        slice_original(raw, "link ").unwrap_or(rest)
+    } else if let Some(rest) = lower.strip_prefix("connect ") {
+        slice_original(raw, "connect ").unwrap_or(rest)
+    } else {
+        return Ok(None);
+    };
+
+    let Some((from_hint, to_hint)) = split_on_keyword(after, &[" to "]) else {
+        return Err(PlanError::InvalidIntent(format!(
+            "relation prompt expects `<model> to <target>`: got {raw:?}"
+        )));
+    };
+    let from = resolve_model(schema, from_hint)?;
+    let to = resolve_model(schema, to_hint)?;
+
+    // Singularised admin slug of the target, suffixed with `_id`.
+    // `applicants` → `applicant_id`; `posts` → `post_id`.
+    let via = format!("{}_id", depluralise(&to.admin_name.to_lowercase()));
+
+    // Refuse if the owning model already has this column (avoid
+    // double-FK rows). The executor's idempotency gate catches this
+    // later too, but catching it at plan time gives a clearer error.
+    if from.fields.iter().any(|f| f.name == via) {
+        return Err(PlanError::FieldAlreadyExists {
+            model: from.name.clone(),
+            field: via,
+        });
+    }
+
+    // Refuse core models on either side — the AI boundary already
+    // protects them against schema-shape changes.
+    if from.core {
+        return Err(PlanError::CoreModelProtected(from.name.clone()));
+    }
+    if to.core {
+        return Err(PlanError::CoreModelProtected(to.name.clone()));
+    }
+
+    let primitive = Primitive::AddRelation(super::AddRelation {
+        from: from.name.clone(),
+        kind: crate::schema::RelationKind::BelongsTo,
+        to: to.name.clone(),
+        via: via.clone(),
+    });
+    validate_primitive(&primitive).map_err(PlanError::Validation)?;
+
+    let explanation = format!(
+        "Adds a `belongs_to` relation from `{}` to `{}` via column `{}` (i64). \
+         The executor will add the column but not a SQL foreign-key \
+         constraint — enforcement lands in 0.9.0.",
+        from.name, to.name, via,
+    );
+    Ok(Some(PlanResult {
+        plan: Plan::new(vec![primitive]),
+        explanation,
+    }))
+}
 
 fn try_add_field(
     raw: &str,

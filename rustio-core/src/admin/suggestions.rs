@@ -20,6 +20,7 @@
 //!   user could opt into. Wiring lives in `admin.rs`.
 //! - It does not touch the filesystem or database.
 
+use crate::admin::entry_builder::DynamicAdminEntry;
 use crate::admin::AdminEntry;
 use crate::ai::ContextConfig;
 
@@ -164,6 +165,68 @@ pub fn find_suggestion(
     field: &str,
 ) -> Option<Suggestion> {
     derive_suggestions(entries, context)
+        .into_iter()
+        .find(|s| s.admin_name == admin_name && s.field == field)
+}
+
+/// 0.7.3 schema-backed variant. Same rules as [`derive_suggestions`]
+/// but reads field names from [`DynamicAdminEntry`], which the admin
+/// builds fresh from [`crate::admin::schema_cache`] on every
+/// dashboard render. When the cache sees an updated
+/// `rustio.schema.json` — e.g. after `rustio ai apply` +
+/// `rustio schema` + `[Reload schema]` — the suggestion for the
+/// just-added field disappears on the next response, without
+/// restarting the process.
+pub fn derive_suggestions_from_entries(
+    entries: &[DynamicAdminEntry],
+    context: Option<&ContextConfig>,
+) -> Vec<Suggestion> {
+    let Some(ctx) = context else {
+        return Vec::new();
+    };
+    let Some(schema) = ctx.industry_schema() else {
+        return Vec::new();
+    };
+    let industry = ctx.industry.as_deref().unwrap_or("").to_string();
+
+    let mut out: Vec<Suggestion> = Vec::new();
+    for entry in entries.iter().filter(|e| !e.core) {
+        let field_names: Vec<&str> = entry.fields.iter().map(|f| f.name.as_str()).collect();
+        let covers_any = schema
+            .required_fields
+            .iter()
+            .any(|req| field_names.contains(&req.as_str()));
+        if !covers_any {
+            continue;
+        }
+        for req in &schema.required_fields {
+            if field_names.contains(&req.as_str()) {
+                continue;
+            }
+            let prompt = format!("add {req} to {admin}", admin = entry.admin_name);
+            out.push(Suggestion {
+                model_display: entry.display_name.clone(),
+                model_singular: entry.singular_name.clone(),
+                admin_name: entry.admin_name.clone(),
+                field: req.clone(),
+                prompt,
+                reason: format!("{industry} industry convention"),
+                action: "add_field",
+                confidence: Confidence::High,
+            });
+        }
+    }
+    out
+}
+
+/// Schema-backed counterpart to [`find_suggestion`].
+pub fn find_suggestion_from_entries(
+    entries: &[DynamicAdminEntry],
+    context: Option<&ContextConfig>,
+    admin_name: &str,
+    field: &str,
+) -> Option<Suggestion> {
+    derive_suggestions_from_entries(entries, context)
         .into_iter()
         .find(|s| s.admin_name == admin_name && s.field == field)
 }

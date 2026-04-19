@@ -219,24 +219,11 @@ pub struct ChangeFieldNullability {
 
 /// The kind of relation an `AddRelation` primitive describes.
 ///
-/// 0.4.0 reserves the variants but the executor won't be wired up until
-/// 0.5.0. `#[non_exhaustive]` so later releases can extend this set.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RelationKind {
-    BelongsTo,
-    HasMany,
-}
-
-impl RelationKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            RelationKind::BelongsTo => "belongs_to",
-            RelationKind::HasMany => "has_many",
-        }
-    }
-}
+/// 0.8.0: shared with [`crate::schema::RelationKind`] so schema-level
+/// `SchemaField::relation.kind` and planner-emitted
+/// `AddRelation.kind` are exactly the same type. Re-export keeps
+/// existing `use crate::ai::RelationKind;` imports working.
+pub use crate::schema::RelationKind;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -718,6 +705,7 @@ fn apply_shadow(p: &Primitive, schema: &mut Schema) {
                     ty: f.ty.clone(),
                     nullable: f.nullable,
                     editable: f.editable,
+                    relation: None,
                 })
                 .collect();
             fields.sort_by(|a, b| a.name.cmp(&b.name));
@@ -747,6 +735,7 @@ fn apply_shadow(p: &Primitive, schema: &mut Schema) {
                     ty: af.field.ty.clone(),
                     nullable: af.field.nullable,
                     editable: af.field.editable,
+                    relation: None,
                 });
                 model.fields.sort_by(|a, b| a.name.cmp(&b.name));
             }

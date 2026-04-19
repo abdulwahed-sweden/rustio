@@ -89,11 +89,66 @@ pub struct SchemaField {
     pub ty: String,
     pub nullable: bool,
     pub editable: bool,
+    /// 0.8.0: optional typed relation descriptor when the field is a
+    /// foreign key. Old schema files without this key parse cleanly
+    /// (defaults to `None`) and serialise back without it (skipped on
+    /// `None`), so projects that don't use relations are byte-identical
+    /// to the 0.7.x format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relation: Option<Relation>,
 }
 
-/// Placeholder relation shape. Present so consumers can depend on the
-/// `relations` field existing in every model. Concrete variants land in
-/// 0.5.0 (`belongs_to`, `has_many`).
+/// 0.8.0 — first-class foreign-key annotation on a field.
+///
+/// Only `belongs_to` is stored explicitly. The inverse direction
+/// (`has_many`) is *inferred* at runtime by
+/// [`Schema::incoming_relations`]; adding it as a stored variant
+/// would double-book the same information and drift over time.
+///
+/// Conservative by design: if any of these fields is missing, old
+/// consumers ignore the whole `relation` key because the parent
+/// field is `Option<Relation>`. The executor never writes this shape
+/// yet — projects opt in by adding the block to `rustio.schema.json`
+/// (the 0.9.0 foreign-key enforcement pass will own the write path).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Relation {
+    /// Target model name (e.g. `"Applicant"`).
+    pub model: String,
+    /// Target field name — conventionally `"id"`, but explicit so a
+    /// future release can support multi-column keys without another
+    /// schema bump.
+    pub field: String,
+    /// Direction marker. 0.8.0 only accepts `BelongsTo` as stored;
+    /// `HasMany` is reserved for inferred results.
+    pub kind: RelationKind,
+}
+
+/// Typed relation direction. Kept `#[non_exhaustive]` so a later
+/// pass can add variants (`OneToOne`, `ManyToMany`) without breaking
+/// downstream matchers. Callers must include a wildcard arm.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RelationKind {
+    BelongsTo,
+    HasMany,
+}
+
+impl RelationKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RelationKind::BelongsTo => "belongs_to",
+            RelationKind::HasMany => "has_many",
+        }
+    }
+}
+
+/// Placeholder relation shape left from 0.4.0. Still serialised in
+/// `SchemaModel.relations` for backward compatibility (reserved slot
+/// for future per-model metadata). The 0.8.0 flow uses
+/// [`SchemaField::relation`] instead — the per-field location is the
+/// source of truth.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SchemaRelation {
@@ -161,7 +216,61 @@ impl From<SchemaError> for Error {
     }
 }
 
+/// 0.8.0 — one inferred incoming relation. Produced by
+/// [`Schema::incoming_relations`]; not stored on disk.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncomingRelation {
+    /// The child model name (holder of the foreign-key field).
+    pub from_model: String,
+    /// The child field that points at the target.
+    pub from_field: String,
+    /// Always the target's own name — supplied for symmetry.
+    pub to_model: String,
+    /// Always `RelationKind::BelongsTo` in the stored direction;
+    /// `HasMany` is the implicit inverse a caller is asking about.
+    pub kind: RelationKind,
+}
+
 impl Schema {
+    /// Look up the `Relation` descriptor attached to `(model, field)`,
+    /// if the field carries one. Returns `None` if the model or field
+    /// doesn't exist, or if the field has no relation metadata. A
+    /// schema without relations behaves identically to pre-0.8.0 —
+    /// this accessor just returns `None` everywhere.
+    pub fn relation_for(&self, model: &str, field: &str) -> Option<&Relation> {
+        self.models
+            .iter()
+            .find(|m| m.name == model)?
+            .fields
+            .iter()
+            .find(|f| f.name == field)?
+            .relation
+            .as_ref()
+    }
+
+    /// Enumerate every `belongs_to` relation in the schema that points
+    /// *at* `model` — i.e. the `has_many` view. Order follows model
+    /// order, then field order inside the model. Empty when no field
+    /// in the schema references `model`. Deterministic.
+    pub fn incoming_relations(&self, model: &str) -> Vec<IncomingRelation> {
+        let mut out: Vec<IncomingRelation> = Vec::new();
+        for m in &self.models {
+            for f in &m.fields {
+                if let Some(rel) = &f.relation {
+                    if rel.model == model && matches!(rel.kind, RelationKind::BelongsTo) {
+                        out.push(IncomingRelation {
+                            from_model: m.name.clone(),
+                            from_field: f.name.clone(),
+                            to_model: model.to_string(),
+                            kind: RelationKind::HasMany,
+                        });
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Build a schema from an already-constructed [`Admin`]. This is the
     /// single supported path — we don't parse Rust sources or read the
     /// DB, so whatever the admin is serving is exactly what the schema
@@ -317,6 +426,10 @@ impl SchemaField {
             ty: field_type_name(f.ty).to_string(),
             nullable: f.nullable,
             editable: f.editable,
+            // Compile-time fields don't yet carry a relation
+            // annotation — that lives in `rustio.schema.json` in 0.8.0
+            // and will move to a macro attribute in 0.8.x.
+            relation: None,
         }
     }
 }

@@ -690,6 +690,7 @@ fn apply_shadow_for_review(p: &Primitive, schema: &mut Schema) {
                     ty: f.ty.clone(),
                     nullable: f.nullable,
                     editable: f.editable,
+                    relation: None,
                 })
                 .collect();
             fields.sort_by(|a, b| a.name.cmp(&b.name));
@@ -713,6 +714,7 @@ fn apply_shadow_for_review(p: &Primitive, schema: &mut Schema) {
                     ty: af.field.ty.clone(),
                     nullable: af.field.nullable,
                     editable: af.field.editable,
+                    relation: None,
                 });
                 model.fields.sort_by(|a, b| a.name.cmp(&b.name));
             }

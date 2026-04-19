@@ -49,12 +49,14 @@ fn task_schema() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
+                relation: None,
                 },
                 SchemaField {
                     name: "title".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
+                relation: None,
                 },
             ],
             relations: vec![],
@@ -79,12 +81,14 @@ fn schema_with_core_user() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
+                relation: None,
                 },
                 SchemaField {
                     name: "email".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
+                relation: None,
                 },
             ],
             relations: vec![],
@@ -394,6 +398,7 @@ fn plan_valid_today_becomes_stale_after_schema_change() {
         ty: "i32".into(),
         nullable: false,
         editable: true,
+                relation: None,
     });
 
     let review2 = review_plan(&schema, &plan, None).unwrap();

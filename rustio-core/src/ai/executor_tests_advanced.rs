@@ -119,24 +119,28 @@ fn post_schema() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
+                relation: None,
                 },
                 SchemaField {
                     name: "title".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
+                relation: None,
                 },
                 SchemaField {
                     name: "score".into(),
                     ty: "i32".into(),
                     nullable: false,
                     editable: true,
+                relation: None,
                 },
                 SchemaField {
                     name: "subtitle".into(),
                     ty: "String".into(),
                     nullable: true,
                     editable: true,
+                relation: None,
                 },
             ],
             relations: vec![],
@@ -267,6 +271,7 @@ fn change_type_unsafe_cast_is_refused() {
         ty: "DateTime".into(),
         nullable: false,
         editable: true,
+                relation: None,
     });
     // models.rs mirror: insert a DateTime field so the executor finds
     // it in the struct block.
@@ -633,6 +638,7 @@ fn large_schema_simulation_holds_determinism() {
         ty: "i64".into(),
         nullable: false,
         editable: false,
+                relation: None,
     }];
     for i in 0..20 {
         fields.push(SchemaField {

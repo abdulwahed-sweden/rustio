@@ -1170,6 +1170,7 @@ fn apply_schema_shadow(p: &Primitive, schema: &mut Schema) {
                     ty: a.field.ty.clone(),
                     nullable: a.field.nullable,
                     editable: a.field.editable,
+                    relation: None,
                 });
             }
         }

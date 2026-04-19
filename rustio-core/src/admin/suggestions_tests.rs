@@ -5,9 +5,14 @@
 //! behaviour we don't want to drift: no context → no noise, no
 //! overlap → no noise, deterministic ordering, URL safety.
 
-use super::suggestions::{derive_suggestions, find_suggestion};
+use super::entry_builder::{build_admin_entries, DynamicAdminEntry, DynamicAdminField};
+use super::suggestions::{
+    derive_suggestions, derive_suggestions_from_entries, find_suggestion,
+    find_suggestion_from_entries,
+};
 use super::{AdminEntry, AdminField, FieldType};
 use crate::ai::ContextConfig;
+use crate::schema::{Schema, SchemaField, SchemaModel, SCHEMA_VERSION};
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -237,4 +242,148 @@ fn url_path_uses_admin_name_and_field() {
     let ctx = housing_context();
     let s = &derive_suggestions(&entries, Some(&ctx))[0];
     assert_eq!(s.url_path(), "/admin/suggestions/applicants/annual_income");
+}
+
+// ---------------------------------------------------------------------------
+// 0.7.3 — schema-driven (`derive_suggestions_from_entries`)
+// ---------------------------------------------------------------------------
+
+fn schema_with_applicant_missing_income() -> Schema {
+    // Deliberately omits `annual_income` so a housing suggestion fires.
+    Schema {
+        version: SCHEMA_VERSION,
+        rustio_version: env!("CARGO_PKG_VERSION").to_string(),
+        models: vec![SchemaModel {
+            name: "Applicant".into(),
+            table: "applicants".into(),
+            admin_name: "applicants".into(),
+            display_name: "Applicants".into(),
+            singular_name: "Applicant".into(),
+            fields: vec![
+                SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: false,
+                relation: None,
+                },
+                SchemaField {
+                    name: "personnummer".into(),
+                    ty: "String".into(),
+                    nullable: false,
+                    editable: true,
+                relation: None,
+                },
+                SchemaField {
+                    name: "queue_start_date".into(),
+                    ty: "DateTime".into(),
+                    nullable: false,
+                    editable: true,
+                relation: None,
+                },
+            ],
+            relations: vec![],
+            core: false,
+        }],
+    }
+}
+
+fn schema_with_applicant_fully_covered() -> Schema {
+    let mut s = schema_with_applicant_missing_income();
+    s.models[0].fields.push(SchemaField {
+        name: "annual_income".into(),
+        ty: "i64".into(),
+        nullable: false,
+        editable: true,
+                relation: None,
+    });
+    s
+}
+
+#[test]
+fn schema_driven_suggestion_fires_for_missing_field() {
+    // The dynamic path must behave the same as the compile-time
+    // path when the inputs describe the same shape.
+    let ctx = housing_context();
+    let schema = schema_with_applicant_missing_income();
+    let dyn_entries = build_admin_entries(&schema);
+    let ss = derive_suggestions_from_entries(&dyn_entries, Some(&ctx));
+    assert_eq!(ss.len(), 1);
+    assert_eq!(ss[0].field, "annual_income");
+    assert_eq!(ss[0].admin_name, "applicants");
+}
+
+#[test]
+fn schema_driven_suggestion_disappears_when_field_present() {
+    // The self-heal invariant — *this* is the user-visible win of
+    // 0.7.3. When the schema gains the field, the suggestion stops
+    // firing on the next derivation call.
+    let ctx = housing_context();
+    let before = build_admin_entries(&schema_with_applicant_missing_income());
+    let after = build_admin_entries(&schema_with_applicant_fully_covered());
+    assert_eq!(
+        derive_suggestions_from_entries(&before, Some(&ctx)).len(),
+        1,
+    );
+    assert_eq!(derive_suggestions_from_entries(&after, Some(&ctx)).len(), 0,);
+}
+
+#[test]
+fn schema_driven_and_compile_time_derivations_agree_when_shapes_match() {
+    // Compile-time `entries` with the same fields as the schema
+    // should yield the same set of suggestions — the no-regression
+    // canary.
+    let ctx = housing_context();
+    let dyn_entries = build_admin_entries(&schema_with_applicant_missing_income());
+    let compile_entries = vec![applicant_entry()];
+    let dyn_ss = derive_suggestions_from_entries(&dyn_entries, Some(&ctx));
+    let compile_ss = derive_suggestions(&compile_entries, Some(&ctx));
+    assert_eq!(dyn_ss.len(), compile_ss.len());
+    assert_eq!(dyn_ss[0].field, compile_ss[0].field);
+    assert_eq!(dyn_ss[0].admin_name, compile_ss[0].admin_name);
+    assert_eq!(dyn_ss[0].prompt, compile_ss[0].prompt);
+    assert_eq!(dyn_ss[0].confidence, compile_ss[0].confidence);
+}
+
+#[test]
+fn schema_driven_find_rejects_crafted_urls() {
+    let ctx = housing_context();
+    let entries = build_admin_entries(&schema_with_applicant_missing_income());
+    // Valid pair resolves.
+    assert!(
+        find_suggestion_from_entries(&entries, Some(&ctx), "applicants", "annual_income").is_some()
+    );
+    // Not-in-list pair is rejected.
+    assert!(
+        find_suggestion_from_entries(&entries, Some(&ctx), "applicants", "email").is_none(),
+        "crafted URLs must not resolve to a suggestion"
+    );
+    // Unknown admin too.
+    assert!(find_suggestion_from_entries(&entries, Some(&ctx), "users", "annual_income").is_none(),);
+}
+
+#[test]
+fn schema_driven_skips_core_models() {
+    // Hand-craft a dynamic core model — the derivation must never
+    // propose fields for core infrastructure.
+    let ctx = housing_context();
+    let core = DynamicAdminEntry {
+        admin_name: "users".into(),
+        display_name: "Users".into(),
+        singular_name: "User".into(),
+        table: "rustio_users".into(),
+        fields: vec![DynamicAdminField {
+            name: "personnummer".into(), // Would otherwise match housing.
+            ty: FieldType::String,
+            editable: true,
+            nullable: false,
+        }],
+        core: true,
+    };
+    let ss = derive_suggestions_from_entries(&[core], Some(&ctx));
+    assert!(
+        ss.is_empty(),
+        "core models must not receive suggestions, got: {:?}",
+        ss
+    );
 }
