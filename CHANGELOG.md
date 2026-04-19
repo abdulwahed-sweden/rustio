@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.7.0 Admin Intelligence Layer
+
+The admin UI now adapts to *(schema + context)* instead of treating
+every model as a generic form with a data table. Same project, same
+code, different context → different admin behaviour.
+
+- **`rustio-core::admin::intelligence`** — new module with five
+  pure, deterministic helpers:
+  - `classify_field(field, context) -> FieldRole` — labels a field
+    (`Id`, `Timestamp`, `Bool`, `NumericCount`, `ForeignKey`,
+    `Status`, `Personnummer`, `Email`, `Phone`,
+    `OpaqueIdentifier`, `Money`, `PlainText`).
+  - `field_ui_metadata(field, context) -> FieldUI` — packages
+    label, placeholder, hint, sensitivity marker + note.
+  - `infer_filters(fields, context) -> Vec<FilterDef>` —
+    determines the right filter shape per column
+    (`DropdownText`, `BoolYesNo`, `DateRange`, `NumericExact`,
+    `ExactMatch`).
+  - `classify_search(query) -> SearchIntent` — routes a query to
+    one of `NumericId`, `Email`, `Personnummer`, `Text` (in that
+    precedence: a 12-digit string is never an ID).
+  - `mask_pii(value) -> String` — deterministic masker preserving
+    length + first few chars (`"19870512-4521"` → `"1987•••••••••"`).
+  - Plus `context_global()` — lazy `OnceLock` cache for
+    `rustio.context.json`, mirroring the design-config pattern.
+- **Form rendering** — `render_field_block` now uses
+  `field_ui_metadata`. Personnummer under SE gets placeholder
+  `YYYYMMDD-XXXX` and a 🔒 PII marker; patient IDs under healthcare
+  get the "opaque — do not expose publicly" hint; money fields under
+  banking carry the "integer minor units" hint; datetimes show
+  `YYYY-MM-DDTHH:MM` + UTC. Email / phone under GDPR are flagged
+  sensitive.
+- **List-page masking** — `render_cell` wraps sensitive values in
+  a `.rio-pii` span with `data-value` / `data-mask` attributes and
+  a `.rio-pii-toggle` button. Tiny inline JS (shipped once in the
+  admin shell) flips the display on click — no framework, no
+  external file.
+- **Delete confirmation** — when the record carries any sensitive
+  field, a `rio-alert-error` banner appears above the standard
+  warning: *"This record contains personal data (GDPR). Deletion
+  is typically irreversible — verify you have the right to erase."*
+- **Dashboard alerts** — new `rio-dashboard-alerts` section under
+  the model grid. Two sources of alerts:
+  - *Industry conventions:* any model that covers at least one
+    required field but is missing others is flagged (e.g.
+    `Applicants` missing `annual_income` under `housing`).
+  - *GDPR inventory:* every model carrying PII is listed with its
+    sensitive fields so operators know where retention obligations
+    apply.
+- **Search intent badge** — a small `.rio-search-intent` chip next
+  to the search box reads "Interpreted as: ID / email /
+  personnummer" so operators see the classification the list
+  handler made.
+- **Context-aware empty state** — empty list pages now say
+  *"Start by adding your first Applicant"* and, when the project
+  has an industry context, append *"In Sweden, housing applicants
+  usually include personnummer, queue_start_date,
+  annual_income."* The hint is silent when the model's fields
+  don't intersect the industry's required list.
+- **Tests** — 33 admin-intelligence tests in
+  `rustio-core/src/admin/admin_intelligence_tests.rs`: every
+  classifier branch (country / industry / GDPR / shape / fallback),
+  sensitivity roll-up, `field_ui_metadata` per role, filter
+  inference (order-preserving, id excluded), search intent (ID /
+  email / personnummer precedence, negative numbers, whitespace),
+  PII masking (Unicode-safe, deterministic, length-preserving).
+- **Design** — additions to `assets/admin.css` only, no redesign:
+  `.rio-pii`, `.rio-pii-toggle`, `.rio-field-sensitive`,
+  `.rio-dashboard-alerts`, `.rio-dashboard-alert`,
+  `.rio-search-intent`, `.rio-empty-hint`. The shell gained one
+  30-line inline `<script>` block for the PII toggle — the first
+  JS in the admin.
+
+Smoke-tested end-to-end against `~/Desktop/sveahousing` with
+`{"country":"SE","industry":"housing"}`:
+- Dashboard shows GDPR + convention alerts on the Applicants
+  model.
+- Applicants list masks every personnummer
+  (`1987•••••••••`) with a per-row *show / hide* toggle.
+- `?q=42` displays "Interpreted as: ID".
+- Applicant edit form shows 🔒 PII marker, placeholder
+  `YYYYMMDD-XXXX`, and the Swedish-format hint.
+- Delete page carries the red "Sensitive data (GDPR)" banner
+  above the standard warning.
+
 ### Added — 0.6.0 Intelligence Phase, Pass 5 (Context-Aware Execution)
 
 Makes every layer of the AI pipeline aware of *who the project is*:

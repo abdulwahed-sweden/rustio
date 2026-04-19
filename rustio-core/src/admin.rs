@@ -36,6 +36,10 @@ pub use crate::http::FormData;
 
 pub mod audit;
 pub mod design;
+pub mod intelligence;
+
+#[cfg(test)]
+mod admin_intelligence_tests;
 
 /// The primitive types the admin + schema layers know how to render,
 /// validate, and serialise.
@@ -1324,6 +1328,26 @@ fn render_shell_page(
 </div>
 </main>
 </div>
+<script>
+// Admin Intelligence Layer (0.7.0) — minimal JS for PII toggle.
+// Click a .rio-pii-toggle to reveal / hide the adjacent masked value.
+document.addEventListener("click", function(e){{
+  var btn = e.target.closest ? e.target.closest(".rio-pii-toggle") : null;
+  if(!btn) return;
+  // The masked <span> is the button's previous sibling by construction.
+  var span = btn.previousElementSibling;
+  if(!span || !span.classList.contains("rio-pii")) return;
+  if(span.getAttribute("data-hidden") === "1"){{
+    span.textContent = span.getAttribute("data-value") || "";
+    span.setAttribute("data-hidden","0");
+    btn.textContent = "hide";
+  }} else {{
+    span.textContent = span.getAttribute("data-mask") || "";
+    span.setAttribute("data-hidden","1");
+    btn.textContent = "show";
+  }}
+}});
+</script>
 </body>
 </html>"#,
         doc_title = escape_html(document_title),
@@ -1403,7 +1427,9 @@ fn dashboard_response(shell: Shell<'_>) -> Response {
                 )
             })
             .collect();
-        format!(r#"<div class="rio-grid">{cards}</div>"#)
+        let grid = format!(r#"<div class="rio-grid">{cards}</div>"#);
+        let alerts = render_dashboard_alerts(&user_facing);
+        format!("{grid}{alerts}")
     };
 
     render_shell_page(
@@ -1416,6 +1442,121 @@ fn dashboard_response(shell: Shell<'_>) -> Response {
         "",
         &body,
     )
+}
+
+/// Context-aware hint shown on an empty list page. Combines the
+/// country (e.g. "In Sweden…") with the active industry conventions
+/// (e.g. "…usually include personnummer and income"). Returns `None`
+/// when the project has no context or the current model doesn't
+/// intersect any known convention — better to stay silent than
+/// generic.
+fn empty_state_hint<T: AdminModel>(context: Option<&crate::ai::ContextConfig>) -> Option<String> {
+    let ctx = context?;
+    let schema = ctx.industry_schema()?;
+    // Only emit the hint when the current model actually overlaps the
+    // industry's required fields — a hint about personnummer on a
+    // `Widget` model is noise.
+    let model_has_convention = schema
+        .required_fields
+        .iter()
+        .any(|f| T::FIELDS.iter().any(|af| af.name == f.as_str()));
+    if !model_has_convention {
+        return None;
+    }
+    let country_phrase = match ctx.country.as_deref() {
+        Some(cc) if cc.eq_ignore_ascii_case("SE") => "In Sweden, ",
+        Some(cc) if cc.eq_ignore_ascii_case("NO") => "In Norway, ",
+        _ => "",
+    };
+    let industry = ctx.industry.as_deref().unwrap_or("");
+    let singular_lower = T::singular_name().to_lowercase();
+    let fields_list = schema.required_fields.join(", ");
+    Some(format!(
+        "{country}{industry} {singular}s usually include {fields}.",
+        country = country_phrase,
+        industry = industry,
+        singular = singular_lower,
+        fields = fields_list,
+    ))
+}
+
+/// Generate context-aware alerts shown under the model grid. Each
+/// alert is justified by a concrete `(context, schema)` fact — no
+/// speculative warnings. Returns an empty string when there's
+/// nothing to say.
+fn render_dashboard_alerts(entries: &[&AdminEntry]) -> String {
+    let ctx = match intelligence::context_global() {
+        Some(c) => c,
+        None => return String::new(),
+    };
+    let mut alerts: Vec<String> = Vec::new();
+
+    // Industry convention gaps: when an industry is declared, check
+    // every model for the required-field list. A model that covers
+    // ≥ one required field but is missing others is flagged.
+    if let Some(schema) = ctx.industry_schema() {
+        for entry in entries {
+            let field_names: Vec<&str> = entry.fields.iter().map(|f| f.name).collect();
+            let covers_any = schema
+                .required_fields
+                .iter()
+                .any(|req| field_names.contains(&req.as_str()));
+            if !covers_any {
+                continue;
+            }
+            let missing: Vec<&str> = schema
+                .required_fields
+                .iter()
+                .filter(|req| !field_names.contains(&req.as_str()))
+                .map(|s| s.as_str())
+                .collect();
+            if missing.is_empty() {
+                continue;
+            }
+            alerts.push(format!(
+                "<strong>{model}</strong> is missing {missing_n} {industry} convention \
+                 field{s}: <code>{missing}</code>. Consider adding \
+                 or justify the deviation in code review.",
+                model = escape_html(entry.display_name),
+                missing_n = missing.len(),
+                industry = escape_html(ctx.industry.as_deref().unwrap_or("")),
+                s = if missing.len() == 1 { "" } else { "s" },
+                missing = escape_html(&missing.join(", ")),
+            ));
+        }
+    }
+
+    // GDPR: surface every model that carries a PII field so the
+    // operator knows where retention obligations apply.
+    if ctx.requires_gdpr() {
+        for entry in entries {
+            let pii_fields: Vec<&str> = entry
+                .fields
+                .iter()
+                .filter(|f| intelligence::field_ui_metadata(f, Some(ctx)).sensitive)
+                .map(|f| f.name)
+                .collect();
+            if pii_fields.is_empty() {
+                continue;
+            }
+            alerts.push(format!(
+                "<strong>{model}</strong> stores personal data \
+                 (<code>{fields}</code>) under GDPR. Review retention + access-log \
+                 obligations.",
+                model = escape_html(entry.display_name),
+                fields = escape_html(&pii_fields.join(", ")),
+            ));
+        }
+    }
+
+    if alerts.is_empty() {
+        return String::new();
+    }
+    let items: String = alerts
+        .iter()
+        .map(|a| format!(r#"<li class="rio-dashboard-alert">{a}</li>"#))
+        .collect();
+    format!(r#"<section class="rio-dashboard-alerts"><h2>Alerts</h2><ul>{items}</ul></section>"#)
 }
 
 // ---------------------------------------------------------------------------
@@ -1458,23 +1599,29 @@ fn list_response<T: AdminModel>(
     );
 
     // --- Empty states: two flavours ---
-    // 1. Table has zero rows, period → encourage creation.
+    // 1. Table has zero rows, period → encourage creation + show
+    //    context-aware hint when the project has declared one.
     // 2. Filter returned zero of N → explain the filter is the reason.
     let body = if total == 0 {
+        let hint_html = match empty_state_hint::<T>(intelligence::context_global()) {
+            Some(h) => format!(r#"<p class="rio-empty-hint">{}</p>"#, escape_html(&h)),
+            None => String::new(),
+        };
         format!(
             r#"<div class="rio-card">
 <div class="rio-empty">
 <div class="rio-empty-icon">{icon}</div>
-<h3>No {plural_lower} yet</h3>
+<h3>Start by adding your first {singular_lower}</h3>
 <p>This table is empty. Create the first record to get started.</p>
-<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Create first {singular_lower}</span></a>
+{hint}
+<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
 </div>
 </div>"#,
-            plural_lower = escape_html(&plural.to_lowercase()),
             icon = icon_inbox(),
             name = escape_html(admin_name),
             plus = icon_plus(),
             singular_lower = escape_html(&singular.to_lowercase()),
+            hint = hint_html,
         )
     } else {
         let toolbar = render_list_toolbar::<T>(&filters, count, total);
@@ -1676,11 +1823,28 @@ fn render_list_toolbar<T: AdminModel>(
         format!("{total} records")
     };
 
+    // Search-intent badge. Only render when the user has typed
+    // something that the classifier routes away from plain text —
+    // "Interpreted as ID", "Interpreted as personnummer", etc. —
+    // so the operator sees what the list handler is actually doing.
+    let intent_badge = filters
+        .q
+        .filter(|q| !q.is_empty())
+        .map(|q| match intelligence::classify_search(q) {
+            intelligence::SearchIntent::Text(_) => String::new(),
+            other => format!(
+                r#"<span class="rio-search-intent">Interpreted as: {}</span>"#,
+                escape_html(other.label()),
+            ),
+        })
+        .unwrap_or_default();
+
     format!(
         r#"<form class="rio-table-toolbar" method="get" action="/admin/{name}" role="search" aria-label="Search {plural}">
 <div class="rio-search">
 {search_icon}
 <input type="search" name="q" value="{q}" placeholder="Search by title, ID…" aria-label="Search text">
+{intent}
 </div>
 {status}
 {priority}
@@ -1694,6 +1858,7 @@ fn render_list_toolbar<T: AdminModel>(
         plural = escape_html(plural),
         search_icon = icon_search(),
         q = q_value,
+        intent = intent_badge,
         status = status_select,
         priority = priority_select,
         submit_icon = icon_search(),
@@ -1767,6 +1932,22 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T) -> String {
     }
     if value.is_empty() && f.nullable {
         return r#"<td class="rio-cell-muted">—</td>"#.to_string();
+    }
+    // Sensitive fields (personnummer, email under GDPR, patient_id under
+    // healthcare, …) are masked by default; a tiny inline toggle
+    // restores the real value when the reviewer clicks "show".
+    let ctx = intelligence::context_global();
+    let ui = intelligence::field_ui_metadata(f, ctx);
+    if ui.sensitive && !value.is_empty() {
+        let masked = intelligence::mask_pii(&value);
+        return format!(
+            r#"<td class="rio-cell-muted">\
+<span class="rio-pii" data-value="{real}" data-mask="{mask}" data-hidden="1">{mask}</span>\
+<button class="rio-pii-toggle" type="button" aria-label="Reveal value">show</button>\
+</td>"#,
+            real = escape_html(&value),
+            mask = escape_html(&masked),
+        );
     }
     if matches!(f.ty, FieldType::Bool) {
         let (cls, label) = match value.as_str() {
@@ -1950,7 +2131,9 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
 /// Render a `(label, input)` block for one editable admin field.
 fn render_field_block<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
     let name = escape_html(f.name);
-    let input = render_field::<T>(f, item);
+    let ui = intelligence::field_ui_metadata(f, intelligence::context_global());
+    let input = render_field::<T>(f, item, ui.placeholder.as_deref());
+
     // Bool fields render as a single checkbox row for compactness.
     if matches!(f.ty, FieldType::Bool) {
         return format!(
@@ -1960,34 +2143,44 @@ fn render_field_block<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String
 </div>"#,
             input = input,
             name = name,
-            label = humanise(f.name),
+            label = escape_html(&ui.label),
         );
     }
+
     let optional_mark = if f.nullable {
         r#"<span class="rio-field-optional">optional</span>"#.to_string()
     } else {
         String::new()
     };
-    let hint = field_hint(f);
+    let sensitive_mark = if ui.sensitive {
+        let note = ui
+            .sensitivity_note
+            .as_deref()
+            .unwrap_or("Personal data — handle with care.");
+        format!(
+            r#"<span class="rio-field-sensitive" title="{note}">🔒 PII</span>"#,
+            note = escape_html(note),
+        )
+    } else {
+        String::new()
+    };
+    let hint_html = match ui.hint.as_deref() {
+        Some(h) => format!(r#"<p class="rio-field-hint">{}</p>"#, escape_html(h),),
+        None => String::new(),
+    };
+
     format!(
         r#"<div class="rio-field">
-<label for="_{name}">{label}{optional}</label>
+<label for="_{name}">{label}{optional}{sensitive}</label>
 {input}
 {hint}
 </div>"#,
         name = name,
-        label = humanise(f.name),
+        label = escape_html(&ui.label),
         optional = optional_mark,
-        hint = hint,
+        sensitive = sensitive_mark,
+        hint = hint_html,
     )
-}
-
-fn field_hint(f: &AdminField) -> String {
-    match f.ty {
-        FieldType::DateTime => r#"<p class="rio-field-hint">Interpreted as UTC.</p>"#.to_string(),
-        FieldType::Bool => String::new(),
-        _ => String::new(),
-    }
 }
 
 /// Convert snake_case to Title Case for humans.
@@ -2045,7 +2238,11 @@ fn render_meta<T: AdminModel>(id: i64, item: &T) -> String {
 /// from earlier releases because tests and downstream code depend on
 /// the exact output shape (presence/absence of `required`, the
 /// `type="datetime-local"` hook, `value=""` for None).
-fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
+fn render_field<T: AdminModel>(
+    f: &AdminField,
+    item: Option<&T>,
+    placeholder: Option<&str>,
+) -> String {
     let current = item
         .and_then(|i| i.field_display(f.name))
         .unwrap_or_default();
@@ -2058,6 +2255,11 @@ fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
         ""
     };
 
+    let placeholder_attr = match placeholder {
+        Some(p) if !p.is_empty() => format!(r#" placeholder="{}""#, escape_html(p)),
+        _ => String::new(),
+    };
+
     match f.ty {
         FieldType::Bool => format!(
             r#"<input class="rio-checkbox" id="_{n}" type="checkbox" name="{n}" {checked}>"#,
@@ -2065,17 +2267,17 @@ fn render_field<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
         ),
         FieldType::I32 | FieldType::I64 => {
             format!(
-                r#"<input class="rio-input" id="_{n}" type="number" name="{n}" value="{v}"{required}>"#
+                r#"<input class="rio-input" id="_{n}" type="number" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
         FieldType::String => {
             format!(
-                r#"<input class="rio-input" id="_{n}" type="text" name="{n}" value="{v}"{required}>"#
+                r#"<input class="rio-input" id="_{n}" type="text" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
         FieldType::DateTime => {
             format!(
-                r#"<input class="rio-input" id="_{n}" type="datetime-local" name="{n}" value="{v}"{required}>"#
+                r#"<input class="rio-input" id="_{n}" type="datetime-local" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
     }
@@ -2102,9 +2304,32 @@ fn delete_confirmation_response<T: AdminModel>(shell: Shell<'_>, id: i64, item: 
 
     let csrf_hidden = csrf_input(shell.csrf);
 
+    // Context-aware GDPR / PII banner. Fires when this record has at
+    // least one field the intelligence layer classifies as sensitive
+    // under the project's `rustio.context.json`.
+    let ctx = intelligence::context_global();
+    let has_pii = T::FIELDS
+        .iter()
+        .any(|f| intelligence::field_ui_metadata(f, ctx).sensitive);
+    let pii_banner = if has_pii {
+        let note = if ctx.is_some_and(|c| c.requires_gdpr()) {
+            "This record contains personal data (GDPR). Deletion is typically irreversible — verify you have the right to erase."
+        } else {
+            "This record contains fields flagged as personal data. Review before proceeding."
+        };
+        format!(
+            r#"<div class="rio-alert rio-alert-error">{icon}<div><strong>Sensitive data.</strong> {note}</div></div>"#,
+            icon = icon_shield_alert(),
+            note = escape_html(note),
+        )
+    } else {
+        String::new()
+    };
+
     let body = format!(
         r#"<div class="rio-card">
 <div class="rio-card-body">
+{pii_banner}
 <div class="rio-alert rio-alert-warn">
 {warn}
 <div>
@@ -3456,14 +3681,14 @@ mod tests {
     #[test]
     fn nullable_string_field_omits_required_attribute() {
         let f = string_field("note", true);
-        let html = render_field::<Widgety>(&f, None);
+        let html = render_field::<Widgety>(&f, None, None);
         assert!(!html.contains("required"), "html was: {html}");
     }
 
     #[test]
     fn non_nullable_string_field_marks_required() {
         let f = string_field("title", false);
-        let html = render_field::<Widgety>(&f, None);
+        let html = render_field::<Widgety>(&f, None, None);
         assert!(html.contains("required"), "html was: {html}");
     }
 
@@ -3475,14 +3700,14 @@ mod tests {
             editable: true,
             nullable: false,
         };
-        let html = render_field::<Widgety>(&f, None);
+        let html = render_field::<Widgety>(&f, None, None);
         assert!(!html.contains("required"), "html was: {html}");
     }
 
     #[test]
     fn datetime_field_uses_datetime_local_input() {
         let f = datetime_field("starts_at", false);
-        let html = render_field::<Widgety>(&f, None);
+        let html = render_field::<Widgety>(&f, None, None);
         assert!(
             html.contains(r#"type="datetime-local""#),
             "html was: {html}"
@@ -3492,7 +3717,7 @@ mod tests {
     #[test]
     fn datetime_field_renders_existing_value() {
         let f = datetime_field("filled", true);
-        let html = render_field::<Widgety>(&f, Some(&Widgety));
+        let html = render_field::<Widgety>(&f, Some(&Widgety), None);
         assert!(
             html.contains(r#"value="2026-04-18T10:12""#),
             "html was: {html}"
@@ -3502,7 +3727,7 @@ mod tests {
     #[test]
     fn nullable_field_with_none_value_does_not_panic() {
         let f = string_field("empty", true);
-        let html = render_field::<Widgety>(&f, Some(&Widgety));
+        let html = render_field::<Widgety>(&f, Some(&Widgety), None);
         assert!(html.contains(r#"value="""#));
         assert!(!html.contains("required"));
     }
@@ -3510,7 +3735,7 @@ mod tests {
     #[test]
     fn field_display_returning_none_renders_empty_value() {
         let f = string_field("unknown_field", false);
-        let html = render_field::<Widgety>(&f, Some(&Widgety));
+        let html = render_field::<Widgety>(&f, Some(&Widgety), None);
         assert!(html.contains(r#"value="""#));
     }
 

@@ -1172,3 +1172,86 @@ a.rio-sidebar-user:hover {
 .rio-audit-ip {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+
+/* ----------------------------------------------------------------- */
+/* Admin Intelligence Layer — 0.7.0                                  */
+/* PII masking, sensitivity markers, dashboard alerts                */
+/* ----------------------------------------------------------------- */
+.rio-pii {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--rio-text-label, #374151);
+  letter-spacing: 0.04em;
+}
+.rio-pii-toggle {
+  background: transparent;
+  border: 1px solid var(--rio-border, #d1d5db);
+  color: var(--rio-text-subtle, #6b7280);
+  font-size: 12px;
+  padding: 2px 8px;
+  margin-left: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.rio-pii-toggle:hover {
+  border-color: var(--rio-text-subtle, #6b7280);
+  color: var(--rio-text, #111827);
+}
+.rio-field-sensitive {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 1px 8px;
+  border-radius: 4px;
+  vertical-align: middle;
+  cursor: help;
+}
+.rio-dashboard-alerts {
+  margin-top: 24px;
+}
+.rio-dashboard-alerts h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--rio-text, #111827);
+}
+.rio-dashboard-alerts ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rio-dashboard-alert {
+  padding: 12px 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  color: #78350f;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.rio-dashboard-alert strong { color: #78350f; }
+.rio-search-intent {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+.rio-empty-hint {
+  margin-top: 12px;
+  color: var(--rio-text-subtle, #6b7280);
+  font-size: 14px;
+  max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.55;
+}
+
