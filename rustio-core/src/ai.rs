@@ -35,6 +35,8 @@ pub mod review;
 #[cfg(test)]
 mod executor_tests;
 #[cfg(test)]
+mod executor_tests_advanced;
+#[cfg(test)]
 mod planner_tests;
 #[cfg(test)]
 mod review_tests;

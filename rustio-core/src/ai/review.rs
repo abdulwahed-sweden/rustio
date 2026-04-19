@@ -440,6 +440,10 @@ pub fn warnings_for(plan: &Plan) -> Vec<String> {
     if has_type_change {
         out.push("This plan changes a field's type. The executor may refuse conversions it considers lossy.".into());
     }
+    if has_type_change || has_require {
+        // Both triggers force a SQLite recreate-table migration.
+        out.push("This operation rewrites the entire table. Large tables may cause downtime during execution.".into());
+    }
     if plan.steps.len() > 1 {
         out.push(format!(
             "This plan performs {n} operations. Review each step individually.",
@@ -689,7 +693,11 @@ fn per_step_risk(p: &Primitive) -> RiskLevel {
         Primitive::UpdateAdmin(_) => RiskLevel::Low,
         // Flipping to nullable is reversible and safe; to required is not.
         Primitive::ChangeFieldNullability(c) if c.nullable => RiskLevel::Low,
-        Primitive::ChangeFieldNullability(_) => RiskLevel::Medium,
+        // Tightening nullable → required is High (0.5.3): the executor
+        // will COALESCE existing NULLs with a type default at write
+        // time, which is acceptable data loss *if* the reviewer has
+        // consented to it. Conservative bump.
+        Primitive::ChangeFieldNullability(_) => RiskLevel::High,
         // Data-preserving but noisy
         Primitive::RenameField(_) | Primitive::RenameModel(_) | Primitive::ChangeFieldType(_) => {
             RiskLevel::Medium

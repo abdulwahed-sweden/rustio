@@ -215,7 +215,9 @@ fn medium_risk_for_rename_model() {
 }
 
 #[test]
-fn medium_risk_for_required_change() {
+fn high_risk_for_tightening_nullability() {
+    // 0.5.3: tightening to required rewrites the table and replaces
+    // NULLs with a type default — conservative bump to High.
     let schema = task_schema();
     let plan = Plan::new(vec![Primitive::ChangeFieldNullability(
         ChangeFieldNullability {
@@ -225,11 +227,19 @@ fn medium_risk_for_required_change() {
         },
     )]);
     let review = review_plan(&schema, &plan).unwrap();
-    assert_eq!(review.risk, RiskLevel::Medium);
+    assert_eq!(review.risk, RiskLevel::High);
     assert!(review
         .warnings
         .iter()
         .any(|w| w.contains("nullable to required")));
+    assert!(
+        review
+            .warnings
+            .iter()
+            .any(|w| w.contains("rewrites the entire table")),
+        "expected table-rewrite warning, got {:?}",
+        review.warnings,
+    );
 }
 
 #[test]

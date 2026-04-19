@@ -325,21 +325,20 @@ fn simulate_step(
         Primitive::ChangeFieldNullability(c) => {
             apply_change_field_nullability(c, schema, project, shadow, migration_counter)
         }
-        Primitive::RenameModel(r) => {
-            apply_rename_model(r, project, shadow, migration_counter)
-        }
+        Primitive::RenameModel(r) => apply_rename_model(r, project, shadow, migration_counter),
         // Everything else: refuse explicitly so the reviewer can see
         // which primitive stopped the apply.
         Primitive::AddModel(_) => Err(ExecutionError::UnsupportedPrimitive {
             op: "add_model",
-            reason: "model scaffolding lives with `rustio new app`; use that then let the AI add fields",
+            reason:
+                "model scaffolding lives with `rustio new app`; use that then let the AI add fields",
         }),
-        Primitive::RemoveModel(_) => Err(ExecutionError::DestructiveWithoutConfirmation {
-            op: "remove_model",
-        }),
-        Primitive::RemoveField(_) => Err(ExecutionError::DestructiveWithoutConfirmation {
-            op: "remove_field",
-        }),
+        Primitive::RemoveModel(_) => {
+            Err(ExecutionError::DestructiveWithoutConfirmation { op: "remove_model" })
+        }
+        Primitive::RemoveField(_) => {
+            Err(ExecutionError::DestructiveWithoutConfirmation { op: "remove_field" })
+        }
         Primitive::AddRelation(_) => Err(ExecutionError::UnsupportedPrimitive {
             op: "add_relation",
             reason: "relations land in 0.6.0",
@@ -450,7 +449,7 @@ fn apply_add_field(
             },
         ],
         format!(
-            "Add field \"{}\" ({}{}) to model \"{}\" (migration {})",
+            "+ Add field \"{}\" ({}{}) to model \"{}\" (migration {})",
             a.field.name,
             a.field.ty,
             if a.field.nullable { ", nullable" } else { "" },
@@ -542,10 +541,641 @@ fn apply_rename_field(
             },
         ],
         format!(
-            "Rename field \"{}.{}\" to \"{}\" (migration {})",
+            "~ Rename field \"{}.{}\" to \"{}\" (migration {})",
             r.model, r.from, r.to, mig_filename
         ),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// change_field_type — SQLite recreate-table
+// ---------------------------------------------------------------------------
+
+fn apply_change_field_type(
+    c: &ChangeFieldType,
+    schema: &Schema,
+    project: &ProjectView,
+    shadow: &mut BTreeMap<String, String>,
+    migration_counter: &mut u32,
+) -> Result<(Vec<PlannedFileChange>, String), ExecutionError> {
+    let model = schema
+        .models
+        .iter()
+        .find(|m| m.name == c.model)
+        .ok_or_else(|| {
+            ExecutionError::SchemaMismatch(format!("model `{}` not in schema", c.model))
+        })?;
+    let field = model
+        .fields
+        .iter()
+        .find(|f| f.name == c.field)
+        .ok_or_else(|| {
+            ExecutionError::SchemaMismatch(format!("field `{}.{}` not in schema", c.model, c.field))
+        })?;
+
+    // Idempotency: field already has target type.
+    if field.ty == c.new_type {
+        return Err(ExecutionError::FileConflict {
+            path: format!("apps/?/{}.rs", c.model.to_lowercase()),
+            reason: format!(
+                "field `{}.{}` already has type `{}`; change appears applied",
+                c.model, c.field, c.new_type,
+            ),
+        });
+    }
+
+    // Safe-cast gate.
+    let cast_expr = cast_expression(&field.ty, &c.new_type, &c.field).ok_or(
+        ExecutionError::UnsupportedPrimitive {
+            op: "change_field_type",
+            reason: "this type conversion is not in the 0.5.3 safe-cast set",
+        },
+    )?;
+
+    let (app, initial_source) = locate_model_file(project, &c.model)?;
+    let current = shadow
+        .get(&app)
+        .cloned()
+        .unwrap_or_else(|| initial_source.clone());
+    let table = find_table_for_struct(&current, &c.model)
+        .or_else(|| fallback_table_name(&c.model))
+        .ok_or_else(|| {
+            ExecutionError::ProjectStructure(format!(
+                "could not find `const TABLE` for struct `{}`",
+                c.model
+            ))
+        })?;
+
+    if table_has_any_foreign_key(project, &table) {
+        return Err(ExecutionError::UnsupportedPrimitive {
+            op: "change_field_type",
+            reason:
+                "table has foreign-key constraints (incoming or outgoing); SQLite recreate-table would break them — scheduled for 0.6.0",
+        });
+    }
+
+    let patched = patch_models_for_change_field_type(
+        &current,
+        &c.model,
+        &c.field,
+        &field.ty,
+        &c.new_type,
+        field.nullable,
+    )
+    .map_err(|msg| ExecutionError::FileConflict {
+        path: format!("apps/{app}/models.rs"),
+        reason: msg,
+    })?;
+    shadow.insert(app.clone(), patched.clone());
+
+    // Build the new column list (same order as current schema).
+    let new_fields: Vec<SchemaField> = model
+        .fields
+        .iter()
+        .map(|f| {
+            if f.name == c.field {
+                SchemaField {
+                    ty: c.new_type.clone(),
+                    ..f.clone()
+                }
+            } else {
+                f.clone()
+            }
+        })
+        .collect();
+
+    let mut source_exprs: BTreeMap<String, String> = BTreeMap::new();
+    source_exprs.insert(c.field.clone(), cast_expr);
+    let sql = generate_sqlite_recreate_table_migration(&table, &new_fields, &source_exprs);
+
+    let mig_name = format!("change_{}_type_on_{}", c.field, table);
+    let (mig_path, mig_filename) = new_migration_path(project, *migration_counter, &mig_name);
+    *migration_counter += 1;
+
+    let file_path = project.root.join("apps").join(&app).join("models.rs");
+    let warn_line =
+        format!("    ⚠ This rewrites the entire `{table}` table. Large tables may cause downtime.");
+    Ok((
+        vec![
+            PlannedFileChange {
+                path: file_path,
+                kind: FileChangeKind::Update,
+                new_contents: patched,
+                expected_current_contents: Some(initial_source),
+            },
+            PlannedFileChange {
+                path: mig_path,
+                kind: FileChangeKind::Create,
+                new_contents: sql,
+                expected_current_contents: None,
+            },
+        ],
+        format!(
+            "~ Change type of {}.{} from {} to {} (migration {})\n{}",
+            c.model, c.field, field.ty, c.new_type, mig_filename, warn_line,
+        ),
+    ))
+}
+
+/// Decide whether `old_ty` → `new_ty` is a safe SQLite cast, and return
+/// the SQL expression that performs it against the source column.
+/// `None` means "not in the safe-cast set" — callers refuse with
+/// `UnsupportedPrimitive`.
+fn cast_expression(old_ty: &str, new_ty: &str, col_name: &str) -> Option<String> {
+    match (old_ty, new_ty) {
+        // Same type — caller should have bailed out earlier.
+        (a, b) if a == b => None,
+        // SQLite stores i32 / i64 / bool as INTEGER; no cast needed.
+        ("i32", "i64") | ("i64", "i32") => Some(col_name.to_string()),
+        ("bool", "i32") | ("bool", "i64") | ("i32", "bool") | ("i64", "bool") => {
+            Some(col_name.to_string())
+        }
+        // SQLite stores DateTime as TEXT; no cast needed either way.
+        ("DateTime", "String") | ("String", "DateTime") => Some(col_name.to_string()),
+        // Safe widening to TEXT.
+        ("i32", "String") | ("i64", "String") | ("bool", "String") => {
+            Some(format!("CAST({col_name} AS TEXT)"))
+        }
+        // Narrowing to INTEGER — explicit cast; review warns that
+        // non-numeric text becomes 0.
+        ("String", "i32") | ("String", "i64") | ("String", "bool") => {
+            Some(format!("CAST({col_name} AS INTEGER)"))
+        }
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// change_field_nullability — SQLite recreate-table
+// ---------------------------------------------------------------------------
+
+fn apply_change_field_nullability(
+    c: &ChangeFieldNullability,
+    schema: &Schema,
+    project: &ProjectView,
+    shadow: &mut BTreeMap<String, String>,
+    migration_counter: &mut u32,
+) -> Result<(Vec<PlannedFileChange>, String), ExecutionError> {
+    let model = schema
+        .models
+        .iter()
+        .find(|m| m.name == c.model)
+        .ok_or_else(|| {
+            ExecutionError::SchemaMismatch(format!("model `{}` not in schema", c.model))
+        })?;
+    let field = model
+        .fields
+        .iter()
+        .find(|f| f.name == c.field)
+        .ok_or_else(|| {
+            ExecutionError::SchemaMismatch(format!("field `{}.{}` not in schema", c.model, c.field))
+        })?;
+
+    if field.nullable == c.nullable {
+        return Err(ExecutionError::FileConflict {
+            path: format!("apps/?/{}.rs", c.model.to_lowercase()),
+            reason: format!(
+                "field `{}.{}` is already {}; change appears applied",
+                c.model,
+                c.field,
+                if c.nullable { "nullable" } else { "required" }
+            ),
+        });
+    }
+
+    let (app, initial_source) = locate_model_file(project, &c.model)?;
+    let current = shadow
+        .get(&app)
+        .cloned()
+        .unwrap_or_else(|| initial_source.clone());
+    let table = find_table_for_struct(&current, &c.model)
+        .or_else(|| fallback_table_name(&c.model))
+        .ok_or_else(|| {
+            ExecutionError::ProjectStructure(format!(
+                "could not find `const TABLE` for struct `{}`",
+                c.model
+            ))
+        })?;
+    if table_has_any_foreign_key(project, &table) {
+        return Err(ExecutionError::UnsupportedPrimitive {
+            op: "change_field_nullability",
+            reason:
+                "table has foreign-key constraints; SQLite recreate-table would break them — scheduled for 0.6.0",
+        });
+    }
+
+    let patched = patch_models_for_change_nullability(
+        &current,
+        &c.model,
+        &c.field,
+        &field.ty,
+        field.nullable,
+        c.nullable,
+    )
+    .map_err(|msg| ExecutionError::FileConflict {
+        path: format!("apps/{app}/models.rs"),
+        reason: msg,
+    })?;
+    shadow.insert(app.clone(), patched.clone());
+
+    let new_fields: Vec<SchemaField> = model
+        .fields
+        .iter()
+        .map(|f| {
+            if f.name == c.field {
+                SchemaField {
+                    nullable: c.nullable,
+                    ..f.clone()
+                }
+            } else {
+                f.clone()
+            }
+        })
+        .collect();
+
+    // When tightening (nullable → required), replace NULL source rows
+    // with the type default via COALESCE. When relaxing, straight copy.
+    let mut source_exprs: BTreeMap<String, String> = BTreeMap::new();
+    let tightening = !c.nullable && field.nullable;
+    if tightening {
+        source_exprs.insert(
+            c.field.clone(),
+            format!(
+                "COALESCE({col}, {dflt})",
+                col = c.field,
+                dflt = safe_default_literal(&field.ty)
+            ),
+        );
+    }
+    let sql = generate_sqlite_recreate_table_migration(&table, &new_fields, &source_exprs);
+
+    let mig_name = format!("change_{}_nullability_on_{}", c.field, table);
+    let (mig_path, mig_filename) = new_migration_path(project, *migration_counter, &mig_name);
+    *migration_counter += 1;
+
+    let state = if c.nullable { "nullable" } else { "required" };
+    let warn_line = if tightening {
+        format!(
+            "    ⚠ This rewrites `{table}` and substitutes existing NULLs with the type default ({}).",
+            safe_default_literal(&field.ty)
+        )
+    } else {
+        format!("    ⚠ This rewrites the entire `{table}` table. Large tables may cause downtime.")
+    };
+
+    let file_path = project.root.join("apps").join(&app).join("models.rs");
+    Ok((
+        vec![
+            PlannedFileChange {
+                path: file_path,
+                kind: FileChangeKind::Update,
+                new_contents: patched,
+                expected_current_contents: Some(initial_source),
+            },
+            PlannedFileChange {
+                path: mig_path,
+                kind: FileChangeKind::Create,
+                new_contents: sql,
+                expected_current_contents: None,
+            },
+        ],
+        format!(
+            "~ Mark {}.{} as {} (migration {})\n{}",
+            c.model, c.field, state, mig_filename, warn_line
+        ),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// rename_model — full: struct, TABLE const, admin.rs, views.rs (bounded)
+// ---------------------------------------------------------------------------
+
+fn apply_rename_model(
+    r: &RenameModel,
+    project: &ProjectView,
+    shadow: &mut BTreeMap<String, String>,
+    migration_counter: &mut u32,
+) -> Result<(Vec<PlannedFileChange>, String), ExecutionError> {
+    let (app, initial_source) = locate_model_file(project, &r.from)?;
+    let current = shadow
+        .get(&app)
+        .cloned()
+        .unwrap_or_else(|| initial_source.clone());
+
+    // Idempotency.
+    let struct_names = parse_struct_names(&current);
+    if struct_names.iter().any(|n| n == &r.to) {
+        return Err(ExecutionError::FileConflict {
+            path: format!("apps/{app}/models.rs"),
+            reason: format!(
+                "struct `{}` already exists in this file; rename appears applied",
+                r.to
+            ),
+        });
+    }
+    if !struct_names.iter().any(|n| n == &r.from) {
+        return Err(ExecutionError::FileConflict {
+            path: format!("apps/{app}/models.rs"),
+            reason: format!("struct `{}` not found — nothing to rename", r.from),
+        });
+    }
+
+    let old_table = find_table_for_struct(&current, &r.from)
+        .or_else(|| fallback_table_name(&r.from))
+        .ok_or_else(|| {
+            ExecutionError::ProjectStructure(format!(
+                "could not find `const TABLE` for struct `{}`",
+                r.from
+            ))
+        })?;
+    let new_table = fallback_table_name(&r.to).unwrap_or_else(|| old_table.clone());
+
+    if table_has_any_foreign_key(project, &old_table) {
+        return Err(ExecutionError::UnsupportedPrimitive {
+            op: "rename_model",
+            reason:
+                "table has foreign-key constraints (incoming or outgoing); FK rewriting is scheduled for 0.6.0",
+        });
+    }
+
+    // Patch models.rs.
+    let patched_models = patch_models_for_rename_model(
+        &current, &r.from, &r.to, &old_table, &new_table,
+    )
+    .map_err(|msg| ExecutionError::FileConflict {
+        path: format!("apps/{app}/models.rs"),
+        reason: msg,
+    })?;
+    shadow.insert(app.clone(), patched_models.clone());
+
+    // Patch admin.rs (required — the app must re-register the model).
+    let admin_path = project.root.join("apps").join(&app).join("admin.rs");
+    let admin_source =
+        std::fs::read_to_string(&admin_path).map_err(|e| ExecutionError::IoError {
+            path: admin_path.display().to_string(),
+            message: e.to_string(),
+        })?;
+    let admin_patched =
+        patch_admin_for_rename_model(&admin_source, &r.from, &r.to).map_err(|msg| {
+            ExecutionError::FileConflict {
+                path: admin_path.display().to_string(),
+                reason: msg,
+            }
+        })?;
+
+    // Patch views.rs best-effort (identifier boundaries only). Only
+    // emit a change if the file exists and actually contains the old
+    // name as a standalone identifier.
+    let views_path = project.root.join("apps").join(&app).join("views.rs");
+    let views_change: Option<PlannedFileChange> = if views_path.is_file() {
+        let views_source =
+            std::fs::read_to_string(&views_path).map_err(|e| ExecutionError::IoError {
+                path: views_path.display().to_string(),
+                message: e.to_string(),
+            })?;
+        let patched_views = rename_identifier_bounded(&views_source, &r.from, &r.to);
+        if patched_views != views_source {
+            Some(PlannedFileChange {
+                path: views_path,
+                kind: FileChangeKind::Update,
+                new_contents: patched_views,
+                expected_current_contents: Some(views_source),
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let sql = format!(
+        "-- Generated by rustio ai apply (0.5.3). DO NOT EDIT.\n\
+         ALTER TABLE {old_table} RENAME TO {new_table};\n"
+    );
+    let mig_name = format!("rename_{old_table}_to_{new_table}");
+    let (mig_path, mig_filename) = new_migration_path(project, *migration_counter, &mig_name);
+    *migration_counter += 1;
+
+    let mut changes: Vec<PlannedFileChange> = vec![
+        PlannedFileChange {
+            path: project.root.join("apps").join(&app).join("models.rs"),
+            kind: FileChangeKind::Update,
+            new_contents: patched_models,
+            expected_current_contents: Some(initial_source),
+        },
+        PlannedFileChange {
+            path: admin_path,
+            kind: FileChangeKind::Update,
+            new_contents: admin_patched,
+            expected_current_contents: Some(admin_source),
+        },
+    ];
+    if let Some(vc) = views_change {
+        changes.push(vc);
+    }
+    changes.push(PlannedFileChange {
+        path: mig_path,
+        kind: FileChangeKind::Create,
+        new_contents: sql,
+        expected_current_contents: None,
+    });
+
+    Ok((
+        changes,
+        format!(
+            "~ Rename model \"{from}\" to \"{to}\" (migration {mig})\n\
+             \x20   ⚠ Table renamed from `{old_table}` to `{new_table}`. User code using `{from}` outside apps/{app}/ must be updated manually.",
+            from = r.from,
+            to = r.to,
+            mig = mig_filename,
+        ),
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// SQLite recreate-table helper
+// ---------------------------------------------------------------------------
+
+/// Build the standard SQLite recreate-table migration for an in-place
+/// schema change: create a `<table>__new` with the target shape, copy
+/// rows via `INSERT … SELECT …` (with per-column expressions for type
+/// casts or nullability defaults), drop the old table, rename the new
+/// one back. This is the *only* pattern SQLite supports for changes
+/// that ALTER TABLE won't accept.
+///
+/// Caller guarantees: `new_fields` contains every column the target
+/// table should have (preserving order). Columns missing from
+/// `source_exprs` are copied by name from the old table.
+fn generate_sqlite_recreate_table_migration(
+    table: &str,
+    new_fields: &[SchemaField],
+    source_exprs: &BTreeMap<String, String>,
+) -> String {
+    let new_table = format!("{table}__new");
+    let mut out = String::new();
+    out.push_str("-- Generated by rustio ai apply (0.5.3). DO NOT EDIT.\n");
+    out.push_str("-- SQLite recreate-table pattern: SQLite cannot ALTER COLUMN in place.\n");
+    out.push_str(&format!("CREATE TABLE {new_table} (\n"));
+    for (i, f) in new_fields.iter().enumerate() {
+        out.push_str("    ");
+        out.push_str(&column_def(f));
+        if i + 1 < new_fields.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push_str(");\n\n");
+
+    let col_list = new_fields
+        .iter()
+        .map(|f| f.name.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let expr_list = new_fields
+        .iter()
+        .map(|f| {
+            source_exprs
+                .get(&f.name)
+                .cloned()
+                .unwrap_or_else(|| f.name.clone())
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    out.push_str(&format!(
+        "INSERT INTO {new_table} ({col_list})\nSELECT {expr_list}\nFROM {table};\n\n"
+    ));
+    out.push_str(&format!("DROP TABLE {table};\n\n"));
+    out.push_str(&format!("ALTER TABLE {new_table} RENAME TO {table};\n"));
+    out
+}
+
+/// One column DDL for recreate-table. `id INTEGER PRIMARY KEY
+/// AUTOINCREMENT` is the special case every scaffolded table uses.
+fn column_def(f: &SchemaField) -> String {
+    let sql_ty = sql_type_for(&f.ty);
+    if f.name == "id" && f.ty == "i64" && !f.nullable {
+        return "id INTEGER PRIMARY KEY AUTOINCREMENT".to_string();
+    }
+    let suffix = if f.nullable {
+        String::new()
+    } else {
+        format!(" NOT NULL DEFAULT {}", safe_default_literal(&f.ty))
+    };
+    format!("{} {}{}", f.name, sql_ty, suffix)
+}
+
+/// Refuse recreate-table on any table that participates in foreign
+/// keys — outgoing (declared inside the table) or incoming (referenced
+/// by another table). The recreate pattern DROPs the table, which
+/// would cascade-delete dependent rows under PRAGMA foreign_keys=ON.
+/// 0.6.0 is scheduled to handle FK rewriting.
+fn table_has_any_foreign_key(project: &ProjectView, table: &str) -> bool {
+    let lt = table.to_lowercase();
+    for contents in project.migration_sources.values() {
+        let c = contents.to_lowercase();
+        // Incoming reference from any migration.
+        if c.contains(&format!("references {lt}")) || c.contains(&format!("references {lt}(")) {
+            return true;
+        }
+        // Outgoing FK in this table's own CREATE.
+        let create_needles = [
+            format!("create table {lt} ("),
+            format!("create table if not exists {lt} ("),
+        ];
+        for needle in &create_needles {
+            if let Some(start) = c.find(needle) {
+                let tail = &c[start..];
+                if let Some(end) = tail.find(");") {
+                    if tail[..end].contains("foreign key") {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Replace `from` with `to` only at identifier boundaries (byte before
+/// and after are not identifier chars). Used for the bounded rename
+/// sweep in `views.rs` so we don't clobber substrings inside string
+/// literals or comments that happen to contain the old name.
+fn rename_identifier_bounded(src: &str, from: &str, to: &str) -> String {
+    let bytes = src.as_bytes();
+    let from_bytes = from.as_bytes();
+    let n = from_bytes.len();
+    if n == 0 {
+        return src.to_string();
+    }
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    let mut last = 0;
+    while i + n <= bytes.len() {
+        if &bytes[i..i + n] == from_bytes {
+            let left_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
+            let right_ok = i + n == bytes.len() || !is_ident_byte(bytes[i + n]);
+            if left_ok && right_ok {
+                out.push_str(&src[last..i]);
+                out.push_str(to);
+                i += n;
+                last = i;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out.push_str(&src[last..]);
+    out
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Shadow-apply a primitive to a schema copy so later steps in the
+/// same plan see the earlier step's shape change. Mirrors the review
+/// layer's logic but is executor-internal so we aren't coupled to
+/// review's visibility rules.
+fn apply_schema_shadow(p: &Primitive, schema: &mut Schema) {
+    match p {
+        Primitive::AddField(a) => {
+            if let Some(m) = schema.models.iter_mut().find(|m| m.name == a.model) {
+                m.fields.push(SchemaField {
+                    name: a.field.name.clone(),
+                    ty: a.field.ty.clone(),
+                    nullable: a.field.nullable,
+                    editable: a.field.editable,
+                });
+            }
+        }
+        Primitive::RenameField(r) => {
+            if let Some(m) = schema.models.iter_mut().find(|m| m.name == r.model) {
+                if let Some(f) = m.fields.iter_mut().find(|f| f.name == r.from) {
+                    f.name = r.to.clone();
+                }
+            }
+        }
+        Primitive::ChangeFieldType(c) => {
+            if let Some(m) = schema.models.iter_mut().find(|m| m.name == c.model) {
+                if let Some(f) = m.fields.iter_mut().find(|f| f.name == c.field) {
+                    f.ty = c.new_type.clone();
+                }
+            }
+        }
+        Primitive::ChangeFieldNullability(c) => {
+            if let Some(m) = schema.models.iter_mut().find(|m| m.name == c.model) {
+                if let Some(f) = m.fields.iter_mut().find(|f| f.name == c.field) {
+                    f.nullable = c.nullable;
+                }
+            }
+        }
+        Primitive::RenameModel(r) => {
+            if let Some(m) = schema.models.iter_mut().find(|m| m.name == r.from) {
+                m.name = r.to.clone();
+            }
+        }
+        _ => {}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -621,7 +1251,208 @@ fn patch_models_for_rename_field(
     Ok(out)
 }
 
+/// Rewrite the struct field declaration, the `from_row` accessor, and
+/// (for `String`) the `.clone()` call in `insert_values` so the Rust
+/// side matches the new column type.
+fn patch_models_for_change_field_type(
+    source: &str,
+    struct_name: &str,
+    field_name: &str,
+    old_ty: &str,
+    new_ty: &str,
+    nullable: bool,
+) -> Result<String, String> {
+    let mut out = source.to_string();
+    // Ensure chrono import when introducing DateTime.
+    if (new_ty == "DateTime") && !out.contains("chrono::") {
+        out = insert_chrono_import(&out);
+    }
+    // 1. Struct field line.
+    let old_rust = rust_type_for(old_ty, nullable);
+    let new_rust = rust_type_for(new_ty, nullable);
+    out = replace_in_struct_literal(
+        &out,
+        struct_name,
+        &format!("pub {field_name}: {old_rust},"),
+        &format!("pub {field_name}: {new_rust},"),
+    )?;
+    // 2. from_row accessor.
+    let old_acc = row_accessor(old_ty, nullable);
+    let new_acc = row_accessor(new_ty, nullable);
+    if old_acc != new_acc {
+        out = replace_in_from_row_literal(
+            &out,
+            &format!("{field_name}: row.{old_acc}(\"{field_name}\")?,"),
+            &format!("{field_name}: row.{new_acc}(\"{field_name}\")?,"),
+        )?;
+    }
+    // 3. insert_values line — may gain/lose `.clone()` when moving
+    // between `String` and Copy-able types.
+    let old_line = build_insert_values_line(field_name, old_ty, nullable);
+    let new_line = build_insert_values_line(field_name, new_ty, nullable);
+    if old_line != new_line {
+        let old_trim = old_line.trim().to_string();
+        let new_trim = new_line.trim().to_string();
+        out = replace_in_insert_values_literal(&out, &old_trim, &new_trim)?;
+    }
+    Ok(out)
+}
+
+/// Flip the Rust-side shape for a nullability change. Struct field type
+/// gains/loses `Option<…>`; the `from_row` accessor swaps between
+/// `get_X` and `get_optional_X`. `insert_values` is unchanged — the
+/// `From<Option<T>> for Value` blanket handles both shapes.
+fn patch_models_for_change_nullability(
+    source: &str,
+    struct_name: &str,
+    field_name: &str,
+    ty: &str,
+    was_nullable: bool,
+    now_nullable: bool,
+) -> Result<String, String> {
+    let mut out = source.to_string();
+    let old_rust = rust_type_for(ty, was_nullable);
+    let new_rust = rust_type_for(ty, now_nullable);
+    out = replace_in_struct_literal(
+        &out,
+        struct_name,
+        &format!("pub {field_name}: {old_rust},"),
+        &format!("pub {field_name}: {new_rust},"),
+    )?;
+    let old_acc = row_accessor(ty, was_nullable);
+    let new_acc = row_accessor(ty, now_nullable);
+    out = replace_in_from_row_literal(
+        &out,
+        &format!("{field_name}: row.{old_acc}(\"{field_name}\")?,"),
+        &format!("{field_name}: row.{new_acc}(\"{field_name}\")?,"),
+    )?;
+    Ok(out)
+}
+
+/// Update `models.rs` for a model rename: the struct name, the
+/// `impl Model for …` header, and the `TABLE` const.
+fn patch_models_for_rename_model(
+    source: &str,
+    old_struct: &str,
+    new_struct: &str,
+    old_table: &str,
+    new_table: &str,
+) -> Result<String, String> {
+    let mut out = source.to_string();
+
+    let old_struct_decl = format!("pub struct {old_struct}");
+    let new_struct_decl = format!("pub struct {new_struct}");
+    if !out.contains(&old_struct_decl) {
+        return Err(format!("struct `{old_struct}` not found"));
+    }
+    out = out.replacen(&old_struct_decl, &new_struct_decl, 1);
+
+    let old_impl = format!("impl Model for {old_struct}");
+    let new_impl = format!("impl Model for {new_struct}");
+    if out.contains(&old_impl) {
+        out = out.replacen(&old_impl, &new_impl, 1);
+    }
+
+    let old_tbl = format!("const TABLE: &'static str = \"{old_table}\";");
+    let new_tbl = format!("const TABLE: &'static str = \"{new_table}\";");
+    if out.contains(&old_tbl) {
+        out = out.replacen(&old_tbl, &new_tbl, 1);
+    }
+    Ok(out)
+}
+
+/// Update `admin.rs` for a model rename: `use super::models::Old;`
+/// and `admin.model::<Old>()`.
+fn patch_admin_for_rename_model(
+    source: &str,
+    old_struct: &str,
+    new_struct: &str,
+) -> Result<String, String> {
+    let mut out = source.to_string();
+    let old_use = format!("use super::models::{old_struct};");
+    let new_use = format!("use super::models::{new_struct};");
+    if out.contains(&old_use) {
+        out = out.replacen(&old_use, &new_use, 1);
+    }
+    let old_call = format!("admin.model::<{old_struct}>()");
+    let new_call = format!("admin.model::<{new_struct}>()");
+    if !out.contains(&old_call) {
+        return Err(format!(
+            "`admin.rs` does not call `admin.model::<{old_struct}>()`"
+        ));
+    }
+    out = out.replacen(&old_call, &new_call, 1);
+    Ok(out)
+}
+
 // --- tiny, targeted source-patching primitives ------------------------------
+
+/// Replace a literal substring inside the named struct block only.
+/// Used by change-type / nullability patchers where we need the old
+/// string to be matched exactly rather than by field-name heuristics.
+fn replace_in_struct_literal(
+    src: &str,
+    struct_name: &str,
+    from: &str,
+    to: &str,
+) -> Result<String, String> {
+    let (open, close) = find_struct_block(src, struct_name)
+        .ok_or_else(|| format!("struct `{struct_name}` block not found"))?;
+    let block = &src[open..=close];
+    if !block.contains(from) {
+        return Err(format!("struct `{struct_name}` does not contain `{from}`"));
+    }
+    let new_block = block.replacen(from, to, 1);
+    let mut out = String::with_capacity(src.len());
+    out.push_str(&src[..open]);
+    out.push_str(&new_block);
+    out.push_str(&src[close + 1..]);
+    Ok(out)
+}
+
+fn replace_in_from_row_literal(src: &str, from: &str, to: &str) -> Result<String, String> {
+    let fn_start = src
+        .find("fn from_row(")
+        .ok_or_else(|| "`fn from_row(` not found".to_string())?;
+    let ok_self_rel = src[fn_start..]
+        .find("Ok(Self {")
+        .ok_or_else(|| "`Ok(Self {` not found".to_string())?;
+    let ok_self_open = fn_start + ok_self_rel + "Ok(Self ".len();
+    let ok_self_close = find_matching_brace(src, ok_self_open)
+        .ok_or_else(|| "`Ok(Self { … }` is not closed".to_string())?;
+    let block = &src[ok_self_open..=ok_self_close];
+    if !block.contains(from) {
+        return Err(format!("from_row does not contain `{from}`"));
+    }
+    let replaced = block.replacen(from, to, 1);
+    let mut out = String::with_capacity(src.len());
+    out.push_str(&src[..ok_self_open]);
+    out.push_str(&replaced);
+    out.push_str(&src[ok_self_close + 1..]);
+    Ok(out)
+}
+
+fn replace_in_insert_values_literal(src: &str, from: &str, to: &str) -> Result<String, String> {
+    let fn_start = src
+        .find("fn insert_values(")
+        .ok_or_else(|| "`fn insert_values(` not found".to_string())?;
+    let vec_rel = src[fn_start..]
+        .find("vec![")
+        .ok_or_else(|| "no `vec![` inside insert_values".to_string())?;
+    let vec_open = fn_start + vec_rel + 4;
+    let vec_close = find_matching_bracket(src, vec_open)
+        .ok_or_else(|| "`vec![ … ]` is not closed".to_string())?;
+    let block = &src[vec_open..=vec_close];
+    if !block.contains(from) {
+        return Err(format!("insert_values does not contain `{from}`"));
+    }
+    let replaced = block.replacen(from, to, 1);
+    let mut out = String::with_capacity(src.len());
+    out.push_str(&src[..vec_open]);
+    out.push_str(&replaced);
+    out.push_str(&src[vec_close + 1..]);
+    Ok(out)
+}
 
 fn find_struct_block(src: &str, name: &str) -> Option<(usize, usize)> {
     let anchor = format!("pub struct {name}");
@@ -1412,8 +2243,12 @@ fn display_path(root: &Path, absolute: &Path) -> String {
 pub fn render_preview_human(preview: &ExecutionPreview, risk: RiskLevel) -> String {
     let mut out = String::from("Plan to apply\n\n");
     out.push_str("Applying:\n");
+    // Each summary line already carries its own glyph (`+` for add,
+    // `~` for mutate, `-` for destructive; warning lines are indented
+    // with four leading spaces). The renderer just reserves a two-
+    // space indent for every line so the block is visually uniform.
     for line in preview.summary.lines() {
-        out.push_str("  + ");
+        out.push_str("  ");
         out.push_str(line);
         out.push('\n');
     }

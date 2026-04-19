@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.5.3 Intelligence Phase, Pass 4 (Advanced Schema Mutations)
+
+Extends the Safe Executor with the three primitives that require a
+SQLite table-recreation migration: `change_field_type`,
+`change_field_nullability`, and `rename_model`. Everything remains
+refusal-first — if the shape of the plan violates the safe subset the
+executor stops and reports a named `ExecutionError`.
+
+- **SQLite recreate-table engine** — `generate_sqlite_recreate_table_migration`
+  emits the canonical four-step pattern: `CREATE TABLE <t>__new (…)`,
+  `INSERT INTO <t>__new (cols) SELECT exprs FROM <t>`, `DROP TABLE <t>`,
+  `ALTER TABLE <t>__new RENAME TO <t>`. Column DDL preserves
+  `INTEGER PRIMARY KEY AUTOINCREMENT` for `id` and applies safe type
+  defaults (`0`, `''`, `CURRENT_TIMESTAMP`) to every `NOT NULL` field.
+- **Foreign-key guard** — `ProjectView` now carries the contents of
+  every migration file. The executor refuses recreate-table on any
+  table that participates in a FK (incoming *or* outgoing); FK rewriting
+  is deferred to 0.6.0 rather than silently cascading-deleting dependent
+  rows.
+- **`change_field_type`** — supported safe casts:
+  - `i32 ↔ i64`, `bool ↔ i32/i64`: same SQLite storage, no CAST.
+  - `DateTime ↔ String`: same TEXT storage, no CAST.
+  - `i32/i64/bool → String`: `CAST(col AS TEXT)` — widens safely.
+  - `String → i32/i64/bool`: `CAST(col AS INTEGER)` — warned but
+    allowed; review flags "may truncate or fail".
+  - Anything else: `UnsupportedPrimitive`.
+  The Rust side updates the struct field type, the `from_row`
+  accessor, and (for `String`) the `.clone()` call in `insert_values`.
+  `chrono::{DateTime, Utc}` is auto-imported when introducing
+  `DateTime`.
+- **`change_field_nullability`**:
+  - Required → nullable (relaxing): safe. Migration is a straight
+    recreate-table; the Rust struct wraps the field in `Option<T>` and
+    the `from_row` accessor swaps to `get_optional_*`.
+  - Nullable → required (tightening): the `INSERT SELECT` substitutes
+    existing NULLs with the type default via
+    `COALESCE(col, <default>)`. Risk bumped to **High**. A dedicated
+    warning surfaces the NULL substitution so no reviewer can miss it.
+  - No-op (same state requested): refused with `FileConflict`.
+- **`rename_model`** (full) — updates, in the owning app:
+  - `models.rs` — struct name, `impl Model for …` header, and the
+    `TABLE` constant (pluralised from the new name).
+  - `admin.rs` — `use super::models::Old;` and
+    `admin.model::<Old>()`.
+  - `views.rs` — bounded, identifier-boundary-safe rename (no
+    substring clobbers, no string-literal rewrites).
+  - Migration — `ALTER TABLE old_table RENAME TO new_table;`.
+  Emits a summary warning that references outside the app dir must
+  be updated manually. Refuses if the target struct name already
+  exists or the owning table participates in FKs.
+- **Review risk upgrade** — `ChangeFieldNullability` tightening moved
+  from Medium → High (reflects the NULL-substitution). Any
+  table-rewriting primitive now adds the warning *"This operation
+  rewrites the entire table. Large tables may cause downtime during
+  execution."*
+- **CLI preview glyphs** — additive operations show as `+`, mutating
+  operations as `~`; recreate-table steps emit a `⚠ This rewrites …`
+  indented line directly in the "Applying:" block so the operator
+  sees the cost before confirming.
+- **Shadow-schema simulation** — multi-step plans now see each
+  other's mutations (rename field → change type on the new name works
+  in a single `Plan`).
+- **Tests** — 12 new advanced tests in `executor_tests_advanced.rs`:
+  type-cast happy-path, unsafe cast refusal, idempotent no-op,
+  FK-participating table refusal, nullability relax (no COALESCE),
+  nullability tighten (COALESCE), no-op nullability, rename-model
+  happy path (models + admin + views + migration), rename-model
+  target-collision, recreate-table determinism, and a wide-schema
+  simulation (21 columns) asserting one CAST + straight copies.
+
+Smoke-tested end-to-end: built a scratch project, ran
+`rustio ai plan "change score in notes to String" --save adv.json` →
+`rustio ai apply adv.json --yes` → `rustio migrate apply` → SQLite
+`PRAGMA table_info('notes')` confirms `score` is now `TEXT`,
+project re-compiles clean.
+
 ### Added — 0.5.2 Intelligence Phase, Pass 3 (Safe Executor)
 
 The first layer that turns a reviewed `PlanDocument` into real on-disk

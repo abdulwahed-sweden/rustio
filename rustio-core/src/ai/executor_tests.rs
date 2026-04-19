@@ -28,10 +28,7 @@ use super::executor::{
 };
 use super::planner::PlanResult;
 use super::review::{build_plan_document_with_timestamp, PlanDocument, RiskLevel};
-use super::{
-    AddField, ChangeFieldType, CreateMigration, FieldSpec, Plan, Primitive, RemoveField,
-    RenameField, RenameModel,
-};
+use super::{AddField, CreateMigration, FieldSpec, Plan, Primitive, RemoveField, RenameField};
 use crate::schema::{Schema, SchemaField, SchemaModel, SCHEMA_VERSION};
 
 // ---------------------------------------------------------------------------
@@ -131,6 +128,7 @@ fn project_with_task(root: &str) -> ProjectView {
         root: PathBuf::from(root),
         models_files,
         existing_migrations: vec!["0001_create_tasks.sql".into()],
+        migration_sources: BTreeMap::new(),
     }
 }
 
@@ -500,34 +498,27 @@ fn remove_field_is_still_refused_even_with_allow_destructive() {
 
 #[test]
 fn unsupported_primitives_fail_with_named_reasons() {
+    // `rename_model`, `change_field_type`, and `change_field_nullability`
+    // moved out of this list in 0.5.3 — tests for those live in
+    // `executor_tests_advanced.rs`. What's still unsupported here is
+    // `add_model` (scaffold-level), `update_admin` (metadata), and the
+    // relation primitives.
     let schema = task_schema();
     let project = project_with_task("/p");
-    for (plan, expected_op) in [
-        (
-            Plan::new(vec![Primitive::RenameModel(RenameModel {
-                from: "Task".into(),
-                to: "Todo".into(),
-            })]),
-            "rename_model",
-        ),
-        (
-            Plan::new(vec![Primitive::ChangeFieldType(ChangeFieldType {
-                model: "Task".into(),
-                field: "title".into(),
-                new_type: "String".into(),
-            })]),
-            "change_field_type",
-        ),
-    ] {
-        let doc = doc_for(&schema, "x", plan);
-        let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
-            .expect_err(&format!("{expected_op} must be refused"));
-        match err {
-            ExecutionError::UnsupportedPrimitive { op, .. } => {
-                assert_eq!(op, expected_op);
-            }
-            other => panic!("{expected_op}: expected UnsupportedPrimitive, got {other:?}"),
+    let plan = Plan::new(vec![Primitive::UpdateAdmin(super::UpdateAdmin {
+        model: "Task".into(),
+        field: "title".into(),
+        attr: "searchable".into(),
+        value: serde_json::json!(true),
+    })]);
+    let doc = doc_for(&schema, "x", plan);
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+        .expect_err("update_admin must be refused");
+    match err {
+        ExecutionError::UnsupportedPrimitive { op, .. } => {
+            assert_eq!(op, "update_admin");
         }
+        other => panic!("expected UnsupportedPrimitive, got {other:?}"),
     }
 }
 
