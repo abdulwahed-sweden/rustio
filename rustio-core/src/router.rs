@@ -105,6 +105,20 @@ impl Router {
         self
     }
 
+    /// `true` when a handler is already registered for `(method, path)`.
+    ///
+    /// Path comparison is literal — `:id` and other patterns are matched
+    /// by their textual form. Used by [`crate::defaults::with_defaults`]
+    /// to skip registering defaults the project already owns (e.g. a
+    /// custom `/` homepage) so that registration order doesn't silently
+    /// shadow user intent.
+    pub fn has_route(&self, method: &Method, path: &str) -> bool {
+        let target = parse_path(path);
+        self.routes
+            .iter()
+            .any(|r| r.method == *method && segments_equal(&r.segments, &target))
+    }
+
     pub async fn dispatch(&self, req: Request) -> Response {
         let path = req.uri().path().to_owned();
         let actual: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
@@ -179,6 +193,17 @@ fn parse_path(path: &str) -> Vec<Segment> {
         .collect()
 }
 
+fn segments_equal(a: &[Segment], b: &[Segment]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b.iter()).all(|(x, y)| match (x, y) {
+        (Segment::Literal(u), Segment::Literal(v)) => u == v,
+        (Segment::Param(u), Segment::Param(v)) => u == v,
+        _ => false,
+    })
+}
+
 fn match_segments(patterns: &[Segment], actual: &[&str]) -> Option<Params> {
     if patterns.len() != actual.len() {
         return None;
@@ -239,5 +264,23 @@ mod tests {
         let params = match_segments(&segs("/a/:x/b/:y"), &parts("/a/first/b/second")).unwrap();
         assert_eq!(params.get("x"), Some("first"));
         assert_eq!(params.get("y"), Some("second"));
+    }
+
+    #[test]
+    fn has_route_detects_registered_path() {
+        let router = Router::new()
+            .get("/", |_req, _p| async {
+                Ok::<Response, Error>(crate::http::text("home"))
+            })
+            .get("/users/:id", |_req, _p| async {
+                Ok::<Response, Error>(crate::http::text("user"))
+            });
+        assert!(router.has_route(&Method::GET, "/"));
+        assert!(router.has_route(&Method::GET, "/users/:id"));
+        assert!(!router.has_route(&Method::GET, "/missing"));
+        assert!(!router.has_route(&Method::POST, "/"));
+        // Param name difference should still count as the same path shape.
+        assert!(router.has_route(&Method::GET, "/users/:id"));
+        assert!(!router.has_route(&Method::GET, "/users/:other"));
     }
 }

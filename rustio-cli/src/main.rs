@@ -712,11 +712,32 @@ fn database_url() -> String {
 }
 
 // Returns the `rustio-core` dependency spec used in generated `Cargo.toml`.
-// Defaults to a version matching the CLI's own package version (crates.io).
-// Override with `RUSTIO_CORE_PATH=/path/to/rustio-core` for local development.
+//
+// Resolution order:
+//   1. `RUSTIO_CORE_PATH` env var (explicit override) — path dep.
+//   2. A sibling `rustio-core` directory next to the CLI's workspace —
+//      auto-detected when running via `cargo run -p rustio-cli` from a
+//      checkout. This keeps scaffolded projects in sync with the in-tree
+//      code during development, so features merged into `rustio-core`
+//      but not yet published to crates.io are available immediately.
+//   3. Fall back to the CLI's package version (crates.io).
 fn rustio_core_dep() -> String {
     if let Ok(path) = std::env::var("RUSTIO_CORE_PATH") {
         return format!(r#"{{ path = "{path}" }}"#);
+    }
+    // `CARGO_MANIFEST_DIR` is baked in at build time and points at
+    // `…/rustio-cli`. When the binary ships via crates.io the sibling
+    // directory won't exist and this check falls through.
+    let manifest_dir = env!("CARGO_MANIFEST_DIR");
+    let sibling = std::path::Path::new(manifest_dir)
+        .parent()
+        .map(|p| p.join("rustio-core"));
+    if let Some(path) = sibling {
+        if path.join("Cargo.toml").is_file() {
+            if let Some(s) = path.to_str() {
+                return format!(r#"{{ path = "{s}" }}"#);
+            }
+        }
     }
     format!(r#""{}""#, env!("CARGO_PKG_VERSION"))
 }
@@ -735,6 +756,10 @@ path = "main.rs"
 [dependencies]
 rustio-core = {dep}
 tokio = {{ version = "1", features = ["rt-multi-thread", "macros"] }}
+# `chrono` is used for `DateTime<Utc>` model fields. Leave it even if
+# your first model only uses primitives — you'll want it the moment you
+# add a `created_at` or `published_at` column.
+chrono = {{ version = "0.4", default-features = false, features = ["std", "clock"] }}
 "#,
         dep = rustio_core_dep(),
     )
@@ -866,11 +891,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| "sqlite://app.db?mode=rwc".to_string());
     let db = Db::connect(&url).await?;
 
+    // Route registration order: the router picks the FIRST match, so
+    // register app routes first so they win over framework defaults
+    // sharing the same path (e.g. you can override `/` below by adding
+    // a handler inside `register_all`).
+    //
     // `authenticate(db)` returns a middleware that reads the session
     // cookie on every request, validates it against `rustio_sessions`,
     // and attaches `Identity` to the context when valid.
-    let router = with_defaults(Router::new()).wrap(authenticate(db.clone()));
+    let router = Router::new();
     let router = apps::register_all(router, &db);
+    let router = with_defaults(router).wrap(authenticate(db.clone()));
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8000));
     eprintln!("serving on http://{addr}");
@@ -916,16 +947,22 @@ const APP_MODELS_RS: &str = r#"use rustio_core::{Error, Model, Row, RustioAdmin,
 
 /// The {{STRUCT}} model.
 ///
-/// This is a starting point — edit freely. Supported field types today
-/// are `i32`, `i64`, `String`, and `bool`. To add a field:
+/// This is a starting point — edit freely. Supported field types are
+/// `i32`, `i64`, `String`, `bool`, and `chrono::DateTime<Utc>`. Any of
+/// them can be wrapped in `Option<T>` for a nullable column. To add a
+/// field:
 ///
 ///   1. Add it to the struct below.
 ///   2. Append its column name to `COLUMNS` (and `INSERT_COLUMNS` if the
 ///      DB shouldn't autofill it).
-///   3. Read it in `from_row` and emit it in `insert_values`.
+///   3. Read it in `from_row` (`row.get_i32`, `row.get_datetime`,
+///      `row.get_optional_string`, …) and emit it in `insert_values`.
 ///   4. Generate a migration to update the table:
 ///        rustio migrate generate alter_{{TABLE}}
 ///      then write the `ALTER TABLE ...` SQL and run `rustio migrate apply`.
+///
+/// If you add a `DateTime<Utc>` field, make sure the project's
+/// `Cargo.toml` depends on `chrono` (e.g. `chrono = "0.4"`).
 #[derive(Debug, RustioAdmin)]
 pub struct {{STRUCT}} {
     pub id: i64,

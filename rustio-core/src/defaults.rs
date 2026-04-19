@@ -50,18 +50,27 @@ pub async fn body_limit(req: Request, next: Next) -> Result<Response, Error> {
     next.run(req).await
 }
 
-pub fn with_defaults(router: Router) -> Router {
+pub fn with_defaults(mut router: Router) -> Router {
+    // Register each default only if the project hasn't already claimed
+    // that path. Without this check, registering `with_defaults` after
+    // your own `/` handler would silently shadow it (router matches in
+    // registration order), which is a nasty footgun. Ordering now
+    // doesn't matter: whichever `/` or `/docs` the project registers
+    // first takes precedence, the framework fills in any gap.
+    if !router.has_route(&hyper::Method::GET, "/") {
+        router = router.get("/", |_req: Request, _p: Params| async {
+            Ok::<Response, Error>(homepage())
+        });
+    }
+    if !router.has_route(&hyper::Method::GET, "/docs") {
+        router = router.get("/docs", |_req: Request, _p: Params| async {
+            Ok::<Response, Error>(docs_placeholder())
+        });
+    }
     // `wrap` adds middleware that runs on every request — so the
     // body-size cap applies uniformly to admin, user, and default
     // routes without each handler having to opt in.
-    router
-        .get("/", |_req: Request, _p: Params| async {
-            Ok::<Response, Error>(homepage())
-        })
-        .get("/docs", |_req: Request, _p: Params| async {
-            Ok::<Response, Error>(docs_placeholder())
-        })
-        .wrap(body_limit)
+    router.wrap(body_limit)
 }
 
 #[cfg(test)]

@@ -1,0 +1,12 @@
+[package]
+name = "x"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "x"
+path = "main.rs"
+
+[dependencies]
+rustio-core = { path = "/Users/mansour/Documents/GitHub/rustio/rustio-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
