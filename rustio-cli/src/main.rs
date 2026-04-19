@@ -18,8 +18,13 @@ COMMANDS:
     migrate apply [-v]        Apply all pending migrations (verbose with -v / --verbose)
     migrate status            Show applied and pending migrations
     schema                    Write rustio.schema.json at the project root
-    ai                        (0.5.0) Show the AI boundary summary
-    ai plan "<prompt>"        (0.5.0) Plan a schema change (read-only — never executes)
+    ai                        (0.5.x) Show the AI boundary summary
+    ai plan "<prompt>" [--save <path>]
+                              (0.5.0) Plan a schema change; optionally save a reviewable document
+    ai review <path>          (0.5.1) Review a saved plan against the current schema
+    ai validate <path>        (0.5.1) Terse validate-only gate for CI
+    ai apply <path> [--yes] [--dry-run]
+                              (0.5.2) Apply a reviewed plan (writes files, never runs migrations)
     user create [opts]        Create a user in the auth tables (interactive if args omitted)
 
 ENVIRONMENT:
@@ -111,10 +116,28 @@ enum Command {
 pub(crate) enum AiCommand {
     /// `rustio ai` — informational summary of the AI boundary. No edits.
     Overview(Option<String>),
-    /// `rustio ai plan "<prompt>"` — run the 0.5.0 planner. Reads the
-    /// schema + optional context, prints a structured plan. Never
-    /// writes files, never executes.
-    Plan(String),
+    /// `rustio ai plan "<prompt>" [--save <path>]`. Runs the planner.
+    /// With `--save`, writes a reviewable [`PlanDocument`] JSON to
+    /// `<path>` and prints the review summary. Never executes.
+    Plan {
+        prompt: String,
+        save: Option<String>,
+    },
+    /// `rustio ai review <path>` — load a saved plan (document or
+    /// raw), validate it against the current schema, and print a
+    /// human-readable review.
+    Review(String),
+    /// `rustio ai validate <path>` — terse machine-friendly exit:
+    /// 0 if the plan still passes `Plan::validate(&schema)`, 1
+    /// otherwise. Designed for CI gates.
+    Validate(String),
+    /// `rustio ai apply <path> [--yes] [--dry-run]` — apply a reviewed
+    /// plan. Prints a preview, prompts, writes files atomically.
+    Apply {
+        path: String,
+        assume_yes: bool,
+        dry_run: bool,
+    },
 }
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
@@ -601,13 +624,26 @@ async fn user_create_command(
 /// can grow independently.
 fn parse_ai_command(rest: &[String]) -> Result<Command, String> {
     match rest.first().map(String::as_str) {
-        Some("plan") => {
-            let prompt = rest[1..].join(" ");
-            if prompt.trim().is_empty() {
-                return Err("usage: rustio ai plan \"<natural language request>\"".to_string());
+        Some("plan") => parse_ai_plan_args(&rest[1..]),
+        Some("review") => {
+            let path = rest
+                .get(1)
+                .ok_or("usage: rustio ai review <path-to-plan.json>")?;
+            if rest.len() > 2 {
+                return Err(format!("unexpected argument `{}`", rest[2]));
             }
-            Ok(Command::Ai(AiCommand::Plan(prompt)))
+            Ok(Command::Ai(AiCommand::Review(path.clone())))
         }
+        Some("validate") => {
+            let path = rest
+                .get(1)
+                .ok_or("usage: rustio ai validate <path-to-plan.json>")?;
+            if rest.len() > 2 {
+                return Err(format!("unexpected argument `{}`", rest[2]));
+            }
+            Ok(Command::Ai(AiCommand::Validate(path.clone())))
+        }
+        Some("apply") => parse_ai_apply_args(&rest[1..]),
         Some(other) if !other.starts_with("--") => {
             // Back-compat: `rustio ai add foo` (pre-plan syntax) still
             // reaches the informational overview with an "intent"
@@ -615,17 +651,87 @@ fn parse_ai_command(rest: &[String]) -> Result<Command, String> {
             Ok(Command::Ai(AiCommand::Overview(Some(rest.join(" ")))))
         }
         Some(flag) => Err(format!(
-            "unknown flag `{flag}` (try `rustio ai plan \"…\"`)"
+            "unknown flag `{flag}` (try `rustio ai plan \"…\"`, `rustio ai review <path>`, or `rustio ai validate <path>`)"
         )),
         None => Ok(Command::Ai(AiCommand::Overview(None))),
     }
 }
 
+/// Parse `rustio ai plan …` arguments: collects `--save <path>` (or
+/// `--save=<path>`) and treats everything else as the prompt.
+fn parse_ai_plan_args(rest: &[String]) -> Result<Command, String> {
+    let mut save: Option<String> = None;
+    let mut prompt_tokens: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < rest.len() {
+        let a = &rest[i];
+        if let Some(v) = a.strip_prefix("--save=") {
+            if v.is_empty() {
+                return Err("missing value for --save (expected a file path)".into());
+            }
+            save = Some(v.to_string());
+            i += 1;
+        } else if a == "--save" {
+            let v = rest
+                .get(i + 1)
+                .ok_or("missing value for --save (expected a file path)")?;
+            save = Some(v.clone());
+            i += 2;
+        } else {
+            prompt_tokens.push(a.clone());
+            i += 1;
+        }
+    }
+    let prompt = prompt_tokens.join(" ");
+    if prompt.trim().is_empty() {
+        return Err(
+            "usage: rustio ai plan \"<natural language request>\" [--save <path>]".to_string(),
+        );
+    }
+    Ok(Command::Ai(AiCommand::Plan { prompt, save }))
+}
+
 fn ai_command(sub: AiCommand) -> Result<(), String> {
     match sub {
         AiCommand::Overview(intent) => ai_overview(intent),
-        AiCommand::Plan(prompt) => ai_plan_command(prompt),
+        AiCommand::Plan { prompt, save } => ai_plan_command(prompt, save),
+        AiCommand::Review(path) => ai_review_command(&path),
+        AiCommand::Validate(path) => ai_validate_command(&path),
+        AiCommand::Apply {
+            path,
+            assume_yes,
+            dry_run,
+        } => ai_apply_command(&path, assume_yes, dry_run),
     }
+}
+
+/// Parse `rustio ai apply …`: one positional path, optional `--yes`
+/// (skip confirmation) and `--dry-run` (print preview only).
+fn parse_ai_apply_args(rest: &[String]) -> Result<Command, String> {
+    let mut path: Option<String> = None;
+    let mut assume_yes = false;
+    let mut dry_run = false;
+    for a in rest {
+        match a.as_str() {
+            "--yes" | "-y" => assume_yes = true,
+            "--dry-run" => dry_run = true,
+            other if other.starts_with("--") => {
+                return Err(format!("unknown flag `{other}`"));
+            }
+            other => {
+                if path.is_some() {
+                    return Err(format!("unexpected argument `{other}`"));
+                }
+                path = Some(other.to_string());
+            }
+        }
+    }
+    let path = path.ok_or("usage: rustio ai apply <path-to-plan.json> [--yes] [--dry-run]")?;
+    Ok(Command::Ai(AiCommand::Apply {
+        path,
+        assume_yes,
+        dry_run,
+    }))
 }
 
 /// `rustio ai` (no args) — informational summary. No project I/O.
@@ -656,22 +762,17 @@ fn ai_overview(intent: Option<String>) -> Result<(), String> {
 /// [`rustio_core::ai::Plan`] + explanation, and prints both a strict
 /// JSON object and a human-readable summary. **Does not execute.**
 /// Does not touch the filesystem beyond reading the schema/context.
-fn ai_plan_command(prompt: String) -> Result<(), String> {
+fn ai_plan_command(prompt: String, save: Option<String>) -> Result<(), String> {
     use rustio_core::ai::generate_plan;
     use rustio_core::ai::planner::{
         render_plan_human, render_plan_json, ContextConfig, PlanRequest,
     };
-    use rustio_core::Schema;
+    use rustio_core::ai::review::{
+        build_plan_document, render_plan_document_json, render_review_human, review_plan,
+        ReviewHeader,
+    };
 
-    // Schema is required — the planner validates against it.
-    let schema_path = Path::new("rustio.schema.json");
-    if !schema_path.exists() {
-        return Err(
-            "rustio.schema.json not found. Run `rustio schema` first to emit it.".to_string(),
-        );
-    }
-    let schema_json = fs::read_to_string(schema_path).map_err(err_str)?;
-    let schema: Schema = Schema::parse(&schema_json).map_err(err_str)?;
+    let schema = load_project_schema()?;
 
     // Context is optional — read if present, otherwise plan without it.
     let ctx_path = Path::new("rustio.context.json");
@@ -698,11 +799,237 @@ fn ai_plan_command(prompt: String) -> Result<(), String> {
         }
     };
 
+    // --save bypasses the plain JSON shape; it writes a reviewable
+    // PlanDocument and prints the review. Keeps stdout useful for
+    // operators rather than noisy.
+    if let Some(path) = save {
+        let doc = build_plan_document(&schema, &prompt, &result)
+            .map_err(|e| format!("could not build reviewable plan document: {e}"))?;
+        let json = render_plan_document_json(&doc)
+            .map_err(|e| format!("could not serialise plan document: {e}"))?;
+        write_atomically(Path::new(&path), json.as_bytes())
+            .map_err(|e| format!("could not write `{path}`: {e}"))?;
+        // Second pass: review the saved plan so the operator sees the
+        // same risk/impact/warnings they will see on `ai review`.
+        let review = review_plan(&schema, &doc.plan)
+            .map_err(|e| format!("could not review saved plan: {e}"))?;
+        let header = ReviewHeader {
+            prompt: Some(doc.prompt.clone()),
+            explanation: Some(doc.explanation.clone()),
+            source: Some(path.clone()),
+        };
+        print!("{}", render_review_human(&review, Some(&header)));
+        out::success("saved", &format!("plan document → {path}"));
+        return Ok(());
+    }
+
     // 1. Strict JSON shape documented for the 0.5.0 planner.
     println!("{}", render_plan_json(&result.plan, &result.explanation));
     // 2. Human-readable block — goes after, separated by a blank line.
     println!();
     print!("{}", render_plan_human(&result.plan, &result.explanation));
+    Ok(())
+}
+
+/// `rustio ai review <path>` — load a saved plan (document or raw
+/// plan), validate it against the current schema, and print an
+/// operator-friendly review. Never executes.
+fn ai_review_command(path: &str) -> Result<(), String> {
+    use rustio_core::ai::review::{
+        load_plan, render_review_human, review_plan, LoadedPlan, ReviewHeader,
+    };
+
+    let schema = load_project_schema()?;
+    let json =
+        fs::read_to_string(Path::new(path)).map_err(|e| format!("could not read `{path}`: {e}"))?;
+    let loaded = load_plan(&json).map_err(|e| format!("could not parse `{path}`: {e}"))?;
+
+    let (plan_ref, header) = match &loaded {
+        LoadedPlan::Document(doc) => (
+            &doc.plan,
+            ReviewHeader {
+                prompt: Some(doc.prompt.clone()),
+                explanation: Some(doc.explanation.clone()),
+                source: Some(format!("{path} (document v{})", doc.version)),
+            },
+        ),
+        LoadedPlan::RawPlan(plan) => (
+            plan,
+            ReviewHeader {
+                prompt: None,
+                explanation: None,
+                source: Some(format!("{path} (raw plan)")),
+            },
+        ),
+    };
+
+    let review = review_plan(&schema, plan_ref).map_err(|e| format!("review failed: {e}"))?;
+    print!("{}", render_review_human(&review, Some(&header)));
+
+    // Exit non-zero when validation fails — `review` is a gate, not
+    // just an informational dump. Same-shape command chains (`ai review
+    // foo.json && rustio migrate …`) should halt on stale plans.
+    if !review.validation.is_valid() {
+        return Err("plan is invalid or stale against the current schema".to_string());
+    }
+    Ok(())
+}
+
+/// `rustio ai validate <path>` — terse, CI-shaped gate. Exit 0 if
+/// the plan validates; exit 1 with a short reason otherwise. No
+/// narrative output.
+fn ai_validate_command(path: &str) -> Result<(), String> {
+    use rustio_core::ai::review::{load_plan, review_plan, ValidationOutcome};
+
+    let schema = load_project_schema()?;
+    let json =
+        fs::read_to_string(Path::new(path)).map_err(|e| format!("could not read `{path}`: {e}"))?;
+    let loaded = load_plan(&json).map_err(|e| format!("could not parse `{path}`: {e}"))?;
+    let plan = loaded.plan();
+    let review = review_plan(&schema, plan).map_err(|e| format!("review failed: {e}"))?;
+    match review.validation {
+        ValidationOutcome::Valid => {
+            println!(
+                "ok: {} step(s) valid against the current schema",
+                plan.steps.len()
+            );
+            Ok(())
+        }
+        ValidationOutcome::Invalid { step, reason } => {
+            Err(format!("invalid at step {step}: {reason}"))
+        }
+    }
+}
+
+/// `rustio ai apply <path> [--yes] [--dry-run]` — the Safe Executor.
+///
+/// Flow:
+///   1. Load schema + plan document (or raw plan).
+///   2. Re-review against the current schema (executor re-runs this
+///      internally too; doing it here lets us print the review to the
+///      operator before the confirmation prompt).
+///   3. Build an `ExecutionPreview` (pure) and print it as the "Plan
+///      to apply" block.
+///   4. On `--dry-run`: stop here.
+///   5. If `--yes` skip the prompt; else require an interactive `yes`.
+///   6. Call `execute_plan_document` which commits atomically.
+///   7. Print the post-apply summary and the `rustio migrate apply`
+///      hint — we never run migrations ourselves.
+fn ai_apply_command(path: &str, assume_yes: bool, dry_run: bool) -> Result<(), String> {
+    use std::io::{BufRead, IsTerminal};
+
+    use rustio_core::ai::executor::{
+        execute_plan_document, plan_execution, render_preview_human, ExecuteOptions, ProjectView,
+    };
+    use rustio_core::ai::review::{load_plan, review_plan, LoadedPlan};
+
+    let schema = load_project_schema()?;
+    let json =
+        fs::read_to_string(Path::new(path)).map_err(|e| format!("could not read `{path}`: {e}"))?;
+    let loaded = load_plan(&json).map_err(|e| format!("could not parse `{path}`: {e}"))?;
+    let (plan_doc, source_label) = match loaded {
+        LoadedPlan::Document(doc) => (doc, format!("{path} (document v{})", 1)),
+        LoadedPlan::RawPlan(_) => {
+            return Err(format!(
+                "`{path}` is a raw plan. `rustio ai apply` needs a saved PlanDocument — run `rustio ai plan \"…\" --save <path>` first."
+            ));
+        }
+    };
+
+    // Independent review so the operator sees the same risk/impact the
+    // saved document claims — drift between document.risk and live
+    // review.risk is itself a warning sign.
+    let review = review_plan(&schema, &plan_doc.plan).map_err(|e| format!("review failed: {e}"))?;
+
+    // Pure dry-run against the live project.
+    let project = ProjectView::from_dir(Path::new(".")).map_err(|e| format!("{e}"))?;
+    let preview = plan_execution(&schema, &project, &plan_doc, &ExecuteOptions::default())
+        .map_err(|e| format!("{e}"))?;
+
+    // Preview + risk tag on stdout.
+    print!("{}", render_preview_human(&preview, review.risk));
+    println!("\nSource:\n  {source_label}");
+    if !review.warnings.is_empty() {
+        println!("\nWarnings:");
+        for w in &review.warnings {
+            println!("  - {w}");
+        }
+    }
+
+    if dry_run {
+        println!("\n(dry run — no files written)");
+        return Ok(());
+    }
+
+    // Confirmation.
+    if !assume_yes {
+        let stdin = std::io::stdin();
+        if !stdin.is_terminal() {
+            return Err(
+                "stdin is not a terminal; re-run with --yes to apply non-interactively".to_string(),
+            );
+        }
+        println!("\nProceed? (yes/no)");
+        let mut line = String::new();
+        stdin
+            .lock()
+            .read_line(&mut line)
+            .map_err(|e| format!("could not read confirmation: {e}"))?;
+        let answer = line.trim().to_lowercase();
+        if answer != "yes" && answer != "y" {
+            return Err("aborted by user".to_string());
+        }
+    }
+
+    // Commit.
+    let result = execute_plan_document(Path::new("."), &plan_doc, &ExecuteOptions::default())
+        .map_err(|e| format!("{e}"))?;
+
+    println!();
+    out::success(
+        "applied",
+        &format!(
+            "{} step{}",
+            result.applied_steps,
+            if result.applied_steps == 1 { "" } else { "s" }
+        ),
+    );
+    for f in &result.generated_files {
+        out::success("wrote", f);
+    }
+    println!();
+    out::hint("rustio migrate apply   # run the new migration against your DB");
+    out::hint("rustio schema          # regenerate rustio.schema.json");
+    Ok(())
+}
+
+/// Shared schema loader for the AI subcommands — every one of them
+/// refuses to proceed without a committed `rustio.schema.json`.
+fn load_project_schema() -> Result<rustio_core::Schema, String> {
+    let schema_path = Path::new("rustio.schema.json");
+    if !schema_path.exists() {
+        return Err(
+            "rustio.schema.json not found. Run `rustio schema` first to emit it.".to_string(),
+        );
+    }
+    let schema_json = fs::read_to_string(schema_path).map_err(err_str)?;
+    rustio_core::Schema::parse(&schema_json).map_err(err_str)
+}
+
+/// Write `contents` to `path` atomically via a sibling tempfile
+/// rename. Matches the pattern `Schema::write_to` uses so both
+/// artefacts have the same crash-safety guarantee: a partial write
+/// can never be observed by a concurrent reader.
+fn write_atomically(path: &Path, contents: &[u8]) -> Result<(), String> {
+    let tmp = path.with_extension("json.tmp");
+    // Best-effort cleanup from a previous aborted run. `write` will
+    // surface any real permission problem.
+    let _ = fs::remove_file(&tmp);
+    fs::write(&tmp, contents).map_err(err_str)?;
+    if let Err(e) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(e.to_string());
+    }
     Ok(())
 }
 

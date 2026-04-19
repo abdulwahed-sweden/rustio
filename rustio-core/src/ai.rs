@@ -28,12 +28,29 @@ use crate::schema::{
     Schema, SchemaField, SchemaModel, SchemaRelation, SCHEMA_VERSION, VALID_TYPE_NAMES,
 };
 
+pub mod executor;
 pub mod planner;
+pub mod review;
 
 #[cfg(test)]
+mod executor_tests;
+#[cfg(test)]
 mod planner_tests;
+#[cfg(test)]
+mod review_tests;
 
+pub use executor::{
+    execute_plan_document, plan_execution, render_preview_human, ExecuteOptions, ExecutionError,
+    ExecutionPreview, ExecutionResult, FileChangeKind, ParsedModelsFile, PlannedFileChange,
+    ProjectView,
+};
 pub use planner::{generate_plan, ContextConfig, PlanError, PlanRequest, PlanResult};
+pub use review::{
+    build_plan_document, build_plan_document_with_timestamp, classify_risk, compute_impact,
+    load_plan, render_plan_document_json, render_review_human, review_plan, warnings_for,
+    LoadedPlan, PlanDocument, PlanImpact, PlanReview, ReviewError, RiskLevel, ValidationOutcome,
+    PLAN_DOCUMENT_VERSION,
+};
 
 /// The complete set of operations the AI layer is allowed to perform on
 /// a RustIO project.
@@ -43,7 +60,7 @@ pub use planner::{generate_plan, ContextConfig, PlanError, PlanRequest, PlanResu
 /// wildcard arm and treat unknown variants as "refuse" rather than
 /// guess.
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Primitive {
     AddModel(AddModel),
@@ -103,7 +120,7 @@ impl Primitive {
 }
 
 /// A single field on an `add_model` / `add_field` primitive.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FieldSpec {
     pub name: String,
@@ -122,7 +139,7 @@ fn default_editable() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AddModel {
     /// Struct name in Rust (PascalCase), e.g. `Post`.
@@ -132,13 +149,13 @@ pub struct AddModel {
     pub fields: Vec<FieldSpec>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveModel {
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AddField {
     pub model: String,
@@ -146,7 +163,7 @@ pub struct AddField {
     pub field: FieldSpec,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveField {
     pub model: String,
@@ -155,7 +172,7 @@ pub struct RemoveField {
 
 /// Rename a model (schema-level). Data-preserving: the AI executor
 /// must translate this into a table rename, not a drop+recreate.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RenameModel {
     pub from: String,
@@ -163,7 +180,7 @@ pub struct RenameModel {
 }
 
 /// Rename a single field of a model (schema-level). Data-preserving.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RenameField {
     pub model: String,
@@ -175,7 +192,7 @@ pub struct RenameField {
 /// translating the change into a migration (and refusing lossy
 /// conversions); this primitive only records the intent at the
 /// schema layer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChangeFieldType {
     pub model: String,
@@ -186,7 +203,7 @@ pub struct ChangeFieldType {
 }
 
 /// Flip a field's nullability (`Option<T>` ↔ `T`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChangeFieldNullability {
     pub model: String,
@@ -215,7 +232,7 @@ impl RelationKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AddRelation {
     pub from: String,
@@ -227,7 +244,7 @@ pub struct AddRelation {
     pub via: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveRelation {
     pub from: String,
@@ -239,7 +256,7 @@ pub struct RemoveRelation {
 ///
 /// The attribute vocabulary is intentionally narrow; fields outside it
 /// must be rejected at the 0.5.0 executor rather than silently ignored.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateAdmin {
     pub model: String,
@@ -254,7 +271,7 @@ pub struct UpdateAdmin {
 /// shape (`add_model`, `add_field`, `add_relation`) to be accompanied by
 /// a `CreateMigration` whose SQL matches the change. Primitives that
 /// only touch admin metadata do not need one.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateMigration {
     pub name: String,
@@ -475,7 +492,7 @@ fn validate_field_spec(model: &str, f: &FieldSpec) -> Result<(), PrimitiveError>
 ///
 /// The struct is intentionally tiny. 0.4.0 does not execute plans; it
 /// just defines the contract every 0.5.0 executor is built to.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
     pub steps: Vec<Primitive>,
