@@ -1292,3 +1292,63 @@ a.rio-sidebar-user:hover {
   font-size: 13px;
 }
 
+/* ----------------------------------------------------------------- */
+/* Trust & Feedback Layer — 0.7.2                                     */
+/* schema reload row, schema diff, applied summary                    */
+/* ----------------------------------------------------------------- */
+.rio-schema-reload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  background: #f9fafb;
+  border: 1px solid var(--rio-border, #d1d5db);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--rio-text-subtle, #6b7280);
+}
+.rio-schema-reload-meta {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.rio-schema-diff {
+  margin: 12px 0;
+  background: #f9fafb;
+  border: 1px solid var(--rio-border, #d1d5db);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+.rio-schema-diff h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--rio-text, #111827);
+}
+.rio-schema-diff pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--rio-text-label, #374151);
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.6;
+}
+.rio-schema-diff-add {
+  /* Green for additions — same palette as rio-pill-emerald. */
+  color: #065f46;
+  background: #ecfdf5;
+  font-weight: 500;
+  display: inline-block;
+  padding-right: 6px;
+}
+.rio-apply-summary {
+  margin: 0;
+  padding-left: 22px;
+}
+.rio-apply-summary li {
+  margin: 4px 0;
+  line-height: 1.55;
+}
+

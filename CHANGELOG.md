@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.7.2 Trust & Feedback Layer
+
+Makes every action understandable and predictable. The operator
+sees what will change, how confident the system is, and what
+happened — and can refresh the schema without restarting the
+server.
+
+- **Runtime schema reload.** New `rustio-core::admin::schema_cache`
+  module: `snapshot()` / `refresh()` / `refresh_best_effort()`
+  sit behind a `OnceLock<RwLock<Option<CachedSchema>>>`. A
+  poisoned lock degrades to "cache empty" rather than panic; a
+  failed reload preserves the previous cached value. New route
+  `POST /admin/schema/reload` (CSRF-protected) refreshes the cache
+  and redirects back to `/admin?schema_reload=ok|err`. The
+  dashboard renders a header row reading *"Schema loaded at
+  YYYY-MM-DD HH:MM:SS UTC"* with a `[Reload schema]` button
+  alongside. Every successful apply also calls
+  `refresh_best_effort()` so the dashboard self-heals when
+  `rustio.schema.json` changes in the background.
+- **Type inference upgrade.** The planner now resolves monetary
+  field names to `i64` (we store amounts in minor units where
+  `i32` overflows around 21 million):
+  - `annual_income`, `total_income`, etc. (any `*_income`)
+  - `balance`, `amount`, `total_amount`, `order_total` (any
+    `*_amount` / `*_total`)
+  - `price`, `total_price` (any `*_price`)
+  Existing `priority` / `score` / `*_count` → `i32` rules are
+  untouched and covered by a regression test.
+- **Suggestion confidence.** `Suggestion` gained a
+  `confidence: Confidence` field (`High` | `Medium`). Industry-
+  required fields are `High` — the engine isn't guessing when the
+  convention list names the field explicitly. Rendered as a pill
+  next to both the dashboard action button and the review-page
+  title.
+- **Visual schema diff on the review page.** A new
+  `.rio-schema-diff` block shows the target model's current field
+  list in monospace, with added fields highlighted (`+ field: T`
+  in green). The operator sees the shape change before the apply,
+  not just "Add field X to model Y".
+- **Improved success message.** The apply result page now lists
+  specific per-step bullets ("Added field `annual_income` (i64)
+  to Applicant") and per-file bullets labelled by kind
+  ("Updated apps/applicants/models.rs", "Created migration
+  0005_…") instead of a generic "Applied 1 step".
+- **Dashboard header row.** The schema-reload block renders on
+  every dashboard response — operators always see the loaded
+  timestamp and have the refresh button one click away, even when
+  no suggestions are pending.
+- **Tests.**
+  - `monetary_names_infer_i64` — 5 name shapes produce `i64`.
+  - `count_suffix_still_infers_i32` — regression canary for the
+    pre-existing numeric rules.
+  - `schema_cache::tests::format_loaded_at_produces_stable_shape`
+    — pins the `YYYY-MM-DD HH:MM:SS UTC` format so a chrono
+    bump can't silently drift it.
+  - `schema_cache::tests::snapshot_returns_same_value_when_not_refreshed`
+    — invariant check on the cache.
+  - Existing suggestion flow tests verify the `confidence` field
+    surfaces correctly; no regressions across the 418-test
+    workspace suite.
+
+Smoke-tested end-to-end against `~/Desktop/sveahousing` with
+housing context + `annual_income` temporarily removed from the
+Applicant model:
+- Dashboard shows `[Reload schema]` and `Schema loaded at 2026-04-19 …`
+  plus the suggestion button with a green `High confidence` pill.
+- `POST /admin/schema/reload` (CSRF-protected) redirects to
+  `/admin?schema_reload=ok`; the dashboard renders a green flash
+  banner.
+- Review page carries the confidence pill, a visible diff block
+  highlighting `+ annual_income: i64`, and "Approve and apply".
+- Apply result page says "Added field `annual_income` (i64) to
+  Applicant", "Updated apps/applicants/models.rs", "Created
+  migration migrations/0005_…" — matching the files actually
+  written.
+- The generated migration is
+  `ALTER TABLE applicants ADD COLUMN annual_income INTEGER NOT NULL DEFAULT 0`
+  and the Rust struct field is `pub annual_income: i64`,
+  confirming the planner's upgraded inference lands correctly
+  through the whole chain.
+
 ### Added — 0.7.1 Actionable Intelligence Layer
 
 Turns the 0.7.0 dashboard alerts into actions. Each "missing

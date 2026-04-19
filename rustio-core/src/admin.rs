@@ -37,6 +37,7 @@ pub use crate::http::FormData;
 pub mod audit;
 pub mod design;
 pub mod intelligence;
+pub mod schema_cache;
 pub mod suggestions;
 
 #[cfg(test)]
@@ -376,8 +377,16 @@ impl Admin {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
+                // Pass through the schema-reload flash, if any — the
+                // dashboard renders a small banner based on it.
+                let flash = req
+                    .query()
+                    .get("schema_reload")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
                 let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(dashboard_response(shell))
+                Ok::<Response, Error>(dashboard_response(shell, flash.as_deref()))
             }
         });
 
@@ -536,6 +545,25 @@ impl Admin {
                     &field,
                 ))
             }
+        });
+
+        // 0.7.2 — runtime schema reload. POST refreshes the cache,
+        // returns to the dashboard. No restart, no recompile.
+        router = router.post("/admin/schema/reload", move |req, _params| async move {
+            if let Err(resp) = admin_guard(req.ctx()) {
+                return Ok(resp);
+            }
+            let (_, body, ctx) = req.into_parts();
+            let form = read_form_from_parts(body).await?;
+            require_csrf(&ctx, &form)?;
+            // Attempt the reload; on failure redirect with an error
+            // flag in the query string. The dashboard renders a
+            // banner for `?schema_reload=ok|err`.
+            let redirect_url = match schema_cache::refresh() {
+                Ok(_) => "/admin?schema_reload=ok",
+                Err(_) => "/admin?schema_reload=err",
+            };
+            Ok::<Response, Error>(with_admin_headers(redirect(redirect_url)))
         });
 
         for registrar in self.registrars {
@@ -1436,10 +1464,42 @@ fn escape_css_color(s: &str) -> &str {
 // Dashboard (admin index)
 // ---------------------------------------------------------------------------
 
-fn dashboard_response(shell: Shell<'_>) -> Response {
+fn dashboard_response(shell: Shell<'_>, schema_reload_flash: Option<&str>) -> Response {
     let user_facing: Vec<&AdminEntry> = shell.entries.iter().filter(|e| !e.core).collect();
 
-    let body = if user_facing.is_empty() {
+    // Schema-reload flash banner + form. Rendered inside every
+    // dashboard response so operators always have the refresh
+    // affordance nearby.
+    let reload_flash = match schema_reload_flash {
+        Some("ok") => format!(
+            r#"<div class="rio-alert rio-alert-info">{icon}<div>Schema reloaded from <code>rustio.schema.json</code>.</div></div>"#,
+            icon = icon_triangle_alert(),
+        ),
+        Some("err") => format!(
+            r#"<div class="rio-alert rio-alert-error">{icon}<div>Schema reload failed — check that <code>rustio.schema.json</code> exists and parses cleanly.</div></div>"#,
+            icon = icon_triangle_alert(),
+        ),
+        _ => String::new(),
+    };
+    let reload_row = {
+        let cached_line = match schema_cache::snapshot() {
+            Some(c) => format!(
+                "Schema loaded at {}",
+                schema_cache::format_loaded_at(c.loaded_at),
+            ),
+            None => "Schema not yet loaded (no rustio.schema.json found).".into(),
+        };
+        format!(
+            r#"<div class="rio-schema-reload">
+<span class="rio-schema-reload-meta">{cached}</span>
+<form method="post" action="/admin/schema/reload" style="margin:0">{csrf}<button class="rio-btn rio-btn-sm" type="submit">Reload schema</button></form>
+</div>"#,
+            cached = escape_html(&cached_line),
+            csrf = csrf_input(shell.csrf),
+        )
+    };
+
+    let body_core = if user_facing.is_empty() {
         format!(
             r#"<div class="rio-card">
 <div class="rio-empty">
@@ -1478,6 +1538,8 @@ fn dashboard_response(shell: Shell<'_>) -> Response {
         let alerts = render_dashboard_alerts(&user_facing);
         format!("{grid}{alerts}")
     };
+
+    let body = format!("{reload_flash}{reload_row}{body_core}");
 
     render_shell_page(
         &shell,
@@ -1575,9 +1637,14 @@ fn render_dashboard_alerts(entries: &[&AdminEntry]) -> String {
                 .filter(|s| s.admin_name == entry.admin_name)
                 .map(|s| {
                     format!(
-                        r#"<a class="rio-btn rio-btn-sm rio-btn-primary rio-suggestion-action" href="{href}">Add {field}</a>"#,
+                        r#"<a class="rio-btn rio-btn-sm rio-btn-primary rio-suggestion-action" href="{href}">Add {field}</a><span class="{conf_cls}" title="Confidence — explicit industry convention">{conf_label}</span>"#,
                         href = escape_html(&s.url_path()),
                         field = escape_html(&s.field),
+                        conf_cls = s.confidence.pill_class(),
+                        conf_label = escape_html(&format!(
+                            "{} confidence",
+                            s.confidence.as_str()
+                        )),
                     )
                 })
                 .collect();
@@ -3238,6 +3305,10 @@ fn suggestion_review_response(
         })
         .collect();
 
+    // Visual before/after diff of the target model's fields.
+    let schema_diff_html =
+        render_schema_diff(plan_result.schema_ref(), &plan_result.plan_result.plan);
+
     let warnings_html = if review.warnings.is_empty() {
         r#"<p class="rio-field-hint">None</p>"#.to_string()
     } else {
@@ -3282,19 +3353,26 @@ fn suggestion_review_response(
         r#"<button class="rio-btn rio-btn-primary" type="button" disabled aria-disabled="true" title="Risk is Critical or plan is invalid — apply is blocked">Approve and apply</button>"#.to_string()
     };
 
+    let confidence_badge = format!(
+        r#"<span class="{cls}" title="Confidence — explicit industry convention">{label} confidence</span>"#,
+        cls = suggestion.confidence.pill_class(),
+        label = suggestion.confidence.as_str(),
+    );
+
     let body = format!(
         r#"<div class="rio-card">
 <div class="rio-card-body">
 {error_banner}
 <p class="rio-form-section-hint">
 <strong>{model}</strong> is missing the <code>{field}</code> convention for
-<code>{industry}</code>. The planner proposes the following change — review
-before applying.
+<code>{industry}</code>. {confidence}. The planner proposes the following
+change — review before applying.
 </p>
 <div class="rio-plan-preview">
 <h3 style="margin:0 0 8px;font-size:14px;font-weight:500">Planned changes</h3>
 <ul style="margin:0;padding-left:22px">{changes}</ul>
 </div>
+{schema_diff}
 <p style="margin-top:16px"><strong>Explanation.</strong> {explanation}</p>
 <div class="rio-meta">
 <div class="rio-meta-item">
@@ -3322,7 +3400,9 @@ before applying.
         model = escape_html(&suggestion.model_display),
         field = escape_html(&suggestion.field),
         industry = escape_html(ctx.and_then(|c| c.industry.as_deref()).unwrap_or("")),
+        confidence = confidence_badge,
         changes = changes_html,
+        schema_diff = schema_diff_html,
         explanation = escape_html(&plan_result.plan_result.explanation),
         risk = risk_tag,
         adds = review.impact.adds_fields,
@@ -3426,23 +3506,52 @@ fn suggestion_apply_response(
             }
         };
 
+    // Auto-reload the schema cache. A successful apply writes a new
+    // migration + models.rs but not `rustio.schema.json`; a best-
+    // effort refresh is still worthwhile because the project may
+    // have run `rustio schema` in the background, and the reload
+    // is cheap.
+    schema_cache::refresh_best_effort();
+
+    // Per-step bullets extracted from the plan so the success page
+    // says exactly *what* happened ("Added field \"annual_income\"
+    // (i64) to Applicant"), not just "Applied 1 step".
+    let change_bullets: String = doc
+        .plan
+        .steps
+        .iter()
+        .map(|p| format!("<li>{}</li>", describe_applied_step(p)))
+        .collect();
+
     let files_html: String = result
         .generated_files
         .iter()
-        .map(|f| format!("<li><code>{}</code></li>", escape_html(f)))
+        .map(|f| {
+            let kind = if f.ends_with(".sql") {
+                "Created migration"
+            } else if f.ends_with(".rs") {
+                "Updated"
+            } else {
+                "Wrote"
+            };
+            format!("<li>{kind} <code>{}</code></li>", escape_html(f))
+        })
         .collect();
+
     let body = format!(
         r#"<div class="rio-card">
 <div class="rio-card-body">
-<div class="rio-alert rio-alert-info">{ok}<div><strong>Applied {n} step.</strong> The planner wrote the files below. The live admin keeps serving the old compiled binary until you restart.</div></div>
+<div class="rio-alert rio-alert-info">{ok}<div><strong>Changes applied.</strong> The planner wrote the files below atomically. The live admin continues serving the old compiled binary until you restart.</div></div>
+<p style="margin-top:16px"><strong>Summary</strong></p>
+<ul class="rio-apply-summary">{changes}</ul>
 <p style="margin-top:16px"><strong>Files written</strong></p>
-<ul>{files}</ul>
+<ul class="rio-apply-summary">{files}</ul>
 <p style="margin-top:16px"><strong>Next</strong></p>
 <ol>
 <li>Stop this admin server.</li>
-<li>Run <code>rustio migrate apply</code> to run the new migration.</li>
+<li>Run <code>rustio migrate apply</code> to apply the new migration to the database.</li>
 <li>Run <code>cargo build</code> (or <code>rustio run</code>) to recompile against the updated <code>models.rs</code>.</li>
-<li>Run <code>rustio schema</code> so <code>rustio.schema.json</code> reflects the new field.</li>
+<li>Run <code>rustio schema</code> so <code>rustio.schema.json</code> reflects the new shape, then click <a href="/admin">Reload schema</a> on the dashboard.</li>
 </ol>
 </div>
 <div class="rio-form-footer">
@@ -3453,7 +3562,7 @@ fn suggestion_apply_response(
 </div>
 </div>"#,
         ok = icon_triangle_alert(),
-        n = result.applied_steps,
+        changes = change_bullets,
         files = files_html,
         back = icon_arrow_left(),
     );
@@ -3488,6 +3597,106 @@ fn suggestion_error_response(
 }
 
 /// Coloured risk pill reusing the existing pill classes.
+/// Render a compact before/after diff of the target model's fields.
+/// The "before" column is the current schema shape; the "after"
+/// column is the schema with the plan's primitives applied in
+/// sequence. Returns an empty string when no model in the plan can
+/// be resolved (keeps the review page clean when the diff would be
+/// meaningless).
+fn render_schema_diff(schema: &crate::schema::Schema, plan: &crate::ai::Plan) -> String {
+    use std::collections::BTreeSet;
+
+    // Collect the set of model names the plan touches.
+    let mut touched: Vec<String> = Vec::new();
+    for step in &plan.steps {
+        if let crate::ai::Primitive::AddField(a) = step {
+            if !touched.contains(&a.model) {
+                touched.push(a.model.clone());
+            }
+        }
+    }
+    if touched.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::new();
+    for model_name in &touched {
+        let Some(model) = schema.models.iter().find(|m| &m.name == model_name) else {
+            continue;
+        };
+        // Build "after" set: start from current, apply plan steps.
+        let before: Vec<(String, String)> = model
+            .fields
+            .iter()
+            .map(|f| {
+                let ty = if f.nullable {
+                    format!("Option<{}>", f.ty)
+                } else {
+                    f.ty.clone()
+                };
+                (f.name.clone(), ty)
+            })
+            .collect();
+        let before_names: BTreeSet<&str> = before.iter().map(|(n, _)| n.as_str()).collect();
+        let mut added: Vec<(String, String)> = Vec::new();
+        for step in &plan.steps {
+            if let crate::ai::Primitive::AddField(a) = step {
+                if a.model == *model_name && !before_names.contains(a.field.name.as_str()) {
+                    let ty = if a.field.nullable {
+                        format!("Option<{}>", a.field.ty)
+                    } else {
+                        a.field.ty.clone()
+                    };
+                    added.push((a.field.name.clone(), ty));
+                }
+            }
+        }
+        out.push_str(&format!(
+            r#"<div class="rio-schema-diff"><h3>Model <code>{}</code></h3><pre>"#,
+            escape_html(model_name),
+        ));
+        for (name, ty) in &before {
+            out.push_str(&format!("  {}: {}\n", escape_html(name), escape_html(ty),));
+        }
+        for (name, ty) in &added {
+            out.push_str(&format!(
+                "<span class=\"rio-schema-diff-add\">+ {}: {}</span>\n",
+                escape_html(name),
+                escape_html(ty),
+            ));
+        }
+        out.push_str("</pre></div>");
+    }
+    out
+}
+
+/// Human description of one primitive after it was applied. Used by
+/// the "Changes applied" summary on the success page. Mirrors the
+/// executor's log shape but tuned for operator-speak.
+fn describe_applied_step(p: &crate::ai::Primitive) -> String {
+    match p {
+        crate::ai::Primitive::AddField(a) => format!(
+            "Added field <code>{}</code> (<code>{}</code>{}) to <code>{}</code>",
+            escape_html(&a.field.name),
+            escape_html(&a.field.ty),
+            if a.field.nullable { ", nullable" } else { "" },
+            escape_html(&a.model),
+        ),
+        crate::ai::Primitive::RenameField(r) => format!(
+            "Renamed <code>{}.{}</code> to <code>{}</code>",
+            escape_html(&r.model),
+            escape_html(&r.from),
+            escape_html(&r.to),
+        ),
+        crate::ai::Primitive::RenameModel(r) => format!(
+            "Renamed model <code>{}</code> to <code>{}</code>",
+            escape_html(&r.from),
+            escape_html(&r.to),
+        ),
+        other => escape_html(&format!("{:?}", other)),
+    }
+}
+
 fn risk_badge_html(risk: &crate::ai::RiskLevel) -> String {
     let (cls, label) = match risk {
         crate::ai::RiskLevel::Low => ("rio-pill rio-pill-emerald rio-risk-badge", "Low"),

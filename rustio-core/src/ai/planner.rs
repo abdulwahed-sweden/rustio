@@ -886,6 +886,22 @@ fn infer_field_type(
     {
         return Ok(("i32".to_string(), nullable));
     }
+    // Monetary names resolve to `i64` — we store amounts in minor
+    // units (öre / cents) where `i32` can overflow for anything
+    // above ~21 million units. This rule runs whether or not the
+    // banking industry context is active; the banking context arm
+    // already short-circuits for balance/amount above, so this is
+    // the generic fallback for `annual_income`, `total_price`, etc.
+    if n == "price"
+        || n == "balance"
+        || n == "amount"
+        || n.ends_with("_income")
+        || n.ends_with("_amount")
+        || n.ends_with("_total")
+        || n.ends_with("_price")
+    {
+        return Ok(("i64".to_string(), nullable));
+    }
     // Fallback
     Ok(("String".to_string(), nullable))
 }

@@ -23,6 +23,40 @@
 use crate::admin::AdminEntry;
 use crate::ai::ContextConfig;
 
+/// How sure the suggestion engine is that this is the right action.
+///
+/// - [`Confidence::High`] — the field is explicitly listed in an
+///   industry convention. We know the name; the type comes from
+///   the planner's deterministic rules.
+/// - [`Confidence::Medium`] — the suggestion was inferred from a
+///   looser signal (heuristic, pattern match). Reserved for
+///   0.7.x+ when we start producing suggestions from data shape
+///   rather than explicit convention lists.
+///
+/// Rendered as a small badge next to the action button so the
+/// operator sees, before clicking, how trustworthy the proposal is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Confidence {
+    High,
+    Medium,
+}
+
+impl Confidence {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Confidence::High => "High",
+            Confidence::Medium => "Medium",
+        }
+    }
+    /// CSS pill class reusing the existing status palette.
+    pub fn pill_class(self) -> &'static str {
+        match self {
+            Confidence::High => "rio-pill rio-pill-emerald",
+            Confidence::Medium => "rio-pill rio-pill-amber",
+        }
+    }
+}
+
 /// One proposed action shown next to a dashboard alert.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Suggestion {
@@ -47,6 +81,8 @@ pub struct Suggestion {
     /// `"add_field"`; reserved so future variants (`"make_required"`
     /// etc.) can land without changing this struct.
     pub action: &'static str,
+    /// How confident the engine is that this is the right move.
+    pub confidence: Confidence,
 }
 
 impl Suggestion {
@@ -107,6 +143,10 @@ pub fn derive_suggestions(
                 prompt,
                 reason: format!("{industry} industry convention"),
                 action: "add_field",
+                // Industry-required fields are explicit, named
+                // conventions — the engine isn't guessing. That's
+                // High confidence.
+                confidence: Confidence::High,
             });
         }
     }

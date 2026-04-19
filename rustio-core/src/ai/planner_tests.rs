@@ -124,6 +124,43 @@ fn simple_add_field_infers_i32_for_priority() {
 }
 
 #[test]
+fn monetary_names_infer_i64() {
+    // 0.7.2: `*_income`, `*_amount`, `*_total`, `price`, `balance`
+    // resolve to `i64` — we store monetary amounts in minor units
+    // where `i32` can overflow.
+    let schema = task_schema();
+    for (prompt, field, expected_ty) in [
+        ("add annual_income to tasks", "annual_income", "i64"),
+        ("add balance to tasks", "balance", "i64"),
+        ("add price to tasks", "price", "i64"),
+        ("add total_amount to tasks", "total_amount", "i64"),
+        ("add order_total to tasks", "order_total", "i64"),
+    ] {
+        let res = generate_plan(&schema, None, PlanRequest::new(prompt))
+            .unwrap_or_else(|e| panic!("prompt `{prompt}` failed: {e}"));
+        match &res.plan.steps[0] {
+            Primitive::AddField(a) => {
+                assert_eq!(a.field.name, field, "field mismatch for `{prompt}`");
+                assert_eq!(a.field.ty, expected_ty, "type mismatch for `{prompt}`",);
+            }
+            other => panic!("expected AddField for `{prompt}`, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn count_suffix_still_infers_i32() {
+    // Regression canary: adding the `_income`/`_amount`/`_total`
+    // branch must not disturb the existing `_count` → i32 rule.
+    let schema = task_schema();
+    let res = generate_plan(&schema, None, PlanRequest::new("add order_count to tasks")).unwrap();
+    match &res.plan.steps[0] {
+        Primitive::AddField(a) => assert_eq!(a.field.ty, "i32"),
+        _ => panic!("wrong primitive"),
+    }
+}
+
+#[test]
 fn add_due_date_infers_datetime_and_nullable_on_hint() {
     let schema = task_schema();
     let res = generate_plan(
