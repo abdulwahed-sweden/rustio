@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.7.1 Actionable Intelligence Layer
+
+Turns the 0.7.0 dashboard alerts into actions. Each "missing
+industry convention field" alert now renders an `[ Add <field> ]`
+button; clicking it opens a review page that runs the existing
+planner + review chain, and the Approve button fires the existing
+executor. **No safety gate is bypassed** — suggestion is just a
+convenient way to phrase a planner prompt.
+
+- **`rustio-core::admin::suggestions`** — new module with two pure
+  functions:
+  - `derive_suggestions(entries, context)` — enumerates
+    `AddField` suggestions for industry-required fields a model is
+    missing. Returns empty when no context, no industry schema,
+    or no model overlaps the convention list. Skips core models
+    entirely.
+  - `find_suggestion(entries, context, admin_name, field)` — URL
+    router guard. A suggestion URL is only honoured when the
+    `(admin_name, field)` pair is in the currently-derived list,
+    so a crafted URL like `/admin/suggestions/users/nickname`
+    404s in-shell instead of running the planner on something
+    the engine never proposed.
+- **`Suggestion`** carries the minimum the review page needs:
+  model display / singular / admin name, the field, the natural-
+  language `prompt`, a human reason (`"housing industry
+  convention"`), and a `url_path()` helper so the dashboard and
+  the router agree on the route shape.
+- **Routes (auth-gated, CSRF-protected):**
+  - `GET  /admin/suggestions/:admin/:field` — renders the review
+    page: planned changes, explanation, risk badge, impact,
+    validation status, warnings. The **Approve** button is
+    disabled when risk is `Critical` or validation fails — the
+    spec's explicit safety requirement.
+  - `POST /admin/suggestions/:admin/:field` — runs the full
+    planner → `build_plan_document` → `execute_plan_document`
+    chain. Any refusal at any step (planner error, critical risk,
+    policy violation, file conflict) re-renders the review page
+    with an inline error banner. The executor only writes when
+    every gate returns `Ok`.
+- **Dashboard alerts** now carry an inline action button per
+  missing field, rendered inside a `rio-suggestion-card` wrapper.
+  GDPR inventory alerts stay informational — they don't imply a
+  single specific action.
+- **CSS**: `rio-suggestion-card`, `rio-suggestion-actions`,
+  `rio-suggestion-action`, `rio-plan-preview`, `rio-risk-badge`.
+  No JS added — the review page is plain HTML forms. The risk
+  badge reuses the existing `.rio-pill-*` color classes so the
+  palette stays consistent with status pills.
+- **Post-apply page** carries the explicit next-steps list: stop
+  server → `rustio migrate apply` → `cargo build` → `rustio
+  schema` → restart. The live admin doesn't recompile itself;
+  operators need to know that.
+- **Tests** — 10 in `rustio-core/src/admin/suggestions_tests.rs`:
+  no-context → no suggestions, no industry schema → no
+  suggestions, unrelated model → no suggestions, fully-covered
+  model → no suggestions, missing field fires exactly one
+  suggestion, core models skipped, deterministic ordering,
+  `find_suggestion` honours the pair, rejects crafted URLs,
+  `url_path()` format stability.
+
+Smoke-tested end-to-end against `~/Desktop/sveahousing` with
+`{"country":"SE","industry":"housing"}` and `annual_income`
+temporarily removed from the Applicant model:
+- Dashboard renders `[ Add annual_income ]` button under the
+  alert.
+- `GET /admin/suggestions/applicants/annual_income` returns 200
+  with the full review (planned changes, Low risk, Validation
+  passes, Approve button enabled).
+- `GET /admin/suggestions/applicants/email` returns **404** — the
+  URL isn't in the derived list (crafted-URL refusal).
+- `POST` without CSRF returns **403**.
+- `POST` with CSRF: executor writes `apps/applicants/models.rs`
+  and `migrations/0005_add_annual_income_to_applicants.sql`
+  atomically, renders the "Applied 1 step" page with the
+  next-steps list.
+- Running the apply twice without restarting surfaces a clean
+  `FileConflict` (COLUMNS already contains the new field), not a
+  silent duplicate — the executor's existing idempotency gate
+  holds inside this flow too.
+
 ### Added — 0.7.0 Admin Intelligence Layer
 
 The admin UI now adapts to *(schema + context)* instead of treating

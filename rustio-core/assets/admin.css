@@ -1255,3 +1255,40 @@ a.rio-sidebar-user:hover {
   line-height: 1.55;
 }
 
+/* ----------------------------------------------------------------- */
+/* Actionable Intelligence Layer — 0.7.1                             */
+/* suggestion cards, plan preview, risk badge                        */
+/* ----------------------------------------------------------------- */
+.rio-suggestion-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rio-suggestion-card p { margin: 0; }
+.rio-suggestion-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rio-suggestion-action {
+  /* Small primary button reusing the existing rio-btn base. The
+     extra spacing keeps it from cuddling against the alert text. */
+  margin-top: 2px;
+}
+.rio-plan-preview {
+  background: #f9fafb;
+  border: 1px solid var(--rio-border, #d1d5db);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-top: 12px;
+  font-size: 14px;
+  color: var(--rio-text, #111827);
+}
+.rio-plan-preview ul { margin: 0; padding-left: 22px; }
+.rio-plan-preview li { margin: 4px 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+.rio-risk-badge {
+  /* Re-uses .rio-pill base; only a marker class so future tweaks
+     can target suggestion risks without disturbing other pills. */
+  font-size: 13px;
+}
+
