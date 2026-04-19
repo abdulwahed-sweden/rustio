@@ -46,27 +46,133 @@ use crate::schema::{Schema, SchemaModel};
 
 /// Optional per-project context loaded from `rustio.context.json`.
 ///
-/// Extending: every field is `Option`, every unknown key is rejected
-/// (`deny_unknown_fields`) so a typo in the file is a loud error
-/// rather than a silently-ignored hint.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+/// The 0.6.0 shape covers four axes:
+///
+/// - `country` — ISO-3166-1 alpha-2 (`"SE"`, `"NO"`, …). Drives
+///   locale-aware naming (a Swedish project gets `personnummer` for
+///   "personal id", not an `i32`).
+/// - `region` — supra-national grouping (`"EU"`). Mostly inferred from
+///   `country`; explicit setting is an override.
+/// - `industry` — `"housing"`, `"healthcare"`, `"banking"`. Picked up
+///   by the planner / review / executor so "patient id" under
+///   `healthcare` becomes a `String` rather than an `i32`, and removing
+///   a convention field raises a warning.
+/// - `compliance` — explicit list (`["GDPR", "HIPAA"]`). Empty by
+///   default; the helpers below treat `region=EU` as implying `GDPR`
+///   even when the list is empty.
+///
+/// `#[serde(default, deny_unknown_fields)]` keeps the wire contract
+/// tight: a typo is a loud error, not a silent miss.
+///
+/// **Breaking change vs 0.5.x:** the old `domain` key is gone. If your
+/// `rustio.context.json` still reads `{"domain": "housing"}`, rename
+/// the key to `industry`.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ContextConfig {
-    /// ISO-3166-1 alpha-2 country code (e.g. `"SE"`, `"NO"`). Used by
-    /// the planner to pick locale-aware names and types — a field
-    /// request for "personal number" under `SE` resolves to a
-    /// `personnummer: String`, not a numeric id.
     pub country: Option<String>,
-    /// Free-form domain hint (`"housing"`, `"healthcare"`, …). Unused
-    /// in 0.5.0; reserved so projects that add it now won't break on
-    /// the next minor release.
-    pub domain: Option<String>,
+    pub region: Option<String>,
+    pub industry: Option<String>,
+    #[serde(default)]
+    pub compliance: Vec<String>,
 }
 
 impl ContextConfig {
     pub fn parse(json: &str) -> Result<Self, PlanError> {
         serde_json::from_str::<ContextConfig>(json)
             .map_err(|e| PlanError::ContextParse(e.to_string()))
+    }
+
+    /// Either the explicit `region`, or a best-effort inference from
+    /// `country`. Today we only know the EU list; other regions
+    /// (ASEAN, LATAM, MENA, …) fall through to `None` until projects
+    /// ask for them.
+    pub fn effective_region(&self) -> Option<String> {
+        if let Some(r) = &self.region {
+            if !r.trim().is_empty() {
+                return Some(r.clone());
+            }
+        }
+        const EU_MEMBER_STATES: &[&str] = &[
+            "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+            "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+        ];
+        match self.country.as_deref() {
+            Some(cc) if EU_MEMBER_STATES.iter().any(|m| m.eq_ignore_ascii_case(cc)) => {
+                Some("EU".into())
+            }
+            _ => None,
+        }
+    }
+
+    /// `true` if the project operates under the GDPR. Detected by
+    /// either (a) `compliance` listing `"GDPR"` explicitly, or
+    /// (b) the resolved region being `"EU"`.
+    pub fn requires_gdpr(&self) -> bool {
+        if self
+            .compliance
+            .iter()
+            .any(|c| c.trim().eq_ignore_ascii_case("GDPR"))
+        {
+            return true;
+        }
+        matches!(self.effective_region().as_deref(), Some("EU"))
+    }
+
+    /// Look up the industry convention bundle for the selected industry
+    /// (case-insensitive). `None` if the project didn't set one or the
+    /// name isn't in the registry.
+    pub fn industry_schema(&self) -> Option<super::industry::IndustrySchema> {
+        self.industry
+            .as_deref()
+            .and_then(super::industry::industry_schema_for)
+    }
+
+    /// Field names considered personally-identifying under the current
+    /// context. Returns a stable, deduplicated list. Used by the review
+    /// layer to escalate risk on destructive primitives and by the
+    /// executor to refuse them outright with
+    /// `ExecutionError::PolicyViolation`.
+    ///
+    /// Conservative by design: the list grows only as each rule is
+    /// justified. A project needing stricter enforcement can still
+    /// layer its own checks on top.
+    pub fn pii_fields(&self) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = Vec::new();
+        match self.country.as_deref() {
+            Some(cc) if cc.eq_ignore_ascii_case("SE") => {
+                out.push("personnummer");
+            }
+            Some(cc) if cc.eq_ignore_ascii_case("NO") => {
+                out.push("fodselsnummer");
+            }
+            Some(cc) if cc.eq_ignore_ascii_case("US") => {
+                out.push("ssn");
+            }
+            _ => {}
+        }
+        if self.requires_gdpr() {
+            // Generic PII under GDPR. The list is deliberately short —
+            // contact details that a reasonable reviewer would want to
+            // flag. Wider lists (device IDs, IP addresses) need their
+            // own review pass.
+            for f in ["email", "phone", "address", "date_of_birth"] {
+                if !out.contains(&f) {
+                    out.push(f);
+                }
+            }
+        }
+        out
+    }
+
+    /// `true` when the context carries at least one useful signal. The
+    /// CLI uses this to decide whether `rustio context show` has
+    /// something to print.
+    pub fn is_empty(&self) -> bool {
+        self.country.is_none()
+            && self.region.is_none()
+            && self.industry.is_none()
+            && self.compliance.is_empty()
     }
 }
 
@@ -697,13 +803,53 @@ fn infer_field_type(
         }
     }
 
-    // 2. Context
+    // 2. Context — country and industry rules. The earlier an arm
+    // matches, the higher its priority. Order: country → industry →
+    // fallbacks.
     if let Some(ctx) = context {
-        if ctx.country.as_deref() == Some("SE") {
-            let n = name.to_lowercase();
-            if n == "personnummer" || n == "personal_number" || n == "personal_id" || n == "pnr" {
-                return Ok(("String".to_string(), false));
+        let n = name.to_lowercase();
+        // Country rules.
+        if matches!(ctx.country.as_deref(), Some(cc) if cc.eq_ignore_ascii_case("SE"))
+            && (n == "personnummer" || n == "personal_number" || n == "personal_id" || n == "pnr")
+        {
+            return Ok(("String".to_string(), false));
+        }
+        if matches!(ctx.country.as_deref(), Some(cc) if cc.eq_ignore_ascii_case("NO"))
+            && (n == "fodselsnummer" || n == "personal_number" || n == "personal_id")
+        {
+            return Ok(("String".to_string(), false));
+        }
+        // Industry rules.
+        match ctx.industry.as_deref() {
+            Some(i) if i.eq_ignore_ascii_case("healthcare") => {
+                // Patient IDs must be opaque strings — sequential
+                // integers leak enrolment order and are refused by
+                // the planner under this industry.
+                if n == "patient_id"
+                    || n == "patient"
+                    || n.ends_with("_patient_id")
+                    || n == "medical_record_number"
+                    || n == "mrn"
+                {
+                    return Ok(("String".to_string(), false));
+                }
             }
+            Some(i) if i.eq_ignore_ascii_case("banking") => {
+                // Account numbers must be String (international formats
+                // overflow i32). Monetary amounts are stored as i64
+                // minor units.
+                if n == "account_number" || n == "iban" || n == "bic" {
+                    return Ok(("String".to_string(), false));
+                }
+                if n == "balance"
+                    || n == "amount"
+                    || n.ends_with("_amount")
+                    || n.ends_with("_balance")
+                {
+                    return Ok(("i64".to_string(), phrase_is_optional(phrase)));
+                }
+            }
+            _ => {}
         }
     }
 
@@ -866,13 +1012,56 @@ fn explain_add_field(
     };
     let mut tail = String::new();
     if let Some(ctx) = context {
-        if ctx.country.as_deref() == Some("SE") && field == "personnummer" {
+        // Country-specific annotations. Matches any of the SE personal-
+        // id aliases the planner maps to `String` so the explanation
+        // lines up with what was actually inferred.
+        if matches!(ctx.country.as_deref(), Some(cc) if cc.eq_ignore_ascii_case("SE"))
+            && matches!(
+                field,
+                "personnummer" | "personal_id" | "personal_number" | "pnr"
+            )
+        {
             tail.push_str(
                 " Swedish personnummer is stored as a 13-character string (YYYYMMDD-XXXX).",
             );
         }
+        // Industry-specific annotations.
+        match ctx.industry.as_deref() {
+            Some(i)
+                if i.eq_ignore_ascii_case("healthcare")
+                    && (field == "patient_id"
+                        || field == "mrn"
+                        || field == "medical_record_number") =>
+            {
+                tail.push_str(
+                    " Patient identifiers are opaque strings (UUID or hash); sequential integers would leak enrolment order.",
+                );
+            }
+            Some(i)
+                if i.eq_ignore_ascii_case("banking")
+                    && (field == "balance" || field == "amount" || field.ends_with("_amount")) =>
+            {
+                tail.push_str(
+                    " Monetary values are stored as integer minor units (öre, cents). Never use floats.",
+                );
+            }
+            _ => {}
+        }
+        // GDPR guardrail.
+        if ctx.requires_gdpr() && is_generic_pii_field(field) {
+            tail.push_str(
+                " Under GDPR this field is personal data — retention and right-to-erasure rules apply.",
+            );
+        }
     }
     format!("{head}{rationale}{tail}")
+}
+
+fn is_generic_pii_field(name: &str) -> bool {
+    matches!(
+        name,
+        "email" | "phone" | "address" | "date_of_birth" | "ssn" | "personnummer" | "fodselsnummer"
+    )
 }
 
 fn supported_forms_message(raw: &str) -> String {

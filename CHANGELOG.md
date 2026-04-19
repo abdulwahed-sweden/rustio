@@ -7,6 +7,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.6.0 Intelligence Phase, Pass 5 (Context-Aware Execution)
+
+Makes every layer of the AI pipeline aware of *who the project is*:
+country, region, industry, compliance. A prompt that resolves to `i32`
+for a generic project resolves to `String` under `country=SE`; a
+destructive op on a personnummer field becomes `Critical` risk and
+is refused by the executor; and the CLI gains `rustio context show` /
+`rustio context validate`.
+
+#### Context shape
+
+- **Breaking.** `ContextConfig::domain` is removed. The equivalent is
+  `industry`. Old `rustio.context.json` files with `{"domain": …}`
+  parse-fail loudly (deny_unknown_fields) — rename the key to
+  `industry`.
+- Added fields `region` (e.g. `"EU"`, explicit or inferred from
+  `country`), `industry` (`"housing"`, `"healthcare"`, `"banking"`),
+  and `compliance: Vec<String>` (e.g. `["GDPR"]`).
+- Helper methods: `effective_region()` (infers EU from the
+  27 member-state country codes), `requires_gdpr()` (explicit list
+  or EU region), `pii_fields()` (country-specific + generic GDPR
+  list), `industry_schema()`, `is_empty()`.
+
+#### Industry registry
+
+- New `rustio_core::ai::industry` module with `IndustrySchema`
+  and `industry_schema_for(name)`. 0.6.0 ships three entries:
+  **housing** (personnummer, queue_start_date, annual_income),
+  **healthcare** (patient_id, created_at; patient IDs must be
+  opaque strings), **banking** (account_number, currency,
+  balance; monetary amounts as integer minor units).
+
+#### Context threaded through every layer
+
+- `generate_plan` already took `Option<&ContextConfig>`. Logic
+  extended: SE / NO personal id aliases → `String`, healthcare
+  patient id → `String`, banking account_number → `String`,
+  banking balance/amount → `i64`. Explanations now cite the
+  reason ("opaque identifier", "integer minor units", Swedish
+  personnummer format).
+- **Breaking.** `review_plan`, `classify_risk`, `warnings_for`,
+  `build_plan_document`, `build_plan_document_with_timestamp`,
+  `plan_execution`, `execute_plan_document` all gained a trailing
+  `Option<&ContextConfig>` parameter. Tests and downstream code
+  pass `None` to keep 0.5.x behaviour byte-identical.
+- **Review risk escalation**: destructive / rename / retype ops on
+  a context-declared PII field become `Critical` regardless of
+  structural rules.
+- **Review warnings**: GDPR-aware line cites the active context
+  (`country=SE, industry=housing, GDPR`); industry-convention
+  removals add a warning pointing at the affected convention.
+- **Executor policy gate**: new
+  `ExecutionError::PolicyViolation { reason: String }` fires when
+  a plan targets a PII field under context — refused up-front,
+  before the dry-run. The existing critical-risk gate also
+  catches these (review escalates first); the policy gate is a
+  dedicated refusal shape so operators diagnose the real cause,
+  not "risk Critical".
+
+#### CLI
+
+- `rustio context show` — pretty-prints the parsed context, the
+  inferred region / GDPR, every PII field the review layer
+  watches, and the industry conventions (if any).
+- `rustio context validate` — exit 0 if the file parses (or if
+  it's absent), exit 1 with the exact `serde` error on typos.
+- `rustio ai review` / `rustio ai validate` / `rustio ai apply`
+  now auto-load `rustio.context.json` and thread it through the
+  pipeline. No flag needed; the file's presence is the opt-in.
+
+#### Tests
+
+- New `rustio-core/src/ai/context_tests.rs` with 15 scenarios:
+  country → EU inference, explicit GDPR override, country-scoped
+  PII list, deny_unknown_fields rejection, the old `domain` key
+  rejection canary, SE personnummer planning, healthcare
+  patient_id planning, banking account_number planning, Critical
+  escalation on PII removal / rename, industry-convention
+  warning, executor policy refusal (PII remove + PII rename
+  under SE), executor allows non-PII changes under SE, industry
+  registry coverage, and a None-context canary that confirms
+  0.5.x behaviour survives.
+- Existing planner / review / executor tests updated to pass
+  `None` for the new context arg — no regressions.
+
+#### Smoke-tested end-to-end
+
+Ran against `~/Desktop/sveahousing` with
+`{"country":"SE","industry":"housing"}`:
+- `rustio context show` — reports SE, EU (inferred), GDPR
+  (inferred), housing conventions, required field list.
+- `rustio context validate` — three scenarios (missing, valid,
+  typo) all respond correctly.
+- `rustio ai review` on a hand-crafted `remove_field
+  personnummer` plan — Risk: Critical, warnings cite
+  `(country=SE, industry=housing, GDPR)` and the
+  housing-convention removal.
+
 ### Added — 0.5.3 Intelligence Phase, Pass 4 (Advanced Schema Mutations)
 
 Extends the Safe Executor with the three primitives that require a

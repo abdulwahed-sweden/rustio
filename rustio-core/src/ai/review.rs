@@ -52,7 +52,7 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::planner::PlanResult;
+use super::planner::{ContextConfig, PlanResult};
 use super::{validate_against, Plan, Primitive, PrimitiveError};
 use crate::schema::{Schema, SchemaModel};
 
@@ -248,8 +248,9 @@ pub fn build_plan_document(
     schema: &Schema,
     prompt: &str,
     result: &PlanResult,
+    context: Option<&ContextConfig>,
 ) -> Result<PlanDocument, ReviewError> {
-    build_plan_document_with_timestamp(schema, prompt, result, Utc::now())
+    build_plan_document_with_timestamp(schema, prompt, result, Utc::now(), context)
 }
 
 /// Same as [`build_plan_document`] but accepts an explicit timestamp.
@@ -261,6 +262,7 @@ pub fn build_plan_document_with_timestamp(
     prompt: &str,
     result: &PlanResult,
     timestamp: DateTime<Utc>,
+    context: Option<&ContextConfig>,
 ) -> Result<PlanDocument, ReviewError> {
     // Defence in depth: the planner already calls Plan::validate, but
     // an invalid plan sneaking into a saved document would be a
@@ -271,7 +273,7 @@ pub fn build_plan_document_with_timestamp(
         .map_err(ReviewError::InvalidPlan)?;
 
     let impact = compute_impact(&result.plan, schema);
-    let risk = classify_risk(&result.plan, &impact, &ValidationOutcome::Valid);
+    let risk = classify_risk(&result.plan, &impact, &ValidationOutcome::Valid, context);
     Ok(PlanDocument {
         version: PLAN_DOCUMENT_VERSION,
         created_at: timestamp.to_rfc3339_opts(SecondsFormat::Secs, true),
@@ -286,14 +288,24 @@ pub fn build_plan_document_with_timestamp(
 /// Review a plan against a schema without executing anything. Returns
 /// the full report even if the plan is invalid — the caller decides
 /// how to present that to the user.
-pub fn review_plan(schema: &Schema, plan: &Plan) -> Result<PlanReview, ReviewError> {
+///
+/// `context`, when present, escalates risk and adds context-aware
+/// warnings (e.g. removing a personnummer field under `country=SE`
+/// becomes Critical with a GDPR notice). Callers who don't have a
+/// project context pass `None` — the review then behaves exactly
+/// as in 0.5.x.
+pub fn review_plan(
+    schema: &Schema,
+    plan: &Plan,
+    context: Option<&ContextConfig>,
+) -> Result<PlanReview, ReviewError> {
     let validation = match simulate_plan(plan, schema) {
         Ok(()) => ValidationOutcome::Valid,
         Err((step, reason)) => ValidationOutcome::Invalid { step, reason },
     };
     let impact = compute_impact(plan, schema);
-    let risk = classify_risk(plan, &impact, &validation);
-    let warnings = warnings_for(plan);
+    let risk = classify_risk(plan, &impact, &validation, context);
+    let warnings = warnings_for(plan, context);
     Ok(PlanReview {
         plan: plan.clone(),
         impact,
@@ -370,6 +382,7 @@ pub fn classify_risk(
     plan: &Plan,
     impact: &PlanImpact,
     validation: &ValidationOutcome,
+    context: Option<&ContextConfig>,
 ) -> RiskLevel {
     if !validation.is_valid() {
         return RiskLevel::Critical;
@@ -379,6 +392,27 @@ pub fn classify_risk(
     }
     if plan.steps.iter().any(|s| s.is_developer_only()) {
         return RiskLevel::Critical;
+    }
+
+    // Context-aware escalation: destructive primitives on a field
+    // flagged as PII under the current project context are Critical,
+    // regardless of what the structural rules would score.
+    if let Some(ctx) = context {
+        let pii = ctx.pii_fields();
+        for step in &plan.steps {
+            match step {
+                Primitive::RemoveField(r) if pii.iter().any(|p| *p == r.field) => {
+                    return RiskLevel::Critical;
+                }
+                Primitive::RenameField(r) if pii.iter().any(|p| *p == r.from) => {
+                    return RiskLevel::Critical;
+                }
+                Primitive::ChangeFieldType(c) if pii.iter().any(|p| *p == c.field) => {
+                    return RiskLevel::Critical;
+                }
+                _ => {}
+            }
+        }
     }
 
     let mut max = RiskLevel::Low;
@@ -398,7 +432,13 @@ pub fn classify_risk(
 
 /// Deterministic warnings derived strictly from the plan. Never
 /// speculative — every bullet in the output has a concrete trigger.
-pub fn warnings_for(plan: &Plan) -> Vec<String> {
+///
+/// `context`, when present, surfaces the extra warnings the review
+/// layer owes an operator under real-world constraints: GDPR,
+/// industry conventions, country-specific PII. Without context the
+/// output is the 0.5.x set — nothing changes for projects that
+/// haven't opted in.
+pub fn warnings_for(plan: &Plan, context: Option<&ContextConfig>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut has_remove = false;
     let mut has_rename_model = false;
@@ -453,7 +493,75 @@ pub fn warnings_for(plan: &Plan) -> Vec<String> {
     if has_dev_only {
         out.push("This plan contains a developer-only primitive. It must never be executed from an AI pipeline.".into());
     }
+
+    // Context-aware warnings. Each bullet is justified by the
+    // combination of (plan, context); nothing speculative.
+    if let Some(ctx) = context {
+        let pii = ctx.pii_fields();
+        for step in &plan.steps {
+            match step {
+                Primitive::RemoveField(r) if pii.iter().any(|p| *p == r.field) => {
+                    out.push(format!(
+                        "Field `{}.{}` is considered sensitive personal data under the project's context{}. Removing it is irreversible — review retention obligations first.",
+                        r.model,
+                        r.field,
+                        describe_context(ctx),
+                    ));
+                }
+                Primitive::RenameField(r) if pii.iter().any(|p| *p == r.from) => {
+                    out.push(format!(
+                        "Field `{}.{}` is sensitive personal data; renaming it invalidates any existing access-log / audit trail keyed on the old name.",
+                        r.model, r.from,
+                    ));
+                }
+                Primitive::ChangeFieldType(c) if pii.iter().any(|p| *p == c.field) => {
+                    out.push(format!(
+                        "Field `{}.{}` is sensitive personal data; type changes may affect hashing, masking, or retention pipelines keyed on its storage shape.",
+                        c.model, c.field,
+                    ));
+                }
+                _ => {}
+            }
+        }
+        // Industry-convention removals: warn if a plan removes a field
+        // the industry schema flags as a standard convention.
+        if let Some(schema) = ctx.industry_schema() {
+            for step in &plan.steps {
+                if let Primitive::RemoveField(r) = step {
+                    if schema.required_fields.iter().any(|f| f == &r.field) {
+                        out.push(format!(
+                            "Field `{}.{}` is a standard convention for the `{}` industry. Removing it will break downstream integrations that assume it exists.",
+                            r.model,
+                            r.field,
+                            ctx.industry.as_deref().unwrap_or(""),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     out
+}
+
+/// One-line description of the active context pieces. Used by warning
+/// messages that want to cite the reason they fired.
+fn describe_context(ctx: &ContextConfig) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(c) = &ctx.country {
+        parts.push(format!("country={c}"));
+    }
+    if let Some(i) = &ctx.industry {
+        parts.push(format!("industry={i}"));
+    }
+    if ctx.requires_gdpr() {
+        parts.push("GDPR".to_string());
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", parts.join(", "))
+    }
 }
 
 /// Render a [`PlanReview`] as an operator-friendly summary.

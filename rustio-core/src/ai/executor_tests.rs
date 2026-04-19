@@ -149,7 +149,7 @@ fn doc_for(schema: &Schema, prompt: &str, plan: Plan) -> PlanDocument {
         plan,
         explanation: "unit-test".into(),
     };
-    build_plan_document_with_timestamp(schema, prompt, &result, fixed_ts())
+    build_plan_document_with_timestamp(schema, prompt, &result, fixed_ts(), None)
         .expect("fixture plans should build cleanly")
 }
 
@@ -173,6 +173,7 @@ fn simple_add_field_produces_two_file_changes() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     assert_eq!(preview.applied_steps, 1);
     assert_eq!(preview.file_changes.len(), 2);
@@ -226,6 +227,7 @@ fn add_nullable_datetime_adds_chrono_import_and_uses_optional_accessor() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let new_src = &preview.file_changes[0].new_contents;
     assert!(
@@ -264,6 +266,7 @@ fn add_field_numbering_picks_next_migration_number() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let mig = &preview.file_changes[1];
     assert_eq!(
@@ -292,6 +295,7 @@ fn rename_field_patches_struct_columns_and_accessors() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let new_src = &preview.file_changes[0].new_contents;
     assert!(
@@ -345,7 +349,7 @@ fn rename_refuses_when_source_field_missing_from_file() {
         to: "headline".into(),
     })]);
     let doc = doc_for(&schema, "rename title to headline in tasks", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("should be a FileConflict");
     match err {
         ExecutionError::FileConflict { path, reason } => {
@@ -377,7 +381,7 @@ fn validation_failure_blocks_execution() {
         // `title` already exists on Task — add_field will be stale.
         plan: add_field_plan("Task", "title", "String", false),
     };
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("stale plan must be refused");
     match err {
         ExecutionError::SchemaMismatch(msg) => {
@@ -408,7 +412,7 @@ fn critical_risk_blocks_execution() {
             sql: "DROP TABLE tasks".into(),
         })]),
     };
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("critical-risk plans must be refused");
     // The review layer will fail validation first (dev-only plans
     // never validate), surfacing SchemaMismatch; either that or the
@@ -440,7 +444,7 @@ fn developer_only_primitive_is_refused() {
             sql: "SELECT 1".into(),
         })]),
     };
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("developer-only plan must be refused");
     // Either the re-validation gate (which reports dev-only as
     // SchemaMismatch via the review layer) or the explicit
@@ -463,7 +467,7 @@ fn remove_field_is_refused_as_destructive() {
         field: "title".into(),
     })]);
     let doc = doc_for(&schema, "remove title from tasks", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("destructive primitive must be refused");
     match err {
         ExecutionError::DestructiveWithoutConfirmation { op } => {
@@ -488,7 +492,7 @@ fn remove_field_is_still_refused_even_with_allow_destructive() {
     let opts = ExecuteOptions {
         allow_destructive: true,
     };
-    let err = plan_execution(&schema, &project, &doc, &opts)
+    let err = plan_execution(&schema, &project, &doc, &opts, None)
         .expect_err("0.5.2 should still refuse destructive ops");
     assert!(matches!(
         err,
@@ -512,7 +516,7 @@ fn unsupported_primitives_fail_with_named_reasons() {
         value: serde_json::json!(true),
     })]);
     let doc = doc_for(&schema, "x", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("update_admin must be refused");
     match err {
         ExecutionError::UnsupportedPrimitive { op, .. } => {
@@ -544,8 +548,14 @@ fn stale_plan_is_refused_with_clear_reason() {
         nullable: false,
         editable: true,
     });
-    let err = plan_execution(&schema_now, &project, &doc, &ExecuteOptions::default())
-        .expect_err("stale plan must be refused");
+    let err = plan_execution(
+        &schema_now,
+        &project,
+        &doc,
+        &ExecuteOptions::default(),
+        None,
+    )
+    .expect_err("stale plan must be refused");
     match err {
         ExecutionError::SchemaMismatch(msg) => {
             assert!(
@@ -574,6 +584,7 @@ fn applying_same_plan_twice_against_patched_source_fails_cleanly() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let patched = preview.file_changes[0].new_contents.clone();
 
@@ -594,6 +605,7 @@ fn applying_same_plan_twice_against_patched_source_fails_cleanly() {
         &project_after,
         &doc,
         &ExecuteOptions::default(),
+        None,
     )
     .expect_err("second apply must be refused");
     assert!(
@@ -620,12 +632,14 @@ fn planning_same_document_twice_produces_identical_previews() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let b = unwrap_preview(plan_execution(
         &schema,
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     assert_eq!(a, b);
 }
@@ -641,6 +655,7 @@ fn render_preview_human_reads_like_a_changelog() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let out = render_preview_human(&preview, RiskLevel::Low);
     assert!(out.starts_with("Plan to apply\n"));
@@ -690,7 +705,7 @@ mod integration {
         let plan = add_field_plan("Task", "priority", "i32", false);
         let doc = doc_for(&schema, "add priority", plan);
 
-        let result = execute_plan_document(&root, &doc, &ExecuteOptions::default()).unwrap();
+        let result = execute_plan_document(&root, &doc, &ExecuteOptions::default(), None).unwrap();
         assert_eq!(result.applied_steps, 1);
         assert_eq!(result.generated_files.len(), 2);
 
@@ -734,7 +749,7 @@ mod integration {
         let schema = task_schema();
         let plan = add_field_plan("Task", "priority", "i32", false);
         let doc = doc_for(&schema, "add priority", plan);
-        let res = execute_plan_document(&root, &doc, &ExecuteOptions::default()).unwrap();
+        let res = execute_plan_document(&root, &doc, &ExecuteOptions::default(), None).unwrap();
         // The assigned migration must be 0100, not 0002.
         assert!(
             res.generated_files
@@ -762,7 +777,7 @@ mod integration {
         let schema = task_schema();
         let plan = add_field_plan("Task", "priority", "i32", false);
         let doc = doc_for(&schema, "add priority", plan);
-        let err = execute_plan_document(&root, &doc, &ExecuteOptions::default()).unwrap_err();
+        let err = execute_plan_document(&root, &doc, &ExecuteOptions::default(), None).unwrap_err();
         match err {
             ExecutionError::FileConflict { reason, .. } => {
                 assert!(

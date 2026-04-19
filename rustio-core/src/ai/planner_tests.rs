@@ -253,7 +253,7 @@ fn swedish_context_upgrades_personnummer_to_string() {
     let schema = applicant_schema();
     let ctx = ContextConfig {
         country: Some("SE".into()),
-        domain: None,
+        ..Default::default()
     };
     let res = generate_plan(
         &schema,

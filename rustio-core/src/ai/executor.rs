@@ -62,6 +62,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use super::planner::ContextConfig;
 use super::review::{
     review_plan, PlanDocument, RiskLevel, ValidationOutcome, PLAN_DOCUMENT_VERSION,
 };
@@ -184,6 +185,12 @@ pub enum ExecutionError {
     /// Filesystem error during read or write. Carries the OS message
     /// plus the offending path.
     IoError { path: String, message: String },
+    /// The plan violates a policy derived from the project's
+    /// [`ContextConfig`] — for example, a `remove_field` targeting a
+    /// field flagged as personally-identifying under GDPR, or a
+    /// `change_field_type` on a regulated column. Refused up-front;
+    /// the operator can edit the context file or the plan and re-run.
+    PolicyViolation { reason: String },
 }
 
 impl std::fmt::Display for ExecutionError {
@@ -214,6 +221,9 @@ impl std::fmt::Display for ExecutionError {
             Self::IoError { path, message } => {
                 write!(f, "i/o error on `{path}`: {message}")
             }
+            Self::PolicyViolation { reason } => {
+                write!(f, "policy violation: {reason}")
+            }
         }
     }
 }
@@ -236,6 +246,7 @@ pub fn plan_execution(
     project: &ProjectView,
     doc: &PlanDocument,
     _options: &ExecuteOptions,
+    context: Option<&ContextConfig>,
 ) -> Result<ExecutionPreview, ExecutionError> {
     // Phase 1 — Load & Validate.
     if doc.version != PLAN_DOCUMENT_VERSION {
@@ -244,7 +255,7 @@ pub fn plan_execution(
             doc.version, PLAN_DOCUMENT_VERSION
         )));
     }
-    let review = review_plan(schema, &doc.plan)
+    let review = review_plan(schema, &doc.plan, context)
         .map_err(|e| ExecutionError::ValidationFailed(e.to_string()))?;
     match &review.validation {
         ValidationOutcome::Valid => {}
@@ -255,7 +266,7 @@ pub fn plan_execution(
         }
     }
 
-    // Phase 2 — Risk gate.
+    // Phase 2 — Risk gate (context-aware via review).
     if review.risk == RiskLevel::Critical {
         return Err(ExecutionError::CriticalRiskNotAllowed);
     }
@@ -266,6 +277,20 @@ pub fn plan_execution(
     for step in &doc.plan.steps {
         if step.is_developer_only() {
             return Err(ExecutionError::DeveloperOnlyForbidden);
+        }
+    }
+
+    // Phase 2c — Context policy gate. Refuses destructive or lossy
+    // operations on fields the project context flags as personally-
+    // identifying. The review layer already escalated these to
+    // Critical (caught above); this gate is a dedicated refusal so
+    // the error surface is explicit and named.
+    if let Some(ctx) = context {
+        let pii = ctx.pii_fields();
+        for step in &doc.plan.steps {
+            if let Some(reason) = policy_violation_for(step, &pii, ctx) {
+                return Err(ExecutionError::PolicyViolation { reason });
+            }
         }
     }
 
@@ -1175,6 +1200,45 @@ fn apply_schema_shadow(p: &Primitive, schema: &mut Schema) {
             }
         }
         _ => {}
+    }
+}
+
+/// Return a human-readable reason string if `step` violates a policy
+/// under the given context; `None` means the step is allowed.
+/// Conservative by design — the list grows only as each rule is
+/// justified.
+fn policy_violation_for(step: &Primitive, pii: &[&str], ctx: &ContextConfig) -> Option<String> {
+    let ctx_tag = {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(c) = &ctx.country {
+            parts.push(format!("country={c}"));
+        }
+        if let Some(i) = &ctx.industry {
+            parts.push(format!("industry={i}"));
+        }
+        if ctx.requires_gdpr() {
+            parts.push("GDPR".to_string());
+        }
+        if parts.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", parts.join(", "))
+        }
+    };
+    match step {
+        Primitive::RemoveField(r) if pii.iter().any(|p| *p == r.field) => Some(format!(
+            "refusing to remove `{}.{}` — it is personally-identifying data under the project context{}. Change the context or update the plan by hand.",
+            r.model, r.field, ctx_tag,
+        )),
+        Primitive::ChangeFieldType(c) if pii.iter().any(|p| *p == c.field) => Some(format!(
+            "refusing to change the type of `{}.{}` — it is personally-identifying data under the project context{}; retention / hashing pipelines depend on the stored shape.",
+            c.model, c.field, ctx_tag,
+        )),
+        Primitive::RenameField(r) if pii.iter().any(|p| *p == r.from) => Some(format!(
+            "refusing to rename `{}.{}` — it is personally-identifying data under the project context{}; audit trails keyed on the old name would break.",
+            r.model, r.from, ctx_tag,
+        )),
+        _ => None,
     }
 }
 
@@ -2098,6 +2162,7 @@ pub fn execute_plan_document(
     project_root: &Path,
     doc: &PlanDocument,
     options: &ExecuteOptions,
+    context: Option<&ContextConfig>,
 ) -> Result<ExecutionResult, ExecutionError> {
     let schema_path = project_root.join("rustio.schema.json");
     let schema_json =
@@ -2108,7 +2173,7 @@ pub fn execute_plan_document(
     let schema =
         Schema::parse(&schema_json).map_err(|e| ExecutionError::ValidationFailed(e.to_string()))?;
     let project = ProjectView::from_dir(project_root)?;
-    let preview = plan_execution(&schema, &project, doc, options)?;
+    let preview = plan_execution(&schema, &project, doc, options, context)?;
     commit_changes(&preview)?;
     let generated: Vec<String> = preview
         .file_changes

@@ -115,9 +115,14 @@ fn build_document_from_simple_add_field() {
         plan,
         explanation: "Adds field `priority` (i32) to model `Task`.".into(),
     };
-    let doc =
-        build_plan_document_with_timestamp(&schema, "Add priority to tasks", &result, fixed_ts())
-            .unwrap();
+    let doc = build_plan_document_with_timestamp(
+        &schema,
+        "Add priority to tasks",
+        &result,
+        fixed_ts(),
+        None,
+    )
+    .unwrap();
     assert_eq!(doc.version, PLAN_DOCUMENT_VERSION);
     assert_eq!(doc.created_at, "2026-01-01T00:00:00Z");
     assert_eq!(doc.prompt, "Add priority to tasks");
@@ -137,7 +142,7 @@ fn build_document_rejects_invalid_plan() {
         plan: bad_plan,
         explanation: String::new(),
     };
-    let err = build_plan_document_with_timestamp(&schema, "stuff", &result, fixed_ts())
+    let err = build_plan_document_with_timestamp(&schema, "stuff", &result, fixed_ts(), None)
         .expect_err("should refuse to document an invalid plan");
     assert!(matches!(err, ReviewError::InvalidPlan(_)));
 }
@@ -148,7 +153,7 @@ fn build_document_rejects_invalid_plan() {
 fn low_risk_for_plain_nullable_add_field() {
     let schema = task_schema();
     let plan = add_field_plan("Task", "notes", "String", true);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Low);
     assert!(review.validation.is_valid());
     assert!(
@@ -162,7 +167,7 @@ fn low_risk_for_plain_nullable_add_field() {
 fn low_risk_for_nonnull_add_field_too() {
     let schema = task_schema();
     let plan = add_field_plan("Task", "priority", "i32", false);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Low);
 }
 
@@ -173,7 +178,7 @@ fn high_risk_for_remove_field() {
         model: "Task".into(),
         field: "title".into(),
     })]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::High);
     assert!(review.impact.destructive);
     assert_eq!(review.impact.removes_fields, 1);
@@ -191,7 +196,7 @@ fn medium_risk_for_rename_field() {
         from: "title".into(),
         to: "headline".into(),
     })]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Medium);
     assert!(review
         .warnings
@@ -206,7 +211,7 @@ fn medium_risk_for_rename_model() {
         from: "Task".into(),
         to: "Todo".into(),
     })]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Medium);
     assert!(review
         .warnings
@@ -226,7 +231,7 @@ fn high_risk_for_tightening_nullability() {
             nullable: false,
         },
     )]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::High);
     assert!(review
         .warnings
@@ -252,7 +257,7 @@ fn low_risk_for_nullable_change() {
             nullable: true,
         },
     )]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Low);
 }
 
@@ -264,7 +269,7 @@ fn medium_risk_for_type_change() {
         field: "title".into(),
         new_type: "String".into(),
     })]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Medium);
     assert!(review
         .warnings
@@ -293,7 +298,7 @@ fn plan_with_multiple_ops_gets_warning() {
             to: "headline".into(),
         }),
     ]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert!(review
         .warnings
         .iter()
@@ -318,7 +323,7 @@ fn mixed_add_and_remove_bumps_to_high() {
             field: "title".into(),
         }),
     ]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::High);
     assert!(review.impact.destructive);
     assert_eq!(review.impact.adds_fields, 1);
@@ -333,7 +338,7 @@ fn touching_core_model_is_critical() {
     // Hand-craft a plan that modifies User — the planner would refuse
     // this, but a saved document / hand-edited JSON might carry it.
     let plan = add_field_plan("User", "nickname", "String", true);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Critical);
     assert!(review.impact.touches_core_models);
 }
@@ -343,7 +348,7 @@ fn invalid_plan_is_critical() {
     let schema = task_schema();
     // `title` already exists — add_field will fail validation.
     let plan = add_field_plan("Task", "title", "String", false);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert!(matches!(
         review.validation,
         ValidationOutcome::Invalid { .. }
@@ -358,7 +363,7 @@ fn developer_only_primitive_in_plan_is_critical_and_warned() {
         name: "bad".into(),
         sql: "DROP TABLE tasks".into(),
     })]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Critical);
     assert!(review
         .warnings
@@ -379,7 +384,7 @@ fn plan_valid_today_becomes_stale_after_schema_change() {
     let plan = add_field_plan("Task", "priority", "i32", false);
 
     // Today: valid.
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert!(review.validation.is_valid());
 
     // Someone (a human, a migration, another plan) adds `priority`
@@ -391,7 +396,7 @@ fn plan_valid_today_becomes_stale_after_schema_change() {
         editable: true,
     });
 
-    let review2 = review_plan(&schema, &plan).unwrap();
+    let review2 = review_plan(&schema, &plan, None).unwrap();
     match review2.validation {
         ValidationOutcome::Invalid { step, reason: _ } => assert_eq!(step, 0),
         _ => panic!("expected Invalid, got {:?}", review2.validation),
@@ -429,7 +434,7 @@ fn stale_detection_points_at_correct_step() {
             field: "ghost".into(),
         }),
     ]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     match review.validation {
         ValidationOutcome::Invalid { step, .. } => assert_eq!(step, 1),
         _ => panic!("expected Invalid"),
@@ -447,7 +452,8 @@ fn load_full_plan_document_round_trips() {
         explanation: "doc".into(),
     };
     let doc =
-        build_plan_document_with_timestamp(&schema, "add priority", &result, fixed_ts()).unwrap();
+        build_plan_document_with_timestamp(&schema, "add priority", &result, fixed_ts(), None)
+            .unwrap();
     let json = render_plan_document_json(&doc).unwrap();
     match load_plan(&json).unwrap() {
         LoadedPlan::Document(d) => {
@@ -531,7 +537,7 @@ fn load_refuses_unknown_fields_in_document() {
 fn human_render_reads_like_changelog() {
     let schema = task_schema();
     let plan = add_field_plan("Task", "priority", "i32", false);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     let header = ReviewHeader {
         prompt: Some("Add priority to tasks".into()),
         explanation: Some("Adds priority to Task for sorting.".into()),
@@ -556,7 +562,8 @@ fn render_plan_document_json_is_deterministic() {
         explanation: "x".into(),
     };
     let doc =
-        build_plan_document_with_timestamp(&schema, "add priority", &result, fixed_ts()).unwrap();
+        build_plan_document_with_timestamp(&schema, "add priority", &result, fixed_ts(), None)
+            .unwrap();
     let a = render_plan_document_json(&doc).unwrap();
     let b = render_plan_document_json(&doc).unwrap();
     assert_eq!(a, b);
@@ -590,8 +597,8 @@ fn warnings_for_is_free_standing_and_deterministic() {
             to: "rank".into(),
         }),
     ]);
-    let a = warnings_for(&plan);
-    let b = warnings_for(&plan);
+    let a = warnings_for(&plan, None);
+    let b = warnings_for(&plan, None);
     assert_eq!(a, b, "warnings must be deterministic");
     assert!(a.iter().any(|w| w.contains("removes a field")));
     assert!(a.iter().any(|w| w.contains("renames a field")));
@@ -644,8 +651,8 @@ fn classify_risk_is_pure_over_plan_plus_impact_plus_validation() {
     // risk — no Utc::now, no globals.
     let plan = add_field_plan("Task", "priority", "i32", false);
     let impact = PlanImpact::default();
-    let a = classify_risk(&plan, &impact, &ValidationOutcome::Valid);
-    let b = classify_risk(&plan, &impact, &ValidationOutcome::Valid);
+    let a = classify_risk(&plan, &impact, &ValidationOutcome::Valid, None);
+    let b = classify_risk(&plan, &impact, &ValidationOutcome::Valid, None);
     assert_eq!(a, b);
 }
 
@@ -664,7 +671,7 @@ fn add_model_primitive_is_low_risk_and_not_core() {
             editable: true,
         }],
     })]);
-    let review = review_plan(&schema, &plan).unwrap();
+    let review = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(review.risk, RiskLevel::Low);
     assert!(!review.impact.touches_core_models);
     assert!(review.validation.is_valid());
@@ -683,8 +690,8 @@ fn reviewing_same_plan_twice_is_byte_identical() {
         model: "Task".into(),
         field: "title".into(),
     })]);
-    let a = review_plan(&schema, &plan).unwrap();
-    let b = review_plan(&schema, &plan).unwrap();
+    let a = review_plan(&schema, &plan, None).unwrap();
+    let b = review_plan(&schema, &plan, None).unwrap();
     assert_eq!(as_simple_review(&a), as_simple_review(&b));
     assert_eq!(a.warnings, b.warnings);
     assert_eq!(a.impact, b.impact);

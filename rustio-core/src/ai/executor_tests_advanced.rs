@@ -168,7 +168,7 @@ fn doc_for(schema: &Schema, prompt: &str, plan: Plan) -> PlanDocument {
         plan,
         explanation: "unit-test".into(),
     };
-    build_plan_document_with_timestamp(schema, prompt, &result, fixed_ts())
+    build_plan_document_with_timestamp(schema, prompt, &result, fixed_ts(), None)
         .expect("fixture plans should build")
 }
 
@@ -195,6 +195,7 @@ fn change_type_i32_to_string_uses_cast_and_rewrites_models() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
 
     // The summary carries the `~` glyph and the table-rewrite warning.
@@ -281,7 +282,7 @@ fn change_type_unsafe_cast_is_refused() {
         new_type: "i32".into(),
     })]);
     let doc = doc_for(&schema, "change published_at to i32", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("DateTime → i32 is not a safe cast");
     match err {
         ExecutionError::UnsupportedPrimitive { op, reason } => {
@@ -302,7 +303,7 @@ fn change_type_idempotent_same_type_is_refused() {
         new_type: "i32".into(), // already i32
     })]);
     let doc = doc_for(&schema, "no-op", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("no-op type change must be refused");
     assert!(matches!(err, ExecutionError::FileConflict { .. }));
 }
@@ -324,7 +325,7 @@ fn change_type_refuses_on_foreign_key_tables() {
         new_type: "String".into(),
     })]);
     let doc = doc_for(&schema, "change score to String", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("FK-participating table must be refused");
     match err {
         ExecutionError::UnsupportedPrimitive { op, reason } => {
@@ -356,6 +357,7 @@ fn nullability_required_to_nullable_is_safe() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     // Struct field becomes Option<String>.
     let models_src = &preview.file_changes[0].new_contents;
@@ -398,6 +400,7 @@ fn nullability_nullable_to_required_uses_coalesce() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let models_src = &preview.file_changes[0].new_contents;
     assert!(
@@ -434,7 +437,7 @@ fn nullability_same_state_is_refused() {
         },
     )]);
     let doc = doc_for(&schema, "no-op", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default())
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
         .expect_err("no-op must be refused");
     assert!(matches!(err, ExecutionError::FileConflict { .. }));
 }
@@ -478,7 +481,7 @@ mod rename_model_integration {
         })]);
         let doc = doc_for(&schema, "rename Post to Article", plan);
 
-        let result = execute_plan_document(&root, &doc, &ExecuteOptions::default()).unwrap();
+        let result = execute_plan_document(&root, &doc, &ExecuteOptions::default(), None).unwrap();
         assert_eq!(result.applied_steps, 1);
         // Three or four file paths: models.rs, admin.rs, views.rs
         // (if it changed), plus the migration.
@@ -573,7 +576,7 @@ mod rename_model_integration {
             to: "Article".into(),
         })]);
         let doc = doc_for(&schema, "rename", plan);
-        let err = execute_plan_document(&root, &doc, &ExecuteOptions::default()).unwrap_err();
+        let err = execute_plan_document(&root, &doc, &ExecuteOptions::default(), None).unwrap_err();
         match err {
             ExecutionError::FileConflict { reason, .. } => {
                 assert!(reason.contains("already exists"), "reason: {reason}");
@@ -603,12 +606,14 @@ fn recreate_table_migration_is_deterministic() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let b = unwrap_preview(plan_execution(
         &schema,
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     assert_eq!(a, b);
     // Regression canary: the preview's migration file always uses the
@@ -736,6 +741,7 @@ fn large_schema_simulation_holds_determinism() {
         &project,
         &doc,
         &ExecuteOptions::default(),
+        None,
     ));
     let mig = &preview.file_changes[1].new_contents;
     // Every column shows up in the INSERT column list, and only

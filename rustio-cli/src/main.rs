@@ -25,6 +25,8 @@ COMMANDS:
     ai validate <path>        (0.5.1) Terse validate-only gate for CI
     ai apply <path> [--yes] [--dry-run]
                               (0.5.2) Apply a reviewed plan (writes files, never runs migrations)
+    context show              (0.6.0) Show the parsed rustio.context.json and inferred flags
+    context validate          (0.6.0) Parse rustio.context.json; exit 0 on success
     user create [opts]        Create a user in the auth tables (interactive if args omitted)
 
 ENVIRONMENT:
@@ -55,6 +57,7 @@ async fn main() -> ExitCode {
         Ok(Command::MigrateStatus) => migrate_status().await,
         Ok(Command::Schema) => schema_command(),
         Ok(Command::Ai(sub)) => ai_command(sub),
+        Ok(Command::Context(sub)) => context_command(sub),
         Ok(Command::UserCreate {
             email,
             password,
@@ -107,8 +110,21 @@ enum Command {
         password: Option<String>,
         role: Option<String>,
     },
+    /// `rustio context show` / `rustio context validate` — 0.6.0.
+    /// Inspects `rustio.context.json`.
+    Context(ContextCommand),
     Version,
     Help,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ContextCommand {
+    /// `rustio context show` — print the parsed context + inferred
+    /// fields (GDPR, region, industry schema conventions).
+    Show,
+    /// `rustio context validate` — exit 0 if the file parses cleanly,
+    /// 1 otherwise.
+    Validate,
 }
 
 /// `rustio ai …` subcommands.
@@ -171,6 +187,22 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             Ok(Command::Schema)
         }
         Some("ai") => parse_ai_command(&args[2..]),
+        Some("context") => match args.get(2).map(String::as_str) {
+            Some("show") => {
+                if args.len() > 3 {
+                    return Err(format!("unexpected argument `{}`", args[3]));
+                }
+                Ok(Command::Context(ContextCommand::Show))
+            }
+            Some("validate") => {
+                if args.len() > 3 {
+                    return Err(format!("unexpected argument `{}`", args[3]));
+                }
+                Ok(Command::Context(ContextCommand::Validate))
+            }
+            Some(other) => Err(format!("unknown subcommand `context {other}`")),
+            None => Err("usage: rustio context <show|validate>".into()),
+        },
         Some("user") => match args.get(2).map(String::as_str) {
             Some("create") => parse_user_create_args(&args[3..]),
             Some(other) => Err(format!("unknown subcommand `user {other}`")),
@@ -803,7 +835,7 @@ fn ai_plan_command(prompt: String, save: Option<String>) -> Result<(), String> {
     // PlanDocument and prints the review. Keeps stdout useful for
     // operators rather than noisy.
     if let Some(path) = save {
-        let doc = build_plan_document(&schema, &prompt, &result)
+        let doc = build_plan_document(&schema, &prompt, &result, context.as_ref())
             .map_err(|e| format!("could not build reviewable plan document: {e}"))?;
         let json = render_plan_document_json(&doc)
             .map_err(|e| format!("could not serialise plan document: {e}"))?;
@@ -811,7 +843,7 @@ fn ai_plan_command(prompt: String, save: Option<String>) -> Result<(), String> {
             .map_err(|e| format!("could not write `{path}`: {e}"))?;
         // Second pass: review the saved plan so the operator sees the
         // same risk/impact/warnings they will see on `ai review`.
-        let review = review_plan(&schema, &doc.plan)
+        let review = review_plan(&schema, &doc.plan, context.as_ref())
             .map_err(|e| format!("could not review saved plan: {e}"))?;
         let header = ReviewHeader {
             prompt: Some(doc.prompt.clone()),
@@ -863,7 +895,9 @@ fn ai_review_command(path: &str) -> Result<(), String> {
         ),
     };
 
-    let review = review_plan(&schema, plan_ref).map_err(|e| format!("review failed: {e}"))?;
+    let context = load_project_context()?;
+    let review = review_plan(&schema, plan_ref, context.as_ref())
+        .map_err(|e| format!("review failed: {e}"))?;
     print!("{}", render_review_human(&review, Some(&header)));
 
     // Exit non-zero when validation fails — `review` is a gate, not
@@ -886,7 +920,9 @@ fn ai_validate_command(path: &str) -> Result<(), String> {
         fs::read_to_string(Path::new(path)).map_err(|e| format!("could not read `{path}`: {e}"))?;
     let loaded = load_plan(&json).map_err(|e| format!("could not parse `{path}`: {e}"))?;
     let plan = loaded.plan();
-    let review = review_plan(&schema, plan).map_err(|e| format!("review failed: {e}"))?;
+    let context = load_project_context()?;
+    let review =
+        review_plan(&schema, plan, context.as_ref()).map_err(|e| format!("review failed: {e}"))?;
     match review.validation {
         ValidationOutcome::Valid => {
             println!(
@@ -936,15 +972,24 @@ fn ai_apply_command(path: &str, assume_yes: bool, dry_run: bool) -> Result<(), S
         }
     };
 
+    let context = load_project_context()?;
+
     // Independent review so the operator sees the same risk/impact the
     // saved document claims — drift between document.risk and live
     // review.risk is itself a warning sign.
-    let review = review_plan(&schema, &plan_doc.plan).map_err(|e| format!("review failed: {e}"))?;
+    let review = review_plan(&schema, &plan_doc.plan, context.as_ref())
+        .map_err(|e| format!("review failed: {e}"))?;
 
     // Pure dry-run against the live project.
     let project = ProjectView::from_dir(Path::new(".")).map_err(|e| format!("{e}"))?;
-    let preview = plan_execution(&schema, &project, &plan_doc, &ExecuteOptions::default())
-        .map_err(|e| format!("{e}"))?;
+    let preview = plan_execution(
+        &schema,
+        &project,
+        &plan_doc,
+        &ExecuteOptions::default(),
+        context.as_ref(),
+    )
+    .map_err(|e| format!("{e}"))?;
 
     // Preview + risk tag on stdout.
     print!("{}", render_preview_human(&preview, review.risk));
@@ -982,8 +1027,13 @@ fn ai_apply_command(path: &str, assume_yes: bool, dry_run: bool) -> Result<(), S
     }
 
     // Commit.
-    let result = execute_plan_document(Path::new("."), &plan_doc, &ExecuteOptions::default())
-        .map_err(|e| format!("{e}"))?;
+    let result = execute_plan_document(
+        Path::new("."),
+        &plan_doc,
+        &ExecuteOptions::default(),
+        context.as_ref(),
+    )
+    .map_err(|e| format!("{e}"))?;
 
     println!();
     out::success(
@@ -1014,6 +1064,114 @@ fn load_project_schema() -> Result<rustio_core::Schema, String> {
     }
     let schema_json = fs::read_to_string(schema_path).map_err(err_str)?;
     rustio_core::Schema::parse(&schema_json).map_err(err_str)
+}
+
+/// Shared context loader — reads `rustio.context.json` if present,
+/// otherwise returns `Ok(None)` so commands fall back to the no-
+/// context codepath unchanged.
+fn load_project_context() -> Result<Option<rustio_core::ai::ContextConfig>, String> {
+    let ctx_path = Path::new("rustio.context.json");
+    if !ctx_path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(ctx_path).map_err(err_str)?;
+    let ctx = rustio_core::ai::ContextConfig::parse(&raw).map_err(|e| e.to_string())?;
+    Ok(Some(ctx))
+}
+
+fn context_command(sub: ContextCommand) -> Result<(), String> {
+    match sub {
+        ContextCommand::Show => context_show_command(),
+        ContextCommand::Validate => context_validate_command(),
+    }
+}
+
+/// `rustio context show` — pretty-print the loaded context plus
+/// everything the project derives from it. Helps operators verify
+/// that their country / industry selection is doing what they expect.
+fn context_show_command() -> Result<(), String> {
+    let ctx_path = Path::new("rustio.context.json");
+    if !ctx_path.exists() {
+        out::info("rustio.context.json not found — the project is running without context.");
+        out::hint(
+            "Create rustio.context.json with { \"country\": \"SE\", \"industry\": \"housing\" } to opt in.",
+        );
+        return Ok(());
+    }
+    let ctx = load_project_context()?.expect("exists check above");
+    if ctx.is_empty() {
+        out::info("rustio.context.json is present but empty — no signals active.");
+        return Ok(());
+    }
+    println!("Context:");
+    if let Some(c) = &ctx.country {
+        println!("  country:      {c}");
+    }
+    match (&ctx.region, ctx.effective_region()) {
+        (Some(r), _) => println!("  region:       {r}"),
+        (None, Some(inferred)) => println!("  region:       {inferred} (inferred)"),
+        _ => {}
+    }
+    if let Some(i) = &ctx.industry {
+        println!("  industry:     {i}");
+    }
+    if !ctx.compliance.is_empty() {
+        println!("  compliance:   {}", ctx.compliance.join(", "));
+    }
+    if ctx.requires_gdpr() {
+        let explicit = ctx
+            .compliance
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case("GDPR"));
+        let tag = if explicit {
+            ""
+        } else {
+            " (inferred from EU region)"
+        };
+        println!("  gdpr:         applies{tag}");
+    }
+    let pii = ctx.pii_fields();
+    if !pii.is_empty() {
+        println!("\nPII field names the review layer will escalate:");
+        for f in &pii {
+            println!("  - {f}");
+        }
+    }
+    if let Some(schema) = ctx.industry_schema() {
+        println!("\nIndustry conventions:");
+        for line in &schema.conventions {
+            println!("  - {line}");
+        }
+        if !schema.required_fields.is_empty() {
+            println!("\nRequired fields (removal warned):");
+            for f in &schema.required_fields {
+                println!("  - {f}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `rustio context validate` — parse-only check with a minimal
+/// one-line result. Exit code is the signal.
+fn context_validate_command() -> Result<(), String> {
+    let ctx_path = Path::new("rustio.context.json");
+    if !ctx_path.exists() {
+        println!("ok: no rustio.context.json (running without context)");
+        return Ok(());
+    }
+    let ctx = load_project_context()?.expect("exists check above");
+    if ctx.is_empty() {
+        println!("ok: file parses and is empty (no signals)");
+    } else {
+        println!(
+            "ok: file parses (country={:?}, industry={:?}, gdpr={})",
+            ctx.country,
+            ctx.industry,
+            ctx.requires_gdpr(),
+        );
+    }
+    Ok(())
 }
 
 /// Write `contents` to `path` atomically via a sibling tempfile
