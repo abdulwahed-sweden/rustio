@@ -28,6 +28,13 @@ use crate::schema::{
     Schema, SchemaField, SchemaModel, SchemaRelation, SCHEMA_VERSION, VALID_TYPE_NAMES,
 };
 
+pub mod planner;
+
+#[cfg(test)]
+mod planner_tests;
+
+pub use planner::{generate_plan, ContextConfig, PlanError, PlanRequest, PlanResult};
+
 /// The complete set of operations the AI layer is allowed to perform on
 /// a RustIO project.
 ///

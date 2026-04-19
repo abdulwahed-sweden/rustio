@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.5.0 Intelligence Phase, Pass 1 (AI planning layer)
+
+A read-only, rule-based AI planner. Reads a natural-language prompt,
+the project's `rustio.schema.json`, and an optional
+`rustio.context.json`; emits a structured `Plan` + one-paragraph
+explanation. **Does not execute anything** — no file writes, no DB,
+no migrations, no SQL. The planner is the brain; the executor that
+turns plans into code lands in 0.5.x.
+
+- **`rustio-core::ai::planner`** — new module with `generate_plan()`,
+  `PlanRequest`, `PlanResult`, `ContextConfig`, `PlanError`.
+- **Grammar (rule-based, deterministic):**
+  - `add <field> to <model>` / `add <field> as <type> to <model>` /
+    `add optional <field> to <model>`
+  - `rename <field> to <new> in <model>`
+  - `rename model <from> to <to>`
+  - `remove <field> from <model>` (also `drop` / `delete`)
+  - `change <field> in <model> to <type>`
+  - `make <field> in <model> optional|nullable|required`
+- **Type inference** from identifier shape (`*_at`/`_date` → DateTime,
+  `is_*`/`has_*` → bool, `priority`/`score`/`*_count` → i32, else
+  String), with `as <type>` as explicit override.
+- **Context-aware:** `rustio.context.json` with `country: "SE"`
+  makes `personnummer` resolve to `String` and adds a Swedish
+  explanation to the plan.
+- **Refusals** (never a guessed plan): unknown model, ambiguous
+  model, field already exists, field missing, unknown type, empty
+  prompt, unrecognised grammar, developer-only request (any mention
+  of `create migration` / raw SQL), attempts to modify a `core: true`
+  model.
+- **Plan safety:** every returned plan is run through
+  `Plan::validate(&schema)` before it leaves the planner, and the
+  planner never emits `CreateMigration`.
+- **CLI:** `rustio ai plan "<prompt>"` — prints the strict documented
+  JSON shape to stdout (`{"plan": [...], "explanation": "..."}`)
+  followed by a human-readable `Plan:` summary. On refusal it still
+  prints a JSON skeleton with an `error_kind` tag, then exits non-zero
+  with a friendly `error:` line on stderr.
+- **Tests:** 23 planner-specific tests covering add/rename/remove/
+  change-type/change-nullability/rename-model, context-aware SE
+  upgrade, core-model protection, developer-only refusal, plan-
+  validation invariants, deterministic output, and chaining (rename →
+  change-type across two sequential calls).
+
 ### Hardened — Foundation Phase, Pass D (pre-Intelligence hardening)
 
 Final security pass before the 0.5.0 Intelligence phase. Closes the

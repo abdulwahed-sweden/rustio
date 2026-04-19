@@ -18,7 +18,8 @@ COMMANDS:
     migrate apply [-v]        Apply all pending migrations (verbose with -v / --verbose)
     migrate status            Show applied and pending migrations
     schema                    Write rustio.schema.json at the project root
-    ai [intent]               (0.5.0) Extend the project via a fixed set of primitives
+    ai                        (0.5.0) Show the AI boundary summary
+    ai plan "<prompt>"        (0.5.0) Plan a schema change (read-only — never executes)
     user create [opts]        Create a user in the auth tables (interactive if args omitted)
 
 ENVIRONMENT:
@@ -48,7 +49,7 @@ async fn main() -> ExitCode {
         Ok(Command::MigrateApply { verbose }) => migrate_apply(verbose).await,
         Ok(Command::MigrateStatus) => migrate_status().await,
         Ok(Command::Schema) => schema_command(),
-        Ok(Command::Ai(intent)) => ai_command(intent),
+        Ok(Command::Ai(sub)) => ai_command(sub),
         Ok(Command::UserCreate {
             email,
             password,
@@ -91,8 +92,9 @@ enum Command {
     /// Emit `rustio.schema.json` at the project root by running the
     /// built binary with `--dump-schema`.
     Schema,
-    /// 0.5.0 preview. Prints a description of the AI boundary today.
-    Ai(Option<String>),
+    /// `rustio ai …`. Dispatches to the AI planner or (with no
+    /// argument) prints a summary of the AI boundary.
+    Ai(AiCommand),
     /// `rustio user create` — seeds a user in the auth tables so
     /// someone can actually sign in to `/admin`.
     UserCreate {
@@ -102,6 +104,17 @@ enum Command {
     },
     Version,
     Help,
+}
+
+/// `rustio ai …` subcommands.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum AiCommand {
+    /// `rustio ai` — informational summary of the AI boundary. No edits.
+    Overview(Option<String>),
+    /// `rustio ai plan "<prompt>"` — run the 0.5.0 planner. Reads the
+    /// schema + optional context, prints a structured plan. Never
+    /// writes files, never executes.
+    Plan(String),
 }
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
@@ -134,17 +147,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             }
             Ok(Command::Schema)
         }
-        Some("ai") => {
-            // Everything after `ai` is the free-form intent, joined with
-            // spaces. In 0.4.0 the intent is informational only — we print
-            // the boundary rules and exit without touching the project.
-            let intent = if args.len() > 2 {
-                Some(args[2..].join(" "))
-            } else {
-                None
-            };
-            Ok(Command::Ai(intent))
-        }
+        Some("ai") => parse_ai_command(&args[2..]),
         Some("user") => match args.get(2).map(String::as_str) {
             Some("create") => parse_user_create_args(&args[3..]),
             Some(other) => Err(format!("unknown subcommand `user {other}`")),
@@ -593,25 +596,136 @@ async fn user_create_command(
     Ok(())
 }
 
-/// `rustio ai [intent]` — stub for 0.5.0. Explains the AI boundary the
-/// Phase 2 executor will enforce, without performing any edits.
-fn ai_command(intent: Option<String>) -> Result<(), String> {
-    out::info("rustio ai is scheduled for 0.5.0.");
+/// Parse the args after `rustio ai` into an [`AiCommand`]. Keeps
+/// command-string parsing out of `parse_command` so the `ai` subtree
+/// can grow independently.
+fn parse_ai_command(rest: &[String]) -> Result<Command, String> {
+    match rest.first().map(String::as_str) {
+        Some("plan") => {
+            let prompt = rest[1..].join(" ");
+            if prompt.trim().is_empty() {
+                return Err("usage: rustio ai plan \"<natural language request>\"".to_string());
+            }
+            Ok(Command::Ai(AiCommand::Plan(prompt)))
+        }
+        Some(other) if !other.starts_with("--") => {
+            // Back-compat: `rustio ai add foo` (pre-plan syntax) still
+            // reaches the informational overview with an "intent"
+            // summary so existing muscle memory doesn't break.
+            Ok(Command::Ai(AiCommand::Overview(Some(rest.join(" ")))))
+        }
+        Some(flag) => Err(format!(
+            "unknown flag `{flag}` (try `rustio ai plan \"…\"`)"
+        )),
+        None => Ok(Command::Ai(AiCommand::Overview(None))),
+    }
+}
+
+fn ai_command(sub: AiCommand) -> Result<(), String> {
+    match sub {
+        AiCommand::Overview(intent) => ai_overview(intent),
+        AiCommand::Plan(prompt) => ai_plan_command(prompt),
+    }
+}
+
+/// `rustio ai` (no args) — informational summary. No project I/O.
+fn ai_overview(intent: Option<String>) -> Result<(), String> {
+    out::info("rustio ai — the 0.5.0 AI planning layer.");
     println!();
     if let Some(msg) = intent {
         out::plain(&format!("intent recorded: {msg}"));
-        out::plain("(not executed — the 0.5.0 executor isn't wired up yet)");
+        out::plain("(not executed — the AI executor is scheduled for 0.5.x)");
         println!();
     }
-    out::plain("The AI layer reads rustio.schema.json and emits one of a fixed");
-    out::plain("set of primitives:");
-    out::plain("  add_model · remove_model · add_field · remove_field");
-    out::plain("  add_relation · remove_relation · update_admin · create_migration");
-    out::plain("Anything that can't be expressed as a primitive is rejected — no");
-    out::plain("free-form code generation. This is the guarantee 0.5.0 is built on.");
+    out::plain("The AI planner reads rustio.schema.json and emits a structured");
+    out::plain("Plan composed of these primitives:");
+    out::plain("  add_model · remove_model · rename_model");
+    out::plain("  add_field · remove_field · rename_field");
+    out::plain("  change_field_type · change_field_nullability");
+    out::plain("  add_relation · remove_relation · update_admin");
+    out::plain("Anything that can't be expressed as a primitive is rejected.");
     println!();
-    out::hint("rustio schema   # generate rustio.schema.json (available today)");
+    out::hint("rustio ai plan \"Add priority to tasks\"   # try the planner");
+    out::hint("rustio schema                              # emit rustio.schema.json");
     Ok(())
+}
+
+/// `rustio ai plan "<prompt>"` — the 0.5.0 planning layer.
+///
+/// Reads (schema, optional context, prompt), produces a validated
+/// [`rustio_core::ai::Plan`] + explanation, and prints both a strict
+/// JSON object and a human-readable summary. **Does not execute.**
+/// Does not touch the filesystem beyond reading the schema/context.
+fn ai_plan_command(prompt: String) -> Result<(), String> {
+    use rustio_core::ai::generate_plan;
+    use rustio_core::ai::planner::{
+        render_plan_human, render_plan_json, ContextConfig, PlanRequest,
+    };
+    use rustio_core::Schema;
+
+    // Schema is required — the planner validates against it.
+    let schema_path = Path::new("rustio.schema.json");
+    if !schema_path.exists() {
+        return Err(
+            "rustio.schema.json not found. Run `rustio schema` first to emit it.".to_string(),
+        );
+    }
+    let schema_json = fs::read_to_string(schema_path).map_err(err_str)?;
+    let schema: Schema = Schema::parse(&schema_json).map_err(err_str)?;
+
+    // Context is optional — read if present, otherwise plan without it.
+    let ctx_path = Path::new("rustio.context.json");
+    let context: Option<ContextConfig> = if ctx_path.exists() {
+        let raw = fs::read_to_string(ctx_path).map_err(err_str)?;
+        Some(ContextConfig::parse(&raw).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+
+    let result = match generate_plan(&schema, context.as_ref(), PlanRequest::new(&prompt)) {
+        Ok(r) => r,
+        Err(e) => {
+            // JSON skeleton on stdout so callers piping into `jq`
+            // don't crash on empty stdin; friendly error goes to
+            // stderr via the caller's Err path.
+            let body = serde_json::json!({
+                "plan": [],
+                "explanation": format!("refused: {e}"),
+                "error_kind": error_kind(&e),
+            });
+            println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            return Err(format!("planner refused: {e}"));
+        }
+    };
+
+    // 1. Strict JSON shape documented for the 0.5.0 planner.
+    println!("{}", render_plan_json(&result.plan, &result.explanation));
+    // 2. Human-readable block — goes after, separated by a blank line.
+    println!();
+    print!("{}", render_plan_human(&result.plan, &result.explanation));
+    Ok(())
+}
+
+/// Short kind label for a `PlanError`. Lets JSON consumers branch on
+/// error category without parsing the `Display` string.
+fn error_kind(e: &rustio_core::ai::PlanError) -> &'static str {
+    use rustio_core::ai::PlanError as E;
+    match e {
+        E::EmptyPrompt => "empty_prompt",
+        E::InvalidIntent(_) => "invalid_intent",
+        E::UnknownModel { .. } => "unknown_model",
+        E::AmbiguousModel { .. } => "ambiguous_model",
+        E::FieldAlreadyExists { .. } => "field_already_exists",
+        E::FieldDoesNotExist { .. } => "field_does_not_exist",
+        E::DeveloperOnlyRequested(_) => "developer_only",
+        E::CoreModelProtected(_) => "core_model_protected",
+        E::UnknownType(_) => "unknown_type",
+        E::Validation(_) => "validation",
+        E::ContextParse(_) => "context_parse",
+        // `PlanError` is `#[non_exhaustive]`; a new variant should surface
+        // as a generic tag rather than block the CLI from printing.
+        _ => "unknown",
+    }
 }
 
 fn register_app_in_mod(name: &str) -> Result<(), String> {
