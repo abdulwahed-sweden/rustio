@@ -1,0 +1,485 @@
+{
+  "version": 1,
+  "rustio_version": "0.3.1",
+  "models": [
+    {
+      "name": "Appointment",
+      "table": "appointments",
+      "admin_name": "appointments",
+      "display_name": "Appointments",
+      "singular_name": "Appointment",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "doctor_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "duration_minutes",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "patient_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "priority",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "reason",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "scheduled_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Department",
+      "table": "departments",
+      "admin_name": "departments",
+      "display_name": "Departments",
+      "singular_name": "Department",
+      "fields": [
+        {
+          "name": "code",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "head_doctor_id",
+          "type": "i64",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Doctor",
+      "table": "doctors",
+      "admin_name": "doctors",
+      "display_name": "Doctors",
+      "singular_name": "Doctor",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "department_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "full_name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "license_no",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "specialty",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "years_experience",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Invoice",
+      "table": "invoices",
+      "admin_name": "invoices",
+      "display_name": "Invoices",
+      "singular_name": "Invoice",
+      "fields": [
+        {
+          "name": "amount_cents",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "appointment_id",
+          "type": "i64",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "currency",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "invoice_number",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "issued_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "paid_at",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "patient_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Patient",
+      "table": "patients",
+      "admin_name": "patients",
+      "display_name": "Patients",
+      "singular_name": "Patient",
+      "fields": [
+        {
+          "name": "allergies",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "blood_type",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "date_of_birth",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "full_name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "gender",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "national_id",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Prescription",
+      "table": "prescriptions",
+      "admin_name": "prescriptions",
+      "display_name": "Prescriptions",
+      "singular_name": "Prescription",
+      "fields": [
+        {
+          "name": "appointment_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "doctor_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "dosage",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "duration_days",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "frequency",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_refillable",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "medication",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "patient_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "refills_remaining",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "User",
+      "table": "rustio_users",
+      "admin_name": "users",
+      "display_name": "Users",
+      "singular_name": "User",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "password_hash",
+          "type": "String",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "role",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": true
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+# The example project is deliberately NOT part of the rustio workspace
+# — it has its own lock file and target dir so that running the full
+# workspace test suite doesn't pull it in. An empty [workspace] table
+# is cargo's idiomatic "this crate is its own workspace root" marker.
+[workspace]
+
+[package]
+name = "medflow"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "medflow"
+path = "main.rs"
+
+[dependencies]
+rustio-core = { path = "/Users/mansour/Documents/GitHub/rustio/rustio-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# `chrono` is used for `DateTime<Utc>` model fields. Leave it even if
+# your first model only uses primitives — you'll want it the moment you
+# add a `created_at` or `published_at` column.
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
