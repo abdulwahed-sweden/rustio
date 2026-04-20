@@ -625,6 +625,15 @@ where
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(String::from);
+            // Only accept sort values from the closed vocabulary —
+            // anything else falls back to default so a crafted URL
+            // can't surface a panic or reveal unknown ordering.
+            let sort = query
+                .get("sort")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .filter(|s| SORT_OPTIONS.iter().any(|(v, _)| *v == *s))
+                .map(String::from);
 
             let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
             let all_items = T::all(&db).await?;
@@ -639,7 +648,7 @@ where
             // In-memory filter. Fine for the dev admin's typical row
             // counts; graduates to DB WHERE clauses when a project adds
             // an index or pagination layer.
-            let filtered: Vec<&T> = all_items
+            let mut filtered: Vec<&T> = all_items
                 .iter()
                 .filter(|item| {
                     if let Some(qs) = &q {
@@ -663,12 +672,23 @@ where
                 })
                 .collect();
 
+            // Sort. Default (when `sort` is absent) is newest-first —
+            // matches the natural operator expectation of "most recent
+            // at the top" for admin lists.
+            match sort.as_deref() {
+                Some("oldest") | Some("id_asc") => filtered.sort_by_key(|i| i.id()),
+                Some("id_desc") => filtered.sort_by_key(|i| std::cmp::Reverse(i.id())),
+                Some("newest") | None => filtered.sort_by_key(|i| std::cmp::Reverse(i.id())),
+                _ => {}
+            }
+
             let filters = ListFilters {
                 q: q.as_deref(),
                 status: status.as_deref(),
                 status_options: &status_options,
                 priority: priority.as_deref(),
                 priority_options: &priority_options,
+                sort: sort.as_deref(),
             };
 
             Ok::<Response, Error>(list_response::<T>(shell, &filtered, total, filters))
@@ -1723,13 +1743,29 @@ struct ListFilters<'a> {
     status_options: &'a [String],
     priority: Option<&'a str>,
     priority_options: &'a [String],
+    /// Current sort mode (`newest` | `oldest` | `id_asc` | `id_desc`).
+    /// `None` → default (newest first).
+    sort: Option<&'a str>,
 }
 
 impl ListFilters<'_> {
     fn is_active(&self) -> bool {
-        self.q.is_some() || self.status.is_some() || self.priority.is_some()
+        self.q.is_some()
+            || self.status.is_some()
+            || self.priority.is_some()
+            || self.sort.is_some()
     }
 }
+
+/// The fixed sort vocabulary the toolbar exposes. Kept as
+/// `(value, label)` tuples so the renderer can build a `<select>`
+/// with the correct `<option selected>` mark from this single source.
+const SORT_OPTIONS: &[(&str, &str)] = &[
+    ("newest", "Newest first"),
+    ("oldest", "Oldest first"),
+    ("id_asc", "ID ↑"),
+    ("id_desc", "ID ↓"),
+];
 
 fn list_response<T: AdminModel>(
     shell: Shell<'_>,
@@ -1966,6 +2002,28 @@ fn render_list_toolbar<T: AdminModel>(
         String::new()
     };
 
+    // Sort dropdown — always rendered. Pinned vocabulary in
+    // `SORT_OPTIONS` keeps the options identical across every admin
+    // list in every project, so the toolbar shape is predictable for
+    // operators moving between models.
+    let sort_select = {
+        let current = filters.sort.unwrap_or("newest");
+        let options: String = SORT_OPTIONS
+            .iter()
+            .map(|(value, label)| {
+                let sel = if *value == current { " selected" } else { "" };
+                format!(
+                    r#"<option value="{v}"{sel}>{l}</option>"#,
+                    v = escape_html(value),
+                    l = escape_html(label),
+                )
+            })
+            .collect();
+        format!(
+            r#"<select class="rio-select rio-select-sort" name="sort" aria-label="Sort records">{options}</select>"#,
+        )
+    };
+
     let count_label = if filters.is_active() {
         format!("Showing {shown} of {total}")
     } else if total == 1 {
@@ -1994,24 +2052,27 @@ fn render_list_toolbar<T: AdminModel>(
         r#"<form class="rio-table-toolbar" method="get" action="/admin/{name}" role="search" aria-label="Search {plural}">
 <div class="rio-search">
 {search_icon}
-<input type="search" name="q" value="{q}" placeholder="Search by title, ID…" aria-label="Search text">
+<input type="search" name="q" value="{q}" placeholder="Search {plural_lower}…" aria-label="Search text">
 {intent}
 </div>
 {status}
 {priority}
+{sort}
 <div class="rio-toolbar-actions">
-<button type="submit" class="rio-btn rio-btn-primary">{submit_icon}<span>Search</span></button>
+<button type="submit" class="rio-btn rio-btn-search">{submit_icon}<span>Search</span></button>
 {reset}
 </div>
 <div class="rio-count">{count}</div>
 </form>"#,
         name = escape_html(admin_name),
         plural = escape_html(plural),
+        plural_lower = escape_html(&plural.to_lowercase()),
         search_icon = icon_search(),
         q = q_value,
         intent = intent_badge,
         status = status_select,
         priority = priority_select,
+        sort = sort_select,
         submit_icon = icon_search(),
         reset = reset_btn,
         count = escape_html(&count_label),
