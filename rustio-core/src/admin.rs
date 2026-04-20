@@ -179,6 +179,14 @@ pub(crate) const USER_ENTRY: AdminEntry = AdminEntry {
 /// it with a single `<link>`. Projects must not edit this.
 const ADMIN_CSS_BUNDLE: &str = include_str!("../assets/admin.css");
 
+/// Framework-owned favicon: a compact SVG rust-coloured square with a
+/// white "R". Scalable, CSP-friendly, zero network dependency. Served
+/// at `/admin/assets/favicon.svg` and referenced from every page
+/// shell's `<head>`. Kept inline (as a string) rather than
+/// `include_bytes!` so the brand colour can be swapped at build time
+/// via `rustio.design.json` without a second-pass binary edit.
+const ADMIN_FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#B84318"/><text x="16" y="22" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="20" font-weight="700" fill="#ffffff" text-anchor="middle">R</text></svg>"##;
+
 // Inline Lucide SVG icon markup. Each function returns a complete
 // `<svg>` element sized by the caller's CSS (16px for toolbar,
 // 18px for nav, etc.). `currentColor` lets the surrounding class
@@ -327,9 +335,13 @@ impl Admin {
                 if !is_admin {
                     return next.run(req).await;
                 }
-                // Skip the stylesheet — it's not HTML and shouldn't
-                // ever render a shell page.
-                if req.uri().path() == "/admin/assets/admin.css" {
+                // Skip the stylesheet and favicon — neither is HTML
+                // and neither should ever render a shell page on a
+                // 404 / 500 from an upstream handler.
+                let path = req.uri().path();
+                if path == "/admin/assets/admin.css"
+                    || path == "/admin/assets/favicon.svg"
+                {
                     return next.run(req).await;
                 }
                 let user_email = req
@@ -368,6 +380,12 @@ impl Admin {
         // content can only change with a redeploy.
         router = router.get("/admin/assets/admin.css", |_req, _params| async move {
             Ok::<Response, Error>(admin_css_response())
+        });
+        // Favicon — scalable SVG served from the same /admin/assets
+        // namespace. No binary asset, no external dependency, full
+        // brand colouring. Requested by every browser tab.
+        router = router.get("/admin/assets/favicon.svg", |_req, _params| async move {
+            Ok::<Response, Error>(admin_favicon_response())
         });
 
         // Admin index.
@@ -1179,6 +1197,40 @@ fn admin_css_response() -> Response {
     resp
 }
 
+/// Serve the admin favicon — a scalable SVG. Cached for a day because
+/// the brand mark changes rarely (and only with a redeploy), and the
+/// bytes are tiny. `nosniff` for the same reason the CSS has it: an
+/// attacker must not trick the browser into executing it as script.
+/// `<span class="rio-env-chip">` markup, rendered consistently
+/// everywhere the admin shell appears (main pages *and* the auth
+/// shell). Signed-out operators still see whether they're logging
+/// into dev or prod, which closes a small phishing surface — an
+/// attacker who puts up a lookalike dev admin can't hide the chip.
+fn env_chip_html() -> String {
+    if crate::auth::in_production() {
+        r#"<span class="rio-env-chip is-prod">production</span>"#.to_string()
+    } else {
+        r#"<span class="rio-env-chip">development</span>"#.to_string()
+    }
+}
+
+fn admin_favicon_response() -> Response {
+    use hyper::header::HeaderValue;
+    let mut resp = hyper::Response::builder()
+        .status(200)
+        .header("content-type", "image/svg+xml")
+        .header("cache-control", "public, max-age=86400")
+        .body(Full::new(Bytes::from_static(
+            ADMIN_FAVICON_SVG.as_bytes(),
+        )))
+        .expect("valid favicon response");
+    resp.headers_mut().insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    resp
+}
+
 // ---------------------------------------------------------------------------
 // Shell (sidebar + topbar) — wraps every authenticated page
 // ---------------------------------------------------------------------------
@@ -1365,11 +1417,7 @@ fn render_shell_page(
     let sidebar = render_sidebar(shell);
     let crumbs = render_breadcrumbs(breadcrumbs);
 
-    let env_chip = if crate::auth::in_production() {
-        r#"<span class="rio-env-chip is-prod">production</span>"#.to_string()
-    } else {
-        r#"<span class="rio-env-chip">development</span>"#.to_string()
-    };
+    let env_chip = env_chip_html();
 
     let subtitle_html = page_subtitle
         .map(|s| format!(r#"<p class="rio-page-subtitle">{}</p>"#, escape_html(s)))
@@ -1402,6 +1450,7 @@ fn render_shell_page(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{doc_title} · {project}</title>
 <link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
 <body class="rio-body{density}">
@@ -1532,21 +1581,26 @@ fn dashboard_response(shell: Shell<'_>, schema_reload_flash: Option<&str>) -> Re
             icon = icon_inbox(),
         )
     } else {
+        // Model cards: a plain `<div>` container with the whole-card
+        // "open list" affordance delegated to an <h3><a>…</a></h3>
+        // title and two real `<a>` buttons. The previous `<a>` card
+        // with `<span>` buttons looked clickable but the span buttons
+        // weren't tab-stoppable and didn't have their own href.
         let cards: String = user_facing
             .iter()
             .map(|e| {
                 format!(
-                    r#"<a class="rio-model-card" href="/admin/{name}">
+                    r#"<div class="rio-model-card">
 <div class="rio-model-card-head">
 <div class="rio-model-card-icon">{icon}</div>
+<h3 class="rio-model-name"><a href="/admin/{name}">{display}</a></h3>
 </div>
-<p class="rio-model-name">{display}</p>
 <p class="rio-model-count">Stored in <code>{table}</code></p>
 <div class="rio-model-card-actions">
-<span class="rio-btn rio-btn-sm rio-btn-ghost">View</span>
-<span class="rio-btn rio-btn-sm rio-btn-primary">{plus}<span>Add</span></span>
+<a class="rio-btn rio-btn-sm" href="/admin/{name}">View</a>
+<a class="rio-btn rio-btn-sm rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add</span></a>
 </div>
-</a>"#,
+</div>"#,
                     name = escape_html(e.admin_name),
                     display = escape_html(e.display_name),
                     table = escape_html(e.table),
@@ -1562,13 +1616,17 @@ fn dashboard_response(shell: Shell<'_>, schema_reload_flash: Option<&str>) -> Re
 
     let body = format!("{reload_flash}{reload_row}{body_core}");
 
+    // Dashboard is the "root" — it still gets an `Admin` crumb so the
+    // topbar is never visually empty. Without this the topbar rendered
+    // as a lone env-chip floating on a hairline strip.
+    let crumbs: &[Crumb<'_>] = &[("Admin", None)];
     render_shell_page(
         &shell,
         200,
         "Dashboard",
         "Dashboard",
         Some("Manage your data. Click a model to list, search, and edit."),
-        &[],
+        crumbs,
         "",
         &body,
     )
@@ -1853,7 +1911,7 @@ fn list_response<T: AdminModel>(
                         r#"<td class="rio-cell-actions">
 <div class="rio-row-actions">
 <a class="rio-btn rio-btn-sm" href="/admin/{name}/{id}/edit">{pencil}<span>Edit</span></a>
-<a class="rio-btn rio-btn-sm rio-btn-danger-ghost" href="/admin/{name}/{id}/delete">{trash}<span>Delete</span></a>
+<a class="rio-btn rio-btn-sm rio-btn-danger-ghost" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete</span></a>
 </div>
 </td>"#,
                         name = escape_html(admin_name),
@@ -2259,7 +2317,7 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
 <h3 class="rio-danger-title">{warn}<span>Delete this {singular}</span></h3>
 <p class="rio-danger-hint">Permanently removes this record. Rows that reference it with <code>ON DELETE CASCADE</code> will also be deleted.</p>
 </div>
-<a class="rio-btn rio-btn-danger" href="/admin/{name}/{id}/delete">{trash}<span>Delete record</span></a>
+<a class="rio-btn rio-btn-danger" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete record</span></a>
 </section>"#,
             warn = icon_triangle_alert(),
             singular = escape_html(&singular.to_lowercase()),
@@ -2861,6 +2919,7 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · {project}</title>
 <link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
 <body>
@@ -2872,6 +2931,7 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
 <span class="rio-brand-name">{project}</span>
 <span class="rio-brand-label">Admin</span>
 </span>
+{env}
 </div>
 <h1 class="rio-auth-title">Sign in</h1>
 <p class="rio-auth-subtitle">Enter your credentials to access the admin.</p>
@@ -2898,6 +2958,7 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
         error = error_html,
         email = email_value,
         footer = footer_hint,
+        env = env_chip_html(),
     );
 
     let resp = hyper::Response::builder()
@@ -2925,6 +2986,7 @@ fn forbidden_page(csrf: Option<&str>) -> Response {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>403 Forbidden · {project}</title>
 <link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
 <body>
@@ -3196,6 +3258,7 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign out · {project}</title>
 <link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
 <body>

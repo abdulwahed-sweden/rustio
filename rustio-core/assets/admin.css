@@ -49,7 +49,16 @@
  * stylistic set on so `0` and `O` never confuse a log reader.
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+/*
+ * Fonts — system stack only. The framework's single-binary promise
+ * means no network dependencies at runtime: no CDN @import, no
+ * external webfont download. `Inter` is listed first so projects
+ * that opt in (e.g. via their own layout `<link>` to a self-hosted
+ * copy) pick it up automatically; without it, the OS picks the best
+ * native UI font (SF Pro on macOS, Segoe UI on Windows, Roboto on
+ * Android/Linux) and the admin renders identically offline, behind
+ * a strict CSP, or on an air-gapped network.
+ */
 
 :root {
   /* Typography ----------------------------------------------------- */
@@ -829,10 +838,14 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 }
 .rio-model-card-icon svg { width: 20px; height: 20px; }
 .rio-model-name {
+  margin: 0;
   font-size: 18px;
   font-weight: 600;
   color: var(--rio-ink-900);
+  line-height: 1.3;
 }
+.rio-model-name a { color: inherit; }
+.rio-model-name a:hover { color: var(--rio-primary); text-decoration: none; }
 .rio-model-count {
   font-size: 14px;
   color: var(--rio-text-subtle);
@@ -1362,7 +1375,12 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   flex-direction: column;
   gap: var(--rio-s-5);
 }
-.rio-auth-logo { display: flex; align-items: center; gap: var(--rio-s-3); }
+.rio-auth-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--rio-s-3);
+}
+.rio-auth-logo .rio-env-chip { margin-left: auto; }
 .rio-auth-title {
   margin: 0;
   font-size: var(--rio-fs-h2);
