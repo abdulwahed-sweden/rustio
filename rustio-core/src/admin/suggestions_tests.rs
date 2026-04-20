@@ -7,8 +7,8 @@
 
 use super::entry_builder::{build_admin_entries, DynamicAdminEntry, DynamicAdminField};
 use super::suggestions::{
-    derive_suggestions, derive_suggestions_from_entries, find_suggestion,
-    find_suggestion_from_entries,
+    derive_relation_suggestions, derive_suggestions, derive_suggestions_from_entries,
+    find_relation_suggestion, find_suggestion, find_suggestion_from_entries,
 };
 use super::{AdminEntry, AdminField, FieldType};
 use crate::ai::ContextConfig;
@@ -265,21 +265,21 @@ fn schema_with_applicant_missing_income() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "personnummer".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "queue_start_date".into(),
                     ty: "DateTime".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
             ],
             relations: vec![],
@@ -295,7 +295,7 @@ fn schema_with_applicant_fully_covered() -> Schema {
         ty: "i64".into(),
         nullable: false,
         editable: true,
-                relation: None,
+        relation: None,
     });
     s
 }
@@ -386,4 +386,192 @@ fn schema_driven_skips_core_models() {
         "core models must not receive suggestions, got: {:?}",
         ss
     );
+}
+
+// ---------------------------------------------------------------------------
+// 0.8.0 — missing-relation suggestions
+// ---------------------------------------------------------------------------
+
+fn schema_with_orphan_fk() -> Schema {
+    // Application has `applicant_id` but no relation metadata yet.
+    Schema {
+        version: SCHEMA_VERSION,
+        rustio_version: env!("CARGO_PKG_VERSION").to_string(),
+        models: vec![
+            SchemaModel {
+                name: "Applicant".into(),
+                table: "applicants".into(),
+                admin_name: "applicants".into(),
+                display_name: "Applicants".into(),
+                singular_name: "Applicant".into(),
+                fields: vec![SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: false,
+                    relation: None,
+                }],
+                relations: vec![],
+                core: false,
+            },
+            SchemaModel {
+                name: "Application".into(),
+                table: "applications".into(),
+                admin_name: "applications".into(),
+                display_name: "Applications".into(),
+                singular_name: "Application".into(),
+                fields: vec![
+                    SchemaField {
+                        name: "id".into(),
+                        ty: "i64".into(),
+                        nullable: false,
+                        editable: false,
+                        relation: None,
+                    },
+                    SchemaField {
+                        name: "applicant_id".into(),
+                        ty: "i64".into(),
+                        nullable: false,
+                        editable: true,
+                        relation: None,
+                    },
+                ],
+                relations: vec![],
+                core: false,
+            },
+        ],
+    }
+}
+
+#[test]
+fn relation_suggestion_fires_for_orphan_fk_with_matching_target() {
+    let schema = schema_with_orphan_fk();
+    let ss = derive_relation_suggestions(&schema);
+    assert_eq!(ss.len(), 1, "expected one suggestion, got {:?}", ss);
+    let s = &ss[0];
+    assert_eq!(s.admin_name, "applications");
+    assert_eq!(s.field, "applicant_id");
+    assert_eq!(s.action, "add_relation");
+    assert_eq!(s.prompt, "link Application to Applicant");
+    assert!(
+        s.reason.contains("applicant_id") && s.reason.contains("Applicant"),
+        "reason should cite both the column and the target: {}",
+        s.reason,
+    );
+}
+
+#[test]
+fn relation_suggestion_disappears_once_relation_is_recorded() {
+    let mut schema = schema_with_orphan_fk();
+    let app = schema
+        .models
+        .iter_mut()
+        .find(|m| m.name == "Application")
+        .unwrap();
+    let field = app
+        .fields
+        .iter_mut()
+        .find(|f| f.name == "applicant_id")
+        .unwrap();
+    field.relation = Some(crate::schema::Relation {
+        model: "Applicant".into(),
+        field: "id".into(),
+        kind: crate::schema::RelationKind::BelongsTo,
+    });
+    let ss = derive_relation_suggestions(&schema);
+    assert!(
+        ss.is_empty(),
+        "suggestion must disappear once linked: {:?}",
+        ss,
+    );
+}
+
+#[test]
+fn relation_suggestion_refuses_when_target_model_missing() {
+    // `applicant_id` exists but no `Applicant` model to link to —
+    // refuse instead of guessing.
+    let mut schema = schema_with_orphan_fk();
+    schema.models.retain(|m| m.name != "Applicant");
+    let ss = derive_relation_suggestions(&schema);
+    assert!(
+        ss.is_empty(),
+        "no target → no suggestion, not an invented link: {:?}",
+        ss,
+    );
+}
+
+#[test]
+fn relation_suggestion_refuses_on_ambiguous_target() {
+    // Two models whose singular_name case-insensitively matches
+    // `applicant`. The engine must refuse rather than pick one.
+    let mut schema = schema_with_orphan_fk();
+    schema.models.push(SchemaModel {
+        name: "OtherApplicant".into(),
+        table: "other_applicants".into(),
+        admin_name: "other_applicants".into(),
+        display_name: "Other Applicants".into(),
+        singular_name: "Applicant".into(), // deliberate clash
+        fields: vec![SchemaField {
+            name: "id".into(),
+            ty: "i64".into(),
+            nullable: false,
+            editable: false,
+            relation: None,
+        }],
+        relations: vec![],
+        core: false,
+    });
+    let ss = derive_relation_suggestions(&schema);
+    assert!(
+        ss.is_empty(),
+        "ambiguous target → refuse, don't pick one: {:?}",
+        ss,
+    );
+}
+
+#[test]
+fn relation_suggestion_skips_core_models() {
+    // A core model (e.g. the built-in User) carrying `owner_id` must
+    // not receive suggestions; core is off-limits for schema edits.
+    let mut schema = schema_with_orphan_fk();
+    let app = schema
+        .models
+        .iter_mut()
+        .find(|m| m.name == "Application")
+        .unwrap();
+    app.core = true;
+    assert!(derive_relation_suggestions(&schema).is_empty());
+}
+
+#[test]
+fn relation_suggestion_ignores_plain_id_column() {
+    // The `id` column of every model ends in `_id` reading naively;
+    // we must not suggest linking a model's PK to itself.
+    let mut schema = schema_with_orphan_fk();
+    let app = schema
+        .models
+        .iter_mut()
+        .find(|m| m.name == "Application")
+        .unwrap();
+    app.fields.retain(|f| f.name != "applicant_id");
+    let ss = derive_relation_suggestions(&schema);
+    assert!(ss.is_empty(), "plain `id` must never trigger: {:?}", ss);
+}
+
+#[test]
+fn find_relation_suggestion_rejects_unknown_pair() {
+    let schema = schema_with_orphan_fk();
+    assert!(find_relation_suggestion(&schema, "applications", "applicant_id").is_some());
+    // Wrong field.
+    assert!(find_relation_suggestion(&schema, "applications", "bogus").is_none());
+    // Wrong admin.
+    assert!(find_relation_suggestion(&schema, "applicants", "applicant_id").is_none());
+}
+
+#[test]
+fn relation_suggestion_is_deterministic() {
+    let schema = schema_with_orphan_fk();
+    let a = derive_relation_suggestions(&schema);
+    let b = derive_relation_suggestions(&schema);
+    assert_eq!(a, b, "derive_relation_suggestions must be deterministic");
 }

@@ -34,14 +34,14 @@ fn task_schema() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "title".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
             ],
             relations: vec![],
@@ -89,14 +89,14 @@ fn schema_with_core_user() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "email".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
             ],
             relations: vec![],
@@ -259,7 +259,7 @@ fn rename_field_collides_with_existing_target() {
         ty: "String".into(),
         nullable: false,
         editable: true,
-                relation: None,
+        relation: None,
     });
     let err = generate_plan(
         &schema,
@@ -598,6 +598,179 @@ fn relation_kind_symbol_is_linked_for_future_use() {
     // doesn't emit relations in 0.5.0 but the symbol is wired up so
     // future parsers can see it.
     let _ = RelationKind::HasMany;
+}
+
+// ---------- 0.8.0 relations ----------
+
+fn housing_schema() -> Schema {
+    Schema {
+        version: SCHEMA_VERSION,
+        rustio_version: pkg_version(),
+        models: vec![
+            SchemaModel {
+                name: "Applicant".into(),
+                table: "applicants".into(),
+                admin_name: "applicants".into(),
+                display_name: "Applicants".into(),
+                singular_name: "Applicant".into(),
+                fields: vec![SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: false,
+                    relation: None,
+                }],
+                relations: vec![],
+                core: false,
+            },
+            SchemaModel {
+                name: "Application".into(),
+                table: "applications".into(),
+                admin_name: "applications".into(),
+                display_name: "Applications".into(),
+                singular_name: "Application".into(),
+                fields: vec![SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: false,
+                    relation: None,
+                }],
+                relations: vec![],
+                core: false,
+            },
+        ],
+    }
+}
+
+#[test]
+fn add_relation_from_to_emits_belongs_to() {
+    let schema = housing_schema();
+    let res = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("add relation from Application to Applicant"),
+    )
+    .expect("planner should accept a well-formed relation prompt");
+    assert_eq!(res.plan.steps.len(), 1, "expected a single primitive");
+    match &res.plan.steps[0] {
+        Primitive::AddRelation(r) => {
+            assert_eq!(r.from, "Application");
+            assert_eq!(r.to, "Applicant");
+            assert_eq!(r.via, "applicant_id");
+            assert_eq!(r.kind, RelationKind::BelongsTo);
+        }
+        other => panic!("expected AddRelation, got {other:?}"),
+    }
+    assert!(
+        res.explanation.contains("belongs_to"),
+        "explanation should name the kind: {}",
+        res.explanation,
+    );
+    assert!(
+        res.explanation.contains("foreign-key"),
+        "explanation should be honest about the FK gap: {}",
+        res.explanation,
+    );
+}
+
+#[test]
+fn link_verb_is_synonymous_with_add_relation() {
+    let schema = housing_schema();
+    let via_add = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("add relation from Application to Applicant"),
+    )
+    .unwrap();
+    let via_link = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Applicant"),
+    )
+    .unwrap();
+    assert_eq!(
+        render_plan_json(&via_add.plan, ""),
+        render_plan_json(&via_link.plan, ""),
+        "`link X to Y` must produce the same plan as `add relation from X to Y`",
+    );
+}
+
+#[test]
+fn connect_verb_is_synonymous_with_add_relation() {
+    let schema = housing_schema();
+    let via_add = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("add relation from Application to Applicant"),
+    )
+    .unwrap();
+    let via_connect = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("connect Application to Applicant"),
+    )
+    .unwrap();
+    assert_eq!(
+        render_plan_json(&via_add.plan, ""),
+        render_plan_json(&via_connect.plan, ""),
+    );
+}
+
+#[test]
+fn relation_already_exists_is_refused() {
+    // Seed the "from" model with the column the planner would infer
+    // (`applicant_id`); the planner must refuse, not overwrite.
+    let mut schema = housing_schema();
+    let from = schema
+        .models
+        .iter_mut()
+        .find(|m| m.name == "Application")
+        .unwrap();
+    from.fields.push(SchemaField {
+        name: "applicant_id".into(),
+        ty: "i64".into(),
+        nullable: false,
+        editable: true,
+        relation: None,
+    });
+
+    let err = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Applicant"),
+    )
+    .expect_err("planner must refuse when the FK column already exists");
+    assert!(
+        matches!(err, PlanError::FieldAlreadyExists { ref field, .. } if field == "applicant_id"),
+        "expected FieldAlreadyExists(applicant_id), got {err:?}",
+    );
+}
+
+#[test]
+fn relation_to_unknown_target_is_refused() {
+    let schema = housing_schema();
+    let err = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Martian"),
+    )
+    .expect_err("unknown target model must refuse");
+    assert!(
+        matches!(err, PlanError::UnknownModel { .. }),
+        "expected UnknownModel, got {err:?}",
+    );
+}
+
+#[test]
+fn relation_from_unknown_source_is_refused() {
+    let schema = housing_schema();
+    let err = generate_plan(&schema, None, PlanRequest::new("link Martian to Applicant"))
+        .expect_err("unknown source model must refuse");
+    assert!(
+        matches!(err, PlanError::UnknownModel { .. }),
+        "expected UnknownModel, got {err:?}",
+    );
 }
 
 // ---------- renderers ----------

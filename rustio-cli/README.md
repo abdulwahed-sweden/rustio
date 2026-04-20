@@ -34,10 +34,11 @@ Then:
 ```bash
 cd readlist
 rustio migrate apply
+rustio user create --email you@example.com --password secret --role admin
 rustio run
 ```
 
-Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). The admin lives at `/admin` — send `Authorization: Bearer dev-admin`.
+Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). The admin lives at `/admin` — sign in with the email + password you created.
 
 ## Non-interactive
 
@@ -62,7 +63,15 @@ rustio init readlist --preset blog --app books        # custom app name
 | `rustio migrate generate <n>`   | Create a new migration file                                          |
 | `rustio migrate apply [-v]`     | Apply pending migrations (`-v` prints each statement)                |
 | `rustio migrate status`         | Show applied and pending migrations                                  |
+| `rustio schema`                 | Write `rustio.schema.json` from the compiled admin                   |
 | `rustio run`                    | Build and run the project in the current directory                   |
+| `rustio user create ...`        | Create a real user in the auth tables                                |
+| `rustio ai plan "<prompt>" [--save <path>]` | Plan a schema change; optionally save a reviewable document |
+| `rustio ai review <path>`       | Review a saved plan against the current schema                       |
+| `rustio ai validate <path>`     | Terse validate-only gate for CI                                      |
+| `rustio ai apply <path> [--yes]` | Apply a reviewed plan (writes files, never runs migrations)         |
+| `rustio context show`           | Show parsed `rustio.context.json` + inferred flags (GDPR, PII, …)    |
+| `rustio context validate`       | Parse context; exit 0 on success                                     |
 | `rustio --version`              | Print the CLI version                                                |
 
 ## Environment

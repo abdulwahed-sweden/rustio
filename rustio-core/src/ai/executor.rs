@@ -67,8 +67,8 @@ use super::review::{
     review_plan, PlanDocument, RiskLevel, ValidationOutcome, PLAN_DOCUMENT_VERSION,
 };
 use super::{
-    AddField, ChangeFieldNullability, ChangeFieldType, FieldSpec, Primitive, RenameField,
-    RenameModel,
+    AddField, AddRelation, ChangeFieldNullability, ChangeFieldType, FieldSpec, Primitive,
+    RenameField, RenameModel,
 };
 use crate::schema::{Schema, SchemaField};
 
@@ -364,13 +364,14 @@ fn simulate_step(
         Primitive::RemoveField(_) => {
             Err(ExecutionError::DestructiveWithoutConfirmation { op: "remove_field" })
         }
-        Primitive::AddRelation(_) => Err(ExecutionError::UnsupportedPrimitive {
-            op: "add_relation",
-            reason: "relations land in 0.6.0",
-        }),
+        Primitive::AddRelation(r) => apply_add_relation(r, project, shadow, migration_counter),
+        // 0.8.0: AddRelation is supported (adds a FK-less column).
+        // remove_relation / change_relation remain refused — a column
+        // drop has to wait for the destructive-gate story to land, and
+        // "change" is ambiguous enough that refusing is the safe call.
         Primitive::RemoveRelation(_) => Err(ExecutionError::UnsupportedPrimitive {
             op: "remove_relation",
-            reason: "relations land in 0.6.0",
+            reason: "dropping a relation column is destructive; explicit `remove_field` will land with 0.8.x's destructive gate",
         }),
         Primitive::UpdateAdmin(_) => Err(ExecutionError::UnsupportedPrimitive {
             op: "update_admin",
@@ -480,6 +481,85 @@ fn apply_add_field(
             if a.field.nullable { ", nullable" } else { "" },
             a.model,
             mig_filename,
+        ),
+    ))
+}
+
+/// 0.8.0 — materialise an `AddRelation { kind: BelongsTo, .. }`.
+///
+/// The on-disk realisation is deliberately small: add a `<via>` column
+/// of type `i64`, not-nullable (default `0`), via the same machinery as
+/// [`apply_add_field`]. No SQL `FOREIGN KEY` is emitted — rustio's
+/// executor treats FK enforcement as a separate, later pass (0.9.0),
+/// because issuing a FK on an SQLite column that pre-existing rows
+/// point at with `0` would lock out migration. The soft linkage lives
+/// in `rustio.schema.json` (regenerated from the struct by the user).
+///
+/// Kinds other than `BelongsTo` refuse — planning them is allowed so
+/// the review layer can warn, but the executor has no story for
+/// `HasMany` yet (it's a virtual accessor, not a column).
+fn apply_add_relation(
+    r: &AddRelation,
+    project: &ProjectView,
+    shadow: &mut BTreeMap<String, String>,
+    migration_counter: &mut u32,
+) -> Result<(Vec<PlannedFileChange>, String), ExecutionError> {
+    use crate::schema::RelationKind;
+    match r.kind {
+        RelationKind::BelongsTo => {}
+        _ => {
+            return Err(ExecutionError::UnsupportedPrimitive {
+                op: "add_relation",
+                reason: "only `belongs_to` is materialised in 0.8.0 — `has_many` is a virtual accessor with no column change",
+            });
+        }
+    }
+
+    // Delegate the physical column add to the add_field path so the
+    // same idempotency, patching, and migration machinery applies.
+    let synthetic = AddField {
+        model: r.from.clone(),
+        field: FieldSpec {
+            name: r.via.clone(),
+            ty: "i64".to_string(),
+            nullable: false,
+            editable: true,
+        },
+    };
+    let (changes, _field_summary) =
+        apply_add_field(&synthetic, project, shadow, migration_counter)?;
+
+    // The migration filename is already in `changes` — pull it out to
+    // keep the summary readable. The second entry is always the Create.
+    let mig_filename = changes
+        .iter()
+        .find(|c| c.kind == FileChangeKind::Create)
+        .and_then(|c| c.path.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    // Assert on the contents we just generated: 0.8.0 must not emit a
+    // SQL `FOREIGN KEY` clause or `REFERENCES`. If a future refactor
+    // of `sql_for_add_field` starts emitting either, that's a silent
+    // breakage of the relations contract — fail loudly.
+    if let Some(sql) = changes
+        .iter()
+        .find(|c| c.kind == FileChangeKind::Create)
+        .map(|c| c.new_contents.as_str())
+    {
+        debug_assert!(
+            !sql.contains("FOREIGN KEY") && !sql.contains("REFERENCES"),
+            "add_relation migration must not contain FOREIGN KEY / REFERENCES: {sql}"
+        );
+    }
+
+    Ok((
+        changes,
+        format!(
+            "+ Add relation `{}` from \"{}\" to \"{}\" (belongs_to, migration {})\n    \
+             ⚠ No SQL FOREIGN KEY is emitted — referential integrity is your responsibility until 0.9.0.",
+            r.via, r.from, r.to, mig_filename,
         ),
     ))
 }
@@ -1200,6 +1280,28 @@ fn apply_schema_shadow(p: &Primitive, schema: &mut Schema) {
                 m.name = r.to.clone();
             }
         }
+        Primitive::AddRelation(r) => {
+            use crate::schema::{Relation, RelationKind};
+            if !matches!(r.kind, RelationKind::BelongsTo) {
+                return;
+            }
+            if let Some(m) = schema.models.iter_mut().find(|m| m.name == r.from) {
+                if m.fields.iter().any(|f| f.name == r.via) {
+                    return;
+                }
+                m.fields.push(SchemaField {
+                    name: r.via.clone(),
+                    ty: "i64".to_string(),
+                    nullable: false,
+                    editable: true,
+                    relation: Some(Relation {
+                        model: r.to.clone(),
+                        field: "id".to_string(),
+                        kind: RelationKind::BelongsTo,
+                    }),
+                });
+            }
+        }
         _ => {}
     }
 }
@@ -1256,7 +1358,11 @@ fn patch_models_for_add_field(
     let mut out = source.to_string();
 
     // 1. Make sure chrono is imported when we're adding a DateTime.
-    if field.ty == "DateTime" && !out.contains("chrono::") {
+    // Check for an actual `use chrono::` statement, not the string
+    // "chrono::" anywhere — the scaffolded docstring mentions
+    // `chrono::DateTime<Utc>` in comments, which would otherwise
+    // fool the check and leave the file without an import.
+    if field.ty == "DateTime" && !has_chrono_use(&out) {
         out = insert_chrono_import(&out);
     }
 
@@ -1329,7 +1435,7 @@ fn patch_models_for_change_field_type(
 ) -> Result<String, String> {
     let mut out = source.to_string();
     // Ensure chrono import when introducing DateTime.
-    if (new_ty == "DateTime") && !out.contains("chrono::") {
+    if (new_ty == "DateTime") && !has_chrono_use(&out) {
         out = insert_chrono_import(&out);
     }
     // 1. Struct field line.
@@ -1837,6 +1943,14 @@ fn rename_in_insert_values(src: &str, from: &str, to: &str) -> Result<String, St
     Ok(out)
 }
 
+/// True when `src` contains an actual `use chrono::…;` statement at the
+/// start of a line. A docstring mentioning `chrono::DateTime` does not
+/// count — only a real import satisfies the check.
+fn has_chrono_use(src: &str) -> bool {
+    src.lines()
+        .any(|l| l.trim_start().starts_with("use chrono::"))
+}
+
 fn insert_chrono_import(src: &str) -> String {
     // Put the use statement right after the last top-level `use` line.
     let mut last_use_end: Option<usize> = None;
@@ -2020,9 +2134,10 @@ fn safe_default_literal(ty: &str) -> &'static str {
     match ty {
         "i32" | "i64" | "bool" => "0",
         "String" => "''",
-        // CURRENT_TIMESTAMP yields a string like "2026-04-19 01:23:45"
-        // which our DateTime parser accepts via chrono's RFC 3339.
-        "DateTime" => "CURRENT_TIMESTAMP",
+        // SQLite's `ALTER TABLE ADD COLUMN` rejects non-constant
+        // defaults, so `CURRENT_TIMESTAMP` is refused outright. Use
+        // a fixed epoch string that chrono parses back cleanly.
+        "DateTime" => "'1970-01-01 00:00:00'",
         _ => "''",
     }
 }

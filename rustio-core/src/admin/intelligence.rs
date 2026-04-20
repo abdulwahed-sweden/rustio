@@ -125,10 +125,18 @@ pub struct FieldUI {
     /// One-line explanation of *why* the field is sensitive — shown
     /// next to the lock marker or in a tooltip.
     pub sensitivity_note: Option<String>,
+    /// 0.8.0 — set when the field is a FK to a known model. Carries
+    /// the *singular* display name of the target (e.g. `"Applicant"`)
+    /// so list views can render "Applicant #42" and forms can hint
+    /// "Foreign key to Applicant". `None` for every field that isn't
+    /// a modelled relation — callers must not invent a label from the
+    /// column name alone.
+    pub relation_label: Option<String>,
 }
 
 /// What shape of filter the admin list page should render for a given
 /// field. Each variant maps to a concrete HTML control.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FilterKind {
     /// `<select>` over distinct string values, filled at render time.
@@ -142,6 +150,11 @@ pub enum FilterKind {
     /// Single-line input, compared exactly. Used for identity numbers
     /// where substring is the wrong semantics.
     ExactMatch,
+    /// 0.8.0 — `<select>` populated by the admin runtime from rows of
+    /// the target model. Rendered as "Applicant (42)" / "Applicant
+    /// (43)" etc. The `target_model` carries the *singular* display
+    /// name so the handler knows which table to read.
+    RelationSelect { target_model: String },
 }
 
 /// One filter the list page should show for a model. Produced by
@@ -156,6 +169,7 @@ pub struct FilterDef {
 /// What the user *probably* typed into the list-page search box.
 /// Letting the handler branch on this gives cleaner narrow-match
 /// behaviour than "grep every String field".
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SearchIntent {
     /// Parsed as a non-negative integer — likely an ID lookup.
@@ -164,6 +178,10 @@ pub enum SearchIntent {
     Email(String),
     /// Matches the 12/13-character Swedish personnummer shape.
     Personnummer(String),
+    /// 0.8.0 — an FK field is being searched by target id. Emitted
+    /// only by [`classify_search_for_field`] when the caller supplies
+    /// a relation target; plain `classify_search` never produces it.
+    RelationId { model: String, id: i64 },
     /// Everything else, including empty string.
     Text(String),
 }
@@ -175,6 +193,7 @@ impl SearchIntent {
             SearchIntent::NumericId(_) => "ID",
             SearchIntent::Email(_) => "email",
             SearchIntent::Personnummer(_) => "personnummer",
+            SearchIntent::RelationId { .. } => "relation",
             SearchIntent::Text(_) => "text",
         }
     }
@@ -321,6 +340,47 @@ pub fn field_ui_metadata(f: &AdminField, context: Option<&ContextConfig>) -> Fie
         hint,
         sensitive,
         sensitivity_note,
+        relation_label: None,
+    }
+}
+
+/// 0.8.0 — like [`field_ui_metadata`] but relation-aware. Pass the
+/// singular display name of the target model (e.g. `"Applicant"`) when
+/// the schema records a relation for this field; the returned
+/// [`FieldUI`] then carries `relation_label` and a form hint of the
+/// form "Foreign key to Applicant". Passing `None` is equivalent to
+/// calling [`field_ui_metadata`].
+///
+/// The caller (admin renderer) looks the target up in
+/// [`Schema::relation_for`](crate::schema::Schema::relation_for); this
+/// helper intentionally doesn't take a `&Schema` so the intelligence
+/// module stays schema-free for callers that don't need it.
+pub fn field_ui_metadata_with_relation(
+    f: &AdminField,
+    context: Option<&ContextConfig>,
+    relation_target: Option<&str>,
+) -> FieldUI {
+    let mut ui = field_ui_metadata(f, context);
+    if let Some(target) = relation_target.filter(|t| !t.is_empty()) {
+        // Escalate the role — a known relation always renders as
+        // ForeignKey even if the column name wouldn't hit the `_id`
+        // heuristic.
+        ui.role = FieldRole::ForeignKey;
+        ui.relation_label = Some(target.to_string());
+        // Rewrite the generic ForeignKey hint to name the target.
+        ui.hint = Some(format!("Foreign key to {target}."));
+    }
+    ui
+}
+
+/// Render "Target #42" for a foreign-key cell on a list view. Falls
+/// back to the raw id when the caller doesn't have a target name.
+/// Kept as a free function so the admin list renderer doesn't have to
+/// reach into [`FieldUI`] directly for the common case.
+pub fn format_relation_cell(id: i64, target: Option<&str>) -> String {
+    match target {
+        Some(t) if !t.is_empty() => format!("{t} #{id}"),
+        _ => id.to_string(),
     }
 }
 
@@ -332,6 +392,25 @@ pub fn field_ui_metadata(f: &AdminField, context: Option<&ContextConfig>) -> Fie
 /// plus active context. Order follows the order of `fields`; every
 /// filter references a field that actually exists on the model.
 pub fn infer_filters(fields: &[AdminField], context: Option<&ContextConfig>) -> Vec<FilterDef> {
+    infer_filters_with_relations(fields, context, |_| None)
+}
+
+/// 0.8.0 — like [`infer_filters`] but invokes `relation_target_of` for
+/// each field to detect relation columns. If the callback returns
+/// `Some(target)`, the filter is emitted as
+/// [`FilterKind::RelationSelect`] instead of the numeric-exact fallback.
+///
+/// The callback shape (rather than a `&Schema`) keeps this module
+/// schema-agnostic; the admin renderer is free to wire it to
+/// [`Schema::relation_for`](crate::schema::Schema::relation_for).
+pub fn infer_filters_with_relations<F>(
+    fields: &[AdminField],
+    context: Option<&ContextConfig>,
+    relation_target_of: F,
+) -> Vec<FilterDef>
+where
+    F: Fn(&AdminField) -> Option<String>,
+{
     let mut out: Vec<FilterDef> = Vec::new();
     for f in fields {
         if f.name == "id" {
@@ -344,7 +423,12 @@ pub fn infer_filters(fields: &[AdminField], context: Option<&ContextConfig>) -> 
             FieldRole::Timestamp => FilterKind::DateRange,
             FieldRole::NumericCount => FilterKind::NumericExact,
             FieldRole::Personnummer => FilterKind::ExactMatch,
-            FieldRole::ForeignKey => FilterKind::NumericExact,
+            FieldRole::ForeignKey => match relation_target_of(f) {
+                Some(target_model) if !target_model.is_empty() => {
+                    FilterKind::RelationSelect { target_model }
+                }
+                _ => FilterKind::NumericExact,
+            },
             // Plain text, email, phone, money, opaque-identifier —
             // no stock filter. Email/phone would deserve their own
             // filter UI, but live search already covers the common
@@ -363,6 +447,27 @@ pub fn infer_filters(fields: &[AdminField], context: Option<&ContextConfig>) -> 
 // ---------------------------------------------------------------------------
 // classify_search
 // ---------------------------------------------------------------------------
+
+/// 0.8.0 — variant of [`classify_search`] that knows the field is a
+/// relation. When the query parses as a non-negative integer, emits
+/// [`SearchIntent::RelationId`] carrying the target model; otherwise
+/// falls through to [`classify_search`] for the usual shape-based
+/// routing. Called by the admin search handler when the user is
+/// searching a specific FK column.
+pub fn classify_search_for_field(query: &str, relation_target: Option<&str>) -> SearchIntent {
+    let t = query.trim();
+    if let Some(model) = relation_target.filter(|m| !m.is_empty()) {
+        if let Ok(id) = t.parse::<i64>() {
+            if id >= 0 {
+                return SearchIntent::RelationId {
+                    model: model.to_string(),
+                    id,
+                };
+            }
+        }
+    }
+    classify_search(query)
+}
 
 /// Guess what the user meant by the text in the list-page search box.
 /// Order of tries: numeric → email → personnummer → text.

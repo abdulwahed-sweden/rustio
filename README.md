@@ -29,63 +29,54 @@ This is not a clone of Django. It is a different kind of tool: one that treats y
 
 ```bash
 cargo install rustio-cli
-rustio init
-```
-
-`rustio init` opens a four-prompt wizard:
-
-```text
-  RustIO
-  Let's set up your project.
-
-> Project name: taskwire
-> Choose a starting preset:
-    Basic — empty project, add apps later
-  › Blog  — scaffolds one app with admin + views
-    API   — scaffolds one app with admin + views
-> What should your first model track? tasks
-> Proceed? (Y/n)
-```
-
-Then:
-
-```bash
-cd taskwire
+rustio init clinic_queue --preset basic
+cd clinic_queue
 rustio migrate apply
+rustio user create --email you@example.com --password secret --role admin
 rustio run
 ```
 
-Open these:
+Then open [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) and sign in.
 
-- [http://127.0.0.1:8000/](http://127.0.0.1:8000/) — homepage
-- [http://127.0.0.1:8000/tasks](http://127.0.0.1:8000/tasks) — your app's tutorial view
-- [http://127.0.0.1:8000/admin](http://127.0.0.1:8000/admin) — sign-in form → admin index
-
-To sign in from a browser: type **`dev-admin`** and press Enter. You're in.
-
-For non-interactive scaffolding:
+### Evolve the schema with the AI layer
 
 ```bash
-rustio init taskwire --preset blog --app tasks
+rustio new app patient
+rustio migrate apply
+
+rustio ai plan "add date_of_birth as DateTime to patients" --save plan.json
+rustio ai review plan.json          # inspect risk, impact, warnings
+rustio ai apply plan.json --yes     # writes models.rs + migration
+rustio migrate apply
+rustio schema
 ```
+
+The planner, review layer, and executor all read `rustio.schema.json` — the single stable contract for every AI-driven change.
 
 ---
 
-## What's shipped in 0.3.1
+## What's shipped
 
-| capability | how it works |
-|---|---|
-| **HTTP + router** | hyper-backed server, `:param` path matching, 401/405 discrimination |
-| **Middleware** | `async fn(Request, Next) -> Result<Response, Error>` · typed per-request context |
-| **Admin** | `#[derive(RustioAdmin)]` generates list / create / edit / delete + an index at `/admin` |
-| **Browser auth** | Sign-in form at `/admin`, `HttpOnly; SameSite=Strict` session cookie |
-| **API auth** | `Authorization: Bearer <token>` — works alongside the cookie flow |
-| **ORM** | `Model` trait over SQLite via `sqlx` (hidden from user code) |
-| **Field types** | `i32 · i64 · String · bool` (DateTime, Option, Uuid land in 0.4.0) |
-| **Migrations** | Versioned `.sql` in `migrations/`, tracked, transactional, idempotent |
-| **Production guard** | `RUSTIO_ENV=production` disables dev tokens entirely |
-| **CLI** | `init` wizard · `new project` · `new app` · `migrate generate/apply/status` · `run` |
-| **Deploy** | One ~15 MB binary, sub-50 ms cold start, 10–30 MB resident memory |
+| capability | since | how it works |
+|---|---|---|
+| **HTTP + router** | 0.3 | hyper-backed server, `:param` path matching, 401/405 discrimination |
+| **Middleware** | 0.3 | `async fn(Request, Next) -> Result<Response, Error>` · typed per-request context |
+| **Admin UI** | 0.3 | `#[derive(RustioAdmin)]` generates list / create / edit / delete + an index at `/admin` |
+| **Real auth** | 0.4 | `argon2` password hashing, DB-backed sessions, login at `/admin` |
+| **ORM** | 0.3 | `Model` trait over SQLite via `sqlx` (hidden from user code) |
+| **Field types** | 0.4 | `i32 · i64 · String · bool · DateTime<Utc> · Option<T>` |
+| **`rustio.schema.json`** | 0.4 | The machine-readable contract every AI tool reads |
+| **AI planner** | 0.5.0 | Rule-based grammar → typed [`Primitive`] vocabulary, refuses rather than guesses |
+| **Plan review** | 0.5.1 | Risk / impact / warnings derived deterministically from a saved plan |
+| **Safe executor** | 0.5.2 | Applies plans to the project tree atomically; destructive ops refuse without explicit flags |
+| **Advanced mutations** | 0.5.3 | SQLite recreate-table for `change_field_type`, `change_field_nullability`, `rename_model` |
+| **Context layer** | 0.6 | `rustio.context.json` carries country / industry / compliance; drives PII detection and policy refusals |
+| **Admin intelligence** | 0.7 | Role classification, filters, search intent, masking — inferred from `(field, context)` |
+| **Runtime schema cache** | 0.7.3 | Dashboard re-reads the schema without a restart |
+| **Relations (additive)** | 0.8.0 | `link X to Y` grammar, `belongs_to` FK column (no SQL FK constraint until 0.9.0) |
+| **Migrations** | 0.3 | Versioned `.sql` in `migrations/`, tracked, transactional, idempotent |
+| **CLI** | 0.3+ | `init`, `new app`, `migrate`, `run`, `schema`, `ai plan/review/apply`, `context show`, `user create` |
+| **Deploy** | 0.3 | One ~15 MB binary, sub-50 ms cold start, 10–30 MB resident memory |
 
 ---
 
@@ -93,29 +84,26 @@ rustio init taskwire --preset blog --app tasks
 
 Three phases, in strict order. See [**ROADMAP.md**](ROADMAP.md) for the full plan.
 
-### Phase 1 · Foundation — v0.4.0
+### Phase 1 · Foundation — shipped in 0.4.x ✅
 
-Make the core deterministic, typed, and schema-exportable.
+Typed core, real auth, `rustio.schema.json` as the external contract.
 
-- Production-grade auth: built-in `User` table, `argon2` passwords, DB-backed sessions, login form upgraded to email + password.
-- Core types: `DateTime<Utc>`, `Option<T>`.
-- **`rustio.schema.json`** — a stable, machine-readable description of every model, field, type, and admin behavior in the project. This file is the contract the AI layer will consume.
+### Phase 2 · Intelligence — shipped across 0.5.x–0.8.0 ✅
 
-### Phase 2 · Intelligence — v0.5.0
+- **Planner** (0.5.0) — rule-based grammar over a fixed `Primitive` vocabulary. No free-form code generation.
+- **Plan review** (0.5.1) — risk / impact / warnings, purely deterministic.
+- **Safe executor** (0.5.2) — atomic apply, destructive ops refuse without explicit flags.
+- **Advanced mutations** (0.5.3) — type change, nullability change, rename model via SQLite recreate-table.
+- **Context layer** (0.6.0) — country / industry / compliance drives PII detection and policy refusals.
+- **Admin intelligence** (0.7.0–0.7.3) — role classification, filters, search intent, masking, runtime schema cache.
+- **Relations** (0.8.0) — `link X to Y` grammar; `belongs_to` adds an i64 FK column. SQL `FOREIGN KEY` enforcement lands in 0.9.0.
 
-Make the system safely extensible by AI agents.
-
-- `rustio ai "add a published bool to Post"` — reads the schema, emits a reviewable diff, runs `cargo build`, writes only if it compiles.
-- A fixed set of edit primitives (add-field, add-model, add-relation, add-migration, add-admin-attribute). No free-form code generation.
-- Relations: `belongs_to`, `has_many`. Inline forms in admin. Reflected into the schema.
-
-### Phase 3 · Systems — v0.6.0 and beyond
+### Phase 3 · Systems — v1.0.0 and beyond
 
 `rustio init <system>` scaffolds a running vertical solution, not a blank project.
 
 - `clinic`, `crm`, `inventory`, `workflow`, `registry`.
-- Each is a complete project + apps + migrations + admin configuration.
-- Built only after Phases 1 and 2 are final.
+- Each is a complete project + apps + migrations + admin configuration, built on top of the Phase 2 primitives.
 
 ---
 
@@ -147,27 +135,51 @@ If the answer is no, it does not belong in RustIO.
 | `rustio init` | Interactive wizard: name + preset + model + confirm |
 | `rustio init <name>` | Non-interactive scaffold (default preset: `basic`) |
 | `rustio init <name> --preset P` | Non-interactive with a preset (`basic` / `blog` / `api`) |
-| `rustio init <name> --app X` | Override the scaffolded app name |
 | `rustio new project <name>` | Create a project directly (no wizard) |
 | `rustio new app <name>` | Scaffold an app inside the current project |
 | `rustio migrate generate <n>` | Create a migration file |
 | `rustio migrate apply [-v]` | Apply pending migrations |
 | `rustio migrate status` | Show applied + pending migrations |
+| `rustio schema` | Write `rustio.schema.json` from the compiled admin |
 | `rustio run` | Build and run the project in the current directory |
+| `rustio user create ...` | Create a real user in the auth tables |
+| `rustio ai plan "<prompt>" [--save P]` | Plan a schema change (no side effects) |
+| `rustio ai review <plan>` | Inspect a saved plan against the current schema |
+| `rustio ai validate <plan>` | Terse validate-only gate for CI |
+| `rustio ai apply <plan> [--yes]` | Apply a reviewed plan (writes files, never runs migrations) |
+| `rustio context show` | Show the parsed `rustio.context.json` + inferred flags |
+| `rustio context validate` | Parse context; exit 0 on success |
 | `rustio --version` | Print the CLI version |
+
+### AI grammar (0.5.0 → 0.8.0)
+
+Prompts the planner understands today — all rule-based, deterministic, and refuse-first:
+
+```text
+add <field> [as <type>] to <model>
+remove <field> from <model>
+rename <from> to <to> in <model>
+change <field> to <type> in <model>
+make <field> optional in <model>
+make <field> required in <model>
+rename model <From> to <To>
+add relation from <From> to <To>   # 0.8.0
+link <From> to <To>                # 0.8.0 synonym
+connect <From> to <To>             # 0.8.0 synonym
+```
 
 ---
 
 ## 🔐 Authentication
 
-RustIO ships with a development auth layer so the admin is usable from minute one. Two entry points share one token mapping:
+Production-grade from the Foundation phase:
 
-- **Browser flow.** `/admin` shows a sign-in form. Submit `dev-admin` or `dev-user`; an `HttpOnly; SameSite=Strict` cookie is set and subsequent requests authenticate via the cookie.
-- **API / curl flow.** `Authorization: Bearer dev-admin`.
+- **Browser flow.** `/admin` shows an email + password form. Successful sign-in sets an `HttpOnly; SameSite=Strict` session cookie validated on every request.
+- **Passwords.** `argon2id` with project-salted hashes; the column is marked `editable: false` so no admin UI surfaces it.
+- **Sessions.** DB-backed (`rustio_sessions`) with expiry and CSRF tokens on every mutating admin action.
+- **Create users.** `rustio user create --email … --password … --role admin|user` (or run interactively).
 
-Both paths work in parallel. Setting `RUSTIO_ENV=production` disables the built-in dev tokens — a real auth middleware is required in that mode.
-
-Phase 1 replaces the dev tokens with a real `User` table, `argon2` password hashing, and session storage. The form shape stays; only what's behind it changes.
+No dev tokens. The `User` model is `core: true` — the schema exposes its shape but the admin router does not expose CRUD routes for it (modifications go through the CLI).
 
 ---
 
@@ -229,7 +241,7 @@ impl Model for Task {
 }
 ```
 
-This struct is the entire model. The admin UI at `/admin/tasks` — list, create, edit, delete, plus an entry on the admin index — is generated from it. Once 0.4.0 ships, this same struct will also be the content of `rustio.schema.json`, which is what the AI layer will read.
+This struct is the entire model. The admin UI at `/admin/tasks` — list, create, edit, delete, plus an entry on the admin index — is generated from it. The same struct is what the schema exporter reads to produce `rustio.schema.json`, and that file is the only surface the AI layer touches.
 
 ---
 

@@ -7,8 +7,9 @@
 //! from `(field, context)` with no per-project configuration.
 
 use super::intelligence::{
-    classify_field, classify_search, field_ui_metadata, infer_filters, mask_pii, FieldRole,
-    FilterKind, SearchIntent,
+    classify_field, classify_search, classify_search_for_field, field_ui_metadata,
+    field_ui_metadata_with_relation, format_relation_cell, infer_filters,
+    infer_filters_with_relations, mask_pii, FieldRole, FilterKind, SearchIntent,
 };
 use super::{AdminField, FieldType};
 use crate::ai::ContextConfig;
@@ -461,4 +462,109 @@ fn mask_pii_is_deterministic() {
     let a = mask_pii("alice@example.com");
     let b = mask_pii("alice@example.com");
     assert_eq!(a, b);
+}
+
+// ---------------------------------------------------------------------------
+// 0.8.0 — relations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn field_ui_metadata_without_relation_target_has_no_label() {
+    let ui = field_ui_metadata(&bigint("applicant_id", true), None);
+    assert_eq!(ui.role, FieldRole::ForeignKey);
+    assert_eq!(
+        ui.relation_label, None,
+        "no relation target passed — no label invented from the column name",
+    );
+}
+
+#[test]
+fn field_ui_metadata_with_relation_carries_label_and_hint() {
+    let ui =
+        field_ui_metadata_with_relation(&bigint("applicant_id", true), None, Some("Applicant"));
+    assert_eq!(ui.role, FieldRole::ForeignKey);
+    assert_eq!(ui.relation_label.as_deref(), Some("Applicant"));
+    assert_eq!(
+        ui.hint.as_deref(),
+        Some("Foreign key to Applicant."),
+        "relation-aware hint should name the target",
+    );
+}
+
+#[test]
+fn field_ui_metadata_with_relation_escalates_non_id_column_names() {
+    // The column is just `owner`, not `owner_id` — only the relation
+    // lookup tells us it's a FK. The helper must still set the
+    // ForeignKey role so downstream filter/search code routes it right.
+    let ui = field_ui_metadata_with_relation(&bigint("owner", true), None, Some("User"));
+    assert_eq!(ui.role, FieldRole::ForeignKey);
+    assert_eq!(ui.relation_label.as_deref(), Some("User"));
+}
+
+#[test]
+fn format_relation_cell_renders_target_and_id() {
+    assert_eq!(format_relation_cell(42, Some("Applicant")), "Applicant #42");
+}
+
+#[test]
+fn format_relation_cell_falls_back_when_target_unknown() {
+    assert_eq!(format_relation_cell(42, None), "42");
+    assert_eq!(format_relation_cell(42, Some("")), "42");
+}
+
+#[test]
+fn infer_filters_with_relations_emits_relation_select() {
+    let fields = [bigint("id", false), bigint("applicant_id", true)];
+    let filters = infer_filters_with_relations(&fields, None, |f| match f.name {
+        "applicant_id" => Some("Applicant".to_string()),
+        _ => None,
+    });
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0].field, "applicant_id");
+    assert_eq!(
+        filters[0].kind,
+        FilterKind::RelationSelect {
+            target_model: "Applicant".into()
+        },
+    );
+}
+
+#[test]
+fn infer_filters_without_relation_lookup_keeps_numeric_exact() {
+    // Existing callers that use the plain `infer_filters` must still
+    // get the pre-0.8 behaviour for FK columns.
+    let fields = [bigint("id", false), bigint("applicant_id", true)];
+    let filters = infer_filters(&fields, None);
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0].kind, FilterKind::NumericExact);
+}
+
+#[test]
+fn classify_search_for_field_emits_relation_id_for_numeric() {
+    let intent = classify_search_for_field("42", Some("Applicant"));
+    assert_eq!(
+        intent,
+        SearchIntent::RelationId {
+            model: "Applicant".into(),
+            id: 42
+        },
+    );
+    assert_eq!(intent.label(), "relation");
+}
+
+#[test]
+fn classify_search_for_field_without_target_falls_back() {
+    // Without a relation target, the helper behaves like the plain
+    // `classify_search` — a lone integer is a NumericId lookup, not
+    // a RelationId.
+    let intent = classify_search_for_field("42", None);
+    assert_eq!(intent, SearchIntent::NumericId(42));
+}
+
+#[test]
+fn classify_search_for_field_rejects_non_integer() {
+    // A FK field can still be searched by text (e.g. the user typed
+    // a name). The helper falls back to `classify_search`.
+    let intent = classify_search_for_field("alice", Some("Applicant"));
+    assert_eq!(intent, SearchIntent::Text("alice".into()));
 }

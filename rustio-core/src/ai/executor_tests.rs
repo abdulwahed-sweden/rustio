@@ -94,21 +94,21 @@ fn task_schema() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "title".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "is_active".into(),
                     ty: "bool".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
             ],
             relations: vec![],
@@ -550,7 +550,7 @@ fn stale_plan_is_refused_with_clear_reason() {
         ty: "i32".into(),
         nullable: false,
         editable: true,
-                relation: None,
+        relation: None,
     });
     let err = plan_execution(
         &schema_now,
@@ -601,7 +601,7 @@ fn applying_same_plan_twice_against_patched_source_fails_cleanly() {
         ty: "i32".into(),
         nullable: false,
         editable: true,
-                relation: None,
+        relation: None,
     });
     let mut project_after = project_with_task("/p");
     project_after.models_files.get_mut("tasks").unwrap().source = patched;
@@ -667,6 +667,276 @@ fn render_preview_human_reads_like_a_changelog() {
     assert!(out.contains("Applying:\n  + Add field \"priority\""));
     assert!(out.contains("Files to be written:"));
     assert!(out.contains("Risk:\n  Low"));
+}
+
+// ---------------------------------------------------------------------------
+// 0.8.0 — AddRelation (belongs_to)
+// ---------------------------------------------------------------------------
+
+const APPLICATION_MODELS_SRC: &str = r#"use rustio_core::{Error, Model, Row, RustioAdmin, Value};
+
+#[derive(Debug, RustioAdmin)]
+pub struct Application {
+    pub id: i64,
+    pub title: String,
+}
+
+impl Model for Application {
+    const TABLE: &'static str = "applications";
+    const COLUMNS: &'static [&'static str] = &["id", "title"];
+    const INSERT_COLUMNS: &'static [&'static str] = &["title"];
+
+    fn id(&self) -> i64 {
+        self.id
+    }
+
+    fn from_row(row: Row<'_>) -> Result<Self, Error> {
+        Ok(Self {
+            id: row.get_i64("id")?,
+            title: row.get_string("title")?,
+        })
+    }
+
+    fn insert_values(&self) -> Vec<Value> {
+        vec![self.title.clone().into()]
+    }
+}
+"#;
+
+fn housing_schema() -> Schema {
+    Schema {
+        version: SCHEMA_VERSION,
+        rustio_version: pkg_version(),
+        models: vec![
+            SchemaModel {
+                name: "Applicant".into(),
+                table: "applicants".into(),
+                admin_name: "applicants".into(),
+                display_name: "Applicants".into(),
+                singular_name: "Applicant".into(),
+                fields: vec![SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: false,
+                    relation: None,
+                }],
+                relations: vec![],
+                core: false,
+            },
+            SchemaModel {
+                name: "Application".into(),
+                table: "applications".into(),
+                admin_name: "applications".into(),
+                display_name: "Applications".into(),
+                singular_name: "Application".into(),
+                fields: vec![
+                    SchemaField {
+                        name: "id".into(),
+                        ty: "i64".into(),
+                        nullable: false,
+                        editable: false,
+                        relation: None,
+                    },
+                    SchemaField {
+                        name: "title".into(),
+                        ty: "String".into(),
+                        nullable: false,
+                        editable: true,
+                        relation: None,
+                    },
+                ],
+                relations: vec![],
+                core: false,
+            },
+        ],
+    }
+}
+
+fn project_with_housing(root: &str) -> ProjectView {
+    let mut models_files = BTreeMap::new();
+    models_files.insert(
+        "applications".to_string(),
+        ParsedModelsFile {
+            path: PathBuf::from(format!("{root}/apps/applications/models.rs")),
+            source: APPLICATION_MODELS_SRC.to_string(),
+            struct_names: vec!["Application".into()],
+        },
+    );
+    ProjectView {
+        root: PathBuf::from(root),
+        models_files,
+        existing_migrations: vec!["0001_create_applications.sql".into()],
+        migration_sources: BTreeMap::new(),
+    }
+}
+
+fn add_relation_plan(from: &str, to: &str, via: &str) -> Plan {
+    Plan::new(vec![Primitive::AddRelation(super::AddRelation {
+        from: from.into(),
+        kind: crate::schema::RelationKind::BelongsTo,
+        to: to.into(),
+        via: via.into(),
+    })])
+}
+
+#[test]
+fn add_relation_generates_fk_column_without_sql_constraint() {
+    let schema = housing_schema();
+    let project = project_with_housing("/p");
+    let plan = add_relation_plan("Application", "Applicant", "applicant_id");
+    let doc = doc_for(&schema, "link Application to Applicant", plan);
+
+    let preview = unwrap_preview(plan_execution(
+        &schema,
+        &project,
+        &doc,
+        &ExecuteOptions::default(),
+        None,
+    ));
+    assert_eq!(preview.applied_steps, 1);
+    // One models.rs update + one migration file.
+    assert_eq!(preview.file_changes.len(), 2);
+
+    let models_change = &preview.file_changes[0];
+    assert_eq!(models_change.kind, FileChangeKind::Update);
+    assert!(
+        models_change
+            .new_contents
+            .contains("pub applicant_id: i64,"),
+        "struct should gain the FK column:\n{}",
+        models_change.new_contents,
+    );
+
+    let mig = &preview.file_changes[1];
+    assert_eq!(mig.kind, FileChangeKind::Create);
+    assert!(
+        mig.path
+            .to_string_lossy()
+            .ends_with("_add_applicant_id_to_applications.sql"),
+        "migration should be named after the FK column: {}",
+        mig.path.display(),
+    );
+    assert!(
+        mig.new_contents.contains(
+            "ALTER TABLE applications ADD COLUMN applicant_id INTEGER NOT NULL DEFAULT 0;"
+        ),
+        "migration SQL:\n{}",
+        mig.new_contents,
+    );
+}
+
+#[test]
+fn add_relation_emits_no_foreign_key_constraint() {
+    // The single hardest invariant of 0.8.0: a belongs_to never
+    // produces a SQL `FOREIGN KEY` or `REFERENCES` clause.
+    let schema = housing_schema();
+    let project = project_with_housing("/p");
+    let plan = add_relation_plan("Application", "Applicant", "applicant_id");
+    let doc = doc_for(&schema, "link Application to Applicant", plan);
+
+    let preview = unwrap_preview(plan_execution(
+        &schema,
+        &project,
+        &doc,
+        &ExecuteOptions::default(),
+        None,
+    ));
+    let mig_sql = &preview.file_changes[1].new_contents;
+    assert!(
+        !mig_sql.contains("FOREIGN KEY"),
+        "0.8.0 must not emit FOREIGN KEY clauses:\n{mig_sql}",
+    );
+    assert!(
+        !mig_sql.contains("REFERENCES"),
+        "0.8.0 must not emit REFERENCES clauses:\n{mig_sql}",
+    );
+    // Also check the preview summary flags the FK gap explicitly.
+    assert!(
+        preview.summary.contains("No SQL FOREIGN KEY is emitted"),
+        "preview summary should surface the FK gap: {}",
+        preview.summary,
+    );
+    assert!(
+        preview.summary.contains("belongs_to"),
+        "preview summary should name the relation kind: {}",
+        preview.summary,
+    );
+}
+
+#[test]
+fn add_relation_idempotent_when_column_already_present() {
+    // If the `<via>_id` column already lives in the struct, the
+    // executor must refuse with FileConflict — same policy as
+    // add_field, since relations piggyback on it.
+    let schema = housing_schema();
+    let mut project = project_with_housing("/p");
+    project.models_files.get_mut("applications").unwrap().source = APPLICATION_MODELS_SRC.replace(
+        "    pub title: String,\n}",
+        "    pub title: String,\n    pub applicant_id: i64,\n}",
+    );
+    let plan = add_relation_plan("Application", "Applicant", "applicant_id");
+    let doc = doc_for(&schema, "link Application to Applicant", plan);
+
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
+        .expect_err("must refuse when column already exists");
+    match err {
+        ExecutionError::FileConflict { reason, .. } => {
+            assert!(
+                reason.contains("applicant_id"),
+                "reason should name the column: {reason}",
+            );
+        }
+        other => panic!("expected FileConflict, got {other:?}"),
+    }
+}
+
+#[test]
+fn remove_relation_primitive_is_refused_with_clear_reason() {
+    // 0.8.0: explicit — dropping a FK column is destructive. The
+    // executor refuses until the destructive-gate work lands. Seed
+    // the schema with the relation first so `Plan::validate` passes
+    // and the refusal genuinely comes from the executor gate.
+    let mut schema = housing_schema();
+    let app = schema
+        .models
+        .iter_mut()
+        .find(|m| m.name == "Application")
+        .unwrap();
+    app.fields.push(SchemaField {
+        name: "applicant_id".into(),
+        ty: "i64".into(),
+        nullable: false,
+        editable: true,
+        relation: Some(crate::schema::Relation {
+            model: "Applicant".into(),
+            field: "id".into(),
+            kind: crate::schema::RelationKind::BelongsTo,
+        }),
+    });
+    app.relations.push(crate::schema::SchemaRelation {
+        kind: "belongsto".into(),
+        to: "Applicant".into(),
+        via: "applicant_id".into(),
+    });
+    let project = project_with_housing("/p");
+    let plan = Plan::new(vec![Primitive::RemoveRelation(super::RemoveRelation {
+        from: "Application".into(),
+        via: "applicant_id".into(),
+    })]);
+    let doc = doc_for(&schema, "drop relation", plan);
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
+        .expect_err("remove_relation must refuse");
+    match err {
+        ExecutionError::UnsupportedPrimitive { op, reason } => {
+            assert_eq!(op, "remove_relation");
+            assert!(
+                reason.contains("destructive"),
+                "reason should call the op destructive: {reason}",
+            );
+        }
+        other => panic!("expected UnsupportedPrimitive, got {other:?}"),
+    }
 }
 
 // ---------------------------------------------------------------------------

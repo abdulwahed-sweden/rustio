@@ -230,3 +230,87 @@ pub fn find_suggestion_from_entries(
         .into_iter()
         .find(|s| s.admin_name == admin_name && s.field == field)
 }
+
+/// 0.8.0 — propose linking an orphan `<thing>_id` column to a known
+/// model when the schema has no [`Relation`](crate::schema::Relation)
+/// recorded for it. Fired from `&Schema` directly because relation
+/// metadata lives there (not on admin entries).
+///
+/// Matching rule: take the column name, strip the trailing `_id`, and
+/// look for a model whose `singular_name` (case-insensitively) matches
+/// the singularised remainder. If multiple models match — or none do —
+/// skip: refusing is safer than guessing.
+///
+/// Deterministic: iteration follows `schema.models` then
+/// `model.fields` order. No I/O, no allocation beyond the returned vec.
+pub fn derive_relation_suggestions(schema: &crate::schema::Schema) -> Vec<Suggestion> {
+    let mut out: Vec<Suggestion> = Vec::new();
+    for model in schema.models.iter().filter(|m| !m.core) {
+        for field in &model.fields {
+            if field.name == "id" || !field.name.ends_with("_id") {
+                continue;
+            }
+            if field.relation.is_some() {
+                continue;
+            }
+            let stem = &field.name[..field.name.len() - 3];
+            if stem.is_empty() {
+                continue;
+            }
+            // Find the target: prefer a singular_name match; fall back
+            // to the model name. Refuse on ambiguity or no match.
+            let mut candidates: Vec<&crate::schema::SchemaModel> = schema
+                .models
+                .iter()
+                .filter(|m| {
+                    m.singular_name.eq_ignore_ascii_case(stem) || m.name.eq_ignore_ascii_case(stem)
+                })
+                .collect();
+            candidates.dedup_by(|a, b| a.name == b.name);
+            if candidates.len() != 1 {
+                continue;
+            }
+            let target = candidates[0];
+            if target.name == model.name {
+                // Self-joins ("parent_id" on Category → Category) are
+                // legitimate but easy to propose by accident. Skip in
+                // 0.8.0 — the user can still type the prompt by hand.
+                continue;
+            }
+            out.push(Suggestion {
+                model_display: model.display_name.clone(),
+                model_singular: model.singular_name.clone(),
+                admin_name: model.admin_name.clone(),
+                field: field.name.clone(),
+                prompt: format!(
+                    "link {from} to {to}",
+                    from = model.singular_name,
+                    to = target.singular_name,
+                ),
+                reason: format!(
+                    "`{}` looks like a foreign key to `{}` but no relation is recorded.",
+                    field.name, target.singular_name,
+                ),
+                action: "add_relation",
+                // We inferred the target from a naming convention,
+                // not from an explicit schema link. That's Medium —
+                // the operator sees the confidence pill and decides.
+                confidence: Confidence::Medium,
+            });
+        }
+    }
+    out
+}
+
+/// Companion to [`derive_relation_suggestions`] — locate one by
+/// `(admin_name, field)`. Same rejection-of-crafted-URLs story as
+/// [`find_suggestion`].
+pub fn find_relation_suggestion(
+    schema: &crate::schema::Schema,
+    admin_name: &str,
+    field: &str,
+) -> Option<Suggestion> {
+    derive_relation_suggestions(schema)
+        .into_iter()
+        .find(|s| s.admin_name == admin_name && s.field == field)
+}

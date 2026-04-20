@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.8.0 Relations Layer (Foundational)
+
+First pass at first-class relations. Additive only — existing schemas,
+plans, and generated projects behave identically. The executor
+materialises a `belongs_to` as a single i64 column; it does **not**
+emit a SQL `FOREIGN KEY` clause. Referential enforcement is deferred
+to 0.9.0, so the review layer flags the gap as a warning.
+
+#### Schema
+
+- `SchemaField.relation: Option<Relation>` — absent by default, serde-
+  skipped when `None` so on-disk schemas remain byte-identical for
+  projects without relations.
+- `Relation { model, field, kind }` and `RelationKind` (`BelongsTo` /
+  `HasMany`, `#[non_exhaustive]`). `RelationKind` is the same type
+  used by `Primitive::AddRelation` — re-exported from `ai` so old
+  `use crate::ai::RelationKind;` imports continue to work.
+- `Schema::relation_for(model, field) -> Option<&Relation>` and
+  `Schema::incoming_relations(model) -> Vec<IncomingRelation>`.
+
+#### Planner
+
+- New grammar: `add relation from X to Y`, `link X to Y`, and
+  `connect X to Y`. All three parse to the same `Primitive::AddRelation
+  { from, kind: BelongsTo, to, via }`.
+- FK column name is inferred as `<target_singular_lowercased>_id`
+  (`applicant_id`, `post_id`). Existing field-already-exists and
+  core-model guards apply — the planner refuses rather than
+  overwriting.
+
+#### Review
+
+- `AddRelation` is `Low` risk (additive).
+- Two schema-aware warnings wired through `review_plan`: an FK-gap
+  warning, and a GDPR warning when the target model carries fields
+  flagged as PII under the active context.
+
+#### Executor
+
+- `apply_add_relation` materialises a `belongs_to` by delegating to
+  `apply_add_field` for an i64 NOT NULL DEFAULT 0 column. The
+  migration SQL must not emit `FOREIGN KEY` or `REFERENCES`
+  (asserted in tests and via a debug-assert in the executor).
+- `remove_relation` and any non-`BelongsTo` kinds refuse with a
+  descriptive `UnsupportedPrimitive` reason — ambiguity gets refused,
+  not guessed.
+- `apply_schema_shadow` projects `AddRelation` into the shadow
+  schema as a new field with `relation: Some(...)`, so later steps in
+  the same plan see the relation shape.
+
+#### Intelligence
+
+- `FieldUI.relation_label: Option<String>` carries the target
+  model's singular name. List views render `Applicant #42` via
+  `format_relation_cell`; forms render "Foreign key to Applicant"
+  via the new `field_ui_metadata_with_relation`.
+- `FilterKind::RelationSelect { target_model }` — wired by
+  `infer_filters_with_relations(fields, ctx, relation_of)`. The old
+  `infer_filters` stays untouched for callers that don't need
+  relation awareness.
+- `SearchIntent::RelationId { model, id }` — produced only by
+  `classify_search_for_field(query, relation_target)`. Plain
+  `classify_search` never emits it.
+
+#### Suggestions
+
+- `derive_relation_suggestions(&Schema)` — detects an `<thing>_id`
+  field with no `relation` and proposes linking it to a matching
+  model. Refuses on ambiguous or missing targets. `Medium`
+  confidence because the target is inferred from naming.
+- `find_relation_suggestion` — the route-guard sibling.
+
+#### Safety posture
+
+- Zero breakage to existing schemas, plans, generated projects.
+- No SQL `FOREIGN KEY` emitted — the gap is visible in review
+  warnings, not hidden behind silent success.
+- Every ambiguous case refuses rather than guessing.
+
+#### Tests (32 new)
+
+- Planner (6), Review (4), Executor (4), Intelligence (10),
+  Suggestions (8). Total core test count: 403.
+
 ### Added — 0.7.3 Runtime Truth Layer
 
 Closes the 0.7.2 gap where the schema cache was populated but the

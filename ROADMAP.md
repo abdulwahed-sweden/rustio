@@ -30,18 +30,19 @@ Phases are **strictly sequential**. Each phase is a prerequisite for the one abo
 ```
   ┌──────────────────────────────────────────┐
   │  Phase 3  ·  Systems                     │   pre-built verticals
-  │  clinic · crm · inventory · workflow     │   (v0.6.0 and beyond)
+  │  clinic · crm · inventory · workflow     │   (v1.0.0 and beyond)
   └──────────────────────────────────────────┘
                       ▲
-  ┌──────────────────────────────────────────┐
-  │  Phase 2  ·  Intelligence                │   AI that understands
-  │  rustio ai · relations · schema-aware    │   the typed core
-  └──────────────────────────────────────────┘                (v0.5.0)
+  ┌──────────────────────────────────────────┐   ✅ shipped across
+  │  Phase 2  ·  Intelligence                │     0.5.0 → 0.8.0
+  │  planner · review · executor · context · │
+  │  admin intelligence · relations          │
+  └──────────────────────────────────────────┘
                       ▲
-  ┌──────────────────────────────────────────┐
-  │  Phase 1  ·  Foundation                  │   typed core +
-  │  auth · DateTime · Option · schema.json  │   machine-readable schema
-  └──────────────────────────────────────────┘                (v0.4.0)
+  ┌──────────────────────────────────────────┐   ✅ shipped in
+  │  Phase 1  ·  Foundation                  │     0.4.x
+  │  auth · DateTime · Option · schema.json  │
+  └──────────────────────────────────────────┘
 ```
 
 ### Why this order is non-negotiable
@@ -53,117 +54,74 @@ If the foundation isn't deterministic and typed, intelligence is unreliable. An 
 
 ---
 
-## Phase 1 · Foundation (v0.4.0)
+## Phase 1 · Foundation — shipped in 0.4.x ✅
 
-**Goal:** make RustIO deterministic, typed, and schema-exportable.
+Deterministic, typed, and schema-exportable. All four goals shipped:
 
-### Scope
+- **Authentication.** Built-in `User`, `argon2id` passwords, DB-backed sessions. Dev tokens removed.
+- **Core types.** `DateTime<Utc>` and `Option<T>` round-trip end-to-end.
+- **`rustio.schema.json`.** Stable shape (see sample below); emitted by `rustio schema`; regenerated on every `rustio migrate apply`.
+- **Macro ↔ core contract.** Every field type the derive macro accepts is mirrored in the schema.
 
-**1. Authentication (production-grade)**
-
-- Built-in `User` table
-- `argon2` password hashing
-- Session storage in the database (backed by the existing cookie flow)
-- Login form upgraded from dev-token → email + password
-- The current 0.3.1 dev-token flow is demoted to a development-only override
-
-**2. Core types**
-
-- `DateTime<Utc>` field type (chrono-backed, ISO-8601 at rest)
-- `Option<T>` for nullable fields (NULL in DB, `None` in Rust, empty input in admin)
-
-**3. `rustio.schema.json` (the critical piece)**
-
-A single file generated from the compiled project. It is the only interface that external tooling — including the upcoming AI layer — is allowed to use. Shape:
+Sample shape (current at 0.8.0):
 
 ```json
 {
   "version": 1,
-  "generated_at": "2026-04-18T10:12:33Z",
-  "rustio_version": "0.4.0",
+  "rustio_version": "0.8.0",
   "models": [
     {
-      "name": "User",
-      "table": "users",
-      "admin_name": "users",
-      "display_name": "Users",
-      "singular_name": "User",
+      "name": "Visit",
+      "table": "visits",
+      "admin_name": "visits",
+      "display_name": "Visits",
+      "singular_name": "Visit",
+      "core": false,
       "fields": [
-        { "name": "id",         "type": "i64",      "nullable": false, "editable": false },
-        { "name": "email",      "type": "String",   "nullable": false, "editable": true,
-          "attrs": { "searchable": true } },
-        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false }
+        { "name": "id",         "type": "i64",    "nullable": false, "editable": false },
+        { "name": "patient_id", "type": "i64",    "nullable": false, "editable": true,
+          "relation": { "model": "Patient", "field": "id", "kind": "belongs_to" } },
+        { "name": "doctor_id",  "type": "i64",    "nullable": false, "editable": true,
+          "relation": { "model": "Doctor",  "field": "id", "kind": "belongs_to" } }
       ],
-      "relations": []
+      "relations": [
+        { "kind": "belongsto", "to": "Patient", "via": "patient_id" },
+        { "kind": "belongsto", "to": "Doctor",  "via": "doctor_id"  }
+      ]
     }
   ]
 }
 ```
 
-Emitted by a new `rustio schema` command. Regenerated on every `rustio migrate apply` and every `cargo build` via a small build-script hook.
+---
 
-### Not in 0.4.0
+## Phase 2 · Intelligence — shipped across 0.5.x → 0.8.0 ✅
 
-- Relations (moved to Phase 2 because they depend on the schema format being finalised).
-- Dashboards, charts, custom templates.
-- Hot reload.
+### Shipped
 
-### Exit criteria (must be true before 0.4.0 ships)
+- **0.5.0 Planner.** Rule-based grammar over a closed `Primitive` enum (`AddField`, `RemoveField`, `RenameField`, `RenameModel`, `ChangeFieldType`, `ChangeFieldNullability`, `AddRelation`, `UpdateAdmin`, `CreateMigration` (developer-only)). Refuses instead of guessing.
+- **0.5.1 Plan review.** Deterministic risk / impact / warnings from `(plan, schema, context)`. Saved plans are stale-detected against the live schema.
+- **0.5.2 Safe executor.** Atomic apply of a reviewed plan. Destructive primitives (`remove_field`, `remove_model`) refuse without explicit flags.
+- **0.5.3 Advanced mutations.** SQLite recreate-table for `change_field_type`, `change_field_nullability`, `rename_model`. Tables with FK constraints are refused until 0.9.0.
+- **0.6.0 Context layer.** `rustio.context.json` carries country / industry / compliance signals; `pii_fields()` drives review warnings and executor policy refusals; industry schemas flag expected field sets.
+- **0.7.0–0.7.2 Admin intelligence.** Per-field role classification, `FieldUI` metadata, filter inference, search-intent inference, masking, and a trust dashboard.
+- **0.7.3 Runtime truth.** Admin dashboard reads the schema on disk live; `[Reload schema]` updates suggestions without a process restart.
+- **0.8.0 Relations (foundational).** `link X to Y` / `connect X to Y` / `add relation from X to Y` grammar. Executor adds a `<target>_id i64` column. **No SQL `FOREIGN KEY`** — enforcement is the 0.9.0 follow-up. The review layer warns about the gap and raises a GDPR-minimisation flag when the target model carries PII.
 
-- `rustio.schema.json` format is documented and committed to as stable for the 0.x line.
-- Built-in `User` with argon2 passwords is usable through the existing admin.
-- `DateTime` and `Option<T>` fields render and round-trip correctly in admin forms and SQL.
-- Every field the macro understands is reflected in the schema.
+### Remaining Intelligence-layer work
+
+- **0.9.0 Relations — enforcement.** Emit SQL `FOREIGN KEY` clauses; extend the SQLite recreate-table pattern to rewrite FKs safely during type/nullability changes; unlock the table-has-FK refusal in the advanced-mutations path.
+- **0.9.x destructive gate.** An explicit opt-in (`allow_destructive` on `ExecuteOptions`) so `remove_field` can apply when the operator has reviewed and confirmed data loss.
+- **`has_many` materialisation.** Today 0.8.0 refuses non-`BelongsTo` kinds. The reverse accessor is a runtime convenience, not a schema change — likely lands alongside 0.9.0 FK enforcement.
+
+### Exit criteria (still open)
+
+- End-to-end relation flow including SQL FK enforcement.
+- Documented destructive gate that a reviewer must opt into, with tests proving the default posture still refuses.
 
 ---
 
-## Phase 2 · Intelligence Layer (v0.5.0)
-
-**Goal:** make RustIO safely extensible by AI agents.
-
-### Scope
-
-**1. `rustio ai` command**
-
-- Reads `rustio.schema.json`.
-- Accepts a short natural-language intent: `rustio ai "add a published bool to Post"`.
-- Translates the intent into a fixed set of edit primitives (see below).
-- Produces a diff for review; writes only on explicit confirmation.
-- Runs `cargo build` before finalising — any edit that doesn't compile is rejected.
-
-**Fixed edit primitives (AI may only emit these):**
-
-- `add-field <model> <name> <type>`
-- `remove-field <model> <name>`
-- `add-model <name> <fields>`
-- `add-relation <from> <kind> <to>` (belongs_to, has_many)
-- `add-admin-attribute <model> <field> <attr>`
-- `add-migration <name> <sql>`
-
-Free-form code generation is explicitly out of scope. The AI operates inside the schema, not outside it.
-
-**2. Relations**
-
-- `#[rustio(belongs_to = "User")]` — adds the foreign-key column and a `user(&db).await` lookup.
-- `#[rustio(has_many = "Post")]` — generates the reverse accessor and an inline form in admin.
-- Both reflect into `rustio.schema.json`.
-
-### Constraints (enforced at the AI boundary)
-
-- AI cannot touch files outside the RustIO layout (`apps/*/models.rs`, `apps/*/admin.rs`, `apps/*/views.rs`, `migrations/`).
-- AI cannot emit code that doesn't match the macro's expected shape.
-- AI failures return a clear "not possible in current scope" message instead of partial writes.
-- The AI layer is fully optional at runtime. The framework works without it.
-
-### Exit criteria
-
-- `rustio ai "add a published bool to Post"` produces the correct changes across `models.rs`, a new migration, and `rustio.schema.json`.
-- Relations work end-to-end: foreign key in DB, accessor in Rust, inline form in admin.
-- There exists at least one documented AI intent type that the system correctly **refuses** (proving the boundary).
-
----
-
-## Phase 3 · Systems (v0.6.0 and beyond)
+## Phase 3 · Systems (v1.0.0 and beyond)
 
 **Goal:** `rustio init <system>` produces a running vertical solution, not a blank project.
 
@@ -235,4 +193,4 @@ A sharp design question is more valuable than a broad PR. Either is welcome.
 
 ---
 
-*Last updated alongside the 0.3.1 release.*
+*Last updated alongside the 0.8.0 release.*

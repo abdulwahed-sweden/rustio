@@ -2,7 +2,7 @@
 
 Runtime core for the [RustIO](https://github.com/abdulwahed-sweden/rustio) web framework.
 
-Provides the HTTP server, router, middleware chain, request context, error handling, ORM, admin UI, and migrations.
+Provides the HTTP server, router, middleware chain, request context, error handling, ORM, admin UI, migrations, the AI planner/review/executor pipeline, the context layer, and the admin intelligence module.
 
 Normally used indirectly via the `rustio-cli` binary, which scaffolds projects that depend on this crate.
 

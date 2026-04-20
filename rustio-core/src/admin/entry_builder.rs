@@ -190,14 +190,14 @@ mod tests {
                         ty: "i64".into(),
                         nullable: false,
                         editable: false,
-                relation: None,
+                        relation: None,
                     },
                     SchemaField {
                         name: "title".into(),
                         ty: "String".into(),
                         nullable: false,
                         editable: true,
-                relation: None,
+                        relation: None,
                     },
                     SchemaField {
                         // Unknown type — exercises the PlainText fallback.
@@ -205,7 +205,7 @@ mod tests {
                         ty: "UnknownType".into(),
                         nullable: true,
                         editable: true,
-                relation: None,
+                        relation: None,
                     },
                 ],
                 relations: vec![],

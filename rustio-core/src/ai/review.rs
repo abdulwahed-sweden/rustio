@@ -305,7 +305,12 @@ pub fn review_plan(
     };
     let impact = compute_impact(plan, schema);
     let risk = classify_risk(plan, &impact, &validation, context);
-    let warnings = warnings_for(plan, context);
+    let mut warnings = warnings_for(plan, context);
+    // 0.8.0 — schema-aware relation warnings. Kept here (not in
+    // `warnings_for`) so `warnings_for`'s signature stays a pure
+    // function of (plan, context); the relation warnings genuinely
+    // need the schema to check the target model for PII fields.
+    warnings.extend(relation_warnings_for(plan, schema, context));
     Ok(PlanReview {
         plan: plan.clone(),
         impact,
@@ -313,6 +318,48 @@ pub fn review_plan(
         warnings,
         validation,
     })
+}
+
+/// Warnings that depend on the *current schema* — specifically, whether
+/// the relation's target model contains fields flagged as PII under the
+/// project's context. Every bullet has a concrete trigger (the target
+/// model, and the PII columns that would become linkable).
+fn relation_warnings_for(
+    plan: &Plan,
+    schema: &Schema,
+    context: Option<&ContextConfig>,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let pii: Vec<&str> = context.map(|c| c.pii_fields()).unwrap_or_default();
+    for step in &plan.steps {
+        let Primitive::AddRelation(r) = step else {
+            continue;
+        };
+        out.push(format!(
+            "Relation `{}.{}` → `{}` is recorded without a SQL foreign-key constraint in 0.8.x. Orphan rows are possible if the target is deleted — referential integrity lands in 0.9.0.",
+            r.from, r.via, r.to,
+        ));
+        if !pii.is_empty() {
+            // Only fire the PII warning when the target model actually
+            // has PII columns under the current context.
+            if let Some(target) = schema.models.iter().find(|m| m.name == r.to) {
+                let pii_hits: Vec<&str> = target
+                    .fields
+                    .iter()
+                    .filter_map(|f| pii.iter().copied().find(|p| *p == f.name))
+                    .collect();
+                if !pii_hits.is_empty() {
+                    out.push(format!(
+                        "Linking `{}` to `{}` creates a path to personally-identifying fields on the target ({}). Review GDPR minimisation / purpose-limitation before applying.",
+                        r.from,
+                        r.to,
+                        pii_hits.join(", "),
+                    ));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Parse JSON into either a [`PlanDocument`] or a raw [`Plan`].
@@ -754,12 +801,32 @@ fn apply_shadow_for_review(p: &Primitive, schema: &mut Schema) {
             }
         }
         Primitive::AddRelation(r) => {
+            use crate::schema::{Relation, RelationKind};
             if let Some(model) = schema.models.iter_mut().find(|m| m.name == r.from) {
                 model.relations.push(SchemaRelation {
                     kind: format!("{:?}", r.kind).to_lowercase(),
                     to: r.to.clone(),
                     via: r.via.clone(),
                 });
+                // Materialise the FK column at the field level too —
+                // 0.8.0 belongs_to adds a `<via>` i64 column. has_many
+                // is virtual and adds no column.
+                if matches!(r.kind, RelationKind::BelongsTo)
+                    && !model.fields.iter().any(|f| f.name == r.via)
+                {
+                    model.fields.push(SchemaField {
+                        name: r.via.clone(),
+                        ty: "i64".to_string(),
+                        nullable: false,
+                        editable: true,
+                        relation: Some(Relation {
+                            model: r.to.clone(),
+                            field: "id".to_string(),
+                            kind: RelationKind::BelongsTo,
+                        }),
+                    });
+                    model.fields.sort_by(|a, b| a.name.cmp(&b.name));
+                }
             }
         }
         Primitive::RemoveRelation(r) => {

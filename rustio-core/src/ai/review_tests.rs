@@ -49,14 +49,14 @@ fn task_schema() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "title".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
             ],
             relations: vec![],
@@ -81,14 +81,14 @@ fn schema_with_core_user() -> Schema {
                     ty: "i64".into(),
                     nullable: false,
                     editable: false,
-                relation: None,
+                    relation: None,
                 },
                 SchemaField {
                     name: "email".into(),
                     ty: "String".into(),
                     nullable: false,
                     editable: true,
-                relation: None,
+                    relation: None,
                 },
             ],
             relations: vec![],
@@ -398,7 +398,7 @@ fn plan_valid_today_becomes_stale_after_schema_change() {
         ty: "i32".into(),
         nullable: false,
         editable: true,
-                relation: None,
+        relation: None,
     });
 
     let review2 = review_plan(&schema, &plan, None).unwrap();
@@ -700,4 +700,139 @@ fn reviewing_same_plan_twice_is_byte_identical() {
     assert_eq!(as_simple_review(&a), as_simple_review(&b));
     assert_eq!(a.warnings, b.warnings);
     assert_eq!(a.impact, b.impact);
+}
+
+// ---------- 0.8.0 relations ----------
+
+fn housing_schema_for_review() -> Schema {
+    Schema {
+        version: SCHEMA_VERSION,
+        rustio_version: pkg_version(),
+        models: vec![
+            SchemaModel {
+                name: "Applicant".into(),
+                table: "applicants".into(),
+                admin_name: "applicants".into(),
+                display_name: "Applicants".into(),
+                singular_name: "Applicant".into(),
+                fields: vec![
+                    SchemaField {
+                        name: "id".into(),
+                        ty: "i64".into(),
+                        nullable: false,
+                        editable: false,
+                        relation: None,
+                    },
+                    SchemaField {
+                        name: "personnummer".into(),
+                        ty: "String".into(),
+                        nullable: false,
+                        editable: true,
+                        relation: None,
+                    },
+                ],
+                relations: vec![],
+                core: false,
+            },
+            SchemaModel {
+                name: "Application".into(),
+                table: "applications".into(),
+                admin_name: "applications".into(),
+                display_name: "Applications".into(),
+                singular_name: "Application".into(),
+                fields: vec![SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: false,
+                    relation: None,
+                }],
+                relations: vec![],
+                core: false,
+            },
+        ],
+    }
+}
+
+fn add_relation_plan_review(from: &str, to: &str, via: &str) -> Plan {
+    Plan::new(vec![Primitive::AddRelation(super::AddRelation {
+        from: from.into(),
+        kind: crate::schema::RelationKind::BelongsTo,
+        to: to.into(),
+        via: via.into(),
+    })])
+}
+
+#[test]
+fn add_relation_is_low_risk() {
+    let schema = housing_schema_for_review();
+    let plan = add_relation_plan_review("Application", "Applicant", "applicant_id");
+    let review = review_plan(&schema, &plan, None).unwrap();
+    assert_eq!(review.risk, RiskLevel::Low);
+    assert!(review.validation.is_valid());
+}
+
+#[test]
+fn add_relation_warns_about_missing_fk_constraint() {
+    let schema = housing_schema_for_review();
+    let plan = add_relation_plan_review("Application", "Applicant", "applicant_id");
+    let review = review_plan(&schema, &plan, None).unwrap();
+    assert!(
+        review
+            .warnings
+            .iter()
+            .any(|w| w.contains("foreign-key") && w.contains("Applicant")),
+        "expected a FK-gap warning naming the target; got {:?}",
+        review.warnings,
+    );
+}
+
+#[test]
+fn add_relation_to_pii_target_raises_gdpr_warning() {
+    // Target model `Applicant` carries `personnummer` — PII under
+    // country=SE. Linking something to it must flag the GDPR risk.
+    let schema = housing_schema_for_review();
+    let plan = add_relation_plan_review("Application", "Applicant", "applicant_id");
+    let ctx = super::planner::ContextConfig {
+        country: Some("SE".into()),
+        ..Default::default()
+    };
+    let review = review_plan(&schema, &plan, Some(&ctx)).unwrap();
+    assert_eq!(
+        review.risk,
+        RiskLevel::Low,
+        "PII on target bumps via a warning, not risk — the relation itself is additive",
+    );
+    assert!(
+        review
+            .warnings
+            .iter()
+            .any(|w| w.contains("personnummer") && w.contains("GDPR")),
+        "expected a GDPR warning naming the PII field; got {:?}",
+        review.warnings,
+    );
+}
+
+#[test]
+fn add_relation_to_non_pii_target_does_not_raise_gdpr_warning() {
+    // Country=SE but target has no PII columns — no GDPR bullet.
+    let mut schema = housing_schema_for_review();
+    schema
+        .models
+        .iter_mut()
+        .find(|m| m.name == "Applicant")
+        .unwrap()
+        .fields
+        .retain(|f| f.name != "personnummer");
+    let plan = add_relation_plan_review("Application", "Applicant", "applicant_id");
+    let ctx = super::planner::ContextConfig {
+        country: Some("SE".into()),
+        ..Default::default()
+    };
+    let review = review_plan(&schema, &plan, Some(&ctx)).unwrap();
+    assert!(
+        !review.warnings.iter().any(|w| w.contains("GDPR")),
+        "no GDPR warning should fire when target has no PII: {:?}",
+        review.warnings,
+    );
 }
