@@ -2117,7 +2117,7 @@ fn render_list_toolbar<T: AdminModel>(
 {priority}
 {sort}
 <div class="rio-toolbar-actions">
-<button type="submit" class="rio-btn rio-btn-search">{submit_icon}<span>Search</span></button>
+<button type="submit" class="rio-btn">{submit_icon}<span>Search</span></button>
 {reset}
 </div>
 <div class="rio-count">{count}</div>

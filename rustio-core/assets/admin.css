@@ -1,5 +1,5 @@
 /*
- * RustIO Admin — design system (v6, large-type, generous-spacing)
+ * RustIO Admin — design system (v7, operator-scale, density-aware)
  * ───────────────────────────────────────────────────────────────────
  *
  * Framework-owned stylesheet, bundled into `rustio-core` via
@@ -9,28 +9,30 @@
  *
  * ### Design language
  *
- * Operator-facing back-office with deliberately large type and
- * generous whitespace. The scale is anchored at **18 px body** so
- * the admin is readable at arm's length on a 24-inch monitor —
- * not micro-dense like classic Django admin.
+ * Operator-facing back-office for long sessions. Typography favours
+ * clarity at laptop distance without wasting rows on blog-post-sized
+ * type. Weight hierarchy (400 body → 600 labels → 700 titles) carries
+ * most of the scanning work; colour accent is reserved for write
+ * actions only.
  *
- * ### Type scale (anchored at 18 px body)
+ * ### Type scale (anchored at 16 px body)
  *
- *     Display (page titles):   32 / 700 / -0.02em
- *     H2 (section titles):     24 / 700
- *     H3 (card titles):        20 / 600
- *     Body L (default):        18 / 500
- *     Body M (cells, inputs):  17 / 500
- *     Body S (labels, btns):   16 / 600
- *     Small (eyebrow, pill):   14 / 600
- *     XS (table header caps):  13 / 700 / uppercase / 0.08em
+ *     Display (page titles):   28 / 700 / -0.02em
+ *     H2 (section titles):     22 / 700
+ *     H3 (card titles):        18 / 600
+ *     Body L (default):        16 / 400
+ *     Body M (cells, inputs):  15 / 500
+ *     Body S (labels, btns):   14 / 600
+ *     Small (meta, pills):     13 / 600
+ *     XS (table header caps):  12 / 700 / uppercase / 0.08em
  *
  * ### Spacing (8 pt grid)
  *
  *     4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48 · 56 · 64
  *
- * Row vertical padding: 18 px · Row horizontal padding: 20 px.
- * Container side padding: 40 px. Card padding: 24 px × 28 px.
+ * Row/container padding is density-driven — see the density block
+ * below. Comfortable is the default; Compact is opt-in via
+ * `rustio.design.json` → `.rio-density-compact` on `<body>`.
  *
  * ### Colour
  *
@@ -67,14 +69,14 @@
   --rio-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular,
     Menlo, Consolas, "Liberation Mono", monospace;
 
-  --rio-fs-display: 32px;   /* page titles */
-  --rio-fs-h2:      24px;   /* section titles */
-  --rio-fs-h3:      20px;   /* card titles */
-  --rio-fs-body-l:  18px;   /* default body */
-  --rio-fs-body-m:  17px;   /* cells, inputs */
-  --rio-fs-body-s:  16px;   /* labels, buttons */
-  --rio-fs-small:   14px;   /* pills, hints */
-  --rio-fs-xs:      13px;   /* table header caps */
+  --rio-fs-display: 28px;   /* page titles */
+  --rio-fs-h2:      22px;   /* section titles */
+  --rio-fs-h3:      18px;   /* card titles */
+  --rio-fs-body-l:  16px;   /* default body */
+  --rio-fs-body-m:  15px;   /* cells, inputs */
+  --rio-fs-body-s:  14px;   /* labels, buttons */
+  --rio-fs-small:   13px;   /* pills, hints */
+  --rio-fs-xs:      12px;   /* table header caps */
 
   /* Spacing — 8 pt grid -------------------------------------------- */
   --rio-s-1:  4px;
@@ -122,14 +124,14 @@
   --rio-text:        var(--rio-ink-900);
   --rio-text-label:  var(--rio-ink-800);
   --rio-text-muted:  var(--rio-ink-600);
-  --rio-text-subtle: var(--rio-ink-500);
+  --rio-text-subtle: var(--rio-ink-600);
 
   /* Brand (overrideable via rustio.design.json) -------------------- */
   --rio-primary: var(--rio-rust-600);
   --rio-primary-hover: var(--rio-rust-700);
   --rio-accent: var(--rio-rust-600);
   --rio-accent-hover: var(--rio-rust-700);
-  --rio-accent-ring: rgba(184, 67, 24, 0.22);
+  --rio-accent-ring: rgba(184, 67, 24, 0.45);
 
   /* Semantic ------------------------------------------------------- */
   --rio-danger:        #B42318;
@@ -160,14 +162,33 @@
   --rio-shadow-lg: 0 12px 28px -8px rgba(15, 20, 26, 0.15),
                    0 4px 8px -2px rgba(15, 20, 26, 0.06);
 
-  /* Table density -------------------------------------------------- */
-  --rio-row-y: 18px;
+  /* Layout metrics ------------------------------------------------- */
+  --rio-topbar-h: 64px;
+
+  /* Density — defaults are "comfortable". Consumers read the vars
+     below; switching to `.rio-density-compact` on <body> flips them
+     all together. The row-y/row-x names are kept for back-compat. */
+  --rio-row-y: 14px;
   --rio-row-x: 20px;
+  --rio-form-field-gap:  20px;
+  --rio-card-pad:        24px;
+  --rio-section-pad-y:   24px;
+  --rio-section-pad-x:   32px;
+  --rio-container-gap:   28px;
+  --rio-container-pad-x: 32px;
 }
 
+/* Compact density — opt-in. ~40% more rows per viewport than the
+   comfortable default; still legible at 15 px cells. */
 .rio-density-compact {
-  --rio-row-y: 14px;
+  --rio-row-y: 10px;
   --rio-row-x: 16px;
+  --rio-form-field-gap:  12px;
+  --rio-card-pad:        16px;
+  --rio-section-pad-y:   16px;
+  --rio-section-pad-x:   20px;
+  --rio-container-gap:   20px;
+  --rio-container-pad-x: 24px;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -180,7 +201,7 @@ body {
   font-family: var(--rio-font);
   font-size: var(--rio-fs-body-l);
   line-height: 1.6;
-  font-weight: 500;
+  font-weight: 400;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -199,7 +220,7 @@ body {
 a { color: var(--rio-primary); text-decoration: none; font-weight: 500; }
 a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 
-:focus-visible { outline: 2px solid var(--rio-accent); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--rio-accent); outline-offset: 2px; }
 
 /* Safety net — catches icons not individually sized. */
 .rio-app svg:not([width]):not([height]) {
@@ -247,23 +268,23 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: var(--rio-radius);
   background: var(--rio-primary);
   color: #FFFFFF;
   font-weight: 700;
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
 }
 .rio-brand-meta { display: flex; flex-direction: column; line-height: 1.25; gap: 2px; }
 .rio-brand-name {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--rio-ink-900);
 }
 .rio-brand-label {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--rio-text-subtle);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -284,7 +305,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-brand + .rio-nav { padding-top: var(--rio-s-3); }
 .rio-nav-section {
   padding: var(--rio-s-5) var(--rio-s-3) var(--rio-s-2);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -297,7 +318,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   padding: var(--rio-s-3) var(--rio-s-4);
   border-radius: var(--rio-radius-sm);
   color: var(--rio-ink-700);
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 500;
   line-height: 1.2;
   border-left: 3px solid transparent;
@@ -336,7 +357,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   padding: var(--rio-s-3) var(--rio-s-4);
   border-radius: var(--rio-radius-sm);
   color: var(--rio-ink-800);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
 }
 .rio-sidebar-user:hover {
@@ -354,7 +375,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   background: var(--rio-ink-200);
   color: var(--rio-ink-800);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 .rio-user-email {
@@ -374,7 +395,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   background: transparent;
   border: none;
   font-family: inherit;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
@@ -404,14 +425,14 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--rio-s-8);
+  gap: var(--rio-container-gap);
 }
 .rio-container > *:not(.rio-topbar) {
-  margin-left: var(--rio-s-10);
-  margin-right: var(--rio-s-10);
+  margin-left: var(--rio-container-pad-x);
+  margin-right: var(--rio-container-pad-x);
 }
-.rio-container > *:not(.rio-topbar):first-child { margin-top: var(--rio-s-8); }
-.rio-container > *:last-child { margin-bottom: var(--rio-s-10); }
+.rio-container > *:not(.rio-topbar):first-child { margin-top: var(--rio-container-gap); }
+.rio-container > *:last-child { margin-bottom: var(--rio-container-pad-x); }
 
 .rio-topbar {
   position: sticky;
@@ -419,11 +440,11 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   z-index: 20;
   background: var(--rio-surface);
   border-bottom: 1px solid var(--rio-border);
-  padding: var(--rio-s-4) var(--rio-s-10);
+  padding: var(--rio-s-4) var(--rio-container-pad-x);
   display: flex;
   align-items: center;
   gap: var(--rio-s-5);
-  min-height: 64px;
+  min-height: var(--rio-topbar-h);
 }
 
 .rio-env-chip {
@@ -436,7 +457,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border: 1px solid var(--rio-border-strong);
   background: var(--rio-surface);
   color: var(--rio-ink-700);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -459,7 +480,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   display: flex;
   align-items: center;
   gap: var(--rio-s-2);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-text-muted);
   font-weight: 500;
 }
@@ -493,7 +514,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 }
 .rio-page-subtitle {
   margin: var(--rio-s-2) 0 0;
-  font-size: 17px;
+  font-size: 15px;
   color: var(--rio-text-muted);
   line-height: 1.55;
 }
@@ -535,7 +556,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-btn:disabled,
 .rio-btn[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
 
-.rio-btn-sm { padding: 8px 14px; font-size: 14px; }
+.rio-btn-sm { padding: 7px 12px; font-size: 13px; }
 .rio-btn-block { width: 100%; }
 
 .rio-btn-primary {
@@ -577,20 +598,11 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   color: var(--rio-danger-hover);
 }
 
-/* Search submit button — intentionally *not* the brand rust. The
-   filter strip's primary action is data retrieval, not creation;
-   reserving rust for `Add X` gives a cleaner "rust = write" /
-   "ink-900 = read" split across the admin. */
-.rio-btn-search {
-  background: var(--rio-ink-900);
-  color: #FFFFFF;
-  border-color: var(--rio-ink-900);
-}
-.rio-btn-search:hover {
-  background: var(--rio-ink-800);
-  border-color: var(--rio-ink-800);
-  color: #FFFFFF;
-}
+/* Colour rule for buttons (non-negotiable):
+   rust-filled (`.rio-btn-primary`) is reserved for WRITE actions —
+   Create, Save, Confirm, Apply. Retrieval / query / view actions —
+   including search submit — render as the default outline button
+   (`.rio-btn`). One dominant button per screen. */
 
 .rio-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
 .rio-btn-sm svg { width: 16px; height: 16px; }
@@ -607,7 +619,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   width: 100%;
 }
 .rio-form-section {
-  padding: var(--rio-s-6) var(--rio-s-8) var(--rio-s-8);
+  padding: var(--rio-section-pad-y) var(--rio-section-pad-x) var(--rio-section-pad-x);
   border-bottom: 1px solid var(--rio-border);
 }
 .rio-form-section:last-of-type { border-bottom: none; }
@@ -619,7 +631,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 }
 .rio-form-section-hint {
   margin: var(--rio-s-1) 0 var(--rio-s-5);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-text-muted);
   line-height: 1.55;
 }
@@ -628,7 +640,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: var(--rio-s-2);
-  margin: 0 0 var(--rio-s-6);
+  margin: 0 0 var(--rio-form-field-gap);
 }
 .rio-field:last-child { margin-bottom: 0; }
 .rio-field > label,
@@ -671,7 +683,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-textarea { min-height: 120px; resize: vertical; }
 
 .rio-field-hint {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--rio-text-muted);
   line-height: 1.55;
 }
@@ -700,9 +712,12 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   position: relative;
   flex-shrink: 0;
 }
+/* Checked fill uses ink-800 (near-black), not rust. Rust is reserved
+   for write actions; a bulk-selected table of 50 rows should not
+   flood the left rail with brand colour. */
 .rio-checkbox:checked {
-  background: var(--rio-primary);
-  border-color: var(--rio-primary);
+  background: var(--rio-ink-800);
+  border-color: var(--rio-ink-800);
 }
 .rio-checkbox:checked::after {
   content: "";
@@ -715,7 +730,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border-width: 0 2.5px 2.5px 0;
   transform: rotate(45deg);
 }
-.rio-checkbox:focus-visible { outline: 2px solid var(--rio-accent); outline-offset: 2px; }
+.rio-checkbox:focus-visible { outline: 3px solid var(--rio-accent); outline-offset: 2px; }
 
 /* The outer form/card footer: tinted strip with left anchor + right
    action group, pushed apart via space-between. */
@@ -745,7 +760,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
    renders as a muted-text link, not a boxed button, matching the
    reference. */
 .rio-form-footer > a:not(.rio-btn) {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--rio-text-muted);
 }
@@ -796,10 +811,10 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 }
 .rio-card-subtitle {
   margin: var(--rio-s-1) 0 0;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-text-muted);
 }
-.rio-card-body { padding: var(--rio-s-6); }
+.rio-card-body { padding: var(--rio-card-pad); }
 
 .rio-grid {
   display: grid;
@@ -839,7 +854,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-model-card-icon svg { width: 20px; height: 20px; }
 .rio-model-name {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--rio-ink-900);
   line-height: 1.3;
@@ -847,7 +862,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-model-name a { color: inherit; }
 .rio-model-name a:hover { color: var(--rio-primary); text-decoration: none; }
 .rio-model-count {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--rio-text-subtle);
   font-weight: 500;
 }
@@ -898,19 +913,14 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-table-toolbar .rio-select,
 .rio-table-toolbar .rio-btn { height: 48px; }
 
-/* Search input — the primary control on the strip. Given a warm
-   cream tint (`--rio-search-bg`) that sits softly against the white
-   strip and draws the eye before the filter selects or the submit
-   button. Flips to white + rust ring on focus. The server emits a
+/* Search input — the primary control on the strip. Plain white
+   surface; the rust-coloured search icon plus the field itself are
+   the affordances. No tint, no decorative fill. The server emits a
    bare `<input type="search">` (no `.rio-input` class), so the
    selectors target the actual input element — both the typed and
    class-tagged variants. */
 .rio-search {
   position: relative;
-  /* Roughly doubled on request: 280 → 560 flex basis, 420 → 720 cap,
-     220 → 440 floor. Priority/status selects also bumped (rule
-     below), so the strip still lines up on one row at typical
-     admin widths. */
   flex: 1 1 560px;
   max-width: 720px;
   min-width: 440px;
@@ -922,16 +932,13 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   font-size: var(--rio-fs-body-m);
   font-weight: 500;
   color: var(--rio-ink-900);
-  /* Warm cream tint: #FFF7F3 — a soft rust-adjacent off-white.
-     Distinct from ink-50 panels, still WCAG AA behind dark text,
-     unmistakable as the primary search target. */
-  background: #FFF7F3;
+  background: var(--rio-surface);
   border: 1px solid var(--rio-border-strong);
   border-radius: var(--rio-radius);
   padding: 12px 16px 12px 48px;
   line-height: 1.5;
   height: 48px;
-  transition: background 0.1s ease, border-color 0.08s ease, box-shadow 0.08s ease;
+  transition: border-color 0.08s ease, box-shadow 0.08s ease;
   -webkit-appearance: none;
           appearance: none;
 }
@@ -943,7 +950,6 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-search input:focus,
 .rio-search .rio-input:focus {
   outline: none;
-  background: var(--rio-surface);
   border-color: var(--rio-accent);
   box-shadow: 0 0 0 3px var(--rio-accent-ring);
 }
@@ -989,7 +995,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 
 .rio-count {
   margin-left: auto;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-text-muted);
   font-weight: 500;
   white-space: nowrap;
@@ -1004,7 +1010,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   padding: var(--rio-s-3) var(--rio-s-6);
   background: var(--rio-surface);
   border-bottom: 1px solid var(--rio-border);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-text-muted);
 }
 .rio-bulk-form { display: contents; }
@@ -1015,7 +1021,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   white-space: nowrap;
 }
 .rio-bulk-label {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--rio-ink-800);
   white-space: nowrap;
@@ -1023,14 +1029,20 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-bulk-list,
 .rio-bulk-item { display: inline-flex; align-items: center; gap: var(--rio-s-2); }
 
-/* Table — thead tinted ink-50; rows white with ink-50 hover. */
+/* Table — sticky thead (ink-100), subtle zebra (ink-50 on even rows),
+   stronger hover (ink-100) so the active row beats both base states.
+   Thead sticks below the topbar via `--rio-topbar-h` so column
+   headers stay visible while scrolling a long list. */
 .rio-table {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--rio-fs-body-m);
 }
 .rio-table thead {
-  background: var(--rio-ink-50);
+  position: sticky;
+  top: var(--rio-topbar-h);
+  z-index: 3;
+  background: var(--rio-ink-100);
   border-bottom: 1px solid var(--rio-border);
 }
 .rio-table th {
@@ -1047,8 +1059,9 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border-bottom: 1px solid var(--rio-border);
   transition: background 0.06s ease;
 }
-.rio-table tbody tr:last-child { border-bottom: none; }
-.rio-table tbody tr:hover { background: var(--rio-ink-50); }
+.rio-table tbody tr:nth-child(even) { background: var(--rio-ink-50); }
+.rio-table tbody tr:hover,
+.rio-table tbody tr:nth-child(even):hover { background: var(--rio-ink-100); }
 .rio-table td {
   padding: var(--rio-row-y) var(--rio-row-x);
   color: var(--rio-ink-900);
@@ -1059,7 +1072,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-cell-check { width: 48px; padding-left: var(--rio-row-x); padding-right: 0; }
 .rio-cell-id {
   font-family: var(--rio-font-mono);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-ink-700);
   white-space: nowrap;
 }
@@ -1067,7 +1080,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-cell-muted { color: var(--rio-text-muted); }
 .rio-cell-num {
   font-family: var(--rio-font-mono);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-ink-700);
   font-weight: 500;
 }
@@ -1076,7 +1089,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   text-align: right;
   white-space: nowrap;
 }
-.rio-row-actions .rio-btn { margin-left: var(--rio-s-1); }
+.rio-row-actions .rio-btn { margin-left: var(--rio-s-2); }
 
 /* Pagination ------------------------------------------------------- */
 .rio-table-wrap > nav,
@@ -1089,7 +1102,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   padding: var(--rio-s-4) var(--rio-s-6);
   border-top: 1px solid var(--rio-border);
   background: var(--rio-ink-50);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-text-muted);
 }
 
@@ -1153,7 +1166,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   align-items: center;
   padding: 4px 10px;
   border-radius: var(--rio-radius-sm);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1272,6 +1285,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border-radius: var(--rio-radius);
   background: var(--rio-surface);
   border: 1px solid var(--rio-border);
+  border-left: 3px solid var(--rio-primary);
 }
 .rio-suggestion-actions {
   margin-left: auto;
@@ -1299,7 +1313,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 }
 .rio-meta-item:last-child { border-bottom: none; }
 .rio-meta-label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1389,7 +1403,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 }
 .rio-auth-subtitle { margin: 0; font-size: var(--rio-fs-body-s); color: var(--rio-text-muted); }
 .rio-auth-footer {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--rio-text-muted);
   text-align: center;
   margin: var(--rio-s-1) 0 0;
@@ -1430,7 +1444,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 }
 .rio-error-status {
   font-family: var(--rio-font-mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1461,20 +1475,20 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border-bottom: 1px solid var(--rio-border);
 }
 .rio-audit-item:last-child { border-bottom: none; }
-.rio-audit-when { font-size: 14px; color: var(--rio-text-subtle); white-space: nowrap; }
+.rio-audit-when { font-size: 13px; color: var(--rio-text-subtle); white-space: nowrap; }
 .rio-audit-head { font-size: var(--rio-fs-body-s); color: var(--rio-ink-900); font-weight: 500; }
 .rio-audit-who,
 .rio-audit-object { font-weight: 600; color: var(--rio-ink-900); }
-.rio-audit-meta { font-size: 13px; color: var(--rio-text-subtle); }
-.rio-audit-ip { font-size: 13px; color: var(--rio-text-muted); }
-.rio-audit-summary { font-size: 14px; color: var(--rio-text-muted); margin-top: 2px; }
+.rio-audit-meta { font-size: 12px; color: var(--rio-text-subtle); }
+.rio-audit-ip { font-size: 12px; color: var(--rio-text-muted); }
+.rio-audit-summary { font-size: 13px; color: var(--rio-text-muted); margin-top: 2px; }
 
 /* ═════════════════════════════════════════════════════════════════
  * Schema diff / reload / plan preview
  * ═════════════════════════════════════════════════════════════════ */
 
 .rio-schema-diff {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.55;
   background: var(--rio-ink-900);
   color: var(--rio-ink-100);
@@ -1495,9 +1509,9 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   font-size: var(--rio-fs-body-s);
   color: var(--rio-text-muted);
 }
-.rio-schema-reload-meta { font-size: 13px; color: var(--rio-ink-700); }
+.rio-schema-reload-meta { font-size: 12px; color: var(--rio-ink-700); }
 .rio-plan-preview {
-  font-size: 14px;
+  font-size: 13px;
   background: var(--rio-ink-900);
   color: var(--rio-ink-100);
   padding: var(--rio-s-4) var(--rio-s-5);
@@ -1525,7 +1539,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   align-items: center;
   gap: var(--rio-s-2);
   font-family: var(--rio-font-mono);
-  font-size: 15px;
+  font-size: 14px;
   color: var(--rio-ink-700);
 }
 .rio-pii-toggle {
@@ -1533,7 +1547,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border: none;
   padding: 3px var(--rio-s-1);
   color: var(--rio-text-subtle);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   border-radius: var(--rio-radius-sm);
@@ -1577,7 +1591,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-danger-title svg { width: 18px; height: 18px; flex-shrink: 0; }
 .rio-danger-hint {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--rio-danger-text);
   line-height: 1.55;
@@ -1610,4 +1624,7 @@ details > summary::-webkit-details-marker { display: none; }
     margin-right: var(--rio-s-5);
   }
   .rio-topbar { padding: var(--rio-s-3) var(--rio-s-5); }
+  /* On mobile the topbar is static, so thead can't stick relative to
+     it — reset sticky so it scrolls with the table. */
+  .rio-table thead { position: static; }
 }
