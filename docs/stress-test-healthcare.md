@@ -6,6 +6,14 @@ past a single flat table.
 
 The full worked example lives at `examples/medflow/`. This document is its lab notebook.
 
+> **Addendum — 0.9.0 Relation Intelligence Layer.** Four of the "Critical"
+> findings from §7.1 (raw-id FK columns, no inverse views, opaque delete 500,
+> no facet filtering) have been addressed by the 0.9.0 release. §7.1 entries
+> marked **[FIXED in 0.9.0]** remain visible below for historical context —
+> they are the motivation for the release. Everything in §7.2 (money
+> rendering, date localisation, enum pills, column selection, pagination,
+> NULL/empty semantics) and §7.3 (scaffolder quirks) is unchanged.
+
 ---
 
 ## 1. Project goal
@@ -213,42 +221,62 @@ reading the source and/or the admin HTML the server returned.
 These block a clinic operator from using RustIO as a day-to-day tool. They're
 not "polish" — they're the reason relational UIs exist.
 
-**1 · FK columns render as raw integers.** On `/admin/appointments`, the
-`patient_id` column is literally `<td class="rio-cell-num">11</td>`. No name,
+**1 · FK columns render as raw integers. [FIXED in 0.9.0]** On `/admin/appointments`, the
+`patient_id` column was literally `<td class="rio-cell-num">11</td>`. No name,
 no link. An operator staring at "11 · 8 · 2026-04-16T17:27 · Preventive cardio"
-has no idea which patient or which doctor that row belongs to. Every FK column
-on every list page has the same problem: you can only read the data if you
-memorise the ID↔name mapping, which defeats the purpose of a database.
+had no idea which patient or which doctor that row belonged to.
 
-**2 · No inverse-relation views.** A patient detail page at `/admin/patients/1`
-shows only the patient's own columns. It does **not** show that patient's
-appointments, prescriptions, or invoices. To answer "what has Ahmed Hassan
-been in for?" you have to: memorise his ID (`1`), go to `/admin/appointments`,
-scan 120 rows visually for `patient_id` cells containing `1`. There is no
-`?patient_id=1` filter in the UI — you'd have to craft the URL yourself and
-hope the server parses it (it doesn't; see #5).
+*Fix*: `#[rustio(belongs_to = "Patient", display = "full_name")]` on the FK
+field. The admin now renders `<a href="/admin/patients/11">Hassan Badawi</a>
+<span class="rio-cell-id">#11</span>`. If `display_field` isn't declared, the
+admin renders `#<id>` as a link — never a raw integer, never a guessed column.
 
-**3 · Search doesn't cross relations.** `/admin/appointments` has a search
-box. Typing "Ahmed Hassan" returns zero rows. The search field looks at
-in-table string columns (`reason`, `notes`) — it does not join to `patients`
-or `doctors`. The most common clinic query — "find this patient's next
-appointment" — is unanswerable from the appointments list.
+**2 · No inverse-relation views. [FIXED in 0.9.0]** A patient detail page at
+`/admin/patients/1` used to show only the patient's own columns. No
+appointments, prescriptions, or invoices.
 
-**4 · FK-constraint violations return `500 Server error`.** RustIO's pool
-correctly enforces `ON DELETE RESTRICT` at the SQL layer (good). But the
-admin's response to the violation is a generic 500 page reading *"The admin
-could not complete your request"*. No list of blocking rows ("2 doctors
-reference this department: Dr. Ahmed Abdelrahman, Dr. Sherif Gamal"), no
-offer to reassign or cascade, no hint that the problem is an FK. The
-operator now doesn't know whether their click did something, whether the
-server is broken, or whether to call IT.
+*Fix*: the edit/detail page now renders a "Related" card listing every
+`has_many` inverse with its count and a link to the filtered list:
+*"Appointments (3) · Invoices (2) · Prescriptions (2)"*. Counts only in
+v1; preview rows and in-page drill-in are documented as named extension
+points in `admin/relations.rs`.
 
-**5 · No facet filtering.** The appointments list has a domain-filter
-`<select>` on status (`scheduled / completed / …`). That's it. There is
-no built-in facet for `doctor_id`, `patient_id`, or date range. Users
-expecting "show me today's schedule for Dr. Saleh" have to go find another
-way to answer the question. Query-string overrides would need per-model
-admin configuration that isn't exposed.
+**3 · Search doesn't cross relations. [NOT yet fixed — design sketched
+in 0.9.0, implementation deferred]** `/admin/appointments` has a search
+box. Typing "Ahmed Hassan" still returns zero rows. The search field looks
+at in-table string columns (`reason`, `notes`) — it does not join to
+`patients` or `doctors`. The registry now carries the shape that would
+enable this (`ResolvedRelation.target_display_field` + `target_table`),
+and the plan lives in the `admin/relations.rs` module header: per-target
+`SELECT id FROM <target> WHERE <display> LIKE '%q%' LIMIT 200`, unioned
+into the outer list query via `<fk> IN (<ids>)`. Out of scope for this
+pass because it touches the list query builder meaningfully.
+
+**4 · FK-constraint violations return `500 Server error`. [FIXED in 0.9.0]**
+The admin used to respond to a RESTRICT-violated DELETE with a generic 500
+page reading *"The admin could not complete your request"*.
+
+*Fix*: the delete handler pre-checks every `has_many` inverse via
+`SELECT COUNT(*)`. If any blocker exists it returns **HTTP 409 Conflict**
+with a dedicated page listing every blocking relation — *"Cannot delete
+Cardiology (#1). Referenced by 2 doctors via department_id"* — plus a link
+to the filtered list on each blocker. Defence in depth: the SQLite
+`FOREIGN KEY constraint failed` error is also caught at the DELETE site
+and rendered through the same 409 page, covering the
+pre-check-then-insert race.
+
+**5 · No facet filtering. [FIXED in 0.9.0 for FKs]** The appointments list
+had only a status `<select>`. No facet for `doctor_id`, `patient_id`, or
+date range.
+
+*Fix (FKs only)*: the list toolbar now carries one `<select>` per
+`belongs_to` relation on the model, populated from the target's declared
+`display_field`. `/admin/appointments` shows Patient and Doctor dropdowns;
+`/admin/appointments?patient_id=1` filters to the 3 of 120 rows that
+match. When a target has more than 500 rows **or** no `display_field` is
+declared, the dropdown falls back to a numeric input with a visible hint
+explaining why. Date-range filters are **not** in scope for 0.9.0 and
+remain open.
 
 ### 7.2 Hurts
 

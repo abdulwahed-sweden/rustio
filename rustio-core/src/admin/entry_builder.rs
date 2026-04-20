@@ -261,6 +261,7 @@ mod tests {
             ty: FieldType::I32,
             editable: true,
             nullable: false,
+            relation: None,
         };
         let fields: &'static [AdminField] = Box::leak(vec![af].into_boxed_slice());
         let ae = AdminEntry {

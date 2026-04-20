@@ -1298,6 +1298,10 @@ fn apply_schema_shadow(p: &Primitive, schema: &mut Schema) {
                         model: r.to.clone(),
                         field: "id".to_string(),
                         kind: RelationKind::BelongsTo,
+                        // AI-planner-authored relations don't declare a
+                        // display field: the admin renders `#<id>` until
+                        // the model author opts in via the macro.
+                        display_field: None,
                     }),
                 });
             }

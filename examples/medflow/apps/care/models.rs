@@ -1,6 +1,11 @@
 use chrono::{DateTime, Utc};
 use rustio_core::{Error, Model, Row, RustioAdmin, Value};
 
+// Relation targets on other apps. Brought into scope so the
+// `#[rustio(belongs_to = "Patient")]` / `"Doctor"` compile-time
+// checks can resolve `<Target as Model>::TABLE` and `COLUMNS`.
+use crate::apps::people::models::{Doctor, Patient};
+
 // ───────────────────────────────────────────────────────────────
 // Appointment
 // ───────────────────────────────────────────────────────────────
@@ -8,7 +13,9 @@ use rustio_core::{Error, Model, Row, RustioAdmin, Value};
 #[derive(Debug, RustioAdmin)]
 pub struct Appointment {
     pub id: i64,
+    #[rustio(belongs_to = "Patient", display = "full_name")]
     pub patient_id: i64,
+    #[rustio(belongs_to = "Doctor", display = "full_name")]
     pub doctor_id: i64,
     pub scheduled_at: DateTime<Utc>,
     pub status: String,
@@ -91,8 +98,11 @@ impl Model for Appointment {
 #[derive(Debug, RustioAdmin)]
 pub struct Prescription {
     pub id: i64,
+    #[rustio(belongs_to = "Appointment", display = "reason")]
     pub appointment_id: i64,
+    #[rustio(belongs_to = "Patient", display = "full_name")]
     pub patient_id: i64,
+    #[rustio(belongs_to = "Doctor", display = "full_name")]
     pub doctor_id: i64,
     pub medication: String,
     pub dosage: String,

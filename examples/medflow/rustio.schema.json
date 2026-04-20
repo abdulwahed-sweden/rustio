@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "rustio_version": "0.3.1",
   "models": [
     {
@@ -19,7 +19,13 @@
           "name": "doctor_id",
           "type": "i64",
           "nullable": false,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Doctor",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "full_name"
+          }
         },
         {
           "name": "duration_minutes",
@@ -49,7 +55,13 @@
           "name": "patient_id",
           "type": "i64",
           "nullable": false,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Patient",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "full_name"
+          }
         },
         {
           "name": "priority",
@@ -102,7 +114,13 @@
           "name": "head_doctor_id",
           "type": "i64",
           "nullable": true,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Doctor",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "full_name"
+          }
         },
         {
           "name": "id",
@@ -143,7 +161,13 @@
           "name": "department_id",
           "type": "i64",
           "nullable": false,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Department",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "name"
+          }
         },
         {
           "name": "email",
@@ -214,7 +238,13 @@
           "name": "appointment_id",
           "type": "i64",
           "nullable": true,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Appointment",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "reason"
+          }
         },
         {
           "name": "created_at",
@@ -262,7 +292,13 @@
           "name": "patient_id",
           "type": "i64",
           "nullable": false,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Patient",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "full_name"
+          }
         },
         {
           "name": "status",
@@ -362,7 +398,13 @@
           "name": "appointment_id",
           "type": "i64",
           "nullable": false,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Appointment",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "reason"
+          }
         },
         {
           "name": "created_at",
@@ -374,7 +416,13 @@
           "name": "doctor_id",
           "type": "i64",
           "nullable": false,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Doctor",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "full_name"
+          }
         },
         {
           "name": "dosage",
@@ -422,7 +470,13 @@
           "name": "patient_id",
           "type": "i64",
           "nullable": false,
-          "editable": true
+          "editable": true,
+          "relation": {
+            "model": "Patient",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "full_name"
+          }
         },
         {
           "name": "refills_remaining",

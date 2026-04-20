@@ -912,6 +912,7 @@ fn remove_relation_primitive_is_refused_with_clear_reason() {
             model: "Applicant".into(),
             field: "id".into(),
             kind: crate::schema::RelationKind::BelongsTo,
+            display_field: None,
         }),
     });
     app.relations.push(crate::schema::SchemaRelation {

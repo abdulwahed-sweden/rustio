@@ -40,7 +40,7 @@ use crate::error::Error;
 /// Bumping this value is a **breaking** change: every consumer of the
 /// schema (including the AI layer) will refuse to load older or newer
 /// documents until they are explicitly migrated.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The complete set of type names that may appear in
 /// `SchemaField.ty`. Anything outside this set is a schema error and the
@@ -98,7 +98,7 @@ pub struct SchemaField {
     pub relation: Option<Relation>,
 }
 
-/// 0.8.0 — first-class foreign-key annotation on a field.
+/// First-class foreign-key annotation on a field.
 ///
 /// Only `belongs_to` is stored explicitly. The inverse direction
 /// (`has_many`) is *inferred* at runtime by
@@ -107,21 +107,38 @@ pub struct SchemaField {
 ///
 /// Conservative by design: if any of these fields is missing, old
 /// consumers ignore the whole `relation` key because the parent
-/// field is `Option<Relation>`. The executor never writes this shape
-/// yet — projects opt in by adding the block to `rustio.schema.json`
-/// (the 0.9.0 foreign-key enforcement pass will own the write path).
+/// field is `Option<Relation>`.
+///
+/// ## 0.9.0 write path
+///
+/// The primary writer is the `#[rustio(belongs_to = "...")]` macro
+/// attribute, which populates `AdminRelation` on the compiled model.
+/// `Schema::from_admin` copies that into `SchemaField.relation` so
+/// `rustio.schema.json` always matches the compiled types. Hand-edits
+/// to `rustio.schema.json` still work (the AI layer reads this shape),
+/// but the macro is authoritative: the next `rustio schema` overwrites
+/// any hand-added block without a matching macro attribute.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Relation {
-    /// Target model name (e.g. `"Applicant"`).
+    /// Target model name (e.g. `"Patient"`).
     pub model: String,
     /// Target field name — conventionally `"id"`, but explicit so a
     /// future release can support multi-column keys without another
     /// schema bump.
     pub field: String,
-    /// Direction marker. 0.8.0 only accepts `BelongsTo` as stored;
-    /// `HasMany` is reserved for inferred results.
+    /// Direction marker. Stored writes only accept `BelongsTo`;
+    /// `HasMany` is reserved for inferred inverse results.
     pub kind: RelationKind,
+    /// 0.9.0 — optional name of the target's column whose value should
+    /// be rendered as the human label for this foreign key in the
+    /// admin. `None` means the admin will show `#<id>` rather than
+    /// guess a column. No inference (`full_name` / `name` / `title`
+    /// fallback) is ever applied — this is opt-in on purpose so that
+    /// operators see raw IDs only when the model author has not
+    /// declared a display field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_field: Option<String>,
 }
 
 /// Typed relation direction. Kept `#[non_exhaustive]` so a later
@@ -421,15 +438,24 @@ impl SchemaModel {
 
 impl SchemaField {
     fn from_admin_field(f: &AdminField) -> Self {
+        // 0.9.0: `#[rustio(belongs_to = "Target", display = "col")]` on
+        // a struct field is the only writer the admin blessed. The
+        // compile-time `AdminRelation` carries the declaration; we copy
+        // it verbatim into the owned-string schema shape. Fields with
+        // no macro annotation stay `relation: None`, preserving
+        // byte-identical output for projects that don't use relations.
+        let relation = f.relation.map(|r| Relation {
+            model: r.model.to_string(),
+            field: "id".to_string(),
+            kind: r.kind,
+            display_field: r.display_field.map(|s| s.to_string()),
+        });
         Self {
             name: f.name.to_string(),
             ty: field_type_name(f.ty).to_string(),
             nullable: f.nullable,
             editable: f.editable,
-            // Compile-time fields don't yet carry a relation
-            // annotation — that lives in `rustio.schema.json` in 0.8.0
-            // and will move to a macro attribute in 0.8.x.
-            relation: None,
+            relation,
         }
     }
 }
@@ -486,18 +512,21 @@ mod tests {
                 ty: FieldType::I64,
                 editable: false,
                 nullable: false,
+                relation: None,
             },
             AdminField {
                 name: "title",
                 ty: FieldType::String,
                 editable: true,
                 nullable: false,
+                relation: None,
             },
             AdminField {
                 name: "published_at",
                 ty: FieldType::DateTime,
                 editable: true,
                 nullable: true,
+                relation: None,
             },
         ];
         fn singular_name() -> &'static str {
@@ -540,12 +569,14 @@ mod tests {
                 ty: FieldType::I64,
                 editable: false,
                 nullable: false,
+                relation: None,
             },
             AdminField {
                 name: "title",
                 ty: FieldType::String,
                 editable: true,
                 nullable: false,
+                relation: None,
             },
         ];
         fn singular_name() -> &'static str {
@@ -691,7 +722,7 @@ mod tests {
 
         let expected = format!(
             r#"{{
-  "version": 1,
+  "version": {sv},
   "rustio_version": "{rv}",
   "models": [
     {{
@@ -774,6 +805,7 @@ mod tests {
 }}
 "#,
             rv = env!("CARGO_PKG_VERSION"),
+            sv = SCHEMA_VERSION,
         );
 
         assert_eq!(actual, expected);

@@ -7,6 +7,129 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.9.0 Relation Intelligence Layer
+
+The admin stops treating foreign keys as anonymous integers. This is a
+framework-level feature — the runtime registry, compile-time macro
+validation, and every admin rendering / filter / delete-guard hook all
+read from the same declarative source (`#[rustio(belongs_to = "...")]`
+on a struct field). Additive: projects without annotations continue to
+render and behave exactly like 0.8.x.
+
+#### Schema
+
+- `Relation.display_field: Option<String>` — optional column on the
+  target whose value the admin renders as the human label for a FK.
+  `None` → admin renders `#<id>` and **never guesses** a column. No
+  inference, no fallback chain.
+- `SCHEMA_VERSION` bumped `1` → `2`. Additive (new optional field,
+  `#[serde(default)]` + `skip_serializing_if = "Option::is_none"`), so
+  0.8.x tools still parse the new schema — they just ignore the
+  `display_field` key.
+
+#### Macro (`#[derive(RustioAdmin)]`)
+
+- New field attribute: `#[rustio(belongs_to = "Model")]` and
+  `#[rustio(belongs_to = "Model", display = "column")]`.
+- **Two compile-time checks** per declaration:
+  1. The target type must exist and implement `Model` (forces
+     `<Target as Model>::TABLE` resolution — unknown targets fail the
+     build with Rust's normal "cannot find type" error).
+  2. When `display = "col"` is set, `col` must appear in the target's
+     `Model::COLUMNS`. Verified via a `const _: ()` assertion using
+     a byte-wise `const fn str_eq` — missing column fails at
+     const-eval with a readable message including the offending field
+     name.
+- The attribute is only legal on `i32` / `i64` fields; any other type
+  produces a compile error at the derive site.
+- `#[rustio(display = "…")]` without `belongs_to = "…"` is rejected.
+- Unknown keys inside `#[rustio(...)]` are rejected.
+
+#### Runtime — `admin/relations.rs`
+
+- New module `rustio_core::admin::relations`:
+  - `RelationRegistry` built pure-functionally from `&Schema`. No I/O,
+    no interior mutability, no background refresh.
+  - `ResolvedRelation { source_model, source_field, target_model,
+    target_table, target_admin_name, target_display_field, kind }`.
+  - `InverseRelation { source_model, source_table, source_admin_name,
+    source_display_name, source_field, target_model }`.
+  - `RegistryError::UnknownTarget` / `UnknownDisplayField` — surfaced
+    by `validate(&schema)` for hand-edited `rustio.schema.json` files
+    that reach past the macro's compile-time checks.
+  - `RELATION_FILTER_DROPDOWN_CAP = 500` — soft cap on filter
+    dropdown size.
+- `AdminRelation` (runtime mirror of `schema::Relation`) on
+  `AdminField`. Populated by the macro; consumed by
+  `SchemaField::from_admin_field` so `rustio schema` output always
+  matches the compiled types.
+
+#### Admin rendering (list + detail)
+
+- FK columns on list pages render as
+  `<a href="/admin/<target>/<id>">Display</a> <span>#id</span>` when
+  a `display_field` resolves.
+- Missing target row (stale schema, deleted row) or no `display_field`
+  declared: renders `<a href="...">#<id></a>` — link without name,
+  **never the raw integer**.
+- Label prefetch: one `SELECT id, display FROM target WHERE id IN (…)`
+  per FK column per list render — 1+K queries total, not N+1.
+  **v1 strategy; marked in code as a future JOIN optimisation point.**
+- Edit page shows a `Linked: <Name> (#id)` hint below every FK input.
+  Input itself stays numeric in this pass.
+
+#### Admin — inverse relation panels (Phase 4)
+
+- Edit page renders a "Related" card listing every `has_many` inverse
+  of the current model: `Appointments (12) · Invoices (3)`. Each card
+  links to the filtered list page. Counts only; future evolution
+  (preview rows, in-page drill-in) documented as extension points.
+
+#### Admin — relation-aware filters (Phase 5)
+
+- List toolbar carries one `<select>` per `belongs_to` relation on
+  the model, populated via `SELECT id, display FROM target ORDER BY
+  display LIMIT 501`.
+- When the target row count ≥ 500 or no `display_field` is declared,
+  the filter falls back to a numeric input with a visible muted-text
+  hint explaining which case fired. Cap value is
+  `relations::RELATION_FILTER_DROPDOWN_CAP`.
+- Query string support: `/admin/appointments?patient_id=7` filters
+  the in-memory list. Reset button clears all relation filters.
+
+#### Admin — FK-aware delete guard (Phase 6)
+
+- `POST /admin/<slug>/<id>/delete` pre-checks every `has_many` inverse
+  via `SELECT COUNT(*)`. If any count > 0, the admin returns
+  **HTTP 409 Conflict** with a page listing every blocker (model
+  name + count + link to the filtered list) instead of the previous
+  opaque 500.
+- Defence in depth: a SQLite FK constraint violation surfacing through
+  the driver (`"FOREIGN KEY constraint failed"`) is caught at the
+  DELETE site and rendered through the same 409 page, covering the
+  pre-check→delete race window.
+
+#### Example — `examples/medflow/`
+
+- Every FK column across `apps/{people,care,billing}/models.rs`
+  carries a `#[rustio(belongs_to, display)]` annotation.
+- `rustio.schema.json` regenerates with relation metadata on all 8
+  FKs.
+- Live admin:
+  - `/admin/appointments` renders `Ahmed Hassan (#23)` instead of `23`.
+  - `/admin/patients/1/edit` shows `Appointments (3) · Invoices (2) ·
+    Prescriptions (2)`.
+  - `/admin/appointments?patient_id=1` filters the list to 3 of 120.
+  - Deleting Cardiology (has 2 doctors) returns 409 with blockers
+    listed.
+
+#### Tests
+
+- `rustio-core`: 12 new tests in `admin/relations_tests.rs` covering
+  serde round-trip, registry indexing, inverse computation, dangling-
+  target and unknown-display-field handling, empty-schema safety, and
+  iteration determinism. Total 415 (up from 403).
+
 ### Added — 0.8.0 Relations Layer (Foundational)
 
 First pass at first-class relations. Additive only — existing schemas,

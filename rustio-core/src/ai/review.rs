@@ -823,6 +823,7 @@ fn apply_shadow_for_review(p: &Primitive, schema: &mut Schema) {
                             model: r.to.clone(),
                             field: "id".to_string(),
                             kind: RelationKind::BelongsTo,
+                            display_field: None,
                         }),
                     });
                     model.fields.sort_by(|a, b| a.name.cmp(&b.name));

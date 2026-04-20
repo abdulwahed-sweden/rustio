@@ -11,6 +11,7 @@ pub struct Department {
     pub name: String,
     pub code: String,
     pub is_active: bool,
+    #[rustio(belongs_to = "Doctor", display = "full_name")]
     pub head_doctor_id: Option<i64>,
     pub created_at: DateTime<Utc>,
 }
@@ -68,6 +69,7 @@ pub struct Doctor {
     pub id: i64,
     pub full_name: String,
     pub specialty: String,
+    #[rustio(belongs_to = "Department", display = "name")]
     pub department_id: i64,
     pub license_no: String,
     pub email: String,

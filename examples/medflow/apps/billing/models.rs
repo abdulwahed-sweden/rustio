@@ -1,6 +1,12 @@
 use chrono::{DateTime, Utc};
 use rustio_core::{Error, Model, Row, RustioAdmin, Value};
 
+// Relation targets on other apps. Brought into scope so the
+// `#[rustio(belongs_to = "...")]` compile-time checks can resolve
+// `<Target as Model>::TABLE` and `COLUMNS`.
+use crate::apps::care::models::Appointment;
+use crate::apps::people::models::Patient;
+
 // ───────────────────────────────────────────────────────────────
 // Invoice
 // ───────────────────────────────────────────────────────────────
@@ -9,7 +15,9 @@ use rustio_core::{Error, Model, Row, RustioAdmin, Value};
 pub struct Invoice {
     pub id: i64,
     pub invoice_number: String,
+    #[rustio(belongs_to = "Patient", display = "full_name")]
     pub patient_id: i64,
+    #[rustio(belongs_to = "Appointment", display = "reason")]
     pub appointment_id: Option<i64>,
     pub amount_cents: i64,
     pub currency: String,

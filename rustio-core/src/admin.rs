@@ -38,11 +38,14 @@ pub mod audit;
 pub mod design;
 pub mod entry_builder;
 pub mod intelligence;
+pub mod relations;
 pub mod schema_cache;
 pub mod suggestions;
 
 #[cfg(test)]
 mod admin_intelligence_tests;
+#[cfg(test)]
+mod relations_tests;
 #[cfg(test)]
 mod suggestions_tests;
 
@@ -70,12 +73,43 @@ pub enum FieldType {
 ///   - the DB column is allowed to be `NULL`;
 ///   - the admin form accepts an empty value and stores it as `NULL`;
 ///   - the schema exports it as `"nullable": true`.
+///
+/// `relation` carries compile-time relation metadata when the source
+/// field is annotated with `#[rustio(belongs_to = "...")]`. `None`
+/// means the field is a plain column; the admin renders it using the
+/// `ty` rules. When `Some`, the [`crate::admin::relations`] registry
+/// resolves and renders the foreign key.
 #[derive(Debug, Clone, Copy)]
 pub struct AdminField {
     pub name: &'static str,
     pub ty: FieldType,
     pub editable: bool,
     pub nullable: bool,
+    pub relation: Option<AdminRelation>,
+}
+
+/// Compile-time mirror of [`crate::schema::Relation`]. Uses `&'static
+/// str` so the whole thing is `const`-constructible by the
+/// `#[derive(RustioAdmin)]` macro and can live inside the
+/// `AdminField`-typed `const FIELDS` slice without a runtime allocation.
+///
+/// Converted into the owned-string [`crate::schema::Relation`] by
+/// [`crate::schema::SchemaField::from_admin_field`] so every downstream
+/// consumer (schema export, AI layer, relation registry) reads the same
+/// declarative shape.
+#[derive(Debug, Clone, Copy)]
+pub struct AdminRelation {
+    /// `RelationKind::BelongsTo` is the only variant emitted by the
+    /// macro today. `HasMany` is computed inversely at runtime by
+    /// [`crate::schema::Schema::incoming_relations`] and the registry.
+    pub kind: crate::schema::RelationKind,
+    /// Target model's `singular_name` — e.g. `"Patient"`, matching the
+    /// type name the user wrote in `#[rustio(belongs_to = "Patient")]`.
+    pub model: &'static str,
+    /// Optional column name on the target whose value should be shown
+    /// in place of the raw FK ID. `None` ⇒ the admin renders `#<id>`.
+    /// Never inferred — opt-in only.
+    pub display_field: Option<&'static str>,
 }
 
 pub trait AdminModel: Model {
@@ -126,36 +160,42 @@ pub const USER_FIELDS: &[AdminField] = &[
         ty: FieldType::I64,
         editable: false,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "email",
         ty: FieldType::String,
         editable: true,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "password_hash",
         ty: FieldType::String,
         editable: false,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "is_active",
         ty: FieldType::Bool,
         editable: true,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "role",
         ty: FieldType::String,
         editable: true,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "created_at",
         ty: FieldType::DateTime,
         editable: false,
         nullable: false,
+        relation: None,
     },
 ];
 
@@ -663,6 +703,17 @@ where
             let status_options = distinct_values::<T>(&all_items, "status");
             let priority_options = distinct_values::<T>(&all_items, "priority");
 
+            // Relation-aware filters (Phase 5): one entry per FK
+            // column on the model. Each either renders a dropdown
+            // (target ≤ 500 rows AND declares display_field) or a
+            // numeric fallback input with a clear hint.
+            let registry = current_registry();
+            let relation_filter_states = if registry.is_empty() {
+                Vec::new()
+            } else {
+                build_relation_filters::<T>(&db, &registry, &query).await
+            };
+
             // In-memory filter. Fine for the dev admin's typical row
             // counts; graduates to DB WHERE clauses when a project adds
             // an index or pagination layer.
@@ -678,6 +729,20 @@ where
                         let v = item.field_display("status").unwrap_or_default();
                         if &v != s {
                             return false;
+                        }
+                    }
+                    // Relation-aware equality filter: if the user
+                    // asked for ?patient_id=7, drop rows whose FK
+                    // value doesn't match. Applied before sort so the
+                    // result count reflects the filtered set.
+                    for rel in &relation_filter_states {
+                        if let Some(wanted) = rel.current_value {
+                            let actual = item
+                                .field_display(&rel.field_name)
+                                .and_then(|s| s.parse::<i64>().ok());
+                            if actual != Some(wanted) {
+                                return false;
+                            }
                         }
                     }
                     if let Some(p) = &priority {
@@ -707,9 +772,26 @@ where
                 priority: priority.as_deref(),
                 priority_options: &priority_options,
                 sort: sort.as_deref(),
+                relation_filters: &relation_filter_states,
             };
 
-            Ok::<Response, Error>(list_response::<T>(shell, &filtered, total, filters))
+            // Relation layer (0.9.0): FK label prefetch uses the same
+            // registry we built above for filters. Missing schema
+            // file or no declared relations → empty registry → zero
+            // extra queries and the page renders exactly like
+            // pre-0.9.0.
+            let fk_labels = if registry.is_empty() {
+                FkLabels::new()
+            } else {
+                fetch_fk_labels::<T>(&db, &filtered, &registry).await
+            };
+            let cell_ctx = CellCtx {
+                registry: &registry,
+                fk_labels: &fk_labels,
+            };
+            Ok::<Response, Error>(list_response::<T>(
+                shell, &filtered, total, filters, &cell_ctx,
+            ))
         }
     });
 
@@ -722,7 +804,16 @@ where
                 return Ok(resp);
             }
             let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
-            Ok::<Response, Error>(form_response::<T>(shell, FormMode::Create))
+            // No item yet → relation ctx is empty; create form has
+            // nothing to resolve and no inverse relations to count.
+            let cell_ctx = CellCtx::empty();
+            let inverse_counts = std::collections::HashMap::new();
+            Ok::<Response, Error>(form_response::<T>(
+                shell,
+                FormMode::Create,
+                &cell_ctx,
+                &inverse_counts,
+            ))
         }
     });
 
@@ -786,9 +877,30 @@ where
             let id = parse_id_param(&params)?;
             let item = T::find(&db, id).await?.ok_or(Error::NotFound)?;
             let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
+            // Prefetch FK labels for this single row so the edit-
+            // page "linked: <Name>" hint and any inverse-panel
+            // counts (Phase 4) render without N+1 queries.
+            let registry = current_registry();
+            let items_ref: Vec<&T> = vec![&item];
+            let fk_labels = if registry.is_empty() {
+                FkLabels::new()
+            } else {
+                fetch_fk_labels::<T>(&db, &items_ref, &registry).await
+            };
+            let inverse_counts = if registry.is_empty() {
+                std::collections::HashMap::new()
+            } else {
+                fetch_inverse_counts(&db, T::singular_name(), id, &registry).await
+            };
+            let cell_ctx = CellCtx {
+                registry: &registry,
+                fk_labels: &fk_labels,
+            };
             Ok::<Response, Error>(form_response::<T>(
                 shell,
                 FormMode::Edit { id, item: &item },
+                &cell_ctx,
+                &inverse_counts,
             ))
         }
     });
@@ -857,8 +969,10 @@ where
     });
 
     let delete_db = db.clone();
+    let delete_entries = entries.clone();
     router = router.post(&delete_path, move |req, params| {
         let db = delete_db.clone();
+        let entries = delete_entries.clone();
         async move {
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
@@ -880,7 +994,61 @@ where
                 None => String::new(),
             };
 
-            T::delete(&db, id).await?;
+            // Phase 6 — delete guard. For every `has_many` inverse
+            // pointing at this row, count blockers. If any exist,
+            // refuse the delete and render a 409 page with a
+            // per-blocker breakdown + links to filtered lists.
+            let registry = current_registry();
+            if !registry.is_empty() {
+                let counts =
+                    fetch_inverse_counts(&db, T::singular_name(), id, &registry).await;
+                let blockers: Vec<(&relations::InverseRelation, i64)> = registry
+                    .has_many(T::singular_name())
+                    .iter()
+                    .filter_map(|inv| {
+                        let key = format!("{}.{}", inv.source_model, inv.source_field);
+                        counts.get(&key).copied().filter(|n| *n > 0).map(|n| (inv, n))
+                    })
+                    .collect();
+                if !blockers.is_empty() {
+                    let shell =
+                        Shell::from_ctx(&entries, Some(T::ADMIN_NAME), &ctx);
+                    return Ok::<Response, Error>(render_delete_blocked_page::<T>(
+                        &shell, id, &primary, &blockers,
+                    ));
+                }
+            }
+
+            // Execute the delete. Defence in depth: SQLite's FK
+            // enforcement still runs (a new reference could have
+            // landed between the pre-check and this line); catch
+            // that specific failure and render the same 409 page
+            // instead of a generic 500.
+            if let Err(e) = T::delete(&db, id).await {
+                if is_foreign_key_violation(&e) {
+                    let registry = current_registry();
+                    let counts =
+                        fetch_inverse_counts(&db, T::singular_name(), id, &registry).await;
+                    let blockers: Vec<(&relations::InverseRelation, i64)> = registry
+                        .has_many(T::singular_name())
+                        .iter()
+                        .filter_map(|inv| {
+                            let key = format!("{}.{}", inv.source_model, inv.source_field);
+                            counts
+                                .get(&key)
+                                .copied()
+                                .filter(|n| *n > 0)
+                                .map(|n| (inv, n))
+                        })
+                        .collect();
+                    let shell =
+                        Shell::from_ctx(&entries, Some(T::ADMIN_NAME), &ctx);
+                    return Ok::<Response, Error>(render_delete_blocked_page::<T>(
+                        &shell, id, &primary, &blockers,
+                    ));
+                }
+                return Err(e);
+            }
 
             audit::record(
                 &db,
@@ -1804,6 +1972,34 @@ struct ListFilters<'a> {
     /// Current sort mode (`newest` | `oldest` | `id_asc` | `id_desc`).
     /// `None` → default (newest first).
     sort: Option<&'a str>,
+    /// Phase 5 — one entry per `belongs_to` relation owned by the
+    /// model, carrying either a dropdown option list or a signal to
+    /// render a numeric fallback input.
+    relation_filters: &'a [RelationFilterState],
+}
+
+/// Phase 5 — how one relation-aware filter should render. Assembled
+/// by the list handler per request and consumed by the toolbar.
+struct RelationFilterState {
+    /// FK column name on the source model (e.g. `"patient_id"`).
+    field_name: String,
+    /// Human-readable label shown above the control (e.g. `"Patient"`).
+    label: String,
+    /// Currently-selected FK value pulled from the query string.
+    current_value: Option<i64>,
+    /// Rendering mode — determined by the row count of the target.
+    mode: RelationFilterMode,
+}
+
+enum RelationFilterMode {
+    /// Target has at most [`relations::RELATION_FILTER_DROPDOWN_CAP`]
+    /// rows AND declares a `display_field`. The dropdown lists
+    /// `(id, display)` pairs.
+    Dropdown { options: Vec<(i64, String)> },
+    /// Either too many rows or no `display_field` declared — the
+    /// admin renders a numeric input instead. `too_many` toggles the
+    /// hint copy so an operator knows *why* they got the fallback.
+    Numeric { too_many: bool },
 }
 
 impl ListFilters<'_> {
@@ -1812,6 +2008,10 @@ impl ListFilters<'_> {
             || self.status.is_some()
             || self.priority.is_some()
             || self.sort.is_some()
+            || self
+                .relation_filters
+                .iter()
+                .any(|r| r.current_value.is_some())
     }
 }
 
@@ -1825,11 +2025,263 @@ const SORT_OPTIONS: &[(&str, &str)] = &[
     ("id_desc", "ID ↓"),
 ];
 
+// ---------------------------------------------------------------------------
+// Relation resolution helpers
+// ---------------------------------------------------------------------------
+
+/// Map keyed by FK field name → (referenced id → display label).
+/// Built once per list/detail render by [`fetch_fk_labels`]. An empty
+/// outer map, or a missing inner entry, is the "fall back to #<id>"
+/// signal to the renderer — no display_field was declared, or the
+/// target row has been deleted, or the prefetch query failed. The
+/// renderer never panics on a missing lookup.
+type FkLabels = std::collections::HashMap<String, std::collections::HashMap<i64, String>>;
+
+/// Bundle passed into [`render_cell`] so it can resolve foreign-key
+/// columns without further DB work. Construction sites own the
+/// registry and the prefetched labels.
+struct CellCtx<'a> {
+    registry: &'a relations::RelationRegistry,
+    fk_labels: &'a FkLabels,
+}
+
+impl CellCtx<'_> {
+    /// An empty context — registry with no relations, no labels.
+    /// Used by tests and by call sites that haven't yet plumbed the
+    /// registry through. Renders behave exactly like the pre-0.9.0
+    /// admin (every FK column is a raw number).
+    fn empty() -> CellCtx<'static> {
+        static EMPTY_REG: std::sync::OnceLock<relations::RelationRegistry> =
+            std::sync::OnceLock::new();
+        static EMPTY_LABELS: std::sync::OnceLock<FkLabels> = std::sync::OnceLock::new();
+        CellCtx {
+            registry: EMPTY_REG.get_or_init(relations::RelationRegistry::empty),
+            fk_labels: EMPTY_LABELS.get_or_init(std::collections::HashMap::new),
+        }
+    }
+}
+
+/// Snapshot the current registry from the in-memory schema cache.
+/// Cheap: HashMap construction over a handful of models. Called on
+/// every admin list / detail / delete handler that needs relation
+/// awareness; no background task, no persistent cache.
+fn current_registry() -> relations::RelationRegistry {
+    match schema_cache::snapshot() {
+        Some(c) => relations::RelationRegistry::from_schema(&c.schema),
+        None => relations::RelationRegistry::empty(),
+    }
+}
+
+/// Prefetch display labels for every `belongs_to` relation owned by
+/// `T` whose target declares a `display_field`. Emits one `SELECT`
+/// per FK column; IDs are collected from the current result set,
+/// deduplicated, and batched into an `IN (…)` clause.
+///
+/// ## v1-NOTE — query strategy
+///
+/// This is a 1-plus-K strategy: one list query plus K single-column
+/// FK lookups, where K is the number of FK columns on the model that
+/// carry a `display_field`. Fine for realistic row counts and avoids
+/// N+1. The first future optimisation is to rewrite the list query as
+/// a `LEFT JOIN` onto every target carrying a display_field,
+/// projecting `display_field` as an aliased column and collapsing
+/// every round-trip into one. That change requires reworking the
+/// list query builder, which is out of scope for this pass.
+/// Dependent-reference counts per inverse relation for one target row.
+/// Keyed by source-field qualified id: `"<source_model>.<source_field>"`.
+/// Used by both the Phase 4 inverse panel renderer and the Phase 6
+/// delete guard — they ask the same question ("how many rows point
+/// at this one?") and share the same map.
+type InverseCounts = std::collections::HashMap<String, i64>;
+
+/// Count every row that holds a foreign key into `(target_model,
+/// target_id)`. Issues **one `SELECT COUNT(*)` per incoming edge**;
+/// the result is small (a handful of i64s) and cached into
+/// [`InverseCounts`] for the rest of the request.
+///
+/// v1-NOTE: per-edge counting is the simplest correct shape. A
+/// future version could batch these into a single UNION query or
+/// push the counts into the existing list query as aggregated
+/// sub-selects — same optimisation space as FK label prefetch.
+async fn fetch_inverse_counts(
+    db: &Db,
+    target_model: &str,
+    target_id: i64,
+    registry: &relations::RelationRegistry,
+) -> InverseCounts {
+    use sqlx::Row;
+    let mut out: InverseCounts = std::collections::HashMap::new();
+    for inv in registry.has_many(target_model) {
+        let sql = format!(
+            "SELECT COUNT(*) AS rio_count FROM \"{table}\" WHERE \"{col}\" = ?",
+            table = inv.source_table,
+            col = inv.source_field,
+        );
+        let row = match sqlx::query(&sql).bind(target_id).fetch_one(db.pool()).await {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let count: i64 = row.try_get::<i64, _>("rio_count").unwrap_or_default();
+        out.insert(
+            format!("{}.{}", inv.source_model, inv.source_field),
+            count,
+        );
+    }
+    out
+}
+
+/// Build one [`RelationFilterState`] per `belongs_to` relation on `T`.
+/// Issues **one `SELECT id, <display> FROM <target> LIMIT cap+1` per
+/// relation**. When the result hits `cap+1` rows the state falls
+/// back to numeric-input mode and the admin renders the hint
+/// explaining why. When the target has no declared `display_field`,
+/// we also fall back to numeric input because there is no safe label
+/// to render.
+async fn build_relation_filters<T: AdminModel>(
+    db: &Db,
+    registry: &relations::RelationRegistry,
+    query: &FormData,
+) -> Vec<RelationFilterState> {
+    use sqlx::Row;
+    let mut out: Vec<RelationFilterState> = Vec::new();
+    let cap = relations::RELATION_FILTER_DROPDOWN_CAP;
+    for resolved in registry.belongs_to_of(T::singular_name()) {
+        // Pull the currently-selected id from the query string.
+        let current_value = query
+            .get(&resolved.source_field)
+            .and_then(|v| v.parse::<i64>().ok());
+
+        // Determine the mode.
+        let mode = match &resolved.target_display_field {
+            None => RelationFilterMode::Numeric { too_many: false },
+            Some(display_col) => {
+                // LIMIT cap+1 so we can detect "above cap" without a
+                // separate COUNT query.
+                let sql = format!(
+                    "SELECT id AS rio_id, \"{col}\" AS rio_label FROM \"{table}\" ORDER BY \"{col}\" ASC LIMIT {lim}",
+                    col = display_col,
+                    table = resolved.target_table,
+                    lim = cap + 1,
+                );
+                let rows = match sqlx::query(&sql).fetch_all(db.pool()).await {
+                    Ok(r) => r,
+                    Err(_) => {
+                        // Degrade: SQL failure → numeric fallback.
+                        out.push(RelationFilterState {
+                            field_name: resolved.source_field.clone(),
+                            label: resolved.target_model.clone(),
+                            current_value,
+                            mode: RelationFilterMode::Numeric { too_many: false },
+                        });
+                        continue;
+                    }
+                };
+                if rows.len() > cap {
+                    RelationFilterMode::Numeric { too_many: true }
+                } else {
+                    let options: Vec<(i64, String)> = rows
+                        .into_iter()
+                        .map(|row| {
+                            let id: i64 = row.try_get::<i64, _>("rio_id").unwrap_or_default();
+                            let label: String = row
+                                .try_get::<String, _>("rio_label")
+                                .or_else(|_| {
+                                    row.try_get::<i64, _>("rio_label").map(|n| n.to_string())
+                                })
+                                .or_else(|_| {
+                                    row.try_get::<i32, _>("rio_label").map(|n| n.to_string())
+                                })
+                                .unwrap_or_default();
+                            (id, label)
+                        })
+                        .collect();
+                    RelationFilterMode::Dropdown { options }
+                }
+            }
+        };
+
+        out.push(RelationFilterState {
+            field_name: resolved.source_field.clone(),
+            label: resolved.target_model.clone(),
+            current_value,
+            mode,
+        });
+    }
+    out
+}
+
+async fn fetch_fk_labels<T: AdminModel>(
+    db: &Db,
+    items: &[&T],
+    registry: &relations::RelationRegistry,
+) -> FkLabels {
+    use sqlx::Row;
+    let mut out: FkLabels = std::collections::HashMap::new();
+    let source_model = T::singular_name();
+    for f in T::FIELDS {
+        let Some(resolved) = registry.belongs_to(source_model, f.name) else {
+            continue;
+        };
+        let Some(display_col) = &resolved.target_display_field else {
+            // No display_field declared for this relation. Don't
+            // query — the renderer will fall back to #<id> and
+            // explicit-is-better-than-implicit stops us from guessing
+            // a column name.
+            continue;
+        };
+        // Collect distinct ids; drop empty / unparseable values.
+        let mut ids: Vec<i64> = items
+            .iter()
+            .filter_map(|it| it.field_display(f.name))
+            .filter_map(|s| s.parse::<i64>().ok())
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        if ids.is_empty() {
+            continue;
+        }
+        // SQLite's default max parameter count is 32766, so batching
+        // any realistic list of ids fits in a single query.
+        let placeholders: Vec<&'static str> = ids.iter().map(|_| "?").collect();
+        let sql = format!(
+            "SELECT id AS rio_id, \"{col}\" AS rio_label FROM \"{table}\" WHERE id IN ({ph})",
+            col = display_col,
+            table = resolved.target_table,
+            ph = placeholders.join(","),
+        );
+        let mut q = sqlx::query(&sql);
+        for id in &ids {
+            q = q.bind(id);
+        }
+        let rows = match q.fetch_all(db.pool()).await {
+            Ok(r) => r,
+            // Degrade silently on any SQL error. The renderer falls
+            // back to #<id>; failing a whole list page over one bad
+            // display-field would be a net regression.
+            Err(_) => continue,
+        };
+        let mut map: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
+        for row in rows {
+            let id: i64 = row.try_get::<i64, _>("rio_id").unwrap_or_default();
+            let label: String = row
+                .try_get::<String, _>("rio_label")
+                .or_else(|_| row.try_get::<i64, _>("rio_label").map(|n| n.to_string()))
+                .or_else(|_| row.try_get::<i32, _>("rio_label").map(|n| n.to_string()))
+                .or_else(|_| row.try_get::<bool, _>("rio_label").map(|b| b.to_string()))
+                .unwrap_or_default();
+            map.insert(id, label);
+        }
+        out.insert(f.name.to_string(), map);
+    }
+    out
+}
+
 fn list_response<T: AdminModel>(
     shell: Shell<'_>,
     items: &[&T],
     total: usize,
     filters: ListFilters<'_>,
+    cell_ctx: &CellCtx<'_>,
 ) -> Response {
     let count = items.len();
     let singular = T::singular_name();
@@ -1901,7 +2353,7 @@ fn list_response<T: AdminModel>(
                 .map(|item| {
                     let cells: String = T::FIELDS
                         .iter()
-                        .map(|f| render_cell::<T>(f, *item))
+                        .map(|f| render_cell::<T>(f, *item, cell_ctx))
                         .collect();
                     let id = item.id();
                     // Icon + label actions — obvious to non-technical
@@ -1993,6 +2445,68 @@ update();
 /// Render the search + filters + submit/reset toolbar. Posts as a GET
 /// to the same list URL, so the current filter state is carried in the
 /// URL and bookmarkable.
+/// Render one relation-aware filter control. Dropdown when the
+/// target carries a `display_field` and fits under the cap; numeric
+/// input otherwise (with a hint explaining why).
+fn render_relation_filter_control(state: &RelationFilterState) -> String {
+    let field = escape_html(&state.field_name);
+    let label = escape_html(&state.label);
+    match &state.mode {
+        RelationFilterMode::Dropdown { options } => {
+            let placeholder = format!("All {}", state.label.to_lowercase());
+            let options_html: String = std::iter::once(format!(
+                r#"<option value="">{}</option>"#,
+                escape_html(&placeholder),
+            ))
+            .chain(options.iter().map(|(id, display)| {
+                let selected = state.current_value == Some(*id);
+                let mark = if selected { " selected" } else { "" };
+                format!(
+                    r#"<option value="{id}"{mark}>{display}</option>"#,
+                    id = id,
+                    mark = mark,
+                    display = escape_html(display),
+                )
+            }))
+            .collect();
+            format!(
+                r#"<select class="rio-select" name="{field}" aria-label="Filter by {label}">{options_html}</select>"#,
+            )
+        }
+        RelationFilterMode::Numeric { too_many } => {
+            let current = state
+                .current_value
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            // Two different hints so the operator knows the reason
+            // for the numeric fallback: too many target rows to
+            // dropdown, vs. no display_field declared on the target.
+            let hint = if *too_many {
+                format!(
+                    r#"<span class="rio-field-hint">Too many options for a dropdown — enter the {label} ID directly.</span>"#,
+                    label = label,
+                )
+            } else {
+                format!(
+                    r#"<span class="rio-field-hint">No display field declared for {label} — enter the ID directly.</span>"#,
+                    label = label,
+                )
+            };
+            format!(
+                r#"<label class="rio-field" style="display:inline-flex; gap:var(--rio-s-1); align-items:center; margin:0">\
+<span class="rio-field-label">{label} ID</span>\
+<input class="rio-input" type="number" name="{field}" value="{current}" style="width:140px" aria-label="Filter by {label} id">\
+{hint}\
+</label>"#,
+                label = label,
+                field = field,
+                current = escape_html(&current),
+                hint = hint,
+            )
+        }
+    }
+}
+
 fn render_list_toolbar<T: AdminModel>(
     filters: &ListFilters<'_>,
     shown: usize,
@@ -2050,6 +2564,16 @@ fn render_list_toolbar<T: AdminModel>(
     } else {
         String::new()
     };
+
+    // Phase 5 — relation-aware filters. Each belongs_to on the model
+    // renders as either a dropdown (target ≤ 500 rows) or a numeric
+    // fallback input. The toolbar form submits `?<field>=<id>` which
+    // the list handler then parses back.
+    let relation_filters_html: String = filters
+        .relation_filters
+        .iter()
+        .map(render_relation_filter_control)
+        .collect();
 
     let reset_btn = if filters.is_active() {
         format!(
@@ -2115,6 +2639,7 @@ fn render_list_toolbar<T: AdminModel>(
 </div>
 {status}
 {priority}
+{relations}
 {sort}
 <div class="rio-toolbar-actions">
 <button type="submit" class="rio-btn">{submit_icon}<span>Search</span></button>
@@ -2130,6 +2655,7 @@ fn render_list_toolbar<T: AdminModel>(
         intent = intent_badge,
         status = status_select,
         priority = priority_select,
+        relations = relation_filters_html,
         sort = sort_select,
         submit_icon = icon_search(),
         reset = reset_btn,
@@ -2195,13 +2721,54 @@ fn status_pill_class(value: &str) -> &'static str {
 /// type. Designed for scanning: id monospace-muted, primary column
 /// bolded, bools + status strings become pills, nullable empties
 /// render as a subtle em-dash.
-fn render_cell<T: AdminModel>(f: &AdminField, item: &T) -> String {
+///
+/// Relation-aware: when the field carries `#[rustio(belongs_to =
+/// "…")]` metadata and the registry has prefetched a display label,
+/// the cell renders as a link to the target plus the muted `#<id>`.
+/// When `display_field` is not declared, the cell renders `#<id>` as
+/// a link. No label inference is ever attempted.
+fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> String {
     let value = item.field_display(f.name).unwrap_or_default();
     if f.name == "id" {
         return format!(r#"<td class="rio-cell-id">#{}</td>"#, escape_html(&value));
     }
     if value.is_empty() && f.nullable {
         return r#"<td class="rio-cell-muted">—</td>"#.to_string();
+    }
+    // Relation branch: if this field is a FK to another model, render
+    // a link to the target admin page plus the id. Uses the prefetched
+    // label map; never re-queries the DB here.
+    if let Some(resolved) = ctx.registry.belongs_to(T::singular_name(), f.name) {
+        if let Ok(id) = value.parse::<i64>() {
+            let label = ctx.fk_labels.get(f.name).and_then(|m| m.get(&id));
+            let admin = escape_html(&resolved.target_admin_name);
+            return match (label, &resolved.target_display_field) {
+                // Best case: label resolved, render name + muted id.
+                (Some(name), _) => format!(
+                    r#"<td class="rio-cell-muted"><a href="/admin/{admin}/{id}">{name}</a> <span class="rio-cell-id">#{id}</span></td>"#,
+                    admin = admin,
+                    id = id,
+                    name = escape_html(name),
+                ),
+                // display_field declared but target missing (deleted
+                // row, stale schema). Link still works — the target
+                // admin will produce a 404.
+                (None, Some(_)) => format!(
+                    r#"<td class="rio-cell-muted"><a href="/admin/{admin}/{id}">#{id}</a></td>"#,
+                    admin = admin,
+                    id = id,
+                ),
+                // No display_field declared → explicit #<id> with
+                // link. We never guess a column.
+                (None, None) => format!(
+                    r#"<td class="rio-cell-muted"><a href="/admin/{admin}/{id}">#{id}</a></td>"#,
+                    admin = admin,
+                    id = id,
+                ),
+            };
+        }
+        // FK column but the value didn't parse as an i64. Fall
+        // through to the default numeric render.
     }
     // Sensitive fields (personnummer, email under GDPR, patient_id under
     // healthcare, …) are masked by default; a tiny inline toggle
@@ -2268,7 +2835,12 @@ enum FormMode<'a, T: AdminModel> {
     Edit { id: i64, item: &'a T },
 }
 
-fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Response {
+fn form_response<T: AdminModel>(
+    shell: Shell<'_>,
+    mode: FormMode<'_, T>,
+    cell_ctx: &CellCtx<'_>,
+    inverse_counts: &InverseCounts,
+) -> Response {
     let plural = T::DISPLAY_NAME;
     let singular = T::singular_name();
     let admin_name = T::ADMIN_NAME;
@@ -2300,6 +2872,7 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
                     FormMode::Create => None,
                     FormMode::Edit { item, .. } => Some(*item),
                 },
+                cell_ctx,
             )
         })
         .collect();
@@ -2307,6 +2880,18 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
     let meta_block = match &mode {
         FormMode::Create => String::new(),
         FormMode::Edit { id, item } => render_meta::<T>(*id, item),
+    };
+
+    // Phase 4 — inverse relation panels. Shown only on the Edit page
+    // (Create has nothing to count against). Each `has_many` pointing
+    // at this model becomes a "<plural> (N)" card linking to the
+    // filtered list on that source model. v1 renders counts only; a
+    // future pass can add preview rows and in-page navigation.
+    let inverse_panel = match &mode {
+        FormMode::Create => String::new(),
+        FormMode::Edit { id, .. } => {
+            render_inverse_panel::<T>(cell_ctx.registry, inverse_counts, *id)
+        }
     };
 
     let danger_zone = match &mode {
@@ -2346,6 +2931,7 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
 </div>
 </div>
 </form>
+{inverse}
 {danger}"#,
         meta = meta_block,
         action = escape_html(&action),
@@ -2354,6 +2940,7 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
         name = escape_html(admin_name),
         back_icon = icon_arrow_left(),
         back_label = escape_html(&back_label),
+        inverse = inverse_panel,
         danger = danger_zone,
     );
 
@@ -2399,7 +2986,17 @@ fn form_response<T: AdminModel>(shell: Shell<'_>, mode: FormMode<'_, T>) -> Resp
 }
 
 /// Render a `(label, input)` block for one editable admin field.
-fn render_field_block<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String {
+///
+/// Relation-aware: when the field carries `#[rustio(belongs_to =
+/// "…")]` and we're rendering an existing row (Edit mode), a small
+/// "linked: <Name> (#<id>)" hint appears under the input. The input
+/// itself stays numeric in v1 — a proper relation picker is future
+/// work.
+fn render_field_block<T: AdminModel>(
+    f: &AdminField,
+    item: Option<&T>,
+    cell_ctx: &CellCtx<'_>,
+) -> String {
     let name = escape_html(f.name);
     let ui = intelligence::field_ui_metadata(f, intelligence::context_global());
     let input = render_field::<T>(f, item, ui.placeholder.as_deref());
@@ -2439,18 +3036,234 @@ fn render_field_block<T: AdminModel>(f: &AdminField, item: Option<&T>) -> String
         None => String::new(),
     };
 
+    // Relation hint: "Linked: <Name> (#<id>)" under the numeric input.
+    // Rendered only when the field has `#[rustio(belongs_to = …)]`,
+    // we're editing an existing row, and the FK value parses. Stays
+    // silent when the id is empty, unparseable, or the label
+    // prefetch returned nothing.
+    let relation_hint = render_relation_hint::<T>(f, item, cell_ctx);
+
     format!(
         r#"<div class="rio-field">
 <label for="_{name}">{label}{optional}{sensitive}</label>
 {input}
+{rel}
 {hint}
 </div>"#,
         name = name,
         label = escape_html(&ui.label),
         optional = optional_mark,
         sensitive = sensitive_mark,
+        rel = relation_hint,
         hint = hint_html,
     )
+}
+
+/// Render a small `<p>` hint below a FK input showing the currently
+/// linked target. Empty string when:
+///   - the field has no `belongs_to` annotation,
+///   - the registry doesn't know about the model / field,
+///   - there is no current item (Create mode),
+///   - the value doesn't parse as an i64.
+fn render_relation_hint<T: AdminModel>(
+    f: &AdminField,
+    item: Option<&T>,
+    cell_ctx: &CellCtx<'_>,
+) -> String {
+    let Some(item) = item else {
+        return String::new();
+    };
+    if f.relation.is_none() {
+        return String::new();
+    }
+    let Some(resolved) = cell_ctx.registry.belongs_to(T::singular_name(), f.name) else {
+        return String::new();
+    };
+    let Some(value) = item.field_display(f.name) else {
+        return String::new();
+    };
+    let Ok(id) = value.parse::<i64>() else {
+        return String::new();
+    };
+    let label = cell_ctx.fk_labels.get(f.name).and_then(|m| m.get(&id));
+    let admin = escape_html(&resolved.target_admin_name);
+    match (label, &resolved.target_display_field) {
+        (Some(name), _) => format!(
+            r#"<p class="rio-field-hint">Linked: <a href="/admin/{admin}/{id}">{name}</a> <span class="rio-cell-id">#{id}</span></p>"#,
+            admin = admin,
+            id = id,
+            name = escape_html(name),
+        ),
+        (None, _) => format!(
+            r#"<p class="rio-field-hint">Linked: <a href="/admin/{admin}/{id}">#{id}</a></p>"#,
+            admin = admin,
+            id = id,
+        ),
+    }
+}
+
+/// Substring-match the well-known SQLite error message that fires
+/// on a FK constraint violation. Stable across SQLite 3.x and
+/// surfaced identically by every sqlx version we support. Fragile
+/// against localisation, but SQLite does not localise driver error
+/// messages.
+fn is_foreign_key_violation(e: &Error) -> bool {
+    matches!(e, Error::Internal(msg) if msg.contains("FOREIGN KEY constraint failed"))
+}
+
+/// Phase 6 — 409 Conflict page rendered when a delete is refused
+/// because other rows reference this one. Lists every blocking
+/// inverse with its count and a link to the filtered list on the
+/// source model.
+fn render_delete_blocked_page<T: AdminModel>(
+    shell: &Shell<'_>,
+    target_id: i64,
+    target_primary: &str,
+    blockers: &[(&relations::InverseRelation, i64)],
+) -> Response {
+    let singular = T::singular_name();
+    let admin_name = T::ADMIN_NAME;
+    let plural = T::DISPLAY_NAME;
+    let subject = if target_primary.is_empty() {
+        format!("{singular} #{target_id}")
+    } else {
+        format!("{target_primary} (#{target_id})")
+    };
+
+    let rows: String = blockers
+        .iter()
+        .map(|(inv, count)| {
+            let filter_url = format!(
+                "/admin/{}?{}={}",
+                inv.source_admin_name,
+                urlencoding_light(&inv.source_field),
+                target_id,
+            );
+            format!(
+                r#"<li class="rio-dashboard-alert"><div><strong>{label}</strong> — referenced by <strong>{count}</strong> row{plural_s} via <code>{field}</code></div><a class="rio-btn rio-btn-sm" href="{url}">Open {label_lower}</a></li>"#,
+                label = escape_html(&inv.source_display_name),
+                label_lower = escape_html(&inv.source_display_name.to_lowercase()),
+                field = escape_html(&inv.source_field),
+                count = count,
+                plural_s = if *count == 1 { "" } else { "s" },
+                url = escape_html(&filter_url),
+            )
+        })
+        .collect();
+
+    let back_href = format!("/admin/{}", admin_name);
+    let body = format!(
+        r#"<section class="rio-card">
+<div class="rio-card-header">
+<h2 class="rio-card-title">Cannot delete {subject}</h2>
+<p class="rio-card-subtitle">Other records reference this one. Remove or reassign them first, then retry the delete.</p>
+</div>
+<ul class="rio-dashboard-alerts" style="list-style:none; margin:0; padding:var(--rio-card-pad)">
+{rows}
+</ul>
+<div class="rio-form-footer">
+<a class="rio-btn" href="{back}">Back to {plural_lower}</a>
+</div>
+</section>"#,
+        subject = escape_html(&subject),
+        rows = rows,
+        back = escape_html(&back_href),
+        plural_lower = escape_html(&plural.to_lowercase()),
+    );
+
+    let plural_href = back_href.clone();
+    let crumbs: Vec<Crumb<'_>> = vec![
+        ("Admin", Some("/admin")),
+        (plural, Some(plural_href.as_str())),
+        ("Delete blocked", None),
+    ];
+    let doc_title = format!("Cannot delete {subject}");
+    render_shell_page(
+        shell,
+        409,
+        &doc_title,
+        "Delete blocked",
+        Some("Remove the dependent references first, then retry."),
+        &crumbs,
+        "",
+        &body,
+    )
+}
+
+/// Phase 4 — render a "Related" block listing every `has_many`
+/// inverse of the current model with its row count and a link to
+/// the filtered list on the source model.
+///
+/// v1 shows counts only. Future evolution (per the module header in
+/// `admin/relations.rs`):
+///   - preview rows (top-N newest),
+///   - in-page expand rather than link-out,
+///   - per-panel search.
+fn render_inverse_panel<T: AdminModel>(
+    registry: &relations::RelationRegistry,
+    counts: &InverseCounts,
+    target_id: i64,
+) -> String {
+    let inverses = registry.has_many(T::singular_name());
+    if inverses.is_empty() {
+        return String::new();
+    }
+    let cards: String = inverses
+        .iter()
+        .map(|inv| {
+            let key = format!("{}.{}", inv.source_model, inv.source_field);
+            let count = counts.get(&key).copied().unwrap_or(0);
+            let label = inv.source_display_name.to_string();
+            // `source_field` is guaranteed snake_case by the Rust
+            // identifier rules, so URL-encoding is moot. Kept as a
+            // helper call for future-proofing.
+            let filter_url = format!(
+                "/admin/{}?{}={}",
+                inv.source_admin_name,
+                urlencoding_light(&inv.source_field),
+                target_id,
+            );
+            format!(
+                r#"<li><a href="{url}" class="rio-suggestion-card"><div><strong>{label}</strong> <span class="rio-cell-id">({count})</span></div><div class="rio-cell-muted">via {field}</div></a></li>"#,
+                url = escape_html(&filter_url),
+                label = escape_html(&label),
+                count = count,
+                field = escape_html(&inv.source_field),
+            )
+        })
+        .collect();
+    format!(
+        r#"<section class="rio-card">
+<div class="rio-card-header">
+<h2 class="rio-card-title">Related</h2>
+<p class="rio-card-subtitle">Incoming references to this record.</p>
+</div>
+<ul class="rio-card-body" style="list-style:none; margin:0; padding:var(--rio-card-pad); display:grid; gap:var(--rio-s-3); grid-template-columns:repeat(auto-fill, minmax(260px,1fr))">
+{cards}
+</ul>
+</section>"#,
+        cards = cards,
+    )
+}
+
+/// Minimal URL-path encoder. Doesn't depend on the `url` crate —
+/// only replaces the handful of characters that would break an
+/// unquoted query-string key or value. All our source_field names
+/// are snake_case idents (already safe) so this is really just a
+/// belt-and-suspenders measure for future schemas.
+fn urlencoding_light(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            ' ' => out.push_str("%20"),
+            '&' => out.push_str("%26"),
+            '=' => out.push_str("%3D"),
+            '#' => out.push_str("%23"),
+            '?' => out.push_str("%3F"),
+            _ => out.push(ch),
+        }
+    }
+    out
 }
 
 /// Convert snake_case to Title Case for humans.
@@ -4464,6 +5277,7 @@ mod tests {
             ty: FieldType::String,
             editable: true,
             nullable,
+            relation: None,
         }
     }
 
@@ -4473,6 +5287,7 @@ mod tests {
             ty: FieldType::DateTime,
             editable: true,
             nullable,
+            relation: None,
         }
     }
 
@@ -4497,6 +5312,7 @@ mod tests {
             ty: FieldType::Bool,
             editable: true,
             nullable: false,
+            relation: None,
         };
         let html = render_field::<Widgety>(&f, None, None);
         assert!(!html.contains("required"), "html was: {html}");

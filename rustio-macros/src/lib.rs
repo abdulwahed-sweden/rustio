@@ -1,7 +1,9 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, GenericArgument, PathArguments, Type};
+use syn::{
+    parse_macro_input, Data, DeriveInput, Field, Fields, GenericArgument, Lit, PathArguments, Type,
+};
 
 #[derive(Clone, Copy)]
 enum FieldKind {
@@ -12,15 +14,31 @@ enum FieldKind {
     DateTime,
 }
 
+/// Parsed `#[rustio(belongs_to = "Patient", display = "full_name")]`
+/// declaration on a struct field. The macro emits both the runtime
+/// `AdminRelation` metadata and a companion `const _` block that makes
+/// the compiler verify the target type exists and the named display
+/// column is real — both failures surface as ordinary compile errors.
+#[derive(Clone)]
+struct RelationAttr {
+    /// Target model type name — must resolve as a type in scope (the
+    /// `const` verification block references `<Target as Model>`).
+    target: syn::Ident,
+    /// Optional column on the target whose value will be rendered in
+    /// the admin. `None` ⇒ the admin shows `#<id>`; no inference.
+    display: Option<String>,
+}
+
 struct FieldInfo {
     ident: syn::Ident,
     name_str: String,
     kind: FieldKind,
     editable: bool,
     nullable: bool,
+    relation: Option<RelationAttr>,
 }
 
-#[proc_macro_derive(RustioAdmin)]
+#[proc_macro_derive(RustioAdmin, attributes(rustio))]
 pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -73,12 +91,33 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
             .into();
         }
         let editable = name_str != "id";
+
+        let relation = match parse_relation_attr(f) {
+            Ok(r) => r,
+            Err(e) => return e.to_compile_error().into(),
+        };
+
+        // Relations only make sense on integer foreign-key columns; the
+        // macro's job is to catch the nonsense case at compile time.
+        if relation.is_some()
+            && !matches!(kind, FieldKind::I64 | FieldKind::I32)
+        {
+            return syn::Error::new_spanned(
+                &f.ty,
+                "RustioAdmin: #[rustio(belongs_to = \"...\")] can only be applied to \
+                 `i32` or `i64` fields (the foreign-key column)",
+            )
+            .to_compile_error()
+            .into();
+        }
+
         fields.push(FieldInfo {
             ident,
             name_str,
             kind,
             editable,
             nullable,
+            relation,
         });
     }
 
@@ -93,12 +132,14 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
             let kind_token = kind_token(f.kind);
             let editable = f.editable;
             let nullable = f.nullable;
+            let relation_token = relation_token(f.relation.as_ref());
             quote! {
                 ::rustio_core::admin::AdminField {
                     name: #n,
                     ty: #kind_token,
                     editable: #editable,
                     nullable: #nullable,
+                    relation: #relation_token,
                 }
             }
         })
@@ -108,6 +149,16 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
 
     let from_form_assignments: Vec<TokenStream2> =
         fields.iter().map(from_form_assignment).collect();
+
+    // Compile-time checks for every `#[rustio(belongs_to = "...")]`:
+    // target type must exist and impl `Model`; if `display = "..."` is
+    // set, the named column must appear in `Target::COLUMNS`. Both live
+    // in a single `const _: ()` block per struct so bad declarations
+    // fail the build with a readable message.
+    let relation_checks: Vec<TokenStream2> = fields
+        .iter()
+        .filter_map(|f| f.relation.as_ref().map(|r| relation_check(&f.name_str, r)))
+        .collect();
 
     let expanded = quote! {
         impl ::rustio_core::admin::AdminModel for #name {
@@ -137,6 +188,8 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
                 })
             }
         }
+
+        #( #relation_checks )*
     };
 
     expanded.into()
@@ -157,6 +210,166 @@ fn singularize(name: &str) -> String {
         }
     }
     name.to_string()
+}
+
+/// Parse `#[rustio(belongs_to = "Patient")]` or
+/// `#[rustio(belongs_to = "Patient", display = "full_name")]`.
+/// Returns `Ok(None)` if the field has no `#[rustio(...)]` attribute.
+/// Returns `Err` if the attribute is malformed — unknown keys, wrong
+/// value types, `display` without `belongs_to`, etc.
+fn parse_relation_attr(field: &Field) -> syn::Result<Option<RelationAttr>> {
+    let mut found: Option<RelationAttr> = None;
+    for attr in &field.attrs {
+        if !attr.path().is_ident("rustio") {
+            continue;
+        }
+
+        let mut belongs_to: Option<syn::Ident> = None;
+        let mut display: Option<String> = None;
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("belongs_to") {
+                let value: Lit = meta.value()?.parse()?;
+                match value {
+                    Lit::Str(s) => {
+                        let ident = syn::parse_str::<syn::Ident>(&s.value()).map_err(|_| {
+                            meta.error(format!(
+                                "`belongs_to` value `{}` is not a valid Rust type name",
+                                s.value()
+                            ))
+                        })?;
+                        belongs_to = Some(ident);
+                        Ok(())
+                    }
+                    _ => Err(meta.error("`belongs_to` must be a string literal")),
+                }
+            } else if meta.path.is_ident("display") {
+                let value: Lit = meta.value()?.parse()?;
+                match value {
+                    Lit::Str(s) => {
+                        display = Some(s.value());
+                        Ok(())
+                    }
+                    _ => Err(meta.error("`display` must be a string literal")),
+                }
+            } else {
+                Err(meta.error(format!(
+                    "unknown #[rustio(...)] key: `{}` (expected `belongs_to` or `display`)",
+                    meta.path
+                        .get_ident()
+                        .map(|i| i.to_string())
+                        .unwrap_or_else(|| "<non-ident>".into())
+                )))
+            }
+        })?;
+
+        match (belongs_to, display) {
+            (Some(target), display) => {
+                if found.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "#[rustio(...)] may appear at most once per field",
+                    ));
+                }
+                found = Some(RelationAttr { target, display });
+            }
+            (None, Some(_)) => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "#[rustio(display = \"...\")] requires `belongs_to = \"...\"` on the same field",
+                ));
+            }
+            (None, None) => {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "empty #[rustio()]: expected `belongs_to = \"ModelName\"`",
+                ));
+            }
+        }
+    }
+    Ok(found)
+}
+
+fn relation_token(r: Option<&RelationAttr>) -> TokenStream2 {
+    let Some(r) = r else {
+        return quote! { None };
+    };
+    let target = r.target.to_string();
+    let display_token = match &r.display {
+        Some(s) => quote! { Some(#s) },
+        None => quote! { None },
+    };
+    quote! {
+        Some(::rustio_core::admin::AdminRelation {
+            kind: ::rustio_core::schema::RelationKind::BelongsTo,
+            model: #target,
+            display_field: #display_token,
+        })
+    }
+}
+
+/// Emit a `const _: ()` block that forces the compiler to:
+///   1. resolve `<Target as ::rustio_core::Model>` — fails if the type
+///      doesn't exist or doesn't implement `Model`;
+///   2. if `display = "col"` is set, verify that `col` appears in
+///      `<Target as Model>::COLUMNS` — fails with a readable panic
+///      message at const-eval time if it doesn't.
+///
+/// The field name is baked into the error message so the compiler's
+/// output points at the author's declaration without needing a span
+/// round-trip through the const block.
+fn relation_check(field_name: &str, r: &RelationAttr) -> TokenStream2 {
+    let target = &r.target;
+    let target_str = target.to_string();
+    match &r.display {
+        None => quote! {
+            const _: () = {
+                // Forces the target to exist and impl `Model`.
+                let _: &'static str = <#target as ::rustio_core::orm::Model>::TABLE;
+            };
+        },
+        Some(display) => {
+            let not_found_msg = format!(
+                "#[rustio(belongs_to = \"{target_str}\", display = \"{display}\")] on field `{field_name}`: \
+                 column `{display}` not found in `{target_str}::COLUMNS`. Declare the field on the target \
+                 model or drop the `display = ...` key."
+            );
+            quote! {
+                const _: () = {
+                    let _: &'static str = <#target as ::rustio_core::orm::Model>::TABLE;
+
+                    const fn __rustio_str_eq(a: &str, b: &str) -> bool {
+                        let a = a.as_bytes();
+                        let b = b.as_bytes();
+                        if a.len() != b.len() {
+                            return false;
+                        }
+                        let mut i = 0;
+                        while i < a.len() {
+                            if a[i] != b[i] {
+                                return false;
+                            }
+                            i += 1;
+                        }
+                        true
+                    }
+
+                    let cols = <#target as ::rustio_core::orm::Model>::COLUMNS;
+                    let mut i = 0;
+                    let mut found = false;
+                    while i < cols.len() {
+                        if __rustio_str_eq(cols[i], #display) {
+                            found = true;
+                        }
+                        i += 1;
+                    }
+                    if !found {
+                        panic!(#not_found_msg);
+                    }
+                };
+            }
+        }
+    }
 }
 
 /// Classify a struct field's type into `(FieldKind, nullable)`.
@@ -391,3 +604,4 @@ fn nullable_assignment(ident: &syn::Ident, name_str: &str, kind: FieldKind) -> T
         },
     }
 }
+

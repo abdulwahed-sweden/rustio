@@ -840,12 +840,14 @@ mod tests {
                 ty: FieldType::I64,
                 editable: false,
                 nullable: false,
+                relation: None,
             },
             AdminField {
                 name: "title",
                 ty: FieldType::String,
                 editable: true,
                 nullable: false,
+                relation: None,
             },
         ];
         fn singular_name() -> &'static str {

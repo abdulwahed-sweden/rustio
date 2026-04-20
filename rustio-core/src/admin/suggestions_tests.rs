@@ -24,18 +24,21 @@ const APPLICANT_FIELDS: &[AdminField] = &[
         ty: FieldType::I64,
         editable: false,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "personnummer",
         ty: FieldType::String,
         editable: true,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "queue_start_date",
         ty: FieldType::DateTime,
         editable: true,
         nullable: false,
+        relation: None,
     },
     // Deliberately omits `annual_income` so a housing-context
     // suggestion fires for it.
@@ -47,24 +50,28 @@ const FULLY_COVERED_FIELDS: &[AdminField] = &[
         ty: FieldType::I64,
         editable: false,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "personnummer",
         ty: FieldType::String,
         editable: true,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "queue_start_date",
         ty: FieldType::DateTime,
         editable: true,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "annual_income",
         ty: FieldType::I32,
         editable: true,
         nullable: false,
+        relation: None,
     },
 ];
 
@@ -74,12 +81,14 @@ const WIDGET_FIELDS: &[AdminField] = &[
         ty: FieldType::I64,
         editable: false,
         nullable: false,
+        relation: None,
     },
     AdminField {
         name: "name",
         ty: FieldType::String,
         editable: true,
         nullable: false,
+        relation: None,
     },
 ];
 
@@ -477,6 +486,7 @@ fn relation_suggestion_disappears_once_relation_is_recorded() {
         model: "Applicant".into(),
         field: "id".into(),
         kind: crate::schema::RelationKind::BelongsTo,
+        display_field: None,
     });
     let ss = derive_relation_suggestions(&schema);
     assert!(
