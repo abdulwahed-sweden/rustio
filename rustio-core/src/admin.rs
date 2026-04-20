@@ -430,8 +430,10 @@ impl Admin {
 
         // Admin index.
         let index_entries = entries.clone();
+        let index_db = db.clone();
         router = router.get("/admin", move |req, _params| {
             let entries = index_entries.clone();
+            let db = index_db.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
@@ -445,7 +447,12 @@ impl Admin {
                     .filter(|s| !s.is_empty())
                     .map(String::from);
                 let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(dashboard_response(shell, flash.as_deref()))
+                // Live row-counts for the model cards. Each model is
+                // a cheap `SELECT COUNT(*)`; failing silently degrades
+                // the card to the table name rather than 500-ing the
+                // whole dashboard over one bad query.
+                let counts = fetch_model_row_counts(&db, &entries).await;
+                Ok::<Response, Error>(dashboard_response(shell, flash.as_deref(), &counts))
             }
         });
 
@@ -1702,7 +1709,34 @@ fn escape_css_color(s: &str) -> &str {
 // Dashboard (admin index)
 // ---------------------------------------------------------------------------
 
-fn dashboard_response(shell: Shell<'_>, schema_reload_flash: Option<&str>) -> Response {
+/// Query `SELECT COUNT(*)` on every user-facing admin entry. Returns
+/// a `HashMap<admin_name, count>`. A failure on any single model
+/// leaves that model out of the map; the dashboard renders it
+/// without a count rather than 500-ing the whole page.
+async fn fetch_model_row_counts(
+    db: &Db,
+    entries: &[AdminEntry],
+) -> std::collections::HashMap<String, i64> {
+    use sqlx::Row;
+    let mut out: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for e in entries.iter().filter(|e| !e.core) {
+        let sql = format!(
+            "SELECT COUNT(*) AS rio_count FROM \"{table}\"",
+            table = e.table,
+        );
+        if let Ok(row) = sqlx::query(&sql).fetch_one(db.pool()).await {
+            let count: i64 = row.try_get::<i64, _>("rio_count").unwrap_or_default();
+            out.insert(e.admin_name.to_string(), count);
+        }
+    }
+    out
+}
+
+fn dashboard_response(
+    shell: Shell<'_>,
+    schema_reload_flash: Option<&str>,
+    row_counts: &std::collections::HashMap<String, i64>,
+) -> Response {
     let user_facing: Vec<&AdminEntry> = shell.entries.iter().filter(|e| !e.core).collect();
 
     // Schema-reload flash banner + form. Rendered inside every
@@ -1730,7 +1764,7 @@ fn dashboard_response(shell: Shell<'_>, schema_reload_flash: Option<&str>) -> Re
         format!(
             r#"<div class="rio-schema-reload">
 <span class="rio-schema-reload-meta">{cached}</span>
-<form method="post" action="/admin/schema/reload" style="margin:0">{csrf}<button class="rio-btn rio-btn-sm" type="submit">Reload schema</button></form>
+<form class="rio-inline-form" method="post" action="/admin/schema/reload">{csrf}<button class="rio-btn rio-btn-sm" type="submit">Reload schema</button></form>
 </div>"#,
             cached = escape_html(&cached_line),
             csrf = csrf_input(shell.csrf),
@@ -1757,13 +1791,23 @@ fn dashboard_response(shell: Shell<'_>, schema_reload_flash: Option<&str>) -> Re
         let cards: String = user_facing
             .iter()
             .map(|e| {
+                // Count line prefers the live `COUNT(*)` so the
+                // operator can tell at a glance which tables are
+                // populated. If the query failed (missing table,
+                // permission problem) we fall back to the table
+                // name so the card still renders meaningfully.
+                let count_line = match row_counts.get(e.admin_name) {
+                    Some(&1) => "1 record".to_string(),
+                    Some(&n) => format!("{n} records"),
+                    None => format!("Table <code>{}</code>", escape_html(e.table)),
+                };
                 format!(
                     r#"<div class="rio-model-card">
 <div class="rio-model-card-head">
 <div class="rio-model-card-icon">{icon}</div>
 <h3 class="rio-model-name"><a href="/admin/{name}">{display}</a></h3>
 </div>
-<p class="rio-model-count">Stored in <code>{table}</code></p>
+<p class="rio-model-count">{count}</p>
 <div class="rio-model-card-actions">
 <a class="rio-btn rio-btn-sm" href="/admin/{name}">View</a>
 <a class="rio-btn rio-btn-sm rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add</span></a>
@@ -1771,7 +1815,7 @@ fn dashboard_response(shell: Shell<'_>, schema_reload_flash: Option<&str>) -> Re
 </div>"#,
                     name = escape_html(e.admin_name),
                     display = escape_html(e.display_name),
-                    table = escape_html(e.table),
+                    count = count_line,
                     icon = icon_layers(),
                     plus = icon_plus(),
                 )
@@ -2331,7 +2375,7 @@ fn list_response<T: AdminModel>(
 <div class="rio-empty-icon">{icon}</div>
 <h3>No records match these filters</h3>
 <p>Try a different search term, clear the filters, or add a new {singular_lower}.</p>
-<div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap">
+<div class="rio-empty-actions">
 <a class="rio-btn" href="/admin/{name}">{reset}<span>Clear filters</span></a>
 <a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
 </div>
@@ -2453,7 +2497,9 @@ fn render_relation_filter_control(state: &RelationFilterState) -> String {
     let label = escape_html(&state.label);
     match &state.mode {
         RelationFilterMode::Dropdown { options } => {
-            let placeholder = format!("All {}", state.label.to_lowercase());
+            // "All patients", "All doctors" — pluralise the singular
+            // model name so the placeholder reads like English.
+            let placeholder = format!("All {}", pluralise_label(&state.label));
             let options_html: String = std::iter::once(format!(
                 r#"<option value="">{}</option>"#,
                 escape_html(&placeholder),
@@ -2519,9 +2565,12 @@ fn render_list_toolbar<T: AdminModel>(
 
     // Status filter dropdown — only rendered when the model has a
     // String field named "status" (detected by non-empty options).
+    // Values stay raw (`checked_in`, `no_show`) so form round-trip
+    // works; labels are humanised ("Checked in", "No show") so the
+    // dropdown reads like English rather than database fields.
     let status_select = if !filters.status_options.is_empty() {
         let options: String =
-            std::iter::once(r#"<option value="">All status</option>"#.to_string())
+            std::iter::once(r#"<option value="">All statuses</option>"#.to_string())
                 .chain(filters.status_options.iter().map(|v| {
                     let selected = if filters.status.map(|s| s == v).unwrap_or(false) {
                         " selected"
@@ -2531,7 +2580,7 @@ fn render_list_toolbar<T: AdminModel>(
                     format!(
                         r#"<option value="{v}"{selected}>{label}</option>"#,
                         v = escape_html(v),
-                        label = escape_html(v),
+                        label = escape_html(&humanise_enum_value(v)),
                     )
                 }))
                 .collect();
@@ -2542,12 +2591,23 @@ fn render_list_toolbar<T: AdminModel>(
         String::new()
     };
 
-    // Priority filter — numeric, so render values as-is.
+    // Priority filter — numeric. Sort the options numerically so the
+    // dropdown reads 1, 2, …, 10 (not 1, 10, 2 — the default string
+    // sort from `distinct_values`).
     let priority_select = if !filters.priority_options.is_empty() {
+        let mut sorted_priorities: Vec<&String> = filters.priority_options.iter().collect();
+        sorted_priorities.sort_by(|a, b| {
+            let na: Option<i64> = a.parse().ok();
+            let nb: Option<i64> = b.parse().ok();
+            match (na, nb) {
+                (Some(x), Some(y)) => x.cmp(&y),
+                _ => a.cmp(b),
+            }
+        });
         let options: String =
             std::iter::once(r#"<option value="">All priorities</option>"#.to_string())
-                .chain(filters.priority_options.iter().map(|v| {
-                    let selected = if filters.priority.map(|p| p == v).unwrap_or(false) {
+                .chain(sorted_priorities.iter().map(|v| {
+                    let selected = if filters.priority.map(|p| p == v.as_str()).unwrap_or(false) {
                         " selected"
                     } else {
                         ""
@@ -2998,7 +3058,16 @@ fn render_field_block<T: AdminModel>(
     cell_ctx: &CellCtx<'_>,
 ) -> String {
     let name = escape_html(f.name);
-    let ui = intelligence::field_ui_metadata(f, intelligence::context_global());
+    let mut ui = intelligence::field_ui_metadata(f, intelligence::context_global());
+    // When the field carries a declared relation, our own richer
+    // `Linked: <Name>` hint replaces the generic "Foreign-key id"
+    // hint from the intelligence layer. The relation label also
+    // drops its trailing " Id" so the field reads as "Patient"
+    // not "Patient Id".
+    if f.relation.is_some() {
+        ui.hint = None;
+        ui.label = field_label(f);
+    }
     let input = render_field::<T>(f, item, ui.placeholder.as_deref());
 
     // Bool fields render as a single checkbox row for compactness.
@@ -3233,12 +3302,12 @@ fn render_inverse_panel<T: AdminModel>(
         })
         .collect();
     format!(
-        r#"<section class="rio-card">
+        r#"<section class="rio-card rio-related">
 <div class="rio-card-header">
 <h2 class="rio-card-title">Related</h2>
 <p class="rio-card-subtitle">Incoming references to this record.</p>
 </div>
-<ul class="rio-card-body" style="list-style:none; margin:0; padding:var(--rio-card-pad); display:grid; gap:var(--rio-s-3); grid-template-columns:repeat(auto-fill, minmax(260px,1fr))">
+<ul class="rio-related-grid">
 {cards}
 </ul>
 </section>"#,
@@ -3282,6 +3351,60 @@ fn humanise(s: &str) -> String {
         }
     }
     out
+}
+
+/// Humanise an enum-like `String` value for display. `in_progress` →
+/// `"In progress"` (sentence case, not Title Case — an enum value in
+/// a dropdown reads better as a label than as a book title). Raw
+/// value stays untouched for round-trip via form POST.
+fn humanise_enum_value(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut first = true;
+    for ch in s.chars() {
+        if ch == '_' {
+            out.push(' ');
+        } else if first {
+            out.push(ch.to_ascii_uppercase());
+            first = false;
+        } else {
+            out.push(ch.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
+/// Naive pluralise for filter placeholders. `"patient"` → `"patients"`,
+/// `"status"` → `"statuses"`, `"category"` → `"categories"`. Good
+/// enough for our display labels; the macro's plural for model names
+/// is a separate codepath.
+fn pluralise_label(s: &str) -> String {
+    let lower = s.to_lowercase();
+    if lower.ends_with('s') || lower.ends_with('x') || lower.ends_with("ch") || lower.ends_with("sh") {
+        format!("{lower}es")
+    } else if lower.ends_with('y')
+        && !lower.ends_with("ay")
+        && !lower.ends_with("ey")
+        && !lower.ends_with("iy")
+        && !lower.ends_with("oy")
+        && !lower.ends_with("uy")
+    {
+        format!("{}ies", &lower[..lower.len() - 1])
+    } else {
+        format!("{lower}s")
+    }
+}
+
+/// Drop a trailing ` Id` from a humanised field name when the column
+/// is declared as a FK relation. `"Patient Id"` → `"Patient"` so the
+/// edit form reads naturally. The underlying form field name stays
+/// the raw column (`patient_id`) so POST still round-trips.
+fn field_label(f: &AdminField) -> String {
+    let base = humanise(f.name);
+    if f.relation.is_some() {
+        base.strip_suffix(" Id").map(str::to_string).unwrap_or(base)
+    } else {
+        base
+    }
 }
 
 /// Render a metadata block for the edit page: id + immutable
@@ -3436,7 +3559,7 @@ Deleting this record removes it permanently. Rows that reference it via a foreig
 <a class="rio-btn rio-btn-ghost" href="/admin/{name}">{back}<span>Back to {plural_lower}</span></a>
 <div class="rio-footer-actions">
 <a class="rio-btn" href="/admin/{name}/{id}/edit">Cancel</a>
-<form method="post" action="/admin/{name}/{id}/delete" style="margin:0">
+<form class="rio-inline-form" method="post" action="/admin/{name}/{id}/delete">
 {csrf}
 <button class="rio-btn rio-btn-danger" type="submit">{trash}<span>Delete {singular}</span></button>
 </form>
@@ -3610,7 +3733,7 @@ fn admin_not_found_response(
 <div class="rio-empty-icon">{icon}</div>
 <h3>We couldn't find that page</h3>
 <p>The URL you requested doesn't match any admin route or record. It may have been moved, deleted, or you may have arrived via a stale link.</p>
-<div class="rio-error-actions" style="margin-top:16px">
+<div class="rio-error-actions">
 <a class="rio-btn" href="/admin">{back}<span>Back to dashboard</span></a>
 <a class="rio-btn" href="/admin/actions">View recent actions</a>
 </div>
@@ -3660,7 +3783,7 @@ The admin could not complete your request. The detail has been logged server-sid
 <span class="rio-meta-value">{when}</span>
 </div>
 </div>
-<div class="rio-error-actions" style="margin-top:16px">
+<div class="rio-error-actions">
 <a class="rio-btn" href="/admin">{back}<span>Back to dashboard</span></a>
 </div>
 </div>
@@ -3810,7 +3933,7 @@ fn forbidden_page(csrf: Option<&str>) -> Response {
 <h1 class="rio-error-title">You're signed in, but you don't have admin access.</h1>
 <p class="rio-error-body">Ask an administrator to promote your account, or sign out and come back with different credentials.</p>
 <div class="rio-error-actions">
-<form method="post" action="/admin/logout" style="margin:0">
+<form class="rio-inline-form" method="post" action="/admin/logout">
 {csrf}
 <button class="rio-btn" type="submit">{logout}<span>Sign out</span></button>
 </form>
@@ -4770,7 +4893,7 @@ fn recent_actions_response(
 <select class="rio-select" name="model" aria-label="Filter by model">{model_options}</select>
 <select class="rio-select" name="action" aria-label="Filter by action type">{action_options}</select>
 <div class="rio-toolbar-actions">
-<button type="submit" class="rio-btn rio-btn-primary"><span>Apply</span></button>
+<button type="submit" class="rio-btn"><span>Apply</span></button>
 {reset}
 </div>
 <div class="rio-count">{count}</div>

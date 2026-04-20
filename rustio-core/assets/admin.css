@@ -111,7 +111,10 @@
   --rio-rust-700: #8F3413;
 
   /* Surfaces ------------------------------------------------------- */
-  --rio-bg: var(--rio-ink-50);
+  /* Body bg sits between ink-50 and ink-100 so white cards, the
+     tinted filter strip (ink-50), and the sticky thead (ink-100)
+     all read as distinct visual layers. */
+  --rio-bg: #EDF1F5;
   --rio-surface: #FFFFFF;
   --rio-surface-muted: var(--rio-ink-50);
   --rio-surface-hover: var(--rio-ink-100);
@@ -163,13 +166,21 @@
                    0 4px 8px -2px rgba(15, 20, 26, 0.06);
 
   /* Layout metrics ------------------------------------------------- */
-  --rio-topbar-h: 64px;
+  /* Topbar height must feel anchored — at 64 px the breadcrumbs +
+     env-chip felt cramped against a page title whose display size
+     is 28 px. 76 px gives the topbar the same vertical weight as
+     the sidebar's 72-px brand block and reads as a deliberate
+     app-shell bar rather than a hairline strip. */
+  --rio-topbar-h: 76px;
 
   /* Density — defaults are "comfortable". Consumers read the vars
      below; switching to `.rio-density-compact` on <body> flips them
-     all together. The row-y/row-x names are kept for back-compat. */
+     all together. The row-y/row-x names are kept for back-compat.
+     `row-x` trimmed from 20 → 16 in the v7.1 refresh so wide tables
+     (e.g. 10-column medflow patients) read without excessive
+     horizontal whitespace per cell. */
   --rio-row-y: 14px;
-  --rio-row-x: 20px;
+  --rio-row-x: 16px;
   --rio-form-field-gap:  20px;
   --rio-card-pad:        24px;
   --rio-section-pad-y:   24px;
@@ -227,6 +238,34 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+}
+
+/* ═════════════════════════════════════════════════════════════════
+ * Generic utility classes — migrated from inline styles so the
+ * server templates stay HTML-only. Any new `style="…"` added to a
+ * template is a smell; prefer adding a class here instead.
+ * ═════════════════════════════════════════════════════════════════ */
+
+/* Zero-margin inline form — for logout button + per-row delete
+   forms that live inside flex rows and shouldn't contribute extra
+   vertical space. */
+.rio-inline-form { margin: 0; display: inline; }
+
+/* A centred row of buttons inside an empty-state panel. */
+.rio-empty-actions {
+  display: flex;
+  gap: var(--rio-s-2);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: var(--rio-s-2);
+}
+
+/* Spacing for the error shell's action row. */
+.rio-error-actions {
+  display: flex;
+  gap: var(--rio-s-2);
+  margin-top: var(--rio-s-3);
+  flex-wrap: wrap;
 }
 
 /* ═════════════════════════════════════════════════════════════════
@@ -350,6 +389,13 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   gap: 2px;
   flex-shrink: 0;
 }
+/* Error / 404 shell pages render with no identity → the footer
+   becomes an empty bordered box. Suppress it so the sidebar ends
+   cleanly at the last nav group. */
+.rio-sidebar-footer:empty {
+  border-top: none;
+  padding: 0;
+}
 .rio-sidebar-user {
   display: flex;
   align-items: center;
@@ -426,6 +472,13 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   display: flex;
   flex-direction: column;
   gap: var(--rio-container-gap);
+  /* Cap the content column on very wide screens so tables / forms
+     don't sprawl across a 27-inch monitor. 1600px fits a 5-column
+     list plus row actions comfortably; wider monitors get generous
+     letterboxing of the ink-tinted body bg. */
+  width: 100%;
+  max-width: 1600px;
+  align-self: center;
 }
 .rio-container > *:not(.rio-topbar) {
   margin-left: var(--rio-container-pad-x);
@@ -440,11 +493,18 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   z-index: 20;
   background: var(--rio-surface);
   border-bottom: 1px solid var(--rio-border);
-  padding: var(--rio-s-4) var(--rio-container-pad-x);
+  /* Vertical padding bumped from --rio-s-4 (16) to --rio-s-5 (20)
+     so the breadcrumbs + env-chip sit centred in a 76-px bar with
+     comfortable halos above and below the text baseline. */
+  padding: var(--rio-s-5) var(--rio-container-pad-x);
   display: flex;
   align-items: center;
   gap: var(--rio-s-5);
   min-height: var(--rio-topbar-h);
+  /* Subtle shadow so the topbar reads as a distinct app-shell bar
+     when the user scrolls content beneath it. Hairline alone looked
+     thin against the new tinted body bg. */
+  box-shadow: 0 1px 0 var(--rio-border), 0 2px 8px -6px rgba(15, 20, 26, 0.06);
 }
 
 .rio-env-chip {
@@ -503,6 +563,25 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   gap: var(--rio-s-5);
   flex-wrap: wrap;
   padding-bottom: var(--rio-s-1);
+}
+/* When the server emits an empty right-hand `<div>` (no page
+   actions), suppress its layout so the title doesn't float with an
+   invisible sibling eating flex space. */
+.rio-page-header > div:empty { display: none; }
+
+/* On edit/create pages (where a `.rio-form` follows below) keep the
+   header aligned with the form's 860 rail so the page reads as one
+   centred column, not a misaligned title + body. */
+.rio-container > .rio-page-header:has(~ form.rio-form) {
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+@media (max-width: 1100px) {
+  .rio-container > .rio-page-header:has(~ form.rio-form) {
+    margin-left: var(--rio-container-pad-x);
+    margin-right: var(--rio-container-pad-x);
+  }
 }
 .rio-page-title {
   margin: 0;
@@ -615,8 +694,47 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   background: var(--rio-surface);
   border: 1px solid var(--rio-border);
   border-radius: var(--rio-radius);
-  max-width: 960px;
+  /* 860 (down from 960) anchors the form content to a comfortable
+     reading measure without feeling cramped. Combined with the
+     container's 1600px cap and the auto-centering rule below, the
+     form sits as a centred rail regardless of viewport width. */
+  max-width: 860px;
   width: 100%;
+  box-shadow: var(--rio-shadow-sm);
+}
+
+/* Edit / create pages — centre the form and every companion card
+   on a single 860px rail. Without this the form left-aligns inside
+   the 1600-wide container on a 27-inch monitor, leaving a visible
+   asymmetric gap to the right. `margin-left/right: auto` replaces
+   the container's symmetric `--rio-container-pad-x` rule. */
+.rio-container > form.rio-form,
+.rio-container > form.rio-form ~ section.rio-card,
+.rio-container > form.rio-form ~ .rio-danger-zone {
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* The compact meta row ("ID · Created") that sits above the form on
+   edit pages is always a sibling of `.rio-form` inside the
+   container. Pull it onto the same centred rail so the edit-page
+   column reads as one unit. */
+.rio-container > .rio-meta {
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+/* Fallback for narrow viewports — if the main area can't host the
+   860 rail plus its container pad, collapse the auto-centring and
+   let the container's side margin keep the form off the edge. */
+@media (max-width: 1100px) {
+  .rio-container > form.rio-form,
+  .rio-container > form.rio-form ~ section.rio-card,
+  .rio-container > form.rio-form ~ .rio-danger-zone,
+  .rio-container > .rio-meta {
+    margin-left: var(--rio-container-pad-x);
+    margin-right: var(--rio-container-pad-x);
+  }
 }
 .rio-form-section {
   padding: var(--rio-section-pad-y) var(--rio-section-pad-x) var(--rio-section-pad-x);
@@ -686,7 +804,12 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   font-size: 13px;
   color: var(--rio-text-muted);
   line-height: 1.55;
+  margin: 0;
 }
+/* Stacked hints (e.g. a relation "Linked:" line above a general
+   hint) — use a small inter-line gap instead of `<p>` default
+   margin collapse. */
+.rio-field-hint + .rio-field-hint { margin-top: var(--rio-s-1); }
 
 .rio-field-row-checkbox,
 .rio-field.rio-field-row-checkbox {
@@ -733,13 +856,16 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-checkbox:focus-visible { outline: 3px solid var(--rio-accent); outline-offset: 2px; }
 
 /* The outer form/card footer: tinted strip with left anchor + right
-   action group, pushed apart via space-between. */
+   action group, pushed apart via space-between. Also applies to
+   the delete-confirmation card where `.rio-form-footer` sits as a
+   sibling of `.rio-card-body` inside the card — the bottom radius
+   and top hairline both land correctly in that layout too. */
 .rio-form-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--rio-s-3);
-  padding: var(--rio-s-5) var(--rio-s-6);
+  padding: var(--rio-s-4) var(--rio-s-6);
   border-top: 1px solid var(--rio-border);
   background: var(--rio-ink-50);
   border-bottom-left-radius: var(--rio-radius);
@@ -791,6 +917,10 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border: 1px solid var(--rio-border);
   border-radius: var(--rio-radius);
   overflow: hidden;
+  /* Small lift so the white card reads as an object on top of the
+     tinted body bg. Keeps the admin from looking like an unbroken
+     sheet of white. */
+  box-shadow: var(--rio-shadow-sm);
 }
 .rio-card.rio-form,
 .rio-form.rio-card { overflow: visible; }
@@ -863,8 +993,17 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-model-name a:hover { color: var(--rio-primary); text-decoration: none; }
 .rio-model-count {
   font-size: 13px;
-  color: var(--rio-text-subtle);
+  color: var(--rio-text-muted);
   font-weight: 500;
+  margin: 0;
+}
+.rio-model-count code {
+  font-family: var(--rio-font-mono);
+  font-size: 12px;
+  color: var(--rio-ink-700);
+  background: var(--rio-ink-50);
+  padding: 1px 6px;
+  border-radius: var(--rio-radius-sm);
 }
 .rio-model-card-actions {
   display: flex;
@@ -881,37 +1020,53 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border: 1px solid var(--rio-border);
   border-radius: var(--rio-radius);
   overflow: hidden;
+  /* Subtle lift against the tinted body bg so the card reads as
+     one visual unit separated from the admin frame. */
+  box-shadow: var(--rio-shadow-sm);
 }
 
-/* Filter strip — white surface, hairline bottom. */
+/* Filter strip — tinted (ink-50) so it reads as a distinct control
+   surface, clearly separated from both the darker body bg and the
+   white table rows below. Padding tightened vs v7 for a denser,
+   more operator-friendly toolbar on laptop widths. */
 .rio-table-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--rio-s-3);
-  padding: var(--rio-s-5) var(--rio-s-6);
-  background: var(--rio-surface);
+  padding: var(--rio-s-4) var(--rio-s-5);
+  background: var(--rio-ink-50);
   border-bottom: 1px solid var(--rio-border);
 }
 .rio-table-toolbar .rio-select,
 .rio-bulk-bar .rio-select,
 .rio-bulk-form .rio-select {
   width: auto;
+  min-width: 160px;
+}
+/* Domain + relation filter dropdowns on the main toolbar. Tightened
+   vs v7: 180px is enough for "All priorities" / "All patients" on
+   most screens without truncation, and keeps the whole strip on a
+   single row at 1366-width laptops. */
+.rio-table-toolbar .rio-select:not(.rio-select-sort) {
   min-width: 180px;
 }
-/* Domain-filter dropdowns (priority / status) sit beside the search
-   input and carry the longest option labels ("All priorities") —
-   doubled on request from 180 → 360 so those labels render in full
-   without truncation ellipsis. */
-.rio-table-toolbar .rio-select:not(.rio-select-sort) {
-  min-width: 360px;
+/* Sort select stays the most compact control — terse labels
+   ("Newest first", "ID ↑") don't need width. Pushed to the right of
+   the filter cluster via `margin-left: auto` so the "Search + Reset"
+   action buttons always sit at the far right of the toolbar. */
+.rio-table-toolbar .rio-select-sort {
+  min-width: 140px;
+  margin-left: auto;
 }
-/* The sort select stays compact — its labels are terse by design. */
-.rio-table-toolbar .rio-select-sort { min-width: 160px; }
 
+/* All toolbar controls share the same height so they line up
+   perfectly regardless of which filters a model declares. 42px
+   (down from 48) reads as a dense operator toolbar without
+   clipping the 15-px input text. */
 .rio-table-toolbar .rio-input,
 .rio-table-toolbar .rio-select,
-.rio-table-toolbar .rio-btn { height: 48px; }
+.rio-table-toolbar .rio-btn { height: 42px; }
 
 /* Search input — the primary control on the strip. Plain white
    surface; the rust-coloured search icon plus the field itself are
@@ -921,9 +1076,13 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
    class-tagged variants. */
 .rio-search {
   position: relative;
-  flex: 1 1 560px;
-  max-width: 720px;
-  min-width: 440px;
+  /* Tightened from v7. The toolbar now carries domain filters,
+     relation filters, sort, and submit — the search no longer needs
+     to dominate the row. Still the first flex child so it gets
+     priority when the strip has spare width. */
+  flex: 1 1 320px;
+  max-width: 460px;
+  min-width: 260px;
 }
 .rio-search input,
 .rio-search .rio-input {
@@ -935,9 +1094,9 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   background: var(--rio-surface);
   border: 1px solid var(--rio-border-strong);
   border-radius: var(--rio-radius);
-  padding: 12px 16px 12px 48px;
+  padding: 10px 14px 10px 42px;
   line-height: 1.5;
-  height: 48px;
+  height: 42px;
   transition: border-color 0.08s ease, box-shadow 0.08s ease;
   -webkit-appearance: none;
           appearance: none;
@@ -965,11 +1124,11 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-search > svg:first-of-type,
 .rio-search > :first-child:is(svg) {
   position: absolute;
-  left: 16px;
+  left: 13px;
   top: 50%;
   transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   color: var(--rio-rust-600);
   pointer-events: none;
 }
@@ -980,7 +1139,24 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   clip: rect(0 0 0 0);
 }
 
-.rio-toolbar-actions { display: flex; gap: var(--rio-s-2); flex-wrap: wrap; }
+/* Toolbar action cluster (Search button + Reset). Tighter gap so the
+   two buttons feel like a pair, not a loose row of controls. */
+.rio-toolbar-actions {
+  display: flex;
+  gap: var(--rio-s-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Toolbar submit button — explicitly 42px to match the input / select
+   line, and padded generously so the icon-plus-text label doesn't
+   feel cramped against the tinted strip. Stays neutral (rust is
+   reserved for write actions) but reads as a firm "go" control. */
+.rio-table-toolbar .rio-btn[type="submit"],
+.rio-table-toolbar button.rio-btn {
+  padding: 0 18px;
+  font-weight: 600;
+}
 
 .rio-search-intent {
   font-size: 13px;
@@ -1001,14 +1177,16 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   white-space: nowrap;
 }
 
-/* Bulk-action bar — same white surface as the filter strip. */
+/* Bulk-action bar — shares the ink-50 tint with the filter strip
+   above so the two control surfaces read as one continuous band
+   above the white table body. */
 .rio-bulk-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--rio-s-3);
-  padding: var(--rio-s-3) var(--rio-s-6);
-  background: var(--rio-surface);
+  padding: var(--rio-s-3) var(--rio-s-5);
+  background: var(--rio-ink-50);
   border-bottom: 1px solid var(--rio-border);
   font-size: 14px;
   color: var(--rio-text-muted);
@@ -1287,6 +1465,40 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   border: 1px solid var(--rio-border);
   border-left: 3px solid var(--rio-primary);
 }
+
+/* Related inverse-relation grid on detail/edit pages. Replaces the
+   inline grid style the server used to emit. */
+.rio-related-grid {
+  list-style: none;
+  margin: 0;
+  padding: var(--rio-card-pad);
+  display: grid;
+  gap: var(--rio-s-3);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.rio-related-grid > li { margin: 0; }
+.rio-related-grid .rio-suggestion-card {
+  flex-direction: column;
+  gap: var(--rio-s-1);
+  text-decoration: none;
+  transition: border-color 0.08s ease, box-shadow 0.08s ease;
+}
+.rio-related-grid .rio-suggestion-card:hover {
+  border-color: var(--rio-border-strong);
+  box-shadow: var(--rio-shadow);
+}
+.rio-related-grid .rio-suggestion-card strong {
+  font-size: var(--rio-fs-body-s);
+  font-weight: 600;
+  color: var(--rio-ink-900);
+}
+.rio-related-grid .rio-suggestion-card .rio-cell-id {
+  font-size: 13px;
+  color: var(--rio-text-muted);
+}
+.rio-related-grid .rio-suggestion-card .rio-cell-muted {
+  font-size: 12px;
+}
 .rio-suggestion-actions {
   margin-left: auto;
   display: flex;
@@ -1347,14 +1559,17 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 /* When `.rio-meta` sits at container level (edit pages show ID and
    created_at this way), render its items inline as a compact
    metadata row — no full-width rows with hairlines, just a slim
-   label/value pair or two. */
+   label/value pair or two. Padding keeps it aligned with the
+   centred form rail on wide screens. */
 .rio-container > .rio-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--rio-s-6);
+  gap: var(--rio-s-5);
   padding: 0;
   background: none;
   border: none;
+  margin-top: calc(-1 * var(--rio-container-gap) / 2);
+  margin-bottom: calc(-1 * var(--rio-container-gap) / 2);
 }
 .rio-container > .rio-meta > .rio-meta-item {
   padding: 0;
@@ -1364,6 +1579,11 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 .rio-container > .rio-meta .rio-meta-label {
   width: auto;
   min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.rio-container > .rio-meta .rio-meta-value {
+  font-size: 14px;
 }
 
 /* ═════════════════════════════════════════════════════════════════
@@ -1509,7 +1729,11 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   font-size: var(--rio-fs-body-s);
   color: var(--rio-text-muted);
 }
-.rio-schema-reload-meta { font-size: 12px; color: var(--rio-ink-700); }
+.rio-schema-reload-meta {
+  font-size: 12px;
+  color: var(--rio-ink-700);
+  letter-spacing: 0.01em;
+}
 .rio-plan-preview {
   font-size: 13px;
   background: var(--rio-ink-900);
@@ -1623,7 +1847,15 @@ details > summary::-webkit-details-marker { display: none; }
     margin-left: var(--rio-s-5);
     margin-right: var(--rio-s-5);
   }
-  .rio-topbar { padding: var(--rio-s-3) var(--rio-s-5); }
+  /* On mobile the topbar is static (not sticky) so the bigger
+     desktop height eats too much vertical space. Trim back to a
+     compact 56 px. Sticky-thead is also disabled below (re-anchored
+     to static) so this doesn't affect column-header docking. */
+  .rio-topbar {
+    padding: var(--rio-s-3) var(--rio-s-5);
+    min-height: 56px;
+    box-shadow: 0 1px 0 var(--rio-border);
+  }
   /* On mobile the topbar is static, so thead can't stick relative to
      it — reset sticky so it scrolls with the table. */
   .rio-table thead { position: static; }

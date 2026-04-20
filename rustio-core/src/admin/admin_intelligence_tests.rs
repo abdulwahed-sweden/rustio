@@ -172,13 +172,25 @@ fn email_is_email_under_gdpr_context() {
 #[test]
 fn patient_id_under_healthcare_is_opaque_identifier() {
     let ctx = healthcare_context();
+    // A `String` column named `patient_id` in healthcare is a medical
+    // record identifier, not a FK — the industry-aware classifier
+    // still recognises it as opaque.
     assert_eq!(
         classify_field(&text("patient_id"), Some(&ctx)),
         FieldRole::OpaqueIdentifier,
     );
-    // Without industry, it's just a ForeignKey (shape suffix `_id`).
+    // Without industry, a String `*_id` is plain text — we no longer
+    // tag it as ForeignKey because that would emit a wrong form hint
+    // ("must reference an existing row") on columns like `national_id`
+    // and `license_no`. ForeignKey is reserved for integer FK columns.
     assert_eq!(
         classify_field(&text("patient_id"), None),
+        FieldRole::PlainText,
+    );
+    // An integer `*_id` column with no industry context still hits
+    // the shape heuristic and classifies as ForeignKey.
+    assert_eq!(
+        classify_field(&bigint("patient_id", true), None),
         FieldRole::ForeignKey,
     );
 }

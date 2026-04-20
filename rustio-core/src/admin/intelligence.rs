@@ -268,7 +268,12 @@ pub fn classify_field(f: &AdminField, context: Option<&ContextConfig>) -> FieldR
     if name == "status" || name.ends_with("_status") {
         return FieldRole::Status;
     }
-    if name.ends_with("_id") {
+    // Only classify as ForeignKey when the column is integer-typed.
+    // A String column ending in `_id` (e.g. `national_id`, `mrn`,
+    // `license_no`) is an opaque identifier, not a FK — and the
+    // "Foreign-key id — must reference an existing row" hint is
+    // actively wrong for it.
+    if name.ends_with("_id") && matches!(f.ty, FieldType::I32 | FieldType::I64) {
         return FieldRole::ForeignKey;
     }
     if matches!(f.ty, FieldType::I32 | FieldType::I64) {
