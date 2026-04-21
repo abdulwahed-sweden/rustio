@@ -2400,16 +2400,30 @@ fn list_response<T: AdminModel>(
                 .iter()
                 .filter(|f| filters.visible_columns.contains(&f.name))
                 .collect();
+            // Each <th> and <td> carries `data-col="<field_name>"`
+            // so the Columns toggle (Change 2) can match cells by
+            // column name via `querySelectorAll('[data-col="…"]')`.
+            // Checkbox and actions columns have no data-col and
+            // are never touched by the toggle.
             let headers: String = visible_fields
                 .iter()
-                .map(|f| format!("<th>{}</th>", escape_html(&humanise(f.name))))
+                .map(|f| {
+                    format!(
+                        r#"<th data-col="{name}">{label}</th>"#,
+                        name = escape_html(f.name),
+                        label = escape_html(&humanise(f.name)),
+                    )
+                })
                 .collect();
             let rows: String = items
                 .iter()
                 .map(|item| {
                     let cells: String = visible_fields
                         .iter()
-                        .map(|f| render_cell::<T>(f, *item, cell_ctx))
+                        .map(|f| {
+                            let cell = render_cell::<T>(f, *item, cell_ctx);
+                            inject_data_col(&cell, f.name)
+                        })
                         .collect();
                     let id = item.id();
                     // Icon + label actions — obvious to non-technical
@@ -2462,17 +2476,39 @@ fn list_response<T: AdminModel>(
 </form>
 <script>
 (function(){{
-var form=document.querySelector('.rio-bulk-form');if(!form)return;
-var all=form.querySelector('.rio-bulk-all');
-var rows=form.querySelectorAll('.rio-bulk-row');
-var count=form.querySelector('[data-rio-bulk-count]');
-var hidden=form.querySelector('input[name="_selected"]');
-function collect(){{var ids=[];rows.forEach(function(cb){{if(cb.checked)ids.push(cb.value);}});return ids;}}
-function update(){{var ids=collect();if(hidden)hidden.value=ids.join(',');if(count)count.textContent=ids.length+' selected';}}
-if(all)all.addEventListener('change',function(){{rows.forEach(function(cb){{cb.checked=all.checked;}});update();}});
-rows.forEach(function(cb){{cb.addEventListener('change',update);}});
-form.addEventListener('submit',function(e){{update();var ids=collect();var act=form.querySelector('[name="action"]');if(!ids.length||!act.value){{e.preventDefault();alert('Select one or more rows and an action, then click Go.');}}}});
-update();
+var form=document.querySelector('.rio-bulk-form');
+if(form){{
+  var all=form.querySelector('.rio-bulk-all');
+  var rows=form.querySelectorAll('.rio-bulk-row');
+  var count=form.querySelector('[data-rio-bulk-count]');
+  var hidden=form.querySelector('input[name="_selected"]');
+  function collect(){{var ids=[];rows.forEach(function(cb){{if(cb.checked)ids.push(cb.value);}});return ids;}}
+  function update(){{var ids=collect();if(hidden)hidden.value=ids.join(',');if(count)count.textContent=ids.length+' selected';}}
+  if(all)all.addEventListener('change',function(){{rows.forEach(function(cb){{cb.checked=all.checked;}});update();}});
+  rows.forEach(function(cb){{cb.addEventListener('change',update);}});
+  form.addEventListener('submit',function(e){{update();var ids=collect();var act=form.querySelector('[name="action"]');if(!ids.length||!act.value){{e.preventDefault();alert('Select one or more rows and an action, then click Go.');}}}});
+  update();
+}}
+// Columns toggle (Change 2) — outside-click closes the <details>,
+// and checkbox changes flip `display: none` on the matching <th>
+// and every matching <td> via `data-col` attribute. Checkbox and
+// actions columns carry no `data-col`, so they're never touched.
+document.addEventListener('click',function(e){{
+  var d=document.querySelector('details.rio-cols-ctl[open]');
+  if(!d)return;
+  if(d.contains(e.target))return;
+  d.open=false;
+}});
+document.addEventListener('change',function(e){{
+  var cb=e.target&&e.target.closest?e.target.closest('.rio-cols-check'):null;
+  if(!cb)return;
+  var col=cb.getAttribute('data-col');
+  if(!col)return;
+  var esc=(window.CSS&&CSS.escape)?CSS.escape(col):col;
+  document.querySelectorAll('[data-col="'+esc+'"]').forEach(function(cell){{
+    cell.style.display=cb.checked?'':'none';
+  }});
+}});
 }})();
 </script>
 </div>"#,
@@ -2563,6 +2599,51 @@ fn render_relation_filter_control(state: &RelationFilterState) -> String {
             )
         }
     }
+}
+
+/// Render the "Columns" control — a `<details>` summary button that
+/// opens a checkbox panel listing every field on the model (Change
+/// 2/5). Primary columns from [`default_list_columns`] start
+/// checked; non-primary start unchecked. Toggling a primary
+/// checkbox hides or shows that column client-side via a small
+/// script at the bottom of the list page. Non-primary checkboxes
+/// render in the panel for visibility but flipping them has no
+/// effect in Change 2 — Change 1's server-side `visible_columns`
+/// filter excludes those columns from the DOM entirely. Revealing
+/// a non-primary column is a separate feature deferred to a later
+/// change.
+fn render_columns_control<T: AdminModel>(filters: &ListFilters<'_>) -> String {
+    let rows: String = T::FIELDS
+        .iter()
+        .map(|f| {
+            let is_visible = filters.visible_columns.contains(&f.name);
+            let is_id = f.name == "id";
+            let checked = if is_visible { " checked" } else { "" };
+            let disabled = if is_id { " disabled" } else { "" };
+            let mut tags: Vec<&'static str> = Vec::new();
+            if is_visible {
+                tags.push("primary");
+            }
+            if f.relation.is_some() {
+                tags.push("relation");
+            }
+            let tag_html = if tags.is_empty() {
+                String::new()
+            } else {
+                format!(" <small>{}</small>", tags.join(" · "))
+            };
+            format!(
+                r#"<label class="rio-cols-panel-row"><input type="checkbox" class="rio-cols-check" data-col="{name}"{checked}{disabled}><span>{label}{tags}</span></label>"#,
+                name = escape_html(f.name),
+                label = escape_html(&humanise(f.name)),
+                tags = tag_html,
+            )
+        })
+        .collect();
+
+    format!(
+        r#"<details class="rio-cols-ctl"><summary class="rio-btn">Columns</summary><div class="rio-cols-panel">{rows}</div></details>"#,
+    )
 }
 
 fn render_list_toolbar<T: AdminModel>(
@@ -2702,6 +2783,13 @@ fn render_list_toolbar<T: AdminModel>(
         })
         .unwrap_or_default();
 
+    // Columns control — sits inside .rio-toolbar-actions, right
+    // after the Search submit button. It's a native <details> whose
+    // panel is positioned below the summary; open/close is browser-
+    // default, outside-click closes it via a small JS listener at
+    // the bottom of the list page.
+    let columns_control = render_columns_control::<T>(filters);
+
     format!(
         r#"<form class="rio-table-toolbar" method="get" action="/admin/{name}" role="search" aria-label="Search {plural}">
 <div class="rio-search">
@@ -2716,6 +2804,7 @@ fn render_list_toolbar<T: AdminModel>(
 <div class="rio-toolbar-actions">
 <button type="submit" class="rio-btn">{submit_icon}<span>Search</span></button>
 {reset}
+{columns}
 </div>
 <div class="rio-count">{count}</div>
 </form>"#,
@@ -2731,6 +2820,7 @@ fn render_list_toolbar<T: AdminModel>(
         sort = sort_select,
         submit_icon = icon_search(),
         reset = reset_btn,
+        columns = columns_control,
         count = escape_html(&count_label),
     )
 }
@@ -2799,6 +2889,28 @@ fn status_pill_class(value: &str) -> &'static str {
 /// the cell renders as a link to the target plus the muted `#<id>`.
 /// When `display_field` is not declared, the cell renders `#<id>` as
 /// a link. No label inference is ever attempted.
+///
+/// Insert `data-col="{col}"` into the opening `<td` tag of a
+/// cell-rendering so the Columns-toggle JS can target the cell by
+/// column name (Change 2/5). Non-invasive — preserves the rest of
+/// the cell verbatim; returns the original string if the shape is
+/// unexpected (e.g. a future render_cell variant that doesn't start
+/// with `<td`).
+fn inject_data_col(cell: &str, col: &str) -> String {
+    let trimmed_offset = cell.len() - cell.trim_start().len();
+    let rest = &cell[trimmed_offset..];
+    if !rest.starts_with("<td") {
+        return cell.to_string();
+    }
+    let (leading_ws, after_ws) = cell.split_at(trimmed_offset);
+    // after_ws starts with "<td"; splice ` data-col="..."` after `<td`.
+    let after_td = &after_ws[3..];
+    format!(
+        r#"{leading_ws}<td data-col="{col}"{after_td}"#,
+        col = escape_html(col),
+    )
+}
+
 fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> String {
     let value = item.field_display(f.name).unwrap_or_default();
     if f.name == "id" {

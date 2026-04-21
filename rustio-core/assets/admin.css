@@ -1860,3 +1860,51 @@ details > summary::-webkit-details-marker { display: none; }
      it — reset sticky so it scrolls with the table. */
   .rio-table thead { position: static; }
 }
+
+/* ═════════════════════════════════════════════════════════════════
+ * Columns toggle (Change 2) — native <details> with an absolutely-
+ * positioned panel. Layout-only rules; reuses existing tokens for
+ * background, border, and radius. No new colours, no typography
+ * changes, no animation.
+ * ═════════════════════════════════════════════════════════════════ */
+
+.rio-cols-ctl {
+  position: relative;
+  display: inline-block;
+}
+.rio-cols-ctl > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.rio-cols-ctl > summary::-webkit-details-marker { display: none; }
+.rio-cols-ctl > summary::marker { content: ""; }
+
+.rio-cols-panel {
+  position: absolute;
+  top: calc(100% + var(--rio-s-2));
+  right: 0;
+  z-index: 30;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--rio-s-2);
+  background: var(--rio-surface);
+  border: 1px solid var(--rio-border);
+  border-radius: var(--rio-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rio-cols-panel-row {
+  display: flex;
+  align-items: center;
+  gap: var(--rio-s-2);
+  padding: var(--rio-s-1) var(--rio-s-2);
+  border-radius: var(--rio-radius-sm);
+  cursor: pointer;
+}
+.rio-cols-panel-row:hover { background: var(--rio-ink-50); }
+.rio-cols-panel-row input[type="checkbox"] { margin: 0; flex-shrink: 0; }
+.rio-cols-panel-row input[disabled] + span { color: var(--rio-text-subtle); }
+.rio-cols-panel-row > span { flex: 1 1 auto; }
