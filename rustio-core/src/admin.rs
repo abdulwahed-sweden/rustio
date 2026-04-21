@@ -2369,11 +2369,17 @@ fn list_response<T: AdminModel>(
         )
     } else {
         let toolbar = render_list_toolbar::<T>(&filters, count, total);
+        // Change 4 — active filter chip row. Rendered OUTSIDE the
+        // toolbar form and BEFORE the bulk-action form so neither
+        // form owns it; each chip's `×` is a plain link that rebuilds
+        // the URL without that one filter key.
+        let chips = render_active_filter_chips(&filters, admin_name);
 
         if items.is_empty() {
             format!(
                 r#"<div class="rio-table-wrap">
 {toolbar}
+{chips}
 <div class="rio-empty">
 <div class="rio-empty-icon">{icon}</div>
 <h3>No records match these filters</h3>
@@ -2465,6 +2471,7 @@ fn list_response<T: AdminModel>(
             format!(
                 r#"<div class="rio-table-wrap">
 {toolbar}
+{chips}
 <form method="post" action="/admin/{name}/bulk_action" class="rio-bulk-form">
 {csrf}
 <input type="hidden" name="_selected" value="">
@@ -2662,6 +2669,121 @@ fn render_columns_control<T: AdminModel>(filters: &ListFilters<'_>) -> String {
 
     format!(
         r#"<details class="rio-cols-ctl"><summary class="rio-btn">Columns</summary><div class="rio-cols-panel">{rows}</div></details>"#,
+    )
+}
+
+/// Build an admin list URL from a slice of (key, value) parameter
+/// pairs (Change 4/5). No URL encoding is performed — values are
+/// round-tripped raw, exactly as they entered the filter state from
+/// the query string. Empty params → bare `/admin/<name>`; otherwise
+/// `?k=v&k=v…`. Key ordering is preserved from the caller.
+fn build_list_url(admin_name: &str, params: &[(String, String)]) -> String {
+    if params.is_empty() {
+        return format!("/admin/{}", admin_name);
+    }
+    let query: String = params
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("/admin/{}?{}", admin_name, query)
+}
+
+/// Collect the currently-active filter parameters as (key, value)
+/// pairs in the canonical order `q, status, priority, <relations…>,
+/// sort` (Change 4/5). Skips empty `q`. Each active relation filter
+/// contributes one entry keyed by its FK column name. Sort is
+/// included so chip removal preserves the user's sort choice.
+fn current_filter_params(filters: &ListFilters<'_>) -> Vec<(String, String)> {
+    let mut params: Vec<(String, String)> = Vec::new();
+    if let Some(q) = filters.q.filter(|s| !s.is_empty()) {
+        params.push(("q".to_string(), q.to_string()));
+    }
+    if let Some(s) = filters.status {
+        params.push(("status".to_string(), s.to_string()));
+    }
+    if let Some(p) = filters.priority {
+        params.push(("priority".to_string(), p.to_string()));
+    }
+    for r in filters.relation_filters {
+        if let Some(id) = r.current_value {
+            params.push((r.field_name.clone(), id.to_string()));
+        }
+    }
+    if let Some(sort) = filters.sort {
+        params.push(("sort".to_string(), sort.to_string()));
+    }
+    params
+}
+
+/// Render the "active filter chips" row (Change 4/5) — one chip per
+/// chippable filter (search, status, priority, each active relation).
+/// Sort is NOT chippable. Each chip's `×` link rebuilds the list URL
+/// with that one key removed, preserving every other filter including
+/// sort. A trailing "Clear all" link strips everything back to
+/// `/admin/<name>`. Returns `""` when no chippable filter is active,
+/// so the caller can drop the empty wrapper from the DOM.
+fn render_active_filter_chips(filters: &ListFilters<'_>, admin_name: &str) -> String {
+    let all_params = current_filter_params(filters);
+    let remove_url = |exclude_key: &str| -> String {
+        let kept: Vec<(String, String)> = all_params
+            .iter()
+            .filter(|(k, _)| k != exclude_key)
+            .cloned()
+            .collect();
+        build_list_url(admin_name, &kept)
+    };
+
+    let mut chips: Vec<String> = Vec::new();
+
+    if let Some(q) = filters.q.filter(|s| !s.is_empty()) {
+        chips.push(format!(
+            r#"<span class="admin-filter-chip"><span class="admin-filter-chip-label">Search:</span> <span class="admin-filter-chip-value">&quot;{value}&quot;</span> <a href="{href}" aria-label="Remove search filter">&times;</a></span>"#,
+            value = escape_html(q),
+            href = escape_html(&remove_url("q")),
+        ));
+    }
+    if let Some(s) = filters.status {
+        chips.push(format!(
+            r#"<span class="admin-filter-chip"><span class="admin-filter-chip-label">Status:</span> <span class="admin-filter-chip-value">{value}</span> <a href="{href}" aria-label="Remove status filter">&times;</a></span>"#,
+            value = escape_html(&humanise_enum_value(s)),
+            href = escape_html(&remove_url("status")),
+        ));
+    }
+    if let Some(p) = filters.priority {
+        chips.push(format!(
+            r#"<span class="admin-filter-chip"><span class="admin-filter-chip-label">Priority:</span> <span class="admin-filter-chip-value">{value}</span> <a href="{href}" aria-label="Remove priority filter">&times;</a></span>"#,
+            value = escape_html(p),
+            href = escape_html(&remove_url("priority")),
+        ));
+    }
+    for r in filters.relation_filters {
+        if let Some(id) = r.current_value {
+            let display = match &r.mode {
+                RelationFilterMode::Dropdown { options } => options
+                    .iter()
+                    .find(|(opt_id, _)| *opt_id == id)
+                    .map(|(_, name)| name.clone())
+                    .unwrap_or_else(|| format!("#{}", id)),
+                RelationFilterMode::Numeric { .. } => format!("#{}", id),
+            };
+            chips.push(format!(
+                r#"<span class="admin-filter-chip"><span class="admin-filter-chip-label">{label}:</span> <span class="admin-filter-chip-value">{value}</span> <a href="{href}" aria-label="Remove {label} filter">&times;</a></span>"#,
+                label = escape_html(&r.label),
+                value = escape_html(&display),
+                href = escape_html(&remove_url(&r.field_name)),
+            ));
+        }
+    }
+
+    if chips.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        r#"<div class="admin-filter-chips">{chips}<a class="admin-filter-clear-all" href="/admin/{name}">Clear all</a></div>"#,
+        chips = chips.join(""),
+        name = escape_html(admin_name),
     )
 }
 

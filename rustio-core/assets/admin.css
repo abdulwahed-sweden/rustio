@@ -1927,3 +1927,63 @@ details > summary::-webkit-details-marker { display: none; }
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
+
+/* ═════════════════════════════════════════════════════════════════
+ * Active filter chips (Change 4) — rendered between the toolbar and
+ * the bulk-action form, outside any <form>. Layout only: the tokens,
+ * border, and radius reuse the existing rio palette. Each chip's
+ * `×` is a plain <a>; there is no JS — removal is a full navigation.
+ * ═════════════════════════════════════════════════════════════════ */
+
+.admin-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rio-s-1);
+  margin: var(--rio-s-2) 0;
+}
+
+.admin-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rio-s-1);
+  padding: var(--rio-s-1) var(--rio-s-2);
+  border: 1px solid var(--rio-border);
+  border-radius: var(--rio-radius-sm);
+  background: var(--rio-surface);
+  line-height: 1.2;
+}
+
+.admin-filter-chip-label {
+  color: var(--rio-text-subtle);
+}
+
+.admin-filter-chip-value {
+  font-weight: 500;
+}
+
+.admin-filter-chip a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25em;
+  height: 1.25em;
+  text-decoration: none;
+  color: var(--rio-text-subtle);
+  border-radius: var(--rio-radius-sm);
+}
+
+.admin-filter-chip a:hover {
+  color: var(--rio-text);
+  background: var(--rio-ink-50);
+}
+
+.admin-filter-clear-all {
+  margin-left: var(--rio-s-1);
+  color: var(--rio-text-subtle);
+  text-decoration: underline;
+}
+
+.admin-filter-clear-all:hover {
+  color: var(--rio-text);
+}
