@@ -99,9 +99,7 @@ pub fn derive_rustio_admin(input: TokenStream) -> TokenStream {
 
         // Relations only make sense on integer foreign-key columns; the
         // macro's job is to catch the nonsense case at compile time.
-        if relation.is_some()
-            && !matches!(kind, FieldKind::I64 | FieldKind::I32)
-        {
+        if relation.is_some() && !matches!(kind, FieldKind::I64 | FieldKind::I32) {
             return syn::Error::new_spanned(
                 &f.ty,
                 "RustioAdmin: #[rustio(belongs_to = \"...\")] can only be applied to \
@@ -604,4 +602,3 @@ fn nullable_assignment(ident: &syn::Ident, name_str: &str, kind: FieldKind) -> T
         },
     }
 }
-

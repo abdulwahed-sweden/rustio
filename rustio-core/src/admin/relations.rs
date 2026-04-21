@@ -183,12 +183,21 @@ pub enum RegistryError {
 impl std::fmt::Display for RegistryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownTarget { model, field, target } => write!(
+            Self::UnknownTarget {
+                model,
+                field,
+                target,
+            } => write!(
                 f,
                 "`{model}.{field}` declares `belongs_to = \"{target}\"`, \
                  but no model named `{target}` exists in the schema"
             ),
-            Self::UnknownDisplayField { model, field, target, display } => write!(
+            Self::UnknownDisplayField {
+                model,
+                field,
+                target,
+                display,
+            } => write!(
                 f,
                 "`{model}.{field}` declares `display = \"{display}\"` against `{target}`, \
                  but `{target}` has no field named `{display}`"
@@ -247,11 +256,8 @@ impl RelationRegistry {
         let mut belongs_to_of: HashMap<String, Vec<ResolvedRelation>> = HashMap::new();
 
         // Index models by name for O(1) target lookup.
-        let index: HashMap<&str, &crate::schema::SchemaModel> = schema
-            .models
-            .iter()
-            .map(|m| (m.name.as_str(), m))
-            .collect();
+        let index: HashMap<&str, &crate::schema::SchemaModel> =
+            schema.models.iter().map(|m| (m.name.as_str(), m)).collect();
 
         for source in &schema.models {
             for field in &source.fields {
@@ -288,10 +294,7 @@ impl RelationRegistry {
                     kind: rel.kind,
                 };
 
-                belongs_to.insert(
-                    (source.name.clone(), field.name.clone()),
-                    resolved.clone(),
-                );
+                belongs_to.insert((source.name.clone(), field.name.clone()), resolved.clone());
 
                 belongs_to_of
                     .entry(source.name.clone())
@@ -332,8 +335,7 @@ impl RelationRegistry {
 
     /// The `ResolvedRelation` for `(model, field)`, if any.
     pub fn belongs_to(&self, model: &str, field: &str) -> Option<&ResolvedRelation> {
-        self.belongs_to
-            .get(&(model.to_string(), field.to_string()))
+        self.belongs_to.get(&(model.to_string(), field.to_string()))
     }
 
     /// Every forward relation owned by a source model. Used by the
@@ -369,11 +371,8 @@ impl RelationRegistry {
     /// files (the AI pipeline writes those).
     pub fn validate(&self, schema: &Schema) -> Vec<RegistryError> {
         let mut errors: Vec<RegistryError> = Vec::new();
-        let models: HashMap<&str, &crate::schema::SchemaModel> = schema
-            .models
-            .iter()
-            .map(|m| (m.name.as_str(), m))
-            .collect();
+        let models: HashMap<&str, &crate::schema::SchemaModel> =
+            schema.models.iter().map(|m| (m.name.as_str(), m)).collect();
 
         for source in &schema.models {
             for field in &source.fields {
@@ -417,4 +416,3 @@ impl RelationRegistry {
         entries.into_iter()
     }
 }
-

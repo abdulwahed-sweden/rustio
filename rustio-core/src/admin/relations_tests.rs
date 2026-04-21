@@ -15,9 +15,7 @@ use super::relations::{
     InverseRelation, RegistryError, RelationRegistry, ResolvedRelation,
     RELATION_FILTER_DROPDOWN_CAP,
 };
-use crate::schema::{
-    Relation, RelationKind, Schema, SchemaField, SchemaModel, SCHEMA_VERSION,
-};
+use crate::schema::{Relation, RelationKind, Schema, SchemaField, SchemaModel, SCHEMA_VERSION};
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -48,7 +46,13 @@ fn fk_field(name: &str, target: &str, display: Option<&str>) -> SchemaField {
     }
 }
 
-fn model(name: &str, table: &str, admin: &str, display: &str, fields: Vec<SchemaField>) -> SchemaModel {
+fn model(
+    name: &str,
+    table: &str,
+    admin: &str,
+    display: &str,
+    fields: Vec<SchemaField>,
+) -> SchemaModel {
     SchemaModel {
         name: name.to_string(),
         table: table.to_string(),
@@ -71,10 +75,7 @@ fn healthcare_schema() -> Schema {
                 "patients",
                 "patients",
                 "Patients",
-                vec![
-                    plain_field("id", "i64"),
-                    plain_field("full_name", "String"),
-                ],
+                vec![plain_field("id", "i64"), plain_field("full_name", "String")],
             ),
             model(
                 "Doctor",
@@ -162,11 +163,7 @@ fn relation_without_display_field_round_trips() {
     let json = schema.to_pretty_json().unwrap();
     let parsed = Schema::parse(&json).unwrap();
 
-    let invoices = parsed
-        .models
-        .iter()
-        .find(|m| m.name == "Invoice")
-        .unwrap();
+    let invoices = parsed.models.iter().find(|m| m.name == "Invoice").unwrap();
     let patient_id = invoices
         .fields
         .iter()
@@ -242,7 +239,9 @@ fn registry_inverts_every_stored_belongs_to() {
 
     let doctor_inverses = reg.has_many("Doctor");
     assert!(
-        doctor_inverses.iter().any(|i| i.source_model == "Appointment"),
+        doctor_inverses
+            .iter()
+            .any(|i| i.source_model == "Appointment"),
         "Doctor must see Appointment as an inverse"
     );
 

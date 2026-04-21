@@ -379,9 +379,7 @@ impl Admin {
                 // and neither should ever render a shell page on a
                 // 404 / 500 from an upstream handler.
                 let path = req.uri().path();
-                if path == "/admin/assets/admin.css"
-                    || path == "/admin/assets/favicon.svg"
-                {
+                if path == "/admin/assets/admin.css" || path == "/admin/assets/favicon.svg" {
                     return next.run(req).await;
                 }
                 let user_email = req
@@ -1013,19 +1011,21 @@ where
             // per-blocker breakdown + links to filtered lists.
             let registry = current_registry();
             if !registry.is_empty() {
-                let counts =
-                    fetch_inverse_counts(&db, T::singular_name(), id, &registry).await;
+                let counts = fetch_inverse_counts(&db, T::singular_name(), id, &registry).await;
                 let blockers: Vec<(&relations::InverseRelation, i64)> = registry
                     .has_many(T::singular_name())
                     .iter()
                     .filter_map(|inv| {
                         let key = format!("{}.{}", inv.source_model, inv.source_field);
-                        counts.get(&key).copied().filter(|n| *n > 0).map(|n| (inv, n))
+                        counts
+                            .get(&key)
+                            .copied()
+                            .filter(|n| *n > 0)
+                            .map(|n| (inv, n))
                     })
                     .collect();
                 if !blockers.is_empty() {
-                    let shell =
-                        Shell::from_ctx(&entries, Some(T::ADMIN_NAME), &ctx);
+                    let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), &ctx);
                     return Ok::<Response, Error>(render_delete_blocked_page::<T>(
                         &shell, id, &primary, &blockers,
                     ));
@@ -1040,8 +1040,7 @@ where
             if let Err(e) = T::delete(&db, id).await {
                 if is_foreign_key_violation(&e) {
                     let registry = current_registry();
-                    let counts =
-                        fetch_inverse_counts(&db, T::singular_name(), id, &registry).await;
+                    let counts = fetch_inverse_counts(&db, T::singular_name(), id, &registry).await;
                     let blockers: Vec<(&relations::InverseRelation, i64)> = registry
                         .has_many(T::singular_name())
                         .iter()
@@ -1054,8 +1053,7 @@ where
                                 .map(|n| (inv, n))
                         })
                         .collect();
-                    let shell =
-                        Shell::from_ctx(&entries, Some(T::ADMIN_NAME), &ctx);
+                    let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), &ctx);
                     return Ok::<Response, Error>(render_delete_blocked_page::<T>(
                         &shell, id, &primary, &blockers,
                     ));
@@ -1401,9 +1399,7 @@ fn admin_favicon_response() -> Response {
         .status(200)
         .header("content-type", "image/svg+xml")
         .header("cache-control", "public, max-age=86400")
-        .body(Full::new(Bytes::from_static(
-            ADMIN_FAVICON_SVG.as_bytes(),
-        )))
+        .body(Full::new(Bytes::from_static(ADMIN_FAVICON_SVG.as_bytes())))
         .expect("valid favicon response");
     resp.headers_mut().insert(
         "x-content-type-options",
@@ -2176,10 +2172,7 @@ async fn fetch_inverse_counts(
             Err(_) => continue,
         };
         let count: i64 = row.try_get::<i64, _>("rio_count").unwrap_or_default();
-        out.insert(
-            format!("{}.{}", inv.source_model, inv.source_field),
-            count,
-        );
+        out.insert(format!("{}.{}", inv.source_model, inv.source_field), count);
     }
     out
 }
@@ -3398,7 +3391,11 @@ fn humanise_enum_value(s: &str) -> String {
 /// is a separate codepath.
 fn pluralise_label(s: &str) -> String {
     let lower = s.to_lowercase();
-    if lower.ends_with('s') || lower.ends_with('x') || lower.ends_with("ch") || lower.ends_with("sh") {
+    if lower.ends_with('s')
+        || lower.ends_with('x')
+        || lower.ends_with("ch")
+        || lower.ends_with("sh")
+    {
         format!("{lower}es")
     } else if lower.ends_with('y')
         && !lower.ends_with("ay")
@@ -5866,10 +5863,7 @@ mod tests {
         fn field_display(&self, _: &str) -> Option<String> {
             None
         }
-        fn from_form(
-            _: &FormData,
-            _: Option<i64>,
-        ) -> Result<Self, Error> {
+        fn from_form(_: &FormData, _: Option<i64>) -> Result<Self, Error> {
             unimplemented!()
         }
     }
@@ -5883,10 +5877,7 @@ mod tests {
         // match any rule, so they are NOT included. No fill step
         // means the return is exactly those four.
         let cols = default_list_columns::<DoctorFixture>();
-        assert_eq!(
-            cols,
-            vec!["id", "full_name", "department_id", "is_active",]
-        );
+        assert_eq!(cols, vec!["id", "full_name", "department_id", "is_active",]);
     }
 
     #[test]
@@ -5941,10 +5932,7 @@ mod tests {
             fn field_display(&self, _: &str) -> Option<String> {
                 None
             }
-            fn from_form(
-                _: &FormData,
-                _: Option<i64>,
-            ) -> Result<Self, Error> {
+            fn from_form(_: &FormData, _: Option<i64>) -> Result<Self, Error> {
                 unimplemented!()
             }
         }
@@ -6039,10 +6027,7 @@ mod tests {
             fn field_display(&self, _: &str) -> Option<String> {
                 None
             }
-            fn from_form(
-                _: &FormData,
-                _: Option<i64>,
-            ) -> Result<Self, Error> {
+            fn from_form(_: &FormData, _: Option<i64>) -> Result<Self, Error> {
                 unimplemented!()
             }
         }
@@ -6106,10 +6091,7 @@ mod tests {
             fn field_display(&self, _: &str) -> Option<String> {
                 None
             }
-            fn from_form(
-                _: &FormData,
-                _: Option<i64>,
-            ) -> Result<Self, Error> {
+            fn from_form(_: &FormData, _: Option<i64>) -> Result<Self, Error> {
                 unimplemented!()
             }
         }
