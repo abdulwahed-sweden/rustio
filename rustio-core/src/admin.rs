@@ -3475,12 +3475,10 @@ pub(crate) fn is_primary_column(f: &AdminField) -> bool {
 ///    include only the first-in-declaration-order match.
 /// 3. Cap at [`DEFAULT_VISIBLE_COLUMNS`] (5), keeping declaration
 ///    order.
-/// 4. Fill to 5 if the rules yielded fewer: first prefer non-FK
-///    integer fields (measurement columns like `years_experience`),
-///    then fall back to declaration order skipping `_at` metadata
-///    timestamps. Filling is what makes the default set useful on
-///    models whose names don't match rule 3 (e.g. `invoice_number`,
-///    `medication`) — users retain freedom to override.
+///
+/// If fewer than 5 fields match, the return value has fewer than 5
+/// entries — no padding. Users can reveal hidden columns via the
+/// Columns control.
 ///
 /// Output preserves declaration order, which is how the list
 /// renderer expects it.
@@ -3488,9 +3486,10 @@ pub(crate) fn default_list_columns<T: AdminModel>() -> Vec<&'static str> {
     let fields = T::FIELDS;
     let mut picked: Vec<&'static str> = Vec::with_capacity(DEFAULT_VISIBLE_COLUMNS);
 
-    // Step 1+2: rule-based picks, with rule 3 applied as "first
-    // name-like match wins". Scan in declaration order; a later
-    // name-like field can't override an earlier one.
+    // Rule-based picks, with rule 3 applied as "first name-like
+    // match wins". Scan in declaration order; a later name-like
+    // field can't override an earlier one. Cap at
+    // DEFAULT_VISIBLE_COLUMNS; no fill step.
     let mut name_rule_used = false;
     for f in fields {
         if picked.len() >= DEFAULT_VISIBLE_COLUMNS {
@@ -3505,52 +3504,7 @@ pub(crate) fn default_list_columns<T: AdminModel>() -> Vec<&'static str> {
         }
     }
 
-    // Step 4a: fill with non-FK integer fields in declaration order.
-    // These are typically measurement columns (`years_experience`,
-    // `duration_days`, `amount_cents`) that carry operator-visible
-    // numbers and belong in a primary view.
-    while picked.len() < DEFAULT_VISIBLE_COLUMNS {
-        let next = fields.iter().find(|f| {
-            !picked.contains(&f.name)
-                && f.name != "id"
-                && matches!(f.ty, FieldType::I32 | FieldType::I64)
-                && f.relation.is_none()
-        });
-        match next {
-            Some(f) => picked.push(f.name),
-            None => break,
-        }
-    }
-
-    // Step 4b: further fill in declaration order, skipping `_at`
-    // metadata timestamps (created_at / updated_at / scheduled_at —
-    // dates belong in the row-expansion panel unless explicitly
-    // declared primary by the rules above).
-    while picked.len() < DEFAULT_VISIBLE_COLUMNS {
-        let next = fields
-            .iter()
-            .find(|f| !picked.contains(&f.name) && !f.name.ends_with("_at"));
-        match next {
-            Some(f) => picked.push(f.name),
-            None => break,
-        }
-    }
-
-    // Re-sort picks into declaration order. The fill steps above
-    // append in the order the filler found a match, which can put
-    // a late-declared column (e.g. `years_experience`) after an
-    // earlier one (`is_active`) in the output. The list renderer
-    // iterates `T::FIELDS` and filters by this set, so the set
-    // contents matter — but it's cleaner if the returned order
-    // matches declaration order too so downstream consumers that
-    // render in list order (e.g. chip labels) see a stable sequence.
-    let mut ordered: Vec<&'static str> = Vec::with_capacity(picked.len());
-    for f in fields {
-        if picked.contains(&f.name) {
-            ordered.push(f.name);
-        }
-    }
-    ordered
+    picked
 }
 
 /// Drop a trailing ` Id` from a humanised field name when the column
@@ -5921,21 +5875,81 @@ mod tests {
     }
 
     #[test]
-    fn default_list_columns_doctor_yields_five_including_fill() {
-        // Rules match {id, full_name, department_id, is_active};
-        // fill with first non-FK int → years_experience. Output
-        // stays in declaration order.
+    fn default_columns_doctor_yields_four_rule_matches() {
+        // Rules 1 (id) + 3 (full_name — first name-like) +
+        // 4 (department_id — FK with _id) + 5 (is_active) match
+        // exactly four fields on Doctor. `specialty`, `license_no`,
+        // `email`, `phone`, `years_experience`, `created_at` do not
+        // match any rule, so they are NOT included. No fill step
+        // means the return is exactly those four.
         let cols = default_list_columns::<DoctorFixture>();
         assert_eq!(
             cols,
-            vec![
-                "id",
-                "full_name",
-                "department_id",
-                "years_experience",
-                "is_active",
-            ]
+            vec!["id", "full_name", "department_id", "is_active",]
         );
+    }
+
+    #[test]
+    fn default_columns_returns_fewer_than_five_when_rules_match_fewer() {
+        // Synthetic 3-field model: only `id` (rule 1), `name`
+        // (rule 3 first name-like), and `is_active` (rule 5) match.
+        // Return is exactly those three — not padded to 5.
+        struct Tiny;
+        impl crate::orm::Model for Tiny {
+            const TABLE: &'static str = "tinies";
+            const COLUMNS: &'static [&'static str] = &["id", "name", "is_active"];
+            const INSERT_COLUMNS: &'static [&'static str] = &[];
+            fn id(&self) -> i64 {
+                0
+            }
+            fn from_row(_: crate::orm::Row<'_>) -> Result<Self, Error> {
+                unimplemented!()
+            }
+            fn insert_values(&self) -> Vec<crate::orm::Value> {
+                Vec::new()
+            }
+        }
+        impl AdminModel for Tiny {
+            const ADMIN_NAME: &'static str = "tinies";
+            const DISPLAY_NAME: &'static str = "Tinies";
+            const FIELDS: &'static [AdminField] = &[
+                AdminField {
+                    name: "id",
+                    ty: FieldType::I64,
+                    editable: false,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "name",
+                    ty: FieldType::String,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "is_active",
+                    ty: FieldType::Bool,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+            ];
+            fn singular_name() -> &'static str {
+                "Tiny"
+            }
+            fn field_display(&self, _: &str) -> Option<String> {
+                None
+            }
+            fn from_form(
+                _: &FormData,
+                _: Option<i64>,
+            ) -> Result<Self, Error> {
+                unimplemented!()
+            }
+        }
+        let cols = default_list_columns::<Tiny>();
+        assert_eq!(cols, vec!["id", "name", "is_active"]);
     }
 
     #[test]
@@ -6100,18 +6114,12 @@ mod tests {
             }
         }
         let cols = default_list_columns::<TwoNames>();
-        // Fill then promotes email via "declaration-order, not _at"
-        // — so on a 3-field model we expect all 3 visible. This is
-        // acceptable: the cap only fires when > 5 qualify. The
-        // assertion below pins rule 3's "first match wins" — email
-        // is picked by the fill step, NOT by rule 3.
-        assert!(
-            cols.contains(&"full_name"),
-            "rule 3 must pick `full_name` as the first name-like field"
-        );
-        // email is fill-step-promoted on this 3-field model because
-        // there are no other candidates. The key invariant is that
-        // rule 3 didn't fire twice.
-        assert_eq!(cols, vec!["id", "full_name", "email"]);
+        // Rule 3 fires exactly once: `full_name` is the first
+        // name-like field in declaration order. `email` also
+        // appears in NAME_LIKE_FIELDS but must NOT be promoted —
+        // rule 3 is "first match wins". With no fill step, email
+        // does not reappear via some later pass either. Return is
+        // exactly {id, full_name}.
+        assert_eq!(cols, vec!["id", "full_name"]);
     }
 }
