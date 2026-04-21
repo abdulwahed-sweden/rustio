@@ -2406,6 +2406,21 @@ fn list_response<T: AdminModel>(
                 .iter()
                 .filter(|f| filters.visible_columns.contains(&f.name))
                 .collect();
+            // Change 5 — row expansion. Enabled only when the model
+            // has fields outside the primary column set (Change 1);
+            // otherwise there is nothing to reveal and the whole
+            // expand UI is omitted.
+            let has_hidden_fields = T::FIELDS.len() > visible_fields.len();
+            let hidden_fields: Vec<&AdminField> = T::FIELDS
+                .iter()
+                .filter(|f| !filters.visible_columns.contains(&f.name))
+                .collect();
+            // Total column count drives the expand-row colspan. Based
+            // on server-visible columns only; client-side display:none
+            // from the Change 2 columns toggle is intentionally
+            // ignored (browsers stretch the spanned cell to the
+            // remaining visible width automatically).
+            let colspan_total = visible_fields.len() + 3;
             // Each <th> and <td> carries `data-col="<field_name>"`
             // so the Columns toggle (Change 2) can match cells by
             // column name via `querySelectorAll('[data-col="…"]')`.
@@ -2421,6 +2436,11 @@ fn list_response<T: AdminModel>(
                     )
                 })
                 .collect();
+            let expand_header = if has_hidden_fields {
+                r#"<th class="rio-cell-expand" aria-label="Expand"></th>"#.to_string()
+            } else {
+                String::new()
+            };
             let rows: String = items
                 .iter()
                 .map(|item| {
@@ -2450,7 +2470,35 @@ fn list_response<T: AdminModel>(
                     let checkbox = format!(
                         r#"<td class="rio-cell-check"><input type="checkbox" class="rio-bulk-row" value="{id}" aria-label="Select row {id}"></td>"#,
                     );
-                    format!("<tr>{checkbox}{cells}{row_actions}</tr>")
+                    if !has_hidden_fields {
+                        return format!("<tr>{checkbox}{cells}{row_actions}</tr>");
+                    }
+                    // Change 5 — build the paired main+expand rows.
+                    // The expand row is always present in the DOM and
+                    // carries the `hidden` attribute; the inline IIFE
+                    // at the bottom of the page flips it on click.
+                    let expand_cell = format!(
+                        r#"<td class="rio-cell-expand"><button type="button" class="rio-expand-btn" data-expand-toggle aria-expanded="false" aria-label="Expand row {id}">&#9656;</button></td>"#,
+                    );
+                    let detail_fields: String = hidden_fields
+                        .iter()
+                        .map(|f| {
+                            format!(
+                                r#"<div class="rio-expand-field"><dt>{label}</dt><dd>{value}</dd></div>"#,
+                                label = escape_html(&humanise(f.name)),
+                                value = render_cell_inner::<T>(f, *item, cell_ctx),
+                            )
+                        })
+                        .collect();
+                    let expand_row = format!(
+                        r#"<tr class="rio-row-expand" data-row-id="{id}" hidden><td colspan="{colspan}" class="rio-cell-expand-panel"><dl class="rio-expand-details">{fields}</dl></td></tr>"#,
+                        id = id,
+                        colspan = colspan_total,
+                        fields = detail_fields,
+                    );
+                    format!(
+                        r#"<tr class="rio-row-main" data-row-id="{id}">{expand_cell}{checkbox}{cells}{row_actions}</tr>{expand_row}"#,
+                    )
                 })
                 .collect();
 
@@ -2477,7 +2525,7 @@ fn list_response<T: AdminModel>(
 <input type="hidden" name="_selected" value="">
 {bulk_bar}
 <table class="rio-table">
-<thead><tr><th class="rio-cell-check"><input type="checkbox" class="rio-bulk-all" aria-label="Select all"></th>{headers}<th aria-label="Actions"></th></tr></thead>
+<thead><tr>{expand_header}<th class="rio-cell-check"><input type="checkbox" class="rio-bulk-all" aria-label="Select all"></th>{headers}<th aria-label="Actions"></th></tr></thead>
 <tbody>{rows}</tbody>
 </table>
 </form>
@@ -2535,10 +2583,33 @@ document.addEventListener('click',function(e){{
     btn.setAttribute('aria-expanded','true');
   }}
 }});
+// Row expansion toggle (Change 5) — the button lives in the first
+// column of each `.rio-row-main`, the paired `.rio-row-expand` is
+// its `nextElementSibling`. Flip the `hidden` attribute + chevron
+// glyph + aria-expanded; nothing else.
+document.addEventListener('click',function(e){{
+  var btn=e.target&&e.target.closest?e.target.closest('[data-expand-toggle]'):null;
+  if(!btn)return;
+  var main=btn.closest('tr');
+  if(!main)return;
+  var panel=main.nextElementSibling;
+  if(!panel||!panel.classList.contains('rio-row-expand'))return;
+  var open=!panel.hasAttribute('hidden');
+  if(open){{
+    panel.setAttribute('hidden','');
+    btn.setAttribute('aria-expanded','false');
+    btn.textContent='\u25B8';
+  }}else{{
+    panel.removeAttribute('hidden');
+    btn.setAttribute('aria-expanded','true');
+    btn.textContent='\u25BE';
+  }}
+}});
 }})();
 </script>
 </div>"#,
                 name = escape_html(admin_name),
+                expand_header = expand_header,
             )
         }
     };
@@ -3206,6 +3277,18 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
         "rio-cell-muted"
     };
     format!(r#"<td class="{cls}">{}</td>"#, escape_html(&value))
+}
+
+/// Strip the `<td …>` wrapper from a [`render_cell`] output so the
+/// inner value can be reused inside the row-expansion panel
+/// (Change 5/5). Relies on the invariant that `render_cell` always
+/// returns a single `<td …>INNER</td>` string — do not change that
+/// shape without updating this helper.
+fn render_cell_inner<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> String {
+    let cell = render_cell::<T>(f, item, ctx);
+    let start = cell.find('>').map(|i| i + 1).unwrap_or(0);
+    let end = cell.rfind("</td>").unwrap_or(cell.len());
+    cell[start..end].to_string()
 }
 
 // ---------------------------------------------------------------------------

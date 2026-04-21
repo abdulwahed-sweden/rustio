@@ -1987,3 +1987,44 @@ details > summary::-webkit-details-marker { display: none; }
 .admin-filter-clear-all:hover {
   color: var(--rio-text);
 }
+
+/* ═════════════════════════════════════════════════════════════════
+ * Row expansion (Change 5) — main + expand row pair in the list
+ * table. The expand row is always in the DOM and carries the
+ * `hidden` attribute; a single click handler in the inline IIFE
+ * flips the attribute plus the button's chevron + aria-expanded.
+ * Layout only — no colors, no typography, no animation.
+ * ═════════════════════════════════════════════════════════════════ */
+
+.rio-cell-expand {
+  width: 32px;
+  text-align: center;
+}
+
+.rio-expand-btn {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.rio-row-expand > td {
+  padding: var(--rio-s-3);
+}
+
+.rio-expand-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--rio-s-2);
+  margin: 0;
+}
+
+.rio-expand-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rio-expand-field dd {
+  margin: 0;
+}
