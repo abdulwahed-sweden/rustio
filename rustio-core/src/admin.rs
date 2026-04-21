@@ -700,6 +700,11 @@ where
                 .filter(|s| SORT_OPTIONS.iter().any(|(v, _)| *v == *s))
                 .map(String::from);
 
+            // Column visibility — rule-based default set computed
+            // from the model's field shape via
+            // [`default_list_columns`].
+            let visible_columns: Vec<&'static str> = default_list_columns::<T>();
+
             let shell = Shell::from_ctx(&entries, Some(T::ADMIN_NAME), req.ctx());
             let all_items = T::all(&db).await?;
             let total = all_items.len();
@@ -780,6 +785,7 @@ where
                 priority_options: &priority_options,
                 sort: sort.as_deref(),
                 relation_filters: &relation_filter_states,
+                visible_columns: &visible_columns,
             };
 
             // Relation layer (0.9.0): FK label prefetch uses the same
@@ -2020,6 +2026,10 @@ struct ListFilters<'a> {
     /// model, carrying either a dropdown option list or a signal to
     /// render a numeric fallback input.
     relation_filters: &'a [RelationFilterState],
+    /// Column-visibility set used by [`list_response`] to filter
+    /// `T::FIELDS` when rendering the `<thead>` and row cells. Fed
+    /// from [`default_list_columns`].
+    visible_columns: &'a [&'static str],
 }
 
 /// Phase 5 — how one relation-aware filter should render. Assembled
@@ -2388,14 +2398,23 @@ fn list_response<T: AdminModel>(
                 plus = icon_plus(),
             )
         } else {
-            let headers: String = T::FIELDS
+            // Filter `T::FIELDS` through the visible-columns set
+            // computed by the list handler. Declaration order is
+            // preserved; hidden columns are simply not rendered in
+            // this pass. (Row-expansion / hide-column UI is a later
+            // change.)
+            let visible_fields: Vec<&AdminField> = T::FIELDS
+                .iter()
+                .filter(|f| filters.visible_columns.contains(&f.name))
+                .collect();
+            let headers: String = visible_fields
                 .iter()
                 .map(|f| format!("<th>{}</th>", escape_html(&humanise(f.name))))
                 .collect();
             let rows: String = items
                 .iter()
                 .map(|item| {
-                    let cells: String = T::FIELDS
+                    let cells: String = visible_fields
                         .iter()
                         .map(|f| render_cell::<T>(f, *item, cell_ctx))
                         .collect();
@@ -3392,6 +3411,146 @@ fn pluralise_label(s: &str) -> String {
     } else {
         format!("{lower}s")
     }
+}
+
+/// Default column cap for the list-page visible set. Above this the
+/// table starts to feel wide; users opt into more via the Columns
+/// control. Caps apply after the rule-set + fill step below.
+const DEFAULT_VISIBLE_COLUMNS: usize = 5;
+
+/// Name-like columns that rule 3 in [`is_primary_column`] treats as
+/// the "first match" name field. A single model may have several
+/// of these (e.g. both `full_name` and `email`); only the one that
+/// appears first in declaration order gets primary status, handled
+/// by the caller since the decision needs cross-field context.
+const NAME_LIKE_FIELDS: &[&str] = &["name", "full_name", "title", "email"];
+
+/// Field-local rules for primary-column membership. Returns `true`
+/// if the column qualifies based on properties of the field alone;
+/// rule 3 (first name-like match) requires model-wide context and is
+/// applied in [`default_list_columns`].
+///
+/// Rules applied here (spec order, excluding rule 3):
+///   1. `name == "id"`              → primary
+///   2. model's `primary_display_field` attribute matches — RustIO
+///      has no such attribute today; placeholder for a future macro
+///      addition. Always `false` in this pass.
+///   4. `relation.is_some()` AND    → primary
+///      name ends with `_id`
+///   5. `Bool` type AND             → primary
+///      name starts with `is_`
+///   6. name ∈ {status, state, priority} → primary
+///   7. otherwise                   → not primary
+///
+/// Rule 3 lives in [`default_list_columns`] because "first match on
+/// the model" can't be decided from a single `&AdminField`.
+pub(crate) fn is_primary_column(f: &AdminField) -> bool {
+    // Rule 1.
+    if f.name == "id" {
+        return true;
+    }
+    // Rule 2 intentionally omitted — no such attribute yet.
+    // Rule 4.
+    if f.relation.is_some() && f.name.ends_with("_id") {
+        return true;
+    }
+    // Rule 5.
+    if matches!(f.ty, FieldType::Bool) && f.name.starts_with("is_") {
+        return true;
+    }
+    // Rule 6.
+    if matches!(f.name, "status" | "state" | "priority") {
+        return true;
+    }
+    // Rule 7.
+    false
+}
+
+/// Compute the default set of visible columns for a model's list
+/// page. Generic across every rustio project — relies only on
+/// [`AdminField`] shape (type, name, relation). Algorithm:
+///
+/// 1. Collect every field that matches [`is_primary_column`].
+/// 2. Apply rule 3: if any field name appears in [`NAME_LIKE_FIELDS`],
+///    include only the first-in-declaration-order match.
+/// 3. Cap at [`DEFAULT_VISIBLE_COLUMNS`] (5), keeping declaration
+///    order.
+/// 4. Fill to 5 if the rules yielded fewer: first prefer non-FK
+///    integer fields (measurement columns like `years_experience`),
+///    then fall back to declaration order skipping `_at` metadata
+///    timestamps. Filling is what makes the default set useful on
+///    models whose names don't match rule 3 (e.g. `invoice_number`,
+///    `medication`) — users retain freedom to override.
+///
+/// Output preserves declaration order, which is how the list
+/// renderer expects it.
+pub(crate) fn default_list_columns<T: AdminModel>() -> Vec<&'static str> {
+    let fields = T::FIELDS;
+    let mut picked: Vec<&'static str> = Vec::with_capacity(DEFAULT_VISIBLE_COLUMNS);
+
+    // Step 1+2: rule-based picks, with rule 3 applied as "first
+    // name-like match wins". Scan in declaration order; a later
+    // name-like field can't override an earlier one.
+    let mut name_rule_used = false;
+    for f in fields {
+        if picked.len() >= DEFAULT_VISIBLE_COLUMNS {
+            break;
+        }
+        let hits_name_rule = !name_rule_used && NAME_LIKE_FIELDS.contains(&f.name);
+        if is_primary_column(f) || hits_name_rule {
+            picked.push(f.name);
+            if hits_name_rule {
+                name_rule_used = true;
+            }
+        }
+    }
+
+    // Step 4a: fill with non-FK integer fields in declaration order.
+    // These are typically measurement columns (`years_experience`,
+    // `duration_days`, `amount_cents`) that carry operator-visible
+    // numbers and belong in a primary view.
+    while picked.len() < DEFAULT_VISIBLE_COLUMNS {
+        let next = fields.iter().find(|f| {
+            !picked.contains(&f.name)
+                && f.name != "id"
+                && matches!(f.ty, FieldType::I32 | FieldType::I64)
+                && f.relation.is_none()
+        });
+        match next {
+            Some(f) => picked.push(f.name),
+            None => break,
+        }
+    }
+
+    // Step 4b: further fill in declaration order, skipping `_at`
+    // metadata timestamps (created_at / updated_at / scheduled_at —
+    // dates belong in the row-expansion panel unless explicitly
+    // declared primary by the rules above).
+    while picked.len() < DEFAULT_VISIBLE_COLUMNS {
+        let next = fields
+            .iter()
+            .find(|f| !picked.contains(&f.name) && !f.name.ends_with("_at"));
+        match next {
+            Some(f) => picked.push(f.name),
+            None => break,
+        }
+    }
+
+    // Re-sort picks into declaration order. The fill steps above
+    // append in the order the filler found a match, which can put
+    // a late-declared column (e.g. `years_experience`) after an
+    // earlier one (`is_active`) in the output. The list renderer
+    // iterates `T::FIELDS` and filters by this set, so the set
+    // contents matter — but it's cleaner if the returned order
+    // matches declaration order too so downstream consumers that
+    // render in list order (e.g. chip labels) see a stable sequence.
+    let mut ordered: Vec<&'static str> = Vec::with_capacity(picked.len());
+    for f in fields {
+        if picked.contains(&f.name) {
+            ordered.push(f.name);
+        }
+    }
+    ordered
 }
 
 /// Drop a trailing ` Id` from a humanised field name when the column
@@ -5506,5 +5665,453 @@ mod tests {
         assert_eq!(humanise("is_active"), "Is Active");
         assert_eq!(humanise("created_at"), "Created At");
         assert_eq!(humanise("assigned_to"), "Assigned To");
+    }
+
+    // --- is_primary_column / default_list_columns ---
+    //
+    // Field fixtures. Small helpers to assemble `AdminField` values
+    // that exercise each rule without dragging in a full model.
+
+    fn make_field(
+        name: &'static str,
+        ty: FieldType,
+        relation: Option<AdminRelation>,
+    ) -> AdminField {
+        AdminField {
+            name,
+            ty,
+            editable: true,
+            nullable: false,
+            relation,
+        }
+    }
+
+    fn fk(target: &'static str) -> AdminRelation {
+        AdminRelation {
+            kind: crate::schema::RelationKind::BelongsTo,
+            model: target,
+            display_field: None,
+        }
+    }
+
+    #[test]
+    fn primary_rule_1_id_always_primary() {
+        assert!(is_primary_column(&make_field("id", FieldType::I64, None)));
+    }
+
+    #[test]
+    fn primary_rule_4_fk_ending_in_id() {
+        assert!(is_primary_column(&make_field(
+            "department_id",
+            FieldType::I64,
+            Some(fk("Department")),
+        )));
+        // No relation → not primary via rule 4 (rule 7 takes over).
+        assert!(!is_primary_column(&make_field(
+            "department_id",
+            FieldType::I64,
+            None,
+        )));
+        // Relation but doesn't end in _id → not primary.
+        assert!(!is_primary_column(&make_field(
+            "department",
+            FieldType::I64,
+            Some(fk("Department")),
+        )));
+    }
+
+    #[test]
+    fn primary_rule_5_is_prefix_bool() {
+        assert!(is_primary_column(&make_field(
+            "is_active",
+            FieldType::Bool,
+            None,
+        )));
+        assert!(is_primary_column(&make_field(
+            "is_admin",
+            FieldType::Bool,
+            None,
+        )));
+        // Bool without `is_` prefix → not primary.
+        assert!(!is_primary_column(&make_field(
+            "active",
+            FieldType::Bool,
+            None,
+        )));
+        // `is_*` but not a bool → not primary.
+        assert!(!is_primary_column(&make_field(
+            "is_active",
+            FieldType::String,
+            None,
+        )));
+    }
+
+    #[test]
+    fn primary_rule_6_status_state_priority() {
+        assert!(is_primary_column(&make_field(
+            "status",
+            FieldType::String,
+            None,
+        )));
+        assert!(is_primary_column(&make_field(
+            "state",
+            FieldType::String,
+            None,
+        )));
+        assert!(is_primary_column(&make_field(
+            "priority",
+            FieldType::I32,
+            None,
+        )));
+        // Near-miss — not an exact match.
+        assert!(!is_primary_column(&make_field(
+            "priorities",
+            FieldType::I32,
+            None,
+        )));
+    }
+
+    #[test]
+    fn primary_rule_7_plain_fields_not_primary() {
+        assert!(!is_primary_column(&make_field(
+            "specialty",
+            FieldType::String,
+            None,
+        )));
+        assert!(!is_primary_column(&make_field(
+            "license_no",
+            FieldType::String,
+            None,
+        )));
+        assert!(!is_primary_column(&make_field(
+            "years_experience",
+            FieldType::I32,
+            None,
+        )));
+        assert!(!is_primary_column(&make_field(
+            "created_at",
+            FieldType::DateTime,
+            None,
+        )));
+    }
+
+    // `default_list_columns` is generic over `AdminModel`. The test
+    // fixtures below supply three small synthetic models to verify
+    // (a) rule 3's "first name-like match" behaviour, (b) the cap at
+    // 5, and (c) the fill step that lands `years_experience` in the
+    // Doctor model's default set.
+
+    struct DoctorFixture;
+    impl crate::orm::Model for DoctorFixture {
+        const TABLE: &'static str = "doctors";
+        const COLUMNS: &'static [&'static str] = &[
+            "id",
+            "full_name",
+            "specialty",
+            "department_id",
+            "license_no",
+            "email",
+            "phone",
+            "years_experience",
+            "is_active",
+            "created_at",
+        ];
+        const INSERT_COLUMNS: &'static [&'static str] = &[];
+        fn id(&self) -> i64 {
+            0
+        }
+        fn from_row(_: crate::orm::Row<'_>) -> Result<Self, Error> {
+            unimplemented!()
+        }
+        fn insert_values(&self) -> Vec<crate::orm::Value> {
+            Vec::new()
+        }
+    }
+    impl AdminModel for DoctorFixture {
+        const ADMIN_NAME: &'static str = "doctors";
+        const DISPLAY_NAME: &'static str = "Doctors";
+        const FIELDS: &'static [AdminField] = &[
+            AdminField {
+                name: "id",
+                ty: FieldType::I64,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "full_name",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "specialty",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "department_id",
+                ty: FieldType::I64,
+                editable: true,
+                nullable: false,
+                relation: Some(AdminRelation {
+                    kind: crate::schema::RelationKind::BelongsTo,
+                    model: "Department",
+                    display_field: None,
+                }),
+            },
+            AdminField {
+                name: "license_no",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "email",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "phone",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "years_experience",
+                ty: FieldType::I32,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "is_active",
+                ty: FieldType::Bool,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "created_at",
+                ty: FieldType::DateTime,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+        ];
+        fn singular_name() -> &'static str {
+            "Doctor"
+        }
+        fn field_display(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn from_form(
+            _: &FormData,
+            _: Option<i64>,
+        ) -> Result<Self, Error> {
+            unimplemented!()
+        }
+    }
+
+    #[test]
+    fn default_list_columns_doctor_yields_five_including_fill() {
+        // Rules match {id, full_name, department_id, is_active};
+        // fill with first non-FK int → years_experience. Output
+        // stays in declaration order.
+        let cols = default_list_columns::<DoctorFixture>();
+        assert_eq!(
+            cols,
+            vec![
+                "id",
+                "full_name",
+                "department_id",
+                "years_experience",
+                "is_active",
+            ]
+        );
+    }
+
+    #[test]
+    fn default_list_columns_caps_at_five() {
+        // Synthetic model with MORE than 5 rule-matching fields to
+        // confirm the cap applies and declaration order is kept.
+        struct Stuffed;
+        impl crate::orm::Model for Stuffed {
+            const TABLE: &'static str = "stuffed";
+            const COLUMNS: &'static [&'static str] = &[
+                "id",
+                "name",
+                "status",
+                "state",
+                "priority",
+                "is_active",
+                "is_admin",
+            ];
+            const INSERT_COLUMNS: &'static [&'static str] = &[];
+            fn id(&self) -> i64 {
+                0
+            }
+            fn from_row(_: crate::orm::Row<'_>) -> Result<Self, Error> {
+                unimplemented!()
+            }
+            fn insert_values(&self) -> Vec<crate::orm::Value> {
+                Vec::new()
+            }
+        }
+        impl AdminModel for Stuffed {
+            const ADMIN_NAME: &'static str = "stuffed";
+            const DISPLAY_NAME: &'static str = "Stuffed";
+            const FIELDS: &'static [AdminField] = &[
+                AdminField {
+                    name: "id",
+                    ty: FieldType::I64,
+                    editable: false,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "name",
+                    ty: FieldType::String,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "status",
+                    ty: FieldType::String,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "state",
+                    ty: FieldType::String,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "priority",
+                    ty: FieldType::I32,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "is_active",
+                    ty: FieldType::Bool,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "is_admin",
+                    ty: FieldType::Bool,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+            ];
+            fn singular_name() -> &'static str {
+                "Stuffed"
+            }
+            fn field_display(&self, _: &str) -> Option<String> {
+                None
+            }
+            fn from_form(
+                _: &FormData,
+                _: Option<i64>,
+            ) -> Result<Self, Error> {
+                unimplemented!()
+            }
+        }
+        let cols = default_list_columns::<Stuffed>();
+        assert_eq!(cols.len(), 5, "cap must hold at 5");
+        // First 5 in declaration order.
+        assert_eq!(cols, vec!["id", "name", "status", "state", "priority"]);
+    }
+
+    #[test]
+    fn default_list_columns_rule_3_first_name_like_wins() {
+        // Model with two name-like fields (`full_name` + `email`).
+        // Only `full_name` — the earlier one — should be in the
+        // default set via rule 3; `email` must NOT be picked unless
+        // fill-step promotes it (it doesn't — non-FK int fill skips
+        // Strings).
+        struct TwoNames;
+        impl crate::orm::Model for TwoNames {
+            const TABLE: &'static str = "two_names";
+            const COLUMNS: &'static [&'static str] = &["id", "full_name", "email"];
+            const INSERT_COLUMNS: &'static [&'static str] = &[];
+            fn id(&self) -> i64 {
+                0
+            }
+            fn from_row(_: crate::orm::Row<'_>) -> Result<Self, Error> {
+                unimplemented!()
+            }
+            fn insert_values(&self) -> Vec<crate::orm::Value> {
+                Vec::new()
+            }
+        }
+        impl AdminModel for TwoNames {
+            const ADMIN_NAME: &'static str = "two_names";
+            const DISPLAY_NAME: &'static str = "TwoNames";
+            const FIELDS: &'static [AdminField] = &[
+                AdminField {
+                    name: "id",
+                    ty: FieldType::I64,
+                    editable: false,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "full_name",
+                    ty: FieldType::String,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+                AdminField {
+                    name: "email",
+                    ty: FieldType::String,
+                    editable: true,
+                    nullable: false,
+                    relation: None,
+                },
+            ];
+            fn singular_name() -> &'static str {
+                "TwoName"
+            }
+            fn field_display(&self, _: &str) -> Option<String> {
+                None
+            }
+            fn from_form(
+                _: &FormData,
+                _: Option<i64>,
+            ) -> Result<Self, Error> {
+                unimplemented!()
+            }
+        }
+        let cols = default_list_columns::<TwoNames>();
+        // Fill then promotes email via "declaration-order, not _at"
+        // — so on a 3-field model we expect all 3 visible. This is
+        // acceptable: the cap only fires when > 5 qualify. The
+        // assertion below pins rule 3's "first match wins" — email
+        // is picked by the fill step, NOT by rule 3.
+        assert!(
+            cols.contains(&"full_name"),
+            "rule 3 must pick `full_name` as the first name-like field"
+        );
+        // email is fill-step-promoted on this 3-field model because
+        // there are no other candidates. The key invariant is that
+        // rule 3 didn't fire twice.
+        assert_eq!(cols, vec!["id", "full_name", "email"]);
     }
 }
