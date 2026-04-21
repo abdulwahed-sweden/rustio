@@ -2509,6 +2509,25 @@ document.addEventListener('change',function(e){{
     cell.style.display=cb.checked?'':'none';
   }});
 }});
+// More filters panel toggle (Change 3) — plain hidden-attribute
+// flip. Button carries `data-more-filters-toggle` and an
+// `aria-controls` pointing at the panel id. No outside-click
+// handler, no animation.
+document.addEventListener('click',function(e){{
+  var btn=e.target&&e.target.closest?e.target.closest('[data-more-filters-toggle]'):null;
+  if(!btn)return;
+  var id=btn.getAttribute('aria-controls');
+  var panel=id?document.getElementById(id):null;
+  if(!panel)return;
+  var open=!panel.hasAttribute('hidden');
+  if(open){{
+    panel.setAttribute('hidden','');
+    btn.setAttribute('aria-expanded','false');
+  }}else{{
+    panel.removeAttribute('hidden');
+    btn.setAttribute('aria-expanded','true');
+  }}
+}});
 }})();
 </script>
 </div>"#,
@@ -2646,6 +2665,29 @@ fn render_columns_control<T: AdminModel>(filters: &ListFilters<'_>) -> String {
     )
 }
 
+/// Render the "More filters" secondary panel (Change 3). Returns
+/// `""` when no secondary filter control is available on the model
+/// — in which case the toolbar also omits the "More filters"
+/// button, keeping the DOM minimal on filter-less models. Otherwise
+/// returns a `hidden` `<div>` containing a 3-column grid of secondary
+/// filter controls. Spec: panel defaults to hidden; JS toggles it.
+fn render_more_filters_panel(
+    status_select: &str,
+    priority_select: &str,
+    secondary_relations_html: &str,
+) -> String {
+    if status_select.is_empty() && priority_select.is_empty() && secondary_relations_html.is_empty()
+    {
+        return String::new();
+    }
+    format!(
+        r#"<div class="admin-list-more-filters" id="more-filters-panel" hidden><div class="admin-filter-grid">{status}{priority}{relations}</div></div>"#,
+        status = status_select,
+        priority = priority_select,
+        relations = secondary_relations_html,
+    )
+}
+
 fn render_list_toolbar<T: AdminModel>(
     filters: &ListFilters<'_>,
     shown: usize,
@@ -2718,15 +2760,49 @@ fn render_list_toolbar<T: AdminModel>(
         String::new()
     };
 
-    // Phase 5 — relation-aware filters. Each belongs_to on the model
-    // renders as either a dropdown (target ≤ 500 rows) or a numeric
-    // fallback input. The toolbar form submits `?<field>=<id>` which
-    // the list handler then parses back.
-    let relation_filters_html: String = filters
-        .relation_filters
-        .iter()
-        .map(render_relation_filter_control)
-        .collect();
+    // Phase 5 — relation-aware filters. The FIRST belongs_to on the
+    // model is promoted to the primary toolbar; the rest drop into
+    // the "More filters" panel below (Change 3).
+    let (primary_relation_html, secondary_relations_html): (String, String) = {
+        let mut iter = filters.relation_filters.iter();
+        let first = iter
+            .next()
+            .map(render_relation_filter_control)
+            .unwrap_or_default();
+        let rest: String = iter.map(render_relation_filter_control).collect();
+        (first, rest)
+    };
+
+    // Count active SECONDARY filters for the "More filters (N)"
+    // button label. Excludes search, the primary relation filter,
+    // and sort per spec §5.4.
+    let secondary_active_count: usize = filters.status.is_some() as usize
+        + filters.priority.is_some() as usize
+        + filters
+            .relation_filters
+            .iter()
+            .skip(1)
+            .filter(|r| r.current_value.is_some())
+            .count();
+
+    // Render the "More filters" panel + button only when at least
+    // one secondary filter control exists on this model. If the
+    // panel would be empty, both the button and the <div> are
+    // omitted from the DOM entirely (spec §Q3 decision).
+    let more_filters_panel_html =
+        render_more_filters_panel(&status_select, &priority_select, &secondary_relations_html);
+    let more_filters_btn = if more_filters_panel_html.is_empty() {
+        String::new()
+    } else {
+        let label = if secondary_active_count == 0 {
+            "More filters".to_string()
+        } else {
+            format!("More filters ({secondary_active_count})")
+        };
+        format!(
+            r#"<button type="button" class="rio-btn" data-more-filters-toggle aria-controls="more-filters-panel" aria-expanded="false">{label}</button>"#,
+        )
+    };
 
     let reset_btn = if filters.is_active() {
         format!(
@@ -2784,10 +2860,10 @@ fn render_list_toolbar<T: AdminModel>(
         .unwrap_or_default();
 
     // Columns control — sits inside .rio-toolbar-actions, right
-    // after the Search submit button. It's a native <details> whose
-    // panel is positioned below the summary; open/close is browser-
-    // default, outside-click closes it via a small JS listener at
-    // the bottom of the list page.
+    // after the "More filters" button (Change 3). Native <details>
+    // whose panel is positioned below the summary; open/close is
+    // browser-default, outside-click closes it via a small JS
+    // listener at the bottom of the list page.
     let columns_control = render_columns_control::<T>(filters);
 
     format!(
@@ -2797,16 +2873,16 @@ fn render_list_toolbar<T: AdminModel>(
 <input type="search" name="q" value="{q}" placeholder="Search {plural_lower}…" aria-label="Search text">
 {intent}
 </div>
-{status}
-{priority}
-{relations}
+{primary_relation}
 {sort}
 <div class="rio-toolbar-actions">
 <button type="submit" class="rio-btn">{submit_icon}<span>Search</span></button>
+{more_filters_btn}
 {reset}
 {columns}
 </div>
 <div class="rio-count">{count}</div>
+{more_filters_panel}
 </form>"#,
         name = escape_html(admin_name),
         plural = escape_html(plural),
@@ -2814,14 +2890,14 @@ fn render_list_toolbar<T: AdminModel>(
         search_icon = icon_search(),
         q = q_value,
         intent = intent_badge,
-        status = status_select,
-        priority = priority_select,
-        relations = relation_filters_html,
+        primary_relation = primary_relation_html,
         sort = sort_select,
         submit_icon = icon_search(),
+        more_filters_btn = more_filters_btn,
         reset = reset_btn,
         columns = columns_control,
         count = escape_html(&count_label),
+        more_filters_panel = more_filters_panel_html,
     )
 }
 

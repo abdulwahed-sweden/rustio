@@ -1908,3 +1908,22 @@ details > summary::-webkit-details-marker { display: none; }
 .rio-cols-panel-row input[type="checkbox"] { margin: 0; flex-shrink: 0; }
 .rio-cols-panel-row input[disabled] + span { color: var(--rio-text-subtle); }
 .rio-cols-panel-row > span { flex: 1 1 auto; }
+
+/* ═════════════════════════════════════════════════════════════════
+ * More filters panel (Change 3) — sibling of the primary toolbar
+ * controls inside the same <form class="rio-table-toolbar">. The
+ * panel wraps to its own line via `flex: 0 0 100%`; content is a
+ * simple 3-column grid. Hidden by default via the `hidden`
+ * attribute on the <div>; JS flips the attribute.
+ * ═════════════════════════════════════════════════════════════════ */
+
+.admin-list-more-filters {
+  flex: 0 0 100%;
+  margin-top: 8px;
+}
+
+.admin-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
