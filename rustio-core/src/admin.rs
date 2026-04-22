@@ -38,6 +38,7 @@ pub mod audit;
 pub mod design;
 pub mod entry_builder;
 pub mod intelligence;
+pub mod layout;
 pub mod relations;
 pub mod schema_cache;
 pub mod suggestions;
@@ -479,6 +480,12 @@ impl Admin {
                 let counts = fetch_model_row_counts(&db, &entries).await;
                 Ok::<Response, Error>(dashboard_response(shell, flash.as_deref(), &counts))
             }
+        });
+
+        // Parallel new-layout scaffold. Mounted alongside /admin so the
+        // two systems coexist while the new admin is being built out.
+        router = router.get("/admin-new", |_req, _params| async move {
+            Ok::<Response, Error>(crate::http::html(layout::admin_index()))
         });
 
         // Login + logout. Unauthenticated users *need* to reach
