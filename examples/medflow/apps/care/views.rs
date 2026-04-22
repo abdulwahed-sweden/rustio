@@ -1,8 +1,9 @@
-//! Operational console pages.
+//! Operational console pages — list, new-appointment form, detail.
 //!
-//!   GET /ops/appointments             — dashboard with stats + grouped list
-//!   GET /ops/appointments/new         — smart form with live preview
-//!   GET /ops/appointments/:id/edit    — detail page with lifecycle + timeline
+//! All three render through [`ui::render_shell`] (dark sidebar + content
+//! area, matching the reference mock-up the project is targeting).
+//! Tailwind utility classes power the layout; no page-level
+//! stylesheet survives here.
 
 use chrono::Utc;
 use rustio_core::auth::{session, user, CsrfToken, User, SESSION_COOKIE};
@@ -13,9 +14,10 @@ use std::collections::HashMap;
 use crate::apps::care::models::{Appointment, AppointmentEvent};
 use crate::apps::people::models::{Department, Doctor, Patient};
 use crate::apps::ui::{
-    avatar_color, day_heading, escape_html, forbidden_page, humanise_status, initials,
-    not_found_page, page_hero, pluralise, redirect, relative_past, render_shell, time_chip,
-    Actor, Nav, ICON_ALERT, ICON_ARROW_LEFT, ICON_CLOCK, ICON_INBOX, ICON_PLUS, ICON_SEARCH,
+    escape_html, forbidden_page, humanise_status, iso_ymd, not_found_page, pluralise, redirect,
+    relative_past, render_shell, short_time, status_dot_color, status_pill_classes, Actor, Nav,
+    ShellOpts, ICON_ALERT_SM, ICON_ARROW_LEFT_SM, ICON_CHECK_SM, ICON_CHEVRON_DOWN_SM, ICON_CLOCK,
+    ICON_COLUMNS, ICON_FILTER, ICON_INBOX_LG, ICON_PLUS_SM, ICON_SEARCH_LG, ICON_X_SM,
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -25,19 +27,19 @@ use crate::apps::ui::{
 pub fn register(router: Router, db: &Db) -> Router {
     let list_db = db.clone();
     let new_db = db.clone();
-    let edit_db = db.clone();
+    let detail_db = db.clone();
     router
-        .get("/ops/appointments", move |req, _params| {
+        .get("/ops/appointments", move |req, _p| {
             let db = list_db.clone();
             async move { ops_list(&db, req).await }
         })
-        .get("/ops/appointments/new", move |req, _params| {
+        .get("/ops/appointments/new", move |req, _p| {
             let db = new_db.clone();
             async move { ops_new(&db, req).await }
         })
-        .get("/ops/appointments/:id/edit", move |req, params| {
-            let db = edit_db.clone();
-            async move { ops_detail(&db, req, &params).await }
+        .get("/ops/appointments/:id/edit", move |req, p| {
+            let db = detail_db.clone();
+            async move { ops_detail(&db, req, &p).await }
         })
 }
 
@@ -52,38 +54,22 @@ struct Session {
 }
 
 async fn load_session(db: &Db, req: &Request) -> Result<Option<Session>, Error> {
-    let Some(token) = req.cookie(SESSION_COOKIE) else {
-        return Ok(None);
-    };
-    let Some(sess) = session::find_valid(db, &token).await? else {
-        return Ok(None);
-    };
-    let Some(actor) = user::find_by_id(db, sess.user_id).await? else {
-        return Ok(None);
-    };
-    if !actor.is_active {
-        return Ok(None);
-    }
+    let Some(token) = req.cookie(SESSION_COOKIE) else { return Ok(None); };
+    let Some(sess) = session::find_valid(db, &token).await? else { return Ok(None); };
+    let Some(actor) = user::find_by_id(db, sess.user_id).await? else { return Ok(None); };
+    if !actor.is_active { return Ok(None); }
     let csrf = req
         .ctx()
         .get::<CsrfToken>()
         .map(|c| c.0.clone())
         .unwrap_or(sess.csrf_token);
-    Ok(Some(Session {
-        user: actor,
-        bearer: token,
-        csrf,
-    }))
+    Ok(Some(Session { user: actor, bearer: token, csrf }))
 }
 
 fn role_may(role: &str, action: &str) -> bool {
-    if role == "admin" {
-        return true;
-    }
+    if role == "admin" { return true; }
     match (role, action) {
-        ("receptionist", "confirm")
-        | ("receptionist", "check-in")
-        | ("receptionist", "cancel") => true,
+        ("receptionist", "confirm") | ("receptionist", "check-in") | ("receptionist", "cancel") => true,
         ("doctor", "start") | ("doctor", "complete") | ("doctor", "cancel") => true,
         _ => false,
     }
@@ -104,6 +90,13 @@ async fn ops_list(db: &Db, req: Request) -> Result<Response, Error> {
     let query = req.query();
     let q = query.get("q").unwrap_or("").trim().to_string();
     let status_filter = query.get("status").unwrap_or("").trim().to_string();
+    let doctor_filter = query
+        .get("doctor_id")
+        .and_then(|v| v.parse::<i64>().ok());
+    let dept_filter = query
+        .get("department_id")
+        .and_then(|v| v.parse::<i64>().ok());
+    let after_filter = query.get("after").unwrap_or("").trim().to_string();
     let sort = query.get("sort").unwrap_or("scheduled_asc").to_string();
 
     let mut appointments = Appointment::all(db).await?;
@@ -111,46 +104,47 @@ async fn ops_list(db: &Db, req: Request) -> Result<Response, Error> {
     let doctors = Doctor::all(db).await?;
     let departments = Department::all(db).await?;
 
-    // Lookups
     let patient_names: HashMap<i64, String> =
-        patients.into_iter().map(|p| (p.id, p.full_name)).collect();
+        patients.iter().map(|p| (p.id, p.full_name.clone())).collect();
     let doctor_map: HashMap<i64, (String, String)> = doctors
-        .into_iter()
-        .map(|d| (d.id, (d.full_name, d.specialty)))
+        .iter()
+        .map(|d| (d.id, (d.full_name.clone(), d.specialty.clone())))
         .collect();
     let dept_names: HashMap<i64, String> =
-        departments.into_iter().map(|d| (d.id, d.name)).collect();
+        departments.iter().map(|d| (d.id, d.name.clone())).collect();
 
-    // Stats are computed from the unfiltered set so they reflect the
-    // world, not the current view.
+    // Stats from the unfiltered set.
     let total_all = appointments.len();
+    let active_all = appointments.iter().filter(|a| a.status != "cancelled" && a.status != "completed").count();
     let today_count = appointments
         .iter()
-        .filter(|a| {
-            let t = a.scheduled_at.date_naive();
-            t == Utc::now().date_naive()
-        })
+        .filter(|a| a.scheduled_at.date_naive() == Utc::now().date_naive())
         .count();
     let mut by_status: HashMap<String, usize> = HashMap::new();
     for a in &appointments {
         *by_status.entry(a.status.clone()).or_insert(0) += 1;
     }
 
-    // Filter
+    // Apply filters.
     if !status_filter.is_empty() {
         appointments.retain(|a| a.status == status_filter);
+    }
+    if let Some(did) = doctor_filter {
+        appointments.retain(|a| a.doctor_id == did);
+    }
+    if let Some(dept_id) = dept_filter {
+        appointments.retain(|a| a.department_id == Some(dept_id));
+    }
+    if !after_filter.is_empty() {
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(&after_filter, "%Y-%m-%d") {
+            appointments.retain(|a| a.scheduled_at.date_naive() >= d);
+        }
     }
     if !q.is_empty() {
         let needle = q.to_lowercase();
         appointments.retain(|a| {
-            let pat = patient_names
-                .get(&a.patient_id)
-                .map(|s| s.to_lowercase())
-                .unwrap_or_default();
-            let doc = doctor_map
-                .get(&a.doctor_id)
-                .map(|(n, _)| n.to_lowercase())
-                .unwrap_or_default();
+            let pat = patient_names.get(&a.patient_id).map(|s| s.to_lowercase()).unwrap_or_default();
+            let doc = doctor_map.get(&a.doctor_id).map(|(n, _)| n.to_lowercase()).unwrap_or_default();
             pat.contains(&needle)
                 || doc.contains(&needle)
                 || a.reason.to_lowercase().contains(&needle)
@@ -158,7 +152,7 @@ async fn ops_list(db: &Db, req: Request) -> Result<Response, Error> {
         });
     }
 
-    // Sort
+    // Sort.
     match sort.as_str() {
         "scheduled_desc" => appointments.sort_by(|a, b| b.scheduled_at.cmp(&a.scheduled_at)),
         "scheduled_asc" => appointments.sort_by_key(|a| a.scheduled_at),
@@ -170,63 +164,118 @@ async fn ops_list(db: &Db, req: Request) -> Result<Response, Error> {
     let shown = appointments.len();
     let can_add = can_create(&sess.user);
 
-    // ── Hero ────────────────────────────────────────────────
-    let actions = if can_add {
-        format!(
-            r#"<a class="btn btn-primary btn-lg" href="/ops/appointments/new">{icon}<span>New appointment</span></a>"#,
-            icon = ICON_PLUS,
-        )
-    } else {
-        String::new()
-    };
-    let hero = page_hero(
-        "",
-        "Appointments",
-        "Schedule and coordinate patient visits.",
-        &actions,
+    // ── Top controls (search + columns + primary action) ────
+    let controls = render_controls(&q, can_add);
+
+    // ── Filter grid ─────────────────────────────────────────
+    let filter_grid = render_filter_grid(
+        &status_filter,
+        doctor_filter,
+        dept_filter,
+        &after_filter,
+        &doctors,
+        &departments,
     );
 
-    // ── Stats strip ─────────────────────────────────────────
-    let stats = render_stats(today_count, &by_status, total_all);
+    // ── Active chips ────────────────────────────────────────
+    let chips = render_chips(&q, &status_filter, doctor_filter, dept_filter, &after_filter, &doctor_map, &dept_names);
 
-    // ── Toolbar (tabs + search + sort) ─────────────────────
-    let toolbar = render_toolbar(&q, &status_filter, &sort, &by_status, total_all);
-
-    // ── Rows (grouped by day) ─────────────────────────────
+    // ── Table rows ─────────────────────────────────────────
     let rows = if shown == 0 {
         render_empty_row(total_all == 0)
     } else {
-        render_grouped_rows(
-            &appointments,
-            &patient_names,
-            &doctor_map,
-            &dept_names,
-            &sess.user.role,
-        )
+        appointments
+            .iter()
+            .map(|a| render_row(a, &patient_names, &doctor_map, &dept_names, &sess.user.role))
+            .collect::<String>()
     };
 
-    // ── Active filter chips ────────────────────────────────
-    let chips = render_chips(&q, &status_filter);
+    // ── Sort dropdown (bottom of toolbar) ──────────────────
+    let sort_html = render_sort(&sort);
 
-    let inner = format!(
-        r#"{stats}
+    let content = format!(
+        r##"
+<div id="banner" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-lg mb-4 text-sm flex items-center gap-2">
+  {alert}<span id="banner-text"></span>
+</div>
+
+<!-- Stats row -->
+<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Today</p>
+    <p class="text-2xl font-bold text-slate-900 mt-1">{today}</p>
+    <p class="text-xs text-slate-500 mt-1">{total_label}</p>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-cyan-500">
+    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Confirmed</p>
+    <p class="text-2xl font-bold text-slate-900 mt-1">{conf}</p>
+    <p class="text-xs text-slate-500 mt-1">ready to start</p>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-amber-500">
+    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">In progress</p>
+    <p class="text-2xl font-bold text-slate-900 mt-1">{prog}</p>
+    <p class="text-xs text-slate-500 mt-1">active consultations</p>
+  </div>
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 border-l-4 border-l-emerald-500">
+    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Completed</p>
+    <p class="text-2xl font-bold text-slate-900 mt-1">{comp}</p>
+    <p class="text-xs text-slate-500 mt-1">closed</p>
+  </div>
+</div>
+
+<!-- Control card (search + columns + primary + filter grid) -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6">
+  <form method="get" action="/ops/appointments" class="contents">
+    {controls}
+    {filter_grid}
+  </form>
+</div>
+
 {chips}
-<div id="banner" class="banner" role="alert" hidden>{alert}<span id="banner-text"></span></div>
-<section class="card">
-  {toolbar}
-  <div style="overflow-x:auto">
-    <table class="rows">
-      <tbody>
+
+<!-- Table card -->
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+  <div class="overflow-x-auto custom-scrollbar">
+    <table class="w-full text-sm text-left text-slate-600 whitespace-nowrap">
+      <thead class="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+        <tr>
+          <th class="px-6 py-3 font-semibold w-14">ID</th>
+          <th class="px-6 py-3 font-semibold">Patient</th>
+          <th class="px-6 py-3 font-semibold">Doctor</th>
+          <th class="px-6 py-3 font-semibold">Department</th>
+          <th class="px-6 py-3 font-semibold">Scheduled</th>
+          <th class="px-6 py-3 font-semibold">Status</th>
+          <th class="px-6 py-3 font-semibold text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
         {rows}
       </tbody>
     </table>
   </div>
-</section>"#,
-        stats = stats,
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 border-t border-slate-200 bg-slate-50/50">
+    <div class="text-sm text-slate-500">
+      Showing <span class="font-semibold text-slate-700">{shown}</span> of <span class="font-semibold text-slate-700">{total_all}</span> appointments
+      &middot; <span class="font-semibold text-slate-700">{active_all}</span> active
+    </div>
+    {sort_html}
+  </div>
+</div>
+"##,
+        alert = ICON_ALERT_SM,
+        today = today_count,
+        total_label = pluralise(total_all, "appointment"),
+        conf = by_status.get("confirmed").copied().unwrap_or(0),
+        prog = by_status.get("in_progress").copied().unwrap_or(0),
+        comp = by_status.get("completed").copied().unwrap_or(0),
+        controls = controls,
+        filter_grid = filter_grid,
         chips = chips,
-        alert = ICON_ALERT,
-        toolbar = toolbar,
         rows = rows,
+        shown = shown,
+        total_all = total_all,
+        active_all = active_all,
+        sort_html = sort_html,
     );
 
     let actor = Actor {
@@ -234,183 +283,238 @@ async fn ops_list(db: &Db, req: Request) -> Result<Response, Error> {
         bearer: &sess.bearer,
         csrf: &sess.csrf,
     };
+    let opts = ShellOpts {
+        header_title: "Appointment Center",
+        header_badge: &format!("{} active", active_all),
+    };
     Ok(html(render_shell(
         "Appointments",
         &actor,
         Nav::Appointments,
-        &hero,
-        &inner,
+        &opts,
+        &content,
         LIST_JS,
     )))
 }
 
-fn render_stats(
-    today: usize,
-    by_status: &HashMap<String, usize>,
-    total: usize,
-) -> String {
-    let get = |k: &str| by_status.get(k).copied().unwrap_or(0);
+fn render_controls(q: &str, can_add: bool) -> String {
+    let primary = if can_add {
+        format!(
+            r#"<a href="/ops/appointments/new" class="inline-flex items-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm">{icon}<span>New Appointment</span></a>"#,
+            icon = ICON_PLUS_SM,
+        )
+    } else {
+        String::new()
+    };
+
     format!(
-        r#"<div class="stats">
-  <div class="stat">
-    <div class="label">Today</div>
-    <div class="value">{today}</div>
-    <div class="sub">{total_label} total</div>
+        r##"<div class="p-4 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+  <div class="flex items-stretch gap-2 w-full lg:w-3/5">
+    <div class="relative flex-1">
+      <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">{search_icon}</div>
+      <input type="search" name="q" value="{q}"
+             placeholder="Search by patient, doctor, reason, or ID…"
+             class="w-full pl-11 pr-4 py-2.5 bg-white border border-slate-300 rounded-lg
+                    focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500
+                    text-sm shadow-sm transition-shadow">
+    </div>
+    <button type="submit" class="inline-flex items-center gap-1.5 bg-slate-900 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm">
+      {search_icon_sm}<span>Search</span>
+    </button>
   </div>
-  <div class="stat stat-ok">
-    <div class="label">Confirmed</div>
-    <div class="value">{conf}</div>
-    <div class="sub">ready to start</div>
+
+  <div class="flex flex-wrap items-center gap-2">
+    <details class="relative">
+      <summary class="flex items-center gap-2 bg-white text-slate-700 px-4 py-2.5 rounded-lg text-sm font-medium border border-slate-300 hover:bg-slate-50 transition-colors shadow-sm cursor-pointer">
+        <span class="text-slate-500">{cols_icon}</span>
+        <span>Columns</span>
+        <span class="text-slate-400">{chev}</span>
+      </summary>
+      <div class="absolute right-0 mt-2 w-52 bg-white border border-slate-200 rounded-lg shadow-xl p-3 z-20">
+        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer mb-1.5">
+          <input type="checkbox" data-col-toggle="patient-sub" checked class="rounded text-teal-600 focus:ring-teal-500 border-slate-300">
+          <span>Patient reason</span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer mb-1.5">
+          <input type="checkbox" data-col-toggle="doctor-sub" checked class="rounded text-teal-600 focus:ring-teal-500 border-slate-300">
+          <span>Doctor specialty</span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer mb-1.5">
+          <input type="checkbox" data-col-toggle="dept-badge" checked class="rounded text-teal-600 focus:ring-teal-500 border-slate-300">
+          <span>Department badge</span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+          <input type="checkbox" data-col-toggle="date-time" checked class="rounded text-teal-600 focus:ring-teal-500 border-slate-300">
+          <span>Time row</span>
+        </label>
+      </div>
+    </details>
+    {primary}
   </div>
-  <div class="stat stat-warn">
-    <div class="label">In progress</div>
-    <div class="value">{prog}</div>
-    <div class="sub">active consultations</div>
-  </div>
-  <div class="stat stat-mute">
-    <div class="label">Completed</div>
-    <div class="value">{comp}</div>
-    <div class="sub">closed today &amp; before</div>
-  </div>
-</div>"#,
-        today = today,
-        total_label = pluralise(total, "appointment"),
-        conf = get("confirmed"),
-        prog = get("in_progress"),
-        comp = get("completed"),
+</div>"##,
+        search_icon = ICON_SEARCH_LG,
+        search_icon_sm = ICON_SEARCH_LG,
+        q = escape_html(q),
+        cols_icon = ICON_COLUMNS,
+        chev = ICON_CHEVRON_DOWN_SM,
+        primary = primary,
     )
 }
 
-fn render_toolbar(
+fn render_filter_grid(
+    status: &str,
+    doctor_id: Option<i64>,
+    dept_id: Option<i64>,
+    after: &str,
+    doctors: &[Doctor],
+    departments: &[Department],
+) -> String {
+    let status_opts = format!(
+        r#"<option value="">All statuses</option>
+<option value="scheduled"{s1}>Scheduled</option>
+<option value="confirmed"{s2}>Confirmed</option>
+<option value="in_progress"{s3}>In progress</option>
+<option value="completed"{s4}>Completed</option>
+<option value="cancelled"{s5}>Cancelled</option>"#,
+        s1 = if status == "scheduled" { " selected" } else { "" },
+        s2 = if status == "confirmed" { " selected" } else { "" },
+        s3 = if status == "in_progress" { " selected" } else { "" },
+        s4 = if status == "completed" { " selected" } else { "" },
+        s5 = if status == "cancelled" { " selected" } else { "" },
+    );
+
+    let doctor_opts = {
+        let mut s = String::from(r#"<option value="">Any doctor</option>"#);
+        for d in doctors.iter().filter(|d| d.is_active) {
+            let sel = if Some(d.id) == doctor_id { " selected" } else { "" };
+            s.push_str(&format!(
+                r#"<option value="{id}"{sel}>{name}</option>"#,
+                id = d.id,
+                sel = sel,
+                name = escape_html(&d.full_name),
+            ));
+        }
+        s
+    };
+    let dept_opts = {
+        let mut s = String::from(r#"<option value="">Any department</option>"#);
+        for d in departments.iter().filter(|d| d.is_active) {
+            let sel = if Some(d.id) == dept_id { " selected" } else { "" };
+            s.push_str(&format!(
+                r#"<option value="{id}"{sel}>{name}</option>"#,
+                id = d.id,
+                sel = sel,
+                name = escape_html(&d.name),
+            ));
+        }
+        s
+    };
+
+    format!(
+        r##"<div class="p-4 bg-slate-50/60 rounded-b-xl grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+  <div>
+    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Status</label>
+    <select name="status" class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block p-2 bg-white shadow-sm">
+      {status_opts}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Doctor</label>
+    <select name="doctor_id" class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block p-2 bg-white shadow-sm">
+      {doctor_opts}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Department</label>
+    <select name="department_id" class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block p-2 bg-white shadow-sm">
+      {dept_opts}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Scheduled after</label>
+    <input type="date" name="after" value="{after}" class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-teal-500 focus:border-teal-500 block p-2 bg-white shadow-sm">
+  </div>
+  <div class="flex items-end">
+    <button type="submit" class="w-full inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors shadow-sm">
+      {filter_icon}<span>Apply Filters</span>
+    </button>
+  </div>
+</div>"##,
+        status_opts = status_opts,
+        doctor_opts = doctor_opts,
+        dept_opts = dept_opts,
+        after = escape_html(after),
+        filter_icon = ICON_FILTER,
+    )
+}
+
+fn render_chips(
     q: &str,
     status: &str,
-    sort: &str,
-    by_status: &HashMap<String, usize>,
-    total: usize,
+    doctor_id: Option<i64>,
+    dept_id: Option<i64>,
+    after: &str,
+    doctor_map: &HashMap<i64, (String, String)>,
+    dept_names: &HashMap<i64, String>,
 ) -> String {
-    let tab = |label: &str, value: &str, count: usize| -> String {
-        let is_active = (value.is_empty() && status.is_empty()) || value == status;
-        let base_href = "/ops/appointments".to_string();
-        let mut params: Vec<String> = Vec::new();
-        if !q.is_empty() {
-            params.push(format!("q={}", escape_html(q)));
-        }
-        if !value.is_empty() {
-            params.push(format!("status={}", value));
-        }
-        if sort != "scheduled_asc" {
-            params.push(format!("sort={}", sort));
-        }
-        let href = if params.is_empty() {
-            base_href
-        } else {
-            format!("{}?{}", base_href, params.join("&"))
-        };
+    let mut chips: Vec<String> = Vec::new();
+    let chip = |label: &str, val: &str, remove_href: &str| -> String {
         format!(
-            r#"<a class="{cls}" href="{href}">{label}<span class="badge">{count}</span></a>"#,
-            cls = if is_active { "active" } else { "" },
-            href = escape_html(&href),
+            r#"<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-medium border border-teal-100">
+  <span>{label}: <strong>{val}</strong></span>
+  <a href="{href}" class="text-teal-500 hover:text-teal-700" aria-label="Remove {label} filter">{xicon}</a>
+</span>"#,
             label = escape_html(label),
-            count = count,
+            val = escape_html(val),
+            href = escape_html(remove_href),
+            xicon = ICON_X_SM,
         )
     };
 
-    let tabs = format!(
-        r#"<div class="tabs" role="tablist" aria-label="Filter by status">
-  {all}{sched}{conf}{prog}{comp}{canc}
-</div>"#,
-        all = tab("All", "", total),
-        sched = tab("Scheduled", "scheduled", by_status.get("scheduled").copied().unwrap_or(0)),
-        conf = tab("Confirmed", "confirmed", by_status.get("confirmed").copied().unwrap_or(0)),
-        prog = tab("In progress", "in_progress", by_status.get("in_progress").copied().unwrap_or(0)),
-        comp = tab("Completed", "completed", by_status.get("completed").copied().unwrap_or(0)),
-        canc = tab("Cancelled", "cancelled", by_status.get("cancelled").copied().unwrap_or(0)),
-    );
-
-    format!(
-        r##"<form class="toolbar" method="get" action="/ops/appointments" role="search">
-{tabs}
-<div class="spacer"></div>
-<div class="search">
-  {search_icon}
-  <input type="search" name="q" value="{q}" placeholder="Search patient, doctor, reason…">
-</div>
-<input type="hidden" name="status" value="{status}">
-<select name="sort" aria-label="Sort" onchange="this.form.submit()">
-  <option value="scheduled_asc"{so_a}>Chronological</option>
-  <option value="scheduled_desc"{so_d}>Newest first</option>
-  <option value="id_desc"{si_d}>Recently created</option>
-  <option value="id_asc"{si_a}>Oldest created</option>
-</select>
-<button class="btn" type="submit">Apply</button>
-</form>"##,
-        tabs = tabs,
-        search_icon = ICON_SEARCH,
-        q = escape_html(q),
-        status = escape_html(status),
-        so_a = if sort == "scheduled_asc"  { " selected" } else { "" },
-        so_d = if sort == "scheduled_desc" { " selected" } else { "" },
-        si_d = if sort == "id_desc"        { " selected" } else { "" },
-        si_a = if sort == "id_asc"         { " selected" } else { "" },
-    )
-}
-
-fn render_chips(q: &str, status: &str) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if !q.is_empty() {
-        parts.push(format!(
-            r#"<span class="filter-chip">Search: &ldquo;{v}&rdquo; <a href="?{href}" aria-label="Clear search">×</a></span>"#,
-            v = escape_html(q),
-            href = if status.is_empty() { String::new() } else { format!("status={}", escape_html(status)) },
-        ));
-    }
-    if !status.is_empty() {
-        parts.push(format!(
-            r#"<span class="filter-chip">Status: {v} <a href="?{href}" aria-label="Clear status">×</a></span>"#,
-            v = escape_html(&humanise_status(status)),
-            href = if q.is_empty() { String::new() } else { format!("q={}", escape_html(q)) },
-        ));
-    }
-    if parts.is_empty() {
-        return String::new();
-    }
-    format!(
-        r#"<div class="filter-chips" style="margin-bottom: var(--s-4);">
-  {chips}
-  <a class="filter-chip" href="/ops/appointments" style="background:transparent;color:var(--text-mute)">Clear all</a>
-</div>"#,
-        chips = parts.join(""),
-    )
-}
-
-fn render_grouped_rows(
-    appts: &[Appointment],
-    patient_names: &HashMap<i64, String>,
-    doctor_map: &HashMap<i64, (String, String)>,
-    dept_names: &HashMap<i64, String>,
-    role: &str,
-) -> String {
-    let mut out = String::new();
-    let mut current_day: Option<chrono::NaiveDate> = None;
-
-    for a in appts {
-        let day = a.scheduled_at.date_naive();
-        if Some(day) != current_day {
-            let (badge, absolute) = day_heading(a.scheduled_at);
-            let badge_html = match badge {
-                Some(b) => format!(r#"<span class="pill-today">{}</span>"#, escape_html(&b)),
-                None => String::new(),
-            };
-            out.push_str(&format!(
-                r#"<tr class="day-row"><td colspan="4">{badge}{abs}</td></tr>"#,
-                badge = badge_html,
-                abs = escape_html(&absolute),
-            ));
-            current_day = Some(day);
+    // Base query rebuilder (everything except one key)
+    let all = [
+        ("q", q.to_string()),
+        ("status", status.to_string()),
+        ("doctor_id", doctor_id.map(|i| i.to_string()).unwrap_or_default()),
+        ("department_id", dept_id.map(|i| i.to_string()).unwrap_or_default()),
+        ("after", after.to_string()),
+    ];
+    let build = |exclude: &str| -> String {
+        let parts: Vec<String> = all
+            .iter()
+            .filter(|(k, v)| *k != exclude && !v.is_empty())
+            .map(|(k, v)| format!("{}={}", k, escape_html(v)))
+            .collect();
+        if parts.is_empty() {
+            "/ops/appointments".to_string()
+        } else {
+            format!("/ops/appointments?{}", parts.join("&"))
         }
-        out.push_str(&render_row(a, patient_names, doctor_map, dept_names, role));
+    };
+
+    if !q.is_empty() { chips.push(chip("Search", q, &build("q"))); }
+    if !status.is_empty() {
+        chips.push(chip("Status", &humanise_status(status), &build("status")));
     }
-    out
+    if let Some(did) = doctor_id {
+        let name = doctor_map.get(&did).map(|(n, _)| n.as_str()).unwrap_or("?");
+        chips.push(chip("Doctor", name, &build("doctor_id")));
+    }
+    if let Some(dept_id) = dept_id {
+        let name = dept_names.get(&dept_id).map(|s| s.as_str()).unwrap_or("?");
+        chips.push(chip("Department", name, &build("department_id")));
+    }
+    if !after.is_empty() { chips.push(chip("After", after, &build("after"))); }
+
+    if chips.is_empty() { return String::new(); }
+    format!(
+        r#"<div class="flex flex-wrap items-center gap-2 mb-4">
+  <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide mr-1">Active filters:</span>
+  {chips}
+  <a href="/ops/appointments" class="text-xs text-slate-500 hover:text-slate-700 underline decoration-dotted ml-1">Clear all</a>
+</div>"#,
+        chips = chips.join(""),
+    )
 }
 
 fn render_row(
@@ -428,81 +532,77 @@ fn render_row(
         .get(&a.doctor_id)
         .cloned()
         .unwrap_or_else(|| (format!("#{}", a.doctor_id), String::new()));
-    let dept_badge = a
-        .department_id
-        .and_then(|id| dept_names.get(&id).cloned())
-        .map(|n| {
-            format!(
-                r#"<span class="dept-badge">{}</span>"#,
-                escape_html(&n)
-            )
-        })
-        .unwrap_or_default();
+    let dept = a.department_id.and_then(|id| dept_names.get(&id).cloned());
 
-    let (hh, md) = time_chip(a.scheduled_at);
-    let p_initials = initials(&patient);
-    let d_initials = initials(&doc_name);
-    let p_color = avatar_color(&patient);
-    let d_color = avatar_color(&doc_name);
+    let reason_sub = if a.reason.is_empty() {
+        format!(r#"<div class="text-xs text-slate-400 mt-0.5" data-col-sub="patient-sub">No reason given</div>"#)
+    } else {
+        format!(r#"<div class="text-xs text-slate-400 mt-0.5" data-col-sub="patient-sub">{}</div>"#, escape_html(&a.reason))
+    };
+    let spec_sub = if doc_specialty.is_empty() {
+        String::new()
+    } else {
+        format!(r#"<div class="text-xs text-slate-400 mt-0.5" data-col-sub="doctor-sub">{}</div>"#, escape_html(&doc_specialty))
+    };
+    let dept_html = match dept {
+        Some(name) => format!(
+            r#"<span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-purple-50 text-purple-700 border border-purple-100" data-col-sub="dept-badge">{}</span>"#,
+            escape_html(&name),
+        ),
+        None => r#"<span class="text-slate-400 text-xs">—</span>"#.to_string(),
+    };
 
     let status = a.status.as_str();
+    let pill_cls = status_pill_classes(status);
+    let dot_cls = status_dot_color(status);
+
     let actions = render_row_actions(a.id, status, role);
+    let manage_link = format!(
+        r#"<a href="/ops/appointments/{id}/edit" class="text-teal-700 hover:text-teal-900 font-medium text-xs">Manage</a>"#,
+        id = a.id,
+    );
 
     format!(
-        r##"<tr class="appt">
-  <td class="time">
-    <div class="time-chip">
-      <span class="hh">{hh}</span>
-      <span class="md">{md}</span>
-    </div>
+        r##"<tr class="hover:bg-slate-50 transition-colors">
+  <td class="px-6 py-4 font-mono text-xs text-slate-500">#{id}</td>
+  <td class="px-6 py-4">
+    <div class="font-medium text-slate-800">{patient}</div>
+    {reason_sub}
   </td>
-  <td>
-    <div class="person">
-      <div class="avatar" style="background:{p_col}">{p_in}</div>
-      <div class="meta">
-        <span class="name"><a href="/ops/appointments/{id}/edit">{patient}</a></span>
-        <small>{reason}</small>
-      </div>
-    </div>
+  <td class="px-6 py-4">
+    <div class="font-medium text-slate-800">{doctor}</div>
+    {spec_sub}
   </td>
-  <td>
-    <div class="person">
-      <div class="avatar" style="background:{d_col}">{d_in}</div>
-      <div class="meta">
-        <span class="name">{doctor}</span>
-        <small>{specialty}{sep}{dept}</small>
-      </div>
-    </div>
+  <td class="px-6 py-4">{dept_html}</td>
+  <td class="px-6 py-4 text-slate-700">
+    <div class="font-medium text-slate-700" data-col-sub="date-time">{date}</div>
+    <div class="text-xs text-slate-400 mt-0.5" data-col-sub="date-time">{time} UTC</div>
   </td>
-  <td class="actions-cell">
-    <div class="action-group">
-      <span class="pill pill-{status_raw}">{status_label}</span>
+  <td class="px-6 py-4">
+    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border {pill}">
+      <span class="w-1.5 h-1.5 rounded-full {dot}"></span> {label}
+    </span>
+  </td>
+  <td class="px-6 py-4 text-right">
+    <div class="inline-flex items-center gap-2">
       {actions}
+      {manage}
     </div>
   </td>
 </tr>"##,
-        hh = escape_html(&hh),
-        md = escape_html(&md),
-        p_col = p_color,
-        p_in = escape_html(&p_initials),
-        patient = escape_html(&patient),
-        reason = escape_html(
-            &(if a.reason.is_empty() {
-                "No reason given".to_string()
-            } else {
-                a.reason.clone()
-            })
-        ),
         id = a.id,
-        d_col = d_color,
-        d_in = escape_html(&d_initials),
+        patient = escape_html(&patient),
+        reason_sub = reason_sub,
         doctor = escape_html(&doc_name),
-        specialty = escape_html(&doc_specialty),
-        sep = if !doc_specialty.is_empty() && !dept_badge.is_empty() { " · " } else { "" },
-        dept = dept_badge,
-        status_raw = escape_html(status),
-        status_label = escape_html(&humanise_status(status)),
+        spec_sub = spec_sub,
+        dept_html = dept_html,
+        date = escape_html(&iso_ymd(a.scheduled_at)),
+        time = escape_html(&short_time(a.scheduled_at)),
+        pill = pill_cls,
+        dot = dot_cls,
+        label = escape_html(&humanise_status(status)),
         actions = actions,
+        manage = manage_link,
     )
 }
 
@@ -515,20 +615,15 @@ fn render_row_actions(id: i64, status: &str, role: &str) -> String {
     };
     let mut out = String::new();
     for (action, label, danger) in offered {
-        if !role_may(role, action) {
-            continue;
-        }
+        if !role_may(role, action) { continue; }
         let cls = if *danger {
-            "btn btn-sm btn-danger"
+            "px-3 py-1 rounded-md text-xs font-medium text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors"
         } else {
-            "btn btn-sm"
+            "px-3 py-1 rounded-md text-xs font-medium text-emerald-700 bg-white border border-emerald-200 hover:bg-emerald-50 transition-colors"
         };
         out.push_str(&format!(
             r#"<button class="{cls}" data-action="{a}" data-id="{id}">{label}</button>"#,
-            cls = cls,
-            a = action,
-            id = id,
-            label = escape_html(label),
+            cls = cls, a = action, id = id, label = escape_html(label),
         ));
     }
     out
@@ -537,26 +632,45 @@ fn render_row_actions(id: i64, status: &str, role: &str) -> String {
 fn render_empty_row(completely_empty: bool) -> String {
     if completely_empty {
         format!(
-            r#"<tr><td colspan="4" class="empty-state">
-  <span class="glyph">{icon}</span>
-  <h3>No appointments yet</h3>
-  <p>Create the first appointment to start the clinic workflow.</p>
-  <a class="btn btn-primary" href="/ops/appointments/new">{plus}<span>New appointment</span></a>
+            r#"<tr><td colspan="7" class="px-6 py-16 text-center">
+  <div class="mx-auto w-14 h-14 rounded-full bg-teal-50 text-teal-600 grid place-items-center mb-3">{icon}</div>
+  <h3 class="text-base font-semibold text-slate-700 mb-1">No appointments yet</h3>
+  <p class="text-sm text-slate-500 mb-4">Create the first appointment to start the clinic workflow.</p>
+  <a href="/ops/appointments/new" class="inline-flex items-center gap-2 bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm">{plus}<span>New Appointment</span></a>
 </td></tr>"#,
-            icon = ICON_INBOX,
-            plus = ICON_PLUS,
+            icon = ICON_INBOX_LG,
+            plus = ICON_PLUS_SM,
         )
     } else {
         format!(
-            r#"<tr><td colspan="4" class="empty-state">
-  <span class="glyph">{icon}</span>
-  <h3>No matches</h3>
-  <p>Try a different search or clear the filters.</p>
-  <a class="btn" href="/ops/appointments">Clear filters</a>
+            r#"<tr><td colspan="7" class="px-6 py-16 text-center">
+  <div class="mx-auto w-14 h-14 rounded-full bg-slate-100 text-slate-400 grid place-items-center mb-3">{icon}</div>
+  <h3 class="text-base font-semibold text-slate-700 mb-1">No matches</h3>
+  <p class="text-sm text-slate-500 mb-4">Try a different search or clear the filters.</p>
+  <a href="/ops/appointments" class="inline-flex items-center gap-2 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50">Clear filters</a>
 </td></tr>"#,
-            icon = ICON_SEARCH,
+            icon = ICON_SEARCH_LG,
         )
     }
+}
+
+fn render_sort(sort: &str) -> String {
+    format!(
+        r##"<form method="get" action="/ops/appointments" class="flex items-center gap-2">
+  <label for="sort-field" class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Sort</label>
+  <select id="sort-field" name="sort" onchange="this.form.submit()"
+          class="border border-slate-300 text-slate-700 text-xs rounded-md focus:ring-teal-500 focus:border-teal-500 block py-1 pl-2 pr-7 bg-white shadow-sm">
+    <option value="scheduled_asc"{s1}>Chronological</option>
+    <option value="scheduled_desc"{s2}>Newest first</option>
+    <option value="id_desc"{s3}>Recently created</option>
+    <option value="id_asc"{s4}>Oldest created</option>
+  </select>
+</form>"##,
+        s1 = if sort == "scheduled_asc" { " selected" } else { "" },
+        s2 = if sort == "scheduled_desc" { " selected" } else { "" },
+        s3 = if sort == "id_desc" { " selected" } else { "" },
+        s4 = if sort == "id_asc" { " selected" } else { "" },
+    )
 }
 
 const LIST_JS: &str = r#"
@@ -565,7 +679,7 @@ const LIST_JS: &str = r#"
   var token = tokenEl ? tokenEl.getAttribute('content') : '';
   var banner = document.getElementById('banner');
   var bannerText = document.getElementById('banner-text');
-  function showError(msg) { bannerText.textContent = msg; banner.hidden = false; }
+  function showError(msg) { bannerText.textContent = msg; banner.classList.remove('hidden'); }
   document.addEventListener('click', function (e) {
     var btn = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
     if (!btn) return;
@@ -573,45 +687,46 @@ const LIST_JS: &str = r#"
     var id = btn.getAttribute('data-id');
     if (!action || !id) return;
     btn.disabled = true;
+    btn.classList.add('opacity-50', 'cursor-not-allowed');
     fetch('/api/appointments/' + encodeURIComponent(id) + '/' + action, {
       method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: '{}'
     }).then(function (r) {
       if (r.ok) { window.location.reload(); return; }
       r.text().then(function (t) {
         showError('Action failed (' + r.status + '): ' + t);
-        btn.disabled = false;
+        btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed');
       });
     }).catch(function (err) {
       showError('Network error: ' + err);
-      btn.disabled = false;
+      btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed');
+    });
+  });
+
+  // Columns toggle — checkbox flips display of `[data-col-sub="..."]`.
+  document.addEventListener('change', function (e) {
+    var cb = e.target && e.target.closest ? e.target.closest('[data-col-toggle]') : null;
+    if (!cb) return;
+    var key = cb.getAttribute('data-col-toggle');
+    document.querySelectorAll('[data-col-sub="' + key + '"]').forEach(function (el) {
+      el.style.display = cb.checked ? '' : 'none';
     });
   });
 })();
 "#;
 
 // ═══════════════════════════════════════════════════════════════
-// /ops/appointments/new — 2-column form
+// /ops/appointments/new — form page
 // ═══════════════════════════════════════════════════════════════
 
 async fn ops_new(db: &Db, req: Request) -> Result<Response, Error> {
     let Some(sess) = load_session(db, &req).await? else {
         return Ok(redirect("/admin/login?next=/ops/appointments/new"));
     };
-    let actor = Actor {
-        user: &sess.user,
-        bearer: &sess.bearer,
-        csrf: &sess.csrf,
-    };
+    let actor = Actor { user: &sess.user, bearer: &sess.bearer, csrf: &sess.csrf };
     if !can_create(&sess.user) {
-        return Ok(forbidden_page(
-            &actor,
-            "Only receptionists and admins can create appointments.",
-        ));
+        return Ok(forbidden_page(&actor, "Only receptionists and admins can create appointments."));
     }
 
     let patients = Patient::all(db).await?;
@@ -620,218 +735,224 @@ async fn ops_new(db: &Db, req: Request) -> Result<Response, Error> {
 
     let min_dt = Utc::now().format("%Y-%m-%dT%H:%M").to_string();
     let max_dt = (Utc::now() + chrono::Duration::days(365 * 2))
-        .format("%Y-%m-%dT%H:%M")
-        .to_string();
+        .format("%Y-%m-%dT%H:%M").to_string();
 
-    let breadcrumb = format!(
-        r#"<a href="/ops/appointments">Appointments</a> {sep} <span>New</span>"#,
-        sep = ICON_CHEVRON_RIGHT_SMALL,
-    );
-    let back_btn = format!(
-        r#"<a class="btn btn-ghost" href="/ops/appointments">{icon}<span>Back</span></a>"#,
-        icon = ICON_ARROW_LEFT,
-    );
-    let hero = page_hero(
-        &breadcrumb,
-        "New appointment",
-        "Enter patient, doctor, date and clinical details.",
-        &back_btn,
-    );
-
-    let inner = render_new_form(&patients, &doctors, &departments, &min_dt, &max_dt);
+    let content = render_new_content(&patients, &doctors, &departments, &min_dt, &max_dt);
+    let opts = ShellOpts {
+        header_title: "New Appointment",
+        header_badge: "",
+    };
     Ok(html(render_shell(
         "New appointment",
         &actor,
         Nav::Appointments,
-        &hero,
-        &inner,
-        NEW_FORM_JS,
+        &opts,
+        &content,
+        NEW_JS,
     )))
 }
 
-const ICON_CHEVRON_RIGHT_SMALL: &str = r#"<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>"#;
+fn opt_list<'a, I>(iter: I) -> String
+where I: Iterator<Item = (i64, &'a str)>,
+{
+    let mut s = String::new();
+    for (id, label) in iter {
+        s.push_str(&format!(r#"<option value="{id}">{l}</option>"#, id = id, l = escape_html(label)));
+    }
+    s
+}
 
-fn render_new_form(
+fn render_new_content(
     patients: &[Patient],
     doctors: &[Doctor],
     departments: &[Department],
     min_dt: &str,
     max_dt: &str,
 ) -> String {
-    let patient_opts = options_from(
-        patients
-            .iter()
-            .filter(|p| p.is_active)
-            .map(|p| (p.id, p.full_name.as_str())),
+    let patient_opts = opt_list(
+        patients.iter().filter(|p| p.is_active).map(|p| (p.id, p.full_name.as_str())),
     );
-    let doctor_opts = options_from(
-        doctors
-            .iter()
-            .filter(|d| d.is_active)
-            .map(|d| (d.id, d.full_name.as_str())),
+    let doctor_opts = opt_list(
+        doctors.iter().filter(|d| d.is_active).map(|d| (d.id, d.full_name.as_str())),
     );
     let dept_opts = format!(
         r#"<option value="">— none —</option>{rest}"#,
-        rest = options_from(
-            departments
-                .iter()
-                .filter(|d| d.is_active)
-                .map(|d| (d.id, d.name.as_str()))
+        rest = opt_list(
+            departments.iter().filter(|d| d.is_active).map(|d| (d.id, d.name.as_str()))
         ),
     );
 
     format!(
-        r##"<div id="banner" class="banner" role="alert" hidden>{alert}<span id="banner-text"></span></div>
-<div class="form-layout">
-  <section class="card">
-    <form id="new-form" class="form" novalidate>
-      <fieldset class="group">
-        <legend>Who</legend>
+        r##"
+<!-- Back link -->
+<div class="mb-4">
+  <a href="/ops/appointments" class="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800">
+    {back}<span>Back to appointments</span>
+  </a>
+</div>
 
-        <label class="field" for="patient_id">Patient <span class="req">*</span></label>
+<div id="banner" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-lg mb-4 text-sm flex items-center gap-2">
+  {alert}<span id="banner-text"></span>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6">
+  <!-- Form card -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+    <div class="px-6 py-4 border-b border-slate-100">
+      <h3 class="text-base font-semibold text-slate-800">Visit details</h3>
+      <p class="text-sm text-slate-500 mt-0.5">Fill in the patient, doctor, schedule, and optional clinical notes.</p>
+    </div>
+    <form id="new-form" class="p-6 space-y-6" novalidate>
+
+      <!-- Section: Who -->
+      <section>
+        <p class="text-xs font-bold text-teal-700 uppercase tracking-wider mb-3">Who</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <label for="patient_id" class="block text-sm font-medium text-slate-700 mb-1">Patient <span class="text-red-500">*</span></label>
+            <select id="patient_id" name="patient_id" required
+                    class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm">
+              <option value="">Select a patient…</option>
+              {patients}
+            </select>
+            <div class="text-xs text-red-600 mt-1" id="patient_id-err"></div>
+          </div>
+          <div>
+            <label for="doctor_id" class="block text-sm font-medium text-slate-700 mb-1">Doctor <span class="text-red-500">*</span></label>
+            <select id="doctor_id" name="doctor_id" required
+                    class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm">
+              <option value="">Select a doctor…</option>
+              {doctors}
+            </select>
+            <div class="text-xs text-red-600 mt-1" id="doctor_id-err"></div>
+          </div>
+          <div>
+            <label for="department_id" class="block text-sm font-medium text-slate-700 mb-1">Department <span class="text-slate-400 font-normal text-xs">optional</span></label>
+            <select id="department_id" name="department_id"
+                    class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm">
+              {depts}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: When -->
+      <section class="pt-4 border-t border-slate-100">
+        <p class="text-xs font-bold text-teal-700 uppercase tracking-wider mb-3">When</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div>
+            <label for="scheduled_at" class="block text-sm font-medium text-slate-700 mb-1">Scheduled <span class="text-red-500">*</span></label>
+            <input id="scheduled_at" name="scheduled_at" type="datetime-local"
+                   min="{min_dt}" max="{max_dt}" required
+                   class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm">
+            <p class="text-xs text-slate-500 mt-1">Stored as UTC. Past times are blocked.</p>
+            <div class="text-xs text-red-600 mt-1" id="scheduled_at-err"></div>
+          </div>
+          <div>
+            <label for="duration_preset" class="block text-sm font-medium text-slate-700 mb-1">Duration <span class="text-red-500">*</span></label>
+            <div class="flex gap-2">
+              <select id="duration_preset" name="duration_preset" required
+                      class="flex-1 border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm">
+                <option value="15">15 minutes</option>
+                <option value="30" selected>30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="90">1 hour 30 min</option>
+                <option value="120">2 hours</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <input id="duration_custom" name="duration_custom" type="number" inputmode="numeric"
+                     min="1" max="1440" placeholder="Minutes" hidden
+                     class="w-28 border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm">
+            </div>
+          </div>
+          <div>
+            <label for="priority" class="block text-sm font-medium text-slate-700 mb-1">Priority <span class="text-red-500">*</span></label>
+            <select id="priority" name="priority" required
+                    class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm">
+              <option value="1">Low</option>
+              <option value="3">Normal</option>
+              <option value="5" selected>Standard</option>
+              <option value="7">High</option>
+              <option value="10">Urgent</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Details -->
+      <section class="pt-4 border-t border-slate-100">
+        <p class="text-xs font-bold text-teal-700 uppercase tracking-wider mb-3">Details</p>
         <div>
-          <select class="input" id="patient_id" name="patient_id" required>
-            <option value="">Select a patient…</option>
-            {patients}
-          </select>
-          <div class="field-error" id="patient_id-err"></div>
+          <label for="reason" class="block text-sm font-medium text-slate-700 mb-1">Reason <span class="text-slate-400 font-normal text-xs">optional</span></label>
+          <textarea id="reason" name="reason" rows="2" maxlength="500"
+                    placeholder="Brief reason for the visit"
+                    class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm resize-y"></textarea>
+          <div class="text-xs text-slate-400 text-right mt-1 tabular-nums" id="reason-counter">0 / 500</div>
         </div>
-
-        <label class="field" for="doctor_id">Doctor <span class="req">*</span></label>
-        <div>
-          <select class="input" id="doctor_id" name="doctor_id" required>
-            <option value="">Select a doctor…</option>
-            {doctors}
-          </select>
-          <div class="field-error" id="doctor_id-err"></div>
+        <div class="mt-4">
+          <label for="notes" class="block text-sm font-medium text-slate-700 mb-1">Internal notes <span class="text-slate-400 font-normal text-xs">optional</span></label>
+          <textarea id="notes" name="notes" rows="3" maxlength="1000"
+                    placeholder="Internal notes (not visible to patient)"
+                    class="w-full border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 p-2.5 bg-white shadow-sm resize-y"></textarea>
+          <div class="text-xs text-slate-400 text-right mt-1 tabular-nums" id="notes-counter">0 / 1000</div>
         </div>
-
-        <label class="field" for="department_id">Department <span class="opt">optional</span></label>
-        <select class="input" id="department_id" name="department_id">
-          {depts}
-        </select>
-      </fieldset>
-
-      <fieldset class="group">
-        <legend>When</legend>
-
-        <label class="field" for="scheduled_at">Scheduled <span class="req">*</span></label>
-        <div>
-          <input class="input" id="scheduled_at" name="scheduled_at" type="datetime-local"
-                 min="{min_dt}" max="{max_dt}" required>
-          <div class="field-hint">UTC — past times are blocked.</div>
-          <div class="field-error" id="scheduled_at-err"></div>
-        </div>
-
-        <label class="field" for="duration_preset">Duration <span class="req">*</span></label>
-        <div class="duration-combo">
-          <select class="input" id="duration_preset" name="duration_preset" required>
-            <option value="15">15 minutes</option>
-            <option value="30" selected>30 minutes</option>
-            <option value="45">45 minutes</option>
-            <option value="60">1 hour</option>
-            <option value="90">1 hour 30 min</option>
-            <option value="120">2 hours</option>
-            <option value="custom">Custom…</option>
-          </select>
-          <input class="input" id="duration_custom" name="duration_custom"
-                 type="number" inputmode="numeric" min="1" max="1440"
-                 placeholder="Minutes" hidden>
-        </div>
-
-        <label class="field" for="priority">Priority <span class="req">*</span></label>
-        <select class="input" id="priority" name="priority" required>
-          <option value="1">Low</option>
-          <option value="3">Normal</option>
-          <option value="5" selected>Standard</option>
-          <option value="7">High</option>
-          <option value="10">Urgent</option>
-        </select>
-      </fieldset>
-
-      <fieldset class="group">
-        <legend>Details</legend>
-
-        <label class="field" for="reason">Reason <span class="opt">optional</span></label>
-        <div>
-          <textarea class="input" id="reason" name="reason" rows="2" maxlength="500"
-                    placeholder="Brief reason for the visit"></textarea>
-          <div class="char-counter" id="reason-counter">0 / 500</div>
-        </div>
-
-        <label class="field" for="notes">Notes <span class="opt">optional</span></label>
-        <div>
-          <textarea class="input" id="notes" name="notes" rows="3" maxlength="1000"
-                    placeholder="Internal notes (not visible to patient)"></textarea>
-          <div class="char-counter" id="notes-counter">0 / 1000</div>
-        </div>
-      </fieldset>
+      </section>
     </form>
-  </section>
+  </div>
 
-  <aside class="preview-card" aria-live="polite">
-    <h3>Preview</h3>
-    <div class="big-time empty" id="pv-time">
-      <span class="hh">—</span>
-      <span class="md">pick a date &amp; time</span>
+  <!-- Preview card -->
+  <aside class="lg:sticky lg:top-4 self-start bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Preview</p>
+    <div id="pv-time" class="rounded-lg border border-dashed border-slate-300 bg-slate-50 text-center py-4 px-3 mb-4">
+      <div class="text-lg font-semibold text-slate-400">—</div>
+      <div class="text-xs text-slate-500 uppercase tracking-wide mt-0.5">pick a date &amp; time</div>
     </div>
-    <div class="row">
-      <div class="key">Patient</div>
-      <div class="val" id="pv-patient"><span class="soft">— not selected —</span></div>
-    </div>
-    <div class="row">
-      <div class="key">Doctor</div>
-      <div class="val" id="pv-doctor"><span class="soft">— not selected —</span></div>
-    </div>
-    <div class="row">
-      <div class="key">Dept</div>
-      <div class="val" id="pv-dept"><span class="soft">—</span></div>
-    </div>
-    <div class="row">
-      <div class="key">Duration</div>
-      <div class="val" id="pv-duration">30 minutes</div>
-    </div>
-    <div class="row">
-      <div class="key">Priority</div>
-      <div class="val" id="pv-priority">Standard</div>
-    </div>
-    <div class="cta">
-      <button id="submit-btn" form="new-form" type="submit" class="btn btn-primary btn-lg" style="justify-content:center">
+    <dl class="space-y-2.5 text-sm">
+      <div class="flex items-baseline gap-3">
+        <dt class="w-20 text-xs font-semibold text-slate-500 uppercase tracking-wide">Patient</dt>
+        <dd id="pv-patient" class="flex-1 text-slate-400 italic">— not selected —</dd>
+      </div>
+      <div class="flex items-baseline gap-3">
+        <dt class="w-20 text-xs font-semibold text-slate-500 uppercase tracking-wide">Doctor</dt>
+        <dd id="pv-doctor" class="flex-1 text-slate-400 italic">— not selected —</dd>
+      </div>
+      <div class="flex items-baseline gap-3">
+        <dt class="w-20 text-xs font-semibold text-slate-500 uppercase tracking-wide">Dept</dt>
+        <dd id="pv-dept" class="flex-1 text-slate-400">—</dd>
+      </div>
+      <div class="flex items-baseline gap-3">
+        <dt class="w-20 text-xs font-semibold text-slate-500 uppercase tracking-wide">Duration</dt>
+        <dd id="pv-duration" class="flex-1 text-slate-700">30 minutes</dd>
+      </div>
+      <div class="flex items-baseline gap-3">
+        <dt class="w-20 text-xs font-semibold text-slate-500 uppercase tracking-wide">Priority</dt>
+        <dd id="pv-priority" class="flex-1 text-slate-700">Standard</dd>
+      </div>
+    </dl>
+    <div class="mt-5 pt-5 border-t border-slate-100 space-y-2">
+      <button id="submit-btn" form="new-form" type="submit"
+              class="w-full inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-teal-700 transition-colors shadow-sm">
         {check}<span>Create appointment</span>
       </button>
-      <a class="btn btn-ghost" href="/ops/appointments" style="justify-content:center">Cancel</a>
-      <div class="shortcut"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to submit</div>
+      <a href="/ops/appointments" class="w-full inline-flex items-center justify-center gap-2 bg-white text-slate-700 border border-slate-300 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">Cancel</a>
+      <p class="text-xs text-slate-500 text-center">Submit with <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span></p>
     </div>
   </aside>
-</div>"##,
-        alert = ICON_ALERT,
+</div>
+"##,
+        back = ICON_ARROW_LEFT_SM,
+        alert = ICON_ALERT_SM,
         patients = patient_opts,
         doctors = doctor_opts,
         depts = dept_opts,
         min_dt = escape_html(min_dt),
         max_dt = escape_html(max_dt),
-        check = ICON_CHECK_SMALL,
+        check = ICON_CHECK_SM,
     )
 }
 
-const ICON_CHECK_SMALL: &str = r#"<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>"#;
-
-fn options_from<'a, I>(iter: I) -> String
-where
-    I: Iterator<Item = (i64, &'a str)>,
-{
-    let mut out = String::new();
-    for (id, label) in iter {
-        out.push_str(&format!(
-            r#"<option value="{id}">{label}</option>"#,
-            id = id,
-            label = escape_html(label),
-        ));
-    }
-    out
-}
-
-const NEW_FORM_JS: &str = r#"
+const NEW_JS: &str = r#"
 (function () {
   var tokenEl = document.querySelector('meta[name="api-token"]');
   var token = tokenEl ? tokenEl.getAttribute('content') : '';
@@ -839,22 +960,25 @@ const NEW_FORM_JS: &str = r#"
   var banner = document.getElementById('banner');
   var bannerText = document.getElementById('banner-text');
   var submitBtn = document.getElementById('submit-btn');
-
   var durPreset = document.getElementById('duration_preset');
   var durCustom = document.getElementById('duration_custom');
-
   var PRIORITIES = { '1': 'Low', '3': 'Normal', '5': 'Standard', '7': 'High', '10': 'Urgent' };
 
-  function showBanner(msg) { bannerText.textContent = msg; banner.hidden = false; banner.scrollIntoView({ block: 'nearest' }); }
-  function clearBanner() { banner.hidden = true; bannerText.textContent = ''; }
+  function showBanner(m) { bannerText.textContent = m; banner.classList.remove('hidden'); banner.scrollIntoView({ block: 'nearest' }); }
+  function clearBanner() { banner.classList.add('hidden'); bannerText.textContent = ''; }
 
   function setFieldError(id, msg) {
-    var input = document.getElementById(id);
+    var inp = document.getElementById(id);
     var err = document.getElementById(id + '-err');
-    if (msg) { if (input) input.classList.add('invalid'); if (err) err.textContent = msg; }
-    else     { if (input) input.classList.remove('invalid'); if (err) err.textContent = ''; }
+    if (msg) {
+      if (inp) inp.classList.add('border-red-400', 'ring-red-300');
+      if (err) err.textContent = msg;
+    } else {
+      if (inp) inp.classList.remove('border-red-400', 'ring-red-300');
+      if (err) err.textContent = '';
+    }
   }
-  function clearAllErrors() { ['patient_id','doctor_id','scheduled_at'].forEach(function(i){ setFieldError(i,''); }); }
+  function clearErrors() { ['patient_id','doctor_id','scheduled_at'].forEach(function(i){ setFieldError(i,''); }); }
 
   function syncCustom() {
     if (durPreset.value === 'custom') {
@@ -867,62 +991,68 @@ const NEW_FORM_JS: &str = r#"
   durCustom.addEventListener('input', updatePreview);
   syncCustom();
 
-  function wireCounter(id, ctrId, max) {
-    var inp = document.getElementById(id), ctr = document.getElementById(ctrId);
-    function refresh() { var n = inp.value.length; ctr.textContent = n + ' / ' + max; ctr.classList.toggle('over', n > max); }
+  function wireCounter(id, cid, max) {
+    var inp = document.getElementById(id), ctr = document.getElementById(cid);
+    function refresh() {
+      var n = inp.value.length; ctr.textContent = n + ' / ' + max;
+      ctr.classList.toggle('text-red-500', n > max);
+      ctr.classList.toggle('font-semibold', n > max);
+    }
     inp.addEventListener('input', refresh); refresh();
   }
   wireCounter('reason', 'reason-counter', 500);
   wireCounter('notes',  'notes-counter',  1000);
 
-  function updatePreview() {
-    var pSel = document.getElementById('patient_id');
-    var dSel = document.getElementById('doctor_id');
-    var deptSel = document.getElementById('department_id');
-    var prSel = document.getElementById('priority');
-    var t = document.getElementById('scheduled_at').value;
-
-    var pvPatient = document.getElementById('pv-patient');
-    var pvDoctor = document.getElementById('pv-doctor');
-    var pvDept   = document.getElementById('pv-dept');
-    var pvDur    = document.getElementById('pv-duration');
-    var pvPr     = document.getElementById('pv-priority');
-    var pvTime   = document.getElementById('pv-time');
-
-    pvPatient.innerHTML = pSel.value
-      ? escapeHtml(pSel.options[pSel.selectedIndex].textContent)
-      : '<span class="soft">— not selected —</span>';
-    pvDoctor.innerHTML = dSel.value
-      ? escapeHtml(dSel.options[dSel.selectedIndex].textContent)
-      : '<span class="soft">— not selected —</span>';
-    pvDept.innerHTML = deptSel.value
-      ? escapeHtml(deptSel.options[deptSel.selectedIndex].textContent)
-      : '<span class="soft">—</span>';
-    pvPr.textContent = PRIORITIES[prSel.value] || 'Standard';
-
-    var mins;
-    if (durPreset.value === 'custom') { mins = parseInt(durCustom.value, 10); }
-    else { mins = parseInt(durPreset.value, 10); }
-    pvDur.textContent = formatDuration(mins);
-
-    if (t) {
-      var parts = t.split('T');
-      var date = parts[0]; var time = parts[1] || '00:00';
-      pvTime.classList.remove('empty');
-      pvTime.innerHTML = '<span class="hh">' + escapeHtml(time.slice(0, 5)) + '</span>' +
-                         '<span class="md">' + escapeHtml(date) + ' UTC</span>';
-    } else {
-      pvTime.classList.add('empty');
-      pvTime.innerHTML = '<span class="hh">—</span><span class="md">pick a date &amp; time</span>';
-    }
-  }
-  function formatDuration(m) {
+  function formatDur(m) {
     if (!m || m < 1) return '—';
     if (m < 60) return m + ' minutes';
     var h = Math.floor(m / 60), rem = m % 60;
     return rem === 0 ? h + ' hour' + (h > 1 ? 's' : '') : h + 'h ' + rem + 'm';
   }
-  function escapeHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function updatePreview() {
+    var p = document.getElementById('patient_id');
+    var d = document.getElementById('doctor_id');
+    var dept = document.getElementById('department_id');
+    var pr = document.getElementById('priority');
+    var t = document.getElementById('scheduled_at').value;
+
+    var pvP = document.getElementById('pv-patient');
+    var pvD = document.getElementById('pv-doctor');
+    var pvDept = document.getElementById('pv-dept');
+    var pvDur = document.getElementById('pv-duration');
+    var pvPr = document.getElementById('pv-priority');
+    var pvTime = document.getElementById('pv-time');
+
+    pvP.innerHTML = p.value
+      ? '<span class="text-slate-800 font-medium">' + esc(p.options[p.selectedIndex].textContent) + '</span>'
+      : '<span class="italic text-slate-400">— not selected —</span>';
+    pvD.innerHTML = d.value
+      ? '<span class="text-slate-800 font-medium">' + esc(d.options[d.selectedIndex].textContent) + '</span>'
+      : '<span class="italic text-slate-400">— not selected —</span>';
+    pvDept.innerHTML = dept.value
+      ? esc(dept.options[dept.selectedIndex].textContent)
+      : '<span class="text-slate-400">—</span>';
+    pvPr.textContent = PRIORITIES[pr.value] || 'Standard';
+
+    var mins = durPreset.value === 'custom' ? parseInt(durCustom.value, 10) : parseInt(durPreset.value, 10);
+    pvDur.textContent = formatDur(mins);
+
+    if (t) {
+      var parts = t.split('T');
+      var date = parts[0], time = (parts[1] || '00:00').slice(0, 5);
+      pvTime.className = 'rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 text-white text-center py-4 px-3 mb-4 shadow-sm';
+      pvTime.innerHTML =
+        '<div class="text-2xl font-bold tabular-nums leading-tight">' + esc(time) + '</div>' +
+        '<div class="text-xs uppercase tracking-wider opacity-90 mt-1">' + esc(date) + ' UTC</div>';
+    } else {
+      pvTime.className = 'rounded-lg border border-dashed border-slate-300 bg-slate-50 text-center py-4 px-3 mb-4';
+      pvTime.innerHTML =
+        '<div class="text-lg font-semibold text-slate-400">—</div>' +
+        '<div class="text-xs text-slate-500 uppercase tracking-wide mt-0.5">pick a date &amp; time</div>';
+    }
+  }
   ['patient_id','doctor_id','department_id','scheduled_at','priority'].forEach(function(id){
     var el = document.getElementById(id);
     el.addEventListener('change', updatePreview);
@@ -935,9 +1065,8 @@ const NEW_FORM_JS: &str = r#"
     var withSeconds = local.length === 16 ? local + ':00' : local;
     return withSeconds + 'Z';
   }
-
   function validate() {
-    clearAllErrors();
+    clearErrors();
     var ok = true;
     var fd = new FormData(form);
     if (!fd.get('patient_id')) { setFieldError('patient_id', 'Pick a patient.'); ok = false; }
@@ -949,7 +1078,6 @@ const NEW_FORM_JS: &str = r#"
     }
     return ok;
   }
-
   function submit() {
     clearBanner();
     if (!validate()) return;
@@ -970,7 +1098,9 @@ const NEW_FORM_JS: &str = r#"
     if (deptRaw) body.department_id = parseInt(deptRaw, 10);
 
     submitBtn.disabled = true;
-    submitBtn.lastChild.textContent = 'Creating…';
+    submitBtn.classList.add('opacity-70', 'cursor-not-allowed');
+    var lbl = submitBtn.querySelector('span');
+    if (lbl) lbl.textContent = 'Creating…';
     fetch('/api/appointments', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
@@ -980,12 +1110,14 @@ const NEW_FORM_JS: &str = r#"
       r.text().then(function (t) {
         showBanner('Create failed (' + r.status + '): ' + t);
         submitBtn.disabled = false;
-        submitBtn.lastChild.textContent = 'Create appointment';
+        submitBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+        if (lbl) lbl.textContent = 'Create appointment';
       });
     }).catch(function (err) {
       showBanner('Network error: ' + err);
       submitBtn.disabled = false;
-      submitBtn.lastChild.textContent = 'Create appointment';
+      submitBtn.classList.remove('opacity-70', 'cursor-not-allowed');
+      if (lbl) lbl.textContent = 'Create appointment';
     });
   }
   form.addEventListener('submit', function(e){ e.preventDefault(); submit(); });
@@ -1002,15 +1134,9 @@ const NEW_FORM_JS: &str = r#"
 async fn ops_detail(db: &Db, req: Request, params: &Params) -> Result<Response, Error> {
     let Some(sess) = load_session(db, &req).await? else {
         let id = params.get("id").unwrap_or("");
-        return Ok(redirect(&format!(
-            "/admin/login?next=/ops/appointments/{id}/edit"
-        )));
+        return Ok(redirect(&format!("/admin/login?next=/ops/appointments/{id}/edit")));
     };
-    let actor = Actor {
-        user: &sess.user,
-        bearer: &sess.bearer,
-        csrf: &sess.csrf,
-    };
+    let actor = Actor { user: &sess.user, bearer: &sess.bearer, csrf: &sess.csrf };
     let Some(id_str) = params.get("id") else {
         return Ok(not_found_page(&actor, "Missing appointment id."));
     };
@@ -1018,10 +1144,7 @@ async fn ops_detail(db: &Db, req: Request, params: &Params) -> Result<Response, 
         return Ok(not_found_page(&actor, "That appointment id isn't a number."));
     };
     let Some(appt) = Appointment::find(db, id).await? else {
-        return Ok(not_found_page(
-            &actor,
-            &format!("Appointment #{id} does not exist."),
-        ));
+        return Ok(not_found_page(&actor, &format!("Appointment #{id} does not exist.")));
     };
 
     let patient = Patient::find(db, appt.patient_id).await?;
@@ -1030,7 +1153,6 @@ async fn ops_detail(db: &Db, req: Request, params: &Params) -> Result<Response, 
         Some(d) => Department::find(db, d).await?,
         None => None,
     };
-
     let events: Vec<AppointmentEvent> = {
         let mut all = AppointmentEvent::all(db).await?;
         all.retain(|e| e.appointment_id == id);
@@ -1038,59 +1160,200 @@ async fn ops_detail(db: &Db, req: Request, params: &Params) -> Result<Response, 
         all
     };
 
-    let breadcrumb = format!(
-        r#"<a href="/ops/appointments">Appointments</a> {sep} <span>#{id}</span>"#,
-        sep = ICON_CHEVRON_RIGHT_SMALL,
-        id = id,
-    );
-    let hero_actions = render_detail_actions(id, &appt.status, &sess.user.role);
-    let hero_title = format!("Appointment #{id}");
-    let subtitle = format!(
-        "Status: {status}  ·  {scheduled}",
-        status = humanise_status(&appt.status),
-        scheduled = appt.scheduled_at.format("%Y-%m-%d %H:%M UTC"),
-    );
-    let hero = page_hero(&breadcrumb, &hero_title, &subtitle, &hero_actions);
-
-    let info_card = render_detail_info(&appt, patient.as_ref(), doctor.as_ref(), department.as_ref());
-    let timeline_card = render_detail_timeline(&appt, &events);
-
-    let inner = format!(
-        r#"<div id="banner" class="banner" role="alert" hidden>{alert}<span id="banner-text"></span></div>
-<section class="banner banner-warn" style="margin-bottom: var(--s-5);">
-  {info_icon}<span><strong>Read-only view.</strong> Patient, doctor, and schedule cannot be changed after booking. To reschedule, cancel and create a new appointment.</span>
-</section>
-<div class="detail-grid">
-  <section class="card">
-    <div class="section-head"><h3>Information</h3></div>
-    {info}
-  </section>
-  <section class="card">
-    <div class="section-head">
-      <h3>Activity</h3>
-      <span class="count-pill">{ev_count}</span>
-    </div>
-    {timeline}
-  </section>
-</div>"#,
-        alert = ICON_ALERT,
-        info_icon = ICON_ALERT,
-        info = info_card,
-        timeline = timeline_card,
-        ev_count = events.len(),
-    );
-
+    let content = render_detail_content(id, &appt, patient.as_ref(), doctor.as_ref(), department.as_ref(), &events, &sess.user.role);
+    let opts = ShellOpts {
+        header_title: &format!("Appointment #{id}"),
+        header_badge: &humanise_status(&appt.status),
+    };
     Ok(html(render_shell(
         &format!("Appointment #{id}"),
         &actor,
         Nav::Appointments,
-        &hero,
-        &inner,
+        &opts,
+        &content,
         DETAIL_JS,
     )))
 }
 
-fn render_detail_actions(id: i64, status: &str, role: &str) -> String {
+fn render_detail_content(
+    id: i64,
+    appt: &Appointment,
+    patient: Option<&Patient>,
+    doctor: Option<&Doctor>,
+    department: Option<&Department>,
+    events: &[AppointmentEvent],
+    role: &str,
+) -> String {
+    let p_name = patient.map(|p| p.full_name.as_str()).unwrap_or("—");
+    let p_contact = patient
+        .map(|p| format!("{} · {}", p.phone, p.email))
+        .unwrap_or_else(|| "—".to_string());
+    let d_name = doctor.map(|d| d.full_name.as_str()).unwrap_or("—");
+    let d_specialty = doctor.map(|d| d.specialty.as_str()).unwrap_or("");
+    let dept = department.map(|d| d.name.as_str()).unwrap_or("—");
+
+    let status = appt.status.as_str();
+    let pill_cls = status_pill_classes(status);
+    let dot_cls = status_dot_color(status);
+
+    let actions = render_detail_hero_actions(id, status, role);
+
+    // Timeline
+    let timeline = if events.is_empty() {
+        format!(
+            r#"<div class="p-6 text-center">
+  <div class="mx-auto w-12 h-12 rounded-full bg-slate-100 text-slate-400 grid place-items-center mb-2">{icon}</div>
+  <p class="text-sm text-slate-500">No status transitions yet.</p>
+  <p class="text-xs text-slate-400 mt-1">The audit trail fills as lifecycle actions are taken.</p>
+</div>"#,
+            icon = ICON_CLOCK,
+        )
+    } else {
+        let mut items = String::from(r#"<ul class="p-5 space-y-0">"#);
+        for e in events {
+            let is_cancel = e.to_status == "cancelled";
+            items.push_str(&format!(
+                r#"<li class="relative pl-7 pb-5 border-l-2 border-slate-200 ml-1.5 last:pb-0 last:border-transparent">
+  <span class="timeline-dot{cancel}"></span>
+  <p class="text-sm text-slate-700"><strong>{from}</strong> <span class="text-slate-400 mx-1">→</span> <strong>{to}</strong></p>
+  <p class="text-xs text-slate-400 mt-0.5">{abs} · {rel}</p>
+</li>"#,
+                cancel = if is_cancel { " cancelled" } else { "" },
+                from = escape_html(&humanise_status(&e.from_status)),
+                to = escape_html(&humanise_status(&e.to_status)),
+                abs = escape_html(&e.created_at.format("%Y-%m-%d %H:%M").to_string()),
+                rel = escape_html(&relative_past(e.created_at)),
+            ));
+        }
+        items.push_str(&format!(
+            r#"<li class="relative pl-7 ml-1.5">
+  <span class="timeline-dot" style="background:#94a3b8"></span>
+  <p class="text-sm text-slate-700"><strong>Created</strong></p>
+  <p class="text-xs text-slate-400 mt-0.5">{abs} · {rel}</p>
+</li>"#,
+            abs = escape_html(&appt.created_at.format("%Y-%m-%d %H:%M").to_string()),
+            rel = escape_html(&relative_past(appt.created_at)),
+        ));
+        items.push_str("</ul>");
+        items
+    };
+
+    format!(
+        r##"
+<div class="mb-4 flex items-center justify-between">
+  <a href="/ops/appointments" class="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800">
+    {back}<span>Back to appointments</span>
+  </a>
+  <div class="flex items-center gap-2">{actions}</div>
+</div>
+
+<div id="banner" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-lg mb-4 text-sm flex items-center gap-2">
+  {alert}<span id="banner-text"></span>
+</div>
+
+<div class="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-lg mb-5 text-sm flex items-start gap-2">
+  {alert}
+  <span><strong>Read-only view.</strong> Patient, doctor, and schedule cannot be edited after booking. Cancel and create a new appointment to reschedule.</span>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6">
+  <!-- Information card -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+    <div class="px-5 py-3 border-b border-slate-100 bg-slate-50/60">
+      <h3 class="text-xs font-bold text-slate-600 uppercase tracking-wider">Information</h3>
+    </div>
+    <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Patient</p>
+        <p class="text-base font-medium text-slate-800 mt-1">{p_name}</p>
+        <p class="text-xs text-slate-500 mt-0.5">{p_contact}</p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Doctor</p>
+        <p class="text-base font-medium text-slate-800 mt-1">{d_name}</p>
+        <p class="text-xs text-slate-500 mt-0.5">{d_spec}</p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Department</p>
+        <p class="text-base text-slate-700 mt-1">{dept}</p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</p>
+        <p class="mt-1"><span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border {pill}">
+          <span class="w-1.5 h-1.5 rounded-full {dot}"></span> {status_label}
+        </span></p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Scheduled</p>
+        <p class="text-base text-slate-700 mt-1 tabular-nums">{scheduled}</p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Duration</p>
+        <p class="text-base text-slate-700 mt-1 tabular-nums">{duration} min</p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Priority</p>
+        <p class="text-base text-slate-700 mt-1">{priority}</p>
+      </div>
+      <div>
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Active</p>
+        <p class="text-base text-slate-700 mt-1">{active}</p>
+      </div>
+      <div class="md:col-span-2">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Reason</p>
+        <p class="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{reason}</p>
+      </div>
+      <div class="md:col-span-2">
+        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Notes</p>
+        <p class="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{notes}</p>
+      </div>
+      <div class="md:col-span-2 text-xs text-slate-400 border-t border-slate-100 pt-3 mt-2">
+        Created {created}
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity card -->
+  <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+    <div class="px-5 py-3 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between">
+      <h3 class="text-xs font-bold text-slate-600 uppercase tracking-wider">Activity</h3>
+      <span class="text-xs font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200">{ev_count}</span>
+    </div>
+    {timeline}
+  </div>
+</div>
+"##,
+        back = ICON_ARROW_LEFT_SM,
+        actions = actions,
+        alert = ICON_ALERT_SM,
+        p_name = escape_html(p_name),
+        p_contact = escape_html(&p_contact),
+        d_name = escape_html(d_name),
+        d_spec = escape_html(d_specialty),
+        dept = escape_html(dept),
+        pill = pill_cls,
+        dot = dot_cls,
+        status_label = escape_html(&humanise_status(status)),
+        scheduled = escape_html(&appt.scheduled_at.format("%Y-%m-%d %H:%M UTC").to_string()),
+        duration = appt.duration_minutes,
+        priority = match appt.priority {
+            1 => "1 · Low",
+            3 => "3 · Normal",
+            5 => "5 · Standard",
+            7 => "7 · High",
+            10 => "10 · Urgent",
+            _ => "—",
+        },
+        active = if appt.is_active { "Yes" } else { "No" },
+        reason = escape_html(if appt.reason.is_empty() { "—" } else { appt.reason.as_str() }),
+        notes = escape_html(if appt.notes.is_empty() { "—" } else { appt.notes.as_str() }),
+        created = escape_html(&appt.created_at.format("%Y-%m-%d %H:%M UTC").to_string()),
+        ev_count = events.len(),
+        timeline = timeline,
+    )
+}
+
+fn render_detail_hero_actions(id: i64, status: &str, role: &str) -> String {
     let offered: &[(&str, &str, bool)] = match status {
         "scheduled" => &[("confirm", "Confirm", false), ("cancel", "Cancel", true)],
         "confirmed" => &[("check-in", "Check-in", false), ("cancel", "Cancel", true)],
@@ -1099,108 +1362,17 @@ fn render_detail_actions(id: i64, status: &str, role: &str) -> String {
     };
     let mut out = String::new();
     for (action, label, danger) in offered {
-        if !role_may(role, action) {
-            continue;
-        }
-        let cls = if *danger { "btn btn-danger" } else { "btn btn-primary" };
+        if !role_may(role, action) { continue; }
+        let cls = if *danger {
+            "inline-flex items-center gap-1.5 bg-white text-red-600 border border-red-200 px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-red-50 transition-colors shadow-sm"
+        } else {
+            "inline-flex items-center gap-1.5 bg-teal-600 text-white px-3.5 py-2 rounded-lg text-sm font-medium hover:bg-teal-700 transition-colors shadow-sm"
+        };
         out.push_str(&format!(
-            r#"<button class="{cls}" data-action="{a}" data-id="{id}">{label}</button>"#,
-            cls = cls,
-            a = action,
-            id = id,
-            label = escape_html(label),
+            r#"<button class="{cls}" data-action="{a}" data-id="{id}">{l}</button>"#,
+            cls = cls, a = action, id = id, l = escape_html(label),
         ));
     }
-    if out.is_empty() {
-        out.push_str(&format!(
-            r#"<span class="pill pill-{s}">{label}</span>"#,
-            s = escape_html(status),
-            label = escape_html(&humanise_status(status)),
-        ));
-    }
-    out
-}
-
-fn render_detail_info(
-    appt: &Appointment,
-    patient: Option<&Patient>,
-    doctor: Option<&Doctor>,
-    department: Option<&Department>,
-) -> String {
-    let p_name = patient.map(|p| p.full_name.as_str()).unwrap_or("—");
-    let p_contact = patient.map(|p| format!("{} · {}", p.phone, p.email)).unwrap_or_else(|| "—".to_string());
-    let d_name = doctor.map(|d| d.full_name.as_str()).unwrap_or("—");
-    let d_specialty = doctor.map(|d| d.specialty.as_str()).unwrap_or("");
-    let dept = department.map(|d| d.name.as_str()).unwrap_or("—");
-
-    format!(
-        r#"<div class="info-grid">
-  <div class="item"><span class="k">Patient</span><span class="v">{p_name}</span><small>{p_contact}</small></div>
-  <div class="item"><span class="k">Doctor</span><span class="v">{d_name}</span><small>{d_spec}</small></div>
-  <div class="item"><span class="k">Department</span><span class="v">{dept}</span></div>
-  <div class="item"><span class="k">Status</span><span class="v"><span class="pill pill-{status_raw}">{status_label}</span></span></div>
-  <div class="item"><span class="k">Scheduled</span><span class="v">{scheduled}</span></div>
-  <div class="item"><span class="k">Duration</span><span class="v">{duration} min</span></div>
-  <div class="item"><span class="k">Priority</span><span class="v">{priority}</span></div>
-  <div class="item"><span class="k">Active</span><span class="v">{active}</span></div>
-  <div class="item wide"><span class="k">Reason</span><span class="v">{reason}</span></div>
-  <div class="item wide"><span class="k">Notes</span><span class="v">{notes}</span></div>
-  <div class="item wide"><span class="k">Created</span><small>{created}</small></div>
-</div>"#,
-        p_name = escape_html(p_name),
-        p_contact = escape_html(&p_contact),
-        d_name = escape_html(d_name),
-        d_spec = escape_html(d_specialty),
-        dept = escape_html(dept),
-        status_raw = escape_html(&appt.status),
-        status_label = escape_html(&humanise_status(&appt.status)),
-        scheduled = escape_html(&appt.scheduled_at.format("%Y-%m-%d %H:%M UTC").to_string()),
-        duration = appt.duration_minutes,
-        priority = appt.priority,
-        active = if appt.is_active { "yes" } else { "no" },
-        reason = escape_html(if appt.reason.is_empty() { "—" } else { appt.reason.as_str() }),
-        notes = escape_html(if appt.notes.is_empty() { "—" } else { appt.notes.as_str() }),
-        created = escape_html(&appt.created_at.format("%Y-%m-%d %H:%M UTC").to_string()),
-    )
-}
-
-fn render_detail_timeline(appt: &Appointment, events: &[AppointmentEvent]) -> String {
-    if events.is_empty() {
-        return format!(
-            r#"<div class="empty-state">
-  <span class="glyph">{icon}</span>
-  <h3>No status transitions yet</h3>
-  <p>When this appointment's status changes, the audit trail will appear here.</p>
-</div>"#,
-            icon = ICON_CLOCK,
-        );
-    }
-    let mut out = String::from(r#"<div class="timeline">"#);
-    // Synthetic "Created" event at the tail.
-    let created_event = format!(
-        r#"<div class="timeline-event">
-  <div class="what">Appointment created</div>
-  <div class="when">{abs} · {rel}</div>
-</div>"#,
-        abs = escape_html(&appt.created_at.format("%Y-%m-%d %H:%M").to_string()),
-        rel = escape_html(&relative_past(appt.created_at)),
-    );
-    for e in events {
-        let cls = if e.to_status == "cancelled" { "cancelled" } else { "" };
-        out.push_str(&format!(
-            r#"<div class="timeline-event {cls}">
-  <div class="what"><strong>{from}</strong><span class="arrow">→</span><strong>{to}</strong></div>
-  <div class="when">{abs} · {rel}</div>
-</div>"#,
-            cls = cls,
-            from = escape_html(&humanise_status(&e.from_status)),
-            to = escape_html(&humanise_status(&e.to_status)),
-            abs = escape_html(&e.created_at.format("%Y-%m-%d %H:%M").to_string()),
-            rel = escape_html(&relative_past(e.created_at)),
-        ));
-    }
-    out.push_str(&created_event);
-    out.push_str("</div>");
     out
 }
 
@@ -1210,7 +1382,7 @@ const DETAIL_JS: &str = r#"
   var token = tokenEl ? tokenEl.getAttribute('content') : '';
   var banner = document.getElementById('banner');
   var bannerText = document.getElementById('banner-text');
-  function showError(msg) { bannerText.textContent = msg; banner.hidden = false; }
+  function showError(m) { bannerText.textContent = m; banner.classList.remove('hidden'); }
   document.addEventListener('click', function (e) {
     var btn = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
     if (!btn) return;
@@ -1218,14 +1390,21 @@ const DETAIL_JS: &str = r#"
     var id = btn.getAttribute('data-id');
     if (!action || !id) return;
     btn.disabled = true;
+    btn.classList.add('opacity-60','cursor-not-allowed');
     fetch('/api/appointments/' + encodeURIComponent(id) + '/' + action, {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
       body: '{}'
     }).then(function (r) {
       if (r.ok) { window.location.reload(); return; }
-      r.text().then(function (t) { showError('Action failed (' + r.status + '): ' + t); btn.disabled = false; });
-    }).catch(function (err) { showError('Network error: ' + err); btn.disabled = false; });
+      r.text().then(function (t) {
+        showError('Action failed (' + r.status + '): ' + t);
+        btn.disabled = false; btn.classList.remove('opacity-60','cursor-not-allowed');
+      });
+    }).catch(function (err) {
+      showError('Network error: ' + err);
+      btn.disabled = false; btn.classList.remove('opacity-60','cursor-not-allowed');
+    });
   });
 })();
 "#;

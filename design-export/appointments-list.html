@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Appointments · MedFlow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+
+<aside class="sidebar">
+  <a class="sidebar-brand" href="dashboard.html">
+    <span class="brand-mark">M</span>
+    <span class="brand-text"><strong>MedFlow</strong><small>Operations</small></span>
+  </a>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Operations</div>
+    <a class="nav-item" href="dashboard.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Dashboard</span></a>
+    <a class="nav-item active" href="appointments-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Appointments</span><span class="nav-badge">12</span></a>
+    <div class="nav-section">Directory</div>
+    <a class="nav-item" href="patients-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Patients</span></a>
+    <a class="nav-item" href="doctors-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg><span>Doctors</span></a>
+    <div class="nav-section">Billing</div>
+    <a class="nav-item" href="invoices-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>Invoices</span></a>
+    <div class="nav-section">Clinical</div>
+    <a class="nav-item" href="medical-record-detail.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"/><polygon points="18 2 22 6 12 16 8 16 8 12 18 2"/></svg><span>Medical Records</span></a>
+  </nav>
+  <div class="sidebar-user">
+    <div class="user-avatar">RK</div>
+    <div class="user-info"><div class="user-name">Rose Karimi</div><div class="user-role">Receptionist</div></div>
+    <button class="theme-toggle" data-theme-toggle aria-label="Toggle theme">
+      <span class="sun"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/></svg></span>
+      <span class="moon" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+    </button>
+  </div>
+</aside>
+
+<div class="content">
+  <div class="topbar">
+    <div class="topbar-title">
+      <h1>Appointments</h1>
+      <p>Schedule and coordinate patient visits.</p>
+    </div>
+    <div class="topbar-actions">
+      <button class="icon-btn" aria-label="Notifications"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="dot"></span></button>
+    </div>
+  </div>
+
+  <main class="page">
+    <div class="page-header">
+      <div class="page-title">
+        <h1>All appointments</h1>
+        <p class="subtitle">Filter, search, and drive the clinic's visit workflow.</p>
+      </div>
+      <div class="actions">
+        <button class="btn">Export CSV</button>
+        <a class="btn btn-primary" href="appointment-new.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          New appointment
+        </a>
+      </div>
+    </div>
+
+    <!-- dynamic: stat numbers per status -->
+    <div class="stats">
+      <div class="stat accent">        <div class="label">Today</div>         <div class="value">12</div> <div class="delta">84 this week</div></div>
+      <div class="stat accent">        <div class="label">Scheduled</div>     <div class="value">34</div> <div class="delta">waiting confirmation</div></div>
+      <div class="stat accent-warning"><div class="label">In progress</div>   <div class="value">2</div>  <div class="delta">active consultations</div></div>
+      <div class="stat accent-success"><div class="label">Completed</div>     <div class="value">21</div> <div class="delta">closed this week</div></div>
+    </div>
+
+    <!-- Filter chips (appear when any filter is active) -->
+    <div class="chips">
+      <span class="lead">Active filters</span>
+      <span class="chip">Status: Scheduled <a href="#" aria-label="Remove status filter">✕</a></span>
+      <span class="chip">Doctor: Dr. Erik Nilsson <a href="#" aria-label="Remove doctor filter">✕</a></span>
+      <a href="appointments-list.html" class="chip-clear">Clear all</a>
+    </div>
+
+    <section class="card">
+      <!-- Toolbar: search + primary filters -->
+      <form class="toolbar" method="get">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" name="q" value="" placeholder="Search by patient, doctor, reason, or ID…">
+        </div>
+        <button class="btn btn-primary" type="submit">Search</button>
+        <div class="spacer"></div>
+        <select class="input" style="max-width:180px" aria-label="Sort">
+          <option>Chronological</option>
+          <option>Newest first</option>
+          <option>Recently created</option>
+        </select>
+      </form>
+
+      <!-- Extended filter grid -->
+      <div class="filter-grid">
+        <div>
+          <label>Status</label>
+          <select class="input">
+            <option>All statuses</option>
+            <option selected>Scheduled</option>
+            <option>Confirmed</option>
+            <option>In progress</option>
+            <option>Completed</option>
+            <option>Cancelled</option>
+          </select>
+        </div>
+        <div>
+          <label>Doctor</label>
+          <select class="input">
+            <option>Any doctor</option>
+            <option selected>Dr. Erik Nilsson</option>
+            <option>Dr. Anna Lindqvist</option>
+            <option>Dr. Omar Haddad</option>
+          </select>
+        </div>
+        <div>
+          <label>Department</label>
+          <select class="input">
+            <option>Any department</option>
+            <option>Cardiology</option>
+            <option>Pediatrics</option>
+            <option>Radiology</option>
+          </select>
+        </div>
+        <div>
+          <label>Scheduled after</label>
+          <input type="date" class="input" value="2026-04-22">
+        </div>
+        <div>
+          <button class="btn btn-primary" type="submit">Apply filters</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th style="width:60px">ID</th>
+              <th style="width:90px">Time</th>
+              <th>Patient</th>
+              <th>Doctor</th>
+              <th>Department</th>
+              <th>Status</th>
+              <th style="width:220px" class="actions">Actions</th>
+            </tr>
+          </thead>
+          <!-- dynamic: appointment rows -->
+          <tbody>
+            <tr>
+              <td class="id">#047</td>
+              <td><div class="time-block"><span class="hh">09:00</span><span class="md">Apr 23</span></div></td>
+              <td><div class="person"><div class="avatar sm" style="background:#574fec">AL</div><div class="person-meta"><span class="name">Anna Lindberg</span><span class="sub">Chest pain follow-up</span></div></div></td>
+              <td><div class="person-meta"><span class="name text-sm">Dr. Erik Nilsson</span><span class="sub">Cardiology</span></div></td>
+              <td><span class="badge badge-soft-brand">Cardiology</span></td>
+              <td><span class="pill pill-brand">Scheduled</span></td>
+              <td class="actions">
+                <a href="appointment-edit.html" class="btn btn-sm">Manage</a>
+                <button class="btn btn-sm btn-primary">Confirm</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="id">#048</td>
+              <td><div class="time-block"><span class="hh">10:30</span><span class="md">Apr 23</span></div></td>
+              <td><div class="person"><div class="avatar sm" style="background:#6dbb30">BJ</div><div class="person-meta"><span class="name">Bengt Johansson</span><span class="sub">Annual cardio check</span></div></div></td>
+              <td><div class="person-meta"><span class="name text-sm">Dr. Anna Lindqvist</span><span class="sub">Cardiology</span></div></td>
+              <td><span class="badge badge-soft-brand">Cardiology</span></td>
+              <td><span class="pill pill-info">Confirmed</span></td>
+              <td class="actions">
+                <a href="appointment-edit.html" class="btn btn-sm">Manage</a>
+                <button class="btn btn-sm btn-primary">Check in</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="id">#044</td>
+              <td><div class="time-block"><span class="hh">14:00</span><span class="md">Apr 22</span></div></td>
+              <td><div class="person"><div class="avatar sm" style="background:#f64e60">CB</div><div class="person-meta"><span class="name">Cecilia Berg</span><span class="sub">ECG review</span></div></div></td>
+              <td><div class="person-meta"><span class="name text-sm">Dr. Erik Nilsson</span><span class="sub">Cardiology</span></div></td>
+              <td><span class="badge badge-soft-brand">Cardiology</span></td>
+              <td><span class="pill pill-warning">In progress</span></td>
+              <td class="actions">
+                <a href="appointment-edit.html" class="btn btn-sm">Manage</a>
+                <button class="btn btn-sm btn-success">Complete</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="id">#045</td>
+              <td><div class="time-block"><span class="hh">11:00</span><span class="md">Apr 22</span></div></td>
+              <td><div class="person"><div class="avatar sm" style="background:#0fb5c7">DE</div><div class="person-meta"><span class="name">Daniel Ek</span><span class="sub">Vaccination — pediatric</span></div></div></td>
+              <td><div class="person-meta"><span class="name text-sm">Dr. Omar Haddad</span><span class="sub">Pediatrics</span></div></td>
+              <td><span class="badge badge-soft-info">Pediatrics</span></td>
+              <td><span class="pill pill-info">Confirmed</span></td>
+              <td class="actions"><a href="appointment-edit.html" class="btn btn-sm">Manage</a><button class="btn btn-sm btn-primary">Check in</button></td>
+            </tr>
+            <tr>
+              <td class="id">#046</td>
+              <td><div class="time-block"><span class="hh">10:00</span><span class="md">Apr 22</span></div></td>
+              <td><div class="person"><div class="avatar sm" style="background:#d17d00">ES</div><div class="person-meta"><span class="name">Eva Sorensen</span><span class="sub">Cough and fever</span></div></div></td>
+              <td><div class="person-meta"><span class="name text-sm">Dr. Omar Haddad</span><span class="sub">Pediatrics</span></div></td>
+              <td><span class="badge badge-soft-info">Pediatrics</span></td>
+              <td><span class="pill pill-success">Completed</span></td>
+              <td class="actions"><a href="appointment-edit.html" class="btn btn-sm">View</a></td>
+            </tr>
+            <tr>
+              <td class="id">#043</td>
+              <td><div class="time-block"><span class="hh">15:00</span><span class="md">Apr 21</span></div></td>
+              <td><div class="person"><div class="avatar sm" style="background:#7c3aed">FH</div><div class="person-meta"><span class="name">Freja Holm</span><span class="sub">Medication review</span></div></div></td>
+              <td><div class="person-meta"><span class="name text-sm">Dr. Anna Lindqvist</span><span class="sub">Cardiology</span></div></td>
+              <td><span class="badge badge-soft-brand">Cardiology</span></td>
+              <td><span class="pill pill-success">Completed</span></td>
+              <td class="actions"><a href="appointment-edit.html" class="btn btn-sm">View</a></td>
+            </tr>
+            <tr>
+              <td class="id">#042</td>
+              <td><div class="time-block"><span class="hh">09:30</span><span class="md">Apr 21</span></div></td>
+              <td><div class="person"><div class="avatar sm" style="background:#db2777">GL</div><div class="person-meta"><span class="name">Gustav Lind</span><span class="sub">Post-op check</span></div></div></td>
+              <td><div class="person-meta"><span class="name text-sm">Dr. Peter Andersson</span><span class="sub">Orthopedics</span></div></td>
+              <td><span class="badge badge-soft-warning">Orthopedics</span></td>
+              <td><span class="pill pill-muted">Cancelled</span></td>
+              <td class="actions"><a href="appointment-edit.html" class="btn btn-sm">View</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between" style="padding:var(--s-3) var(--s-4); border-top:1px solid var(--border); background:var(--surface)">
+        <div class="text-sm muted">Showing <span class="fw-600" style="color:var(--text)">7</span> of <span class="fw-600" style="color:var(--text)">84</span> · Page 1 of 12</div>
+        <div class="flex gap-2">
+          <button class="btn btn-sm" disabled>Previous</button>
+          <button class="btn btn-sm btn-primary">1</button>
+          <button class="btn btn-sm">2</button>
+          <button class="btn btn-sm">3</button>
+          <span class="muted text-xs" style="padding:6px 2px">…</span>
+          <button class="btn btn-sm">12</button>
+          <button class="btn btn-sm">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Alternative empty state (commented — swap into <section> above when zero rows) -->
+    <!--
+    <section class="card">
+      <div class="empty-state">
+        <div class="glyph"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/></svg></div>
+        <h3>No appointments yet</h3>
+        <p>Create the first appointment to start the clinic workflow.</p>
+        <a href="appointment-new.html" class="btn btn-primary">+ New appointment</a>
+      </div>
+    </section>
+    -->
+  </main>
+</div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

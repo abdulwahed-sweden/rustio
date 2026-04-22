@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patients · MedFlow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+
+<aside class="sidebar">
+  <a class="sidebar-brand" href="dashboard.html"><span class="brand-mark">M</span><span class="brand-text"><strong>MedFlow</strong><small>Operations</small></span></a>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Operations</div>
+    <a class="nav-item" href="dashboard.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Dashboard</span></a>
+    <a class="nav-item" href="appointments-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Appointments</span><span class="nav-badge">12</span></a>
+    <div class="nav-section">Directory</div>
+    <a class="nav-item active" href="patients-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Patients</span></a>
+    <a class="nav-item" href="doctors-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg><span>Doctors</span></a>
+    <div class="nav-section">Billing</div>
+    <a class="nav-item" href="invoices-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>Invoices</span></a>
+    <div class="nav-section">Clinical</div>
+    <a class="nav-item" href="medical-record-detail.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"/><polygon points="18 2 22 6 12 16 8 16 8 12 18 2"/></svg><span>Medical Records</span></a>
+  </nav>
+  <div class="sidebar-user">
+    <div class="user-avatar">RK</div>
+    <div class="user-info"><div class="user-name">Rose Karimi</div><div class="user-role">Receptionist</div></div>
+    <button class="theme-toggle" data-theme-toggle aria-label="Toggle theme">
+      <span class="sun"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/></svg></span>
+      <span class="moon" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+    </button>
+  </div>
+</aside>
+
+<div class="content">
+  <div class="topbar">
+    <div class="topbar-title"><h1>Patients</h1><p>2 348 patients registered in MedFlow</p></div>
+    <div class="topbar-actions"><button class="icon-btn" aria-label="Notifications"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="dot"></span></button></div>
+  </div>
+
+  <main class="page">
+    <div class="page-header">
+      <div class="page-title"><h1>Patient directory</h1><p class="subtitle">Find, update, and register patient records.</p></div>
+      <div class="actions">
+        <button class="btn">Export</button>
+        <a class="btn btn-primary" href="patient-new.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Register patient
+        </a>
+      </div>
+    </div>
+
+    <!-- dynamic: stat numbers -->
+    <div class="stats">
+      <div class="stat accent"><div class="label">Total</div><div class="value">2 348</div><div class="delta">active records</div></div>
+      <div class="stat"><div class="label">New this month</div><div class="value">42</div><div class="delta"><span class="up">▲ 7</span> vs last month</div></div>
+      <div class="stat accent-success"><div class="label">Visited today</div><div class="value">11</div><div class="delta">across all clinics</div></div>
+      <div class="stat accent-warning"><div class="label">Flagged allergies</div><div class="value">187</div><div class="delta">require screening</div></div>
+    </div>
+
+    <section class="card">
+      <form class="toolbar" method="get">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" name="q" placeholder="Search by name, national ID, email, or phone…">
+        </div>
+        <button class="btn btn-primary" type="submit">Search</button>
+        <div class="spacer"></div>
+        <select class="input" style="max-width:180px" aria-label="Sort">
+          <option>Most recent</option>
+          <option>Name A → Z</option>
+          <option>Name Z → A</option>
+        </select>
+      </form>
+
+      <div class="filter-grid">
+        <div>
+          <label>Status</label>
+          <select class="input"><option>All</option><option>Active</option><option>Inactive</option></select>
+        </div>
+        <div>
+          <label>Gender</label>
+          <select class="input"><option>Any</option><option>Female</option><option>Male</option><option>Other</option></select>
+        </div>
+        <div>
+          <label>Blood type</label>
+          <select class="input"><option>Any</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select>
+        </div>
+        <div>
+          <label>Has allergies</label>
+          <select class="input"><option>Any</option><option>Yes</option><option>No</option></select>
+        </div>
+        <div><button class="btn btn-primary" type="submit">Apply</button></div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th style="width:60px">ID</th>
+              <th>Patient</th>
+              <th>Contact</th>
+              <th>Blood</th>
+              <th>Allergies</th>
+              <th>Last visit</th>
+              <th class="actions" style="width:120px">Actions</th>
+            </tr>
+          </thead>
+          <!-- dynamic: patient rows -->
+          <tbody>
+            <tr>
+              <td class="id">#001</td>
+              <td><div class="person"><div class="avatar sm" style="background:#574fec">AL</div><div class="person-meta"><span class="name">Anna Lindberg</span><span class="sub">F · born 1985-06-01</span></div></div></td>
+              <td><small>+46 70 111 1001</small><br><small>anna.l@example.com</small></td>
+              <td><span class="pill pill-info">A+</span></td>
+              <td><span class="pill pill-warning">Penicillin</span></td>
+              <td class="tabular">2026-04-21</td>
+              <td class="actions"><a class="btn btn-sm" href="patient-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#002</td>
+              <td><div class="person"><div class="avatar sm" style="background:#6dbb30">BJ</div><div class="person-meta"><span class="name">Bengt Johansson</span><span class="sub">M · born 1972-11-14</span></div></div></td>
+              <td><small>+46 70 111 1002</small><br><small>bengt@example.com</small></td>
+              <td><span class="pill pill-brand">O-</span></td>
+              <td><span class="muted">—</span></td>
+              <td class="tabular">2026-04-23</td>
+              <td class="actions"><a class="btn btn-sm" href="patient-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#003</td>
+              <td><div class="person"><div class="avatar sm" style="background:#f64e60">CB</div><div class="person-meta"><span class="name">Cecilia Berg</span><span class="sub">F · born 1990-03-22</span></div></div></td>
+              <td><small>+46 70 111 1003</small><br><small>cecilia@example.com</small></td>
+              <td><span class="pill pill-success">B+</span></td>
+              <td><span class="pill pill-warning">Aspirin</span></td>
+              <td class="tabular">2026-04-22</td>
+              <td class="actions"><a class="btn btn-sm" href="patient-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#004</td>
+              <td><div class="person"><div class="avatar sm" style="background:#0fb5c7">DE</div><div class="person-meta"><span class="name">Daniel Ek</span><span class="sub">M · born 2010-08-30</span></div></div></td>
+              <td><small>+46 70 111 1004</small><br><small>(guardian) daniel@example.com</small></td>
+              <td><span class="pill pill-muted">AB+</span></td>
+              <td><span class="muted">—</span></td>
+              <td class="tabular">2026-04-22</td>
+              <td class="actions"><a class="btn btn-sm" href="patient-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#005</td>
+              <td><div class="person"><div class="avatar sm" style="background:#d17d00">ES</div><div class="person-meta"><span class="name">Eva Sorensen</span><span class="sub">F · born 1968-01-05</span></div></div></td>
+              <td><small>+46 70 111 1005</small><br><small>eva@example.com</small></td>
+              <td><span class="pill pill-brand">O+</span></td>
+              <td><span class="pill pill-warning">Latex</span></td>
+              <td class="tabular">2026-04-21</td>
+              <td class="actions"><a class="btn btn-sm" href="patient-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#006</td>
+              <td><div class="person"><div class="avatar sm" style="background:#7c3aed">FH</div><div class="person-meta"><span class="name">Freja Holm</span><span class="sub">F · born 1995-07-10</span></div></div></td>
+              <td><small>+46 70 111 1006</small><br><small>freja@example.com</small></td>
+              <td><span class="pill pill-info">A-</span></td>
+              <td><span class="muted">—</span></td>
+              <td class="tabular">2026-04-21</td>
+              <td class="actions"><a class="btn btn-sm" href="patient-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#007</td>
+              <td><div class="person"><div class="avatar sm" style="background:#db2777">GL</div><div class="person-meta"><span class="name">Gustav Lind</span><span class="sub">M · born 1958-02-18</span></div></div></td>
+              <td><small>+46 70 111 1007</small><br><small>gustav@example.com</small></td>
+              <td><span class="pill pill-success">B-</span></td>
+              <td><span class="muted">—</span></td>
+              <td class="tabular">2026-04-20</td>
+              <td class="actions"><a class="btn btn-sm" href="patient-edit.html">Manage</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between" style="padding:var(--s-3) var(--s-4); border-top:1px solid var(--border); background:var(--surface)">
+        <div class="text-sm muted">Showing 1–7 of 2 348 patients</div>
+        <div class="flex gap-2">
+          <button class="btn btn-sm" disabled>Previous</button>
+          <button class="btn btn-sm btn-primary">1</button>
+          <button class="btn btn-sm">2</button>
+          <button class="btn btn-sm">3</button>
+          <span class="muted text-xs" style="padding:6px 2px">…</span>
+          <button class="btn btn-sm">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

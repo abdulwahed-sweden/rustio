@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Doctors · MedFlow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+
+<aside class="sidebar">
+  <a class="sidebar-brand" href="dashboard.html"><span class="brand-mark">M</span><span class="brand-text"><strong>MedFlow</strong><small>Operations</small></span></a>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Operations</div>
+    <a class="nav-item" href="dashboard.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Dashboard</span></a>
+    <a class="nav-item" href="appointments-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/></svg><span>Appointments</span></a>
+    <div class="nav-section">Directory</div>
+    <a class="nav-item" href="patients-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span>Patients</span></a>
+    <a class="nav-item active" href="doctors-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg><span>Doctors</span></a>
+    <div class="nav-section">Billing</div>
+    <a class="nav-item" href="invoices-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><span>Invoices</span></a>
+    <div class="nav-section">Clinical</div>
+    <a class="nav-item" href="medical-record-detail.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"/><polygon points="18 2 22 6 12 16 8 16 8 12 18 2"/></svg><span>Medical Records</span></a>
+  </nav>
+  <div class="sidebar-user">
+    <div class="user-avatar">RK</div>
+    <div class="user-info"><div class="user-name">Rose Karimi</div><div class="user-role">Receptionist</div></div>
+    <button class="theme-toggle" data-theme-toggle aria-label="Toggle theme">
+      <span class="sun"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/></svg></span>
+      <span class="moon" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+    </button>
+  </div>
+</aside>
+
+<div class="content">
+  <div class="topbar">
+    <div class="topbar-title"><h1>Doctors</h1><p>28 clinicians across 7 departments</p></div>
+    <div class="topbar-actions"><button class="icon-btn" aria-label="Notifications"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="dot"></span></button></div>
+  </div>
+
+  <main class="page">
+    <div class="page-header">
+      <div class="page-title"><h1>Doctors directory</h1><p class="subtitle">Specialists, availability, and current patient load.</p></div>
+      <div class="actions">
+        <button class="btn">Export</button>
+        <button class="btn btn-primary">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Add doctor
+        </button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat accent"><div class="label">Active</div><div class="value">28</div><div class="delta">across 7 departments</div></div>
+      <div class="stat accent-success"><div class="label">On shift today</div><div class="value">14</div><div class="delta">5 available now</div></div>
+      <div class="stat accent-warning"><div class="label">On leave</div><div class="value">2</div><div class="delta">back this week</div></div>
+      <div class="stat"><div class="label">Avg. load</div><div class="value">6.4</div><div class="delta">appointments / day</div></div>
+    </div>
+
+    <section class="card">
+      <form class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" placeholder="Search by name, specialty, license no…">
+        </div>
+        <button class="btn btn-primary">Search</button>
+        <div class="spacer"></div>
+      </form>
+      <div class="filter-grid">
+        <div><label>Department</label><select class="input"><option>All</option><option>Cardiology</option><option>Pediatrics</option><option>Radiology</option><option>Orthopedics</option></select></div>
+        <div><label>Specialty</label><select class="input"><option>Any</option><option>Cardiology</option><option>Pediatrics</option><option>Radiology</option></select></div>
+        <div><label>Status</label><select class="input"><option>All</option><option selected>Active</option><option>On leave</option></select></div>
+        <div><label>Experience</label><select class="input"><option>Any</option><option>0–5 years</option><option>5–10 years</option><option>10+ years</option></select></div>
+        <div><button class="btn btn-primary">Apply</button></div>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr>
+              <th style="width:60px">ID</th>
+              <th>Doctor</th>
+              <th>Department</th>
+              <th>License</th>
+              <th>Contact</th>
+              <th>Experience</th>
+              <th>Today</th>
+              <th>Status</th>
+              <th class="actions" style="width:110px">Actions</th>
+            </tr>
+          </thead>
+          <!-- dynamic: doctor rows -->
+          <tbody>
+            <tr>
+              <td class="id">#001</td>
+              <td><div class="person"><div class="avatar sm" style="background:#574fec">EN</div><div class="person-meta"><span class="name">Dr. Erik Nilsson</span><span class="sub">Cardiology</span></div></div></td>
+              <td><span class="badge badge-soft-brand">Cardiology</span></td>
+              <td class="tabular">SE-CARD-0001</td>
+              <td><small>erik@med.test</small><br><small>+46 70 100 0001</small></td>
+              <td class="num">14 yrs</td>
+              <td><span class="pill pill-info">3 appts</span></td>
+              <td><span class="pill pill-success">Available</span></td>
+              <td class="actions"><a class="btn btn-sm" href="doctor-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#002</td>
+              <td><div class="person"><div class="avatar sm" style="background:#6dbb30">AL</div><div class="person-meta"><span class="name">Dr. Anna Lindqvist</span><span class="sub">Cardiology</span></div></div></td>
+              <td><span class="badge badge-soft-brand">Cardiology</span></td>
+              <td class="tabular">SE-CARD-0002</td>
+              <td><small>anna@med.test</small><br><small>+46 70 100 0002</small></td>
+              <td class="num">9 yrs</td>
+              <td><span class="pill pill-info">2 appts</span></td>
+              <td><span class="pill pill-success">Available</span></td>
+              <td class="actions"><a class="btn btn-sm" href="doctor-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#003</td>
+              <td><div class="person"><div class="avatar sm" style="background:#0fb5c7">OH</div><div class="person-meta"><span class="name">Dr. Omar Haddad</span><span class="sub">Pediatrics</span></div></div></td>
+              <td><span class="badge badge-soft-info">Pediatrics</span></td>
+              <td class="tabular">SE-PED-001</td>
+              <td><small>omar@med.test</small><br><small>+46 70 100 0003</small></td>
+              <td class="num">11 yrs</td>
+              <td><span class="pill pill-warning">5 appts</span></td>
+              <td><span class="pill pill-warning">Busy until 15:00</span></td>
+              <td class="actions"><a class="btn btn-sm" href="doctor-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#004</td>
+              <td><div class="person"><div class="avatar sm" style="background:#d17d00">MC</div><div class="person-meta"><span class="name">Dr. Maria Costa</span><span class="sub">Radiology</span></div></div></td>
+              <td><span class="badge badge-soft-warning">Radiology</span></td>
+              <td class="tabular">SE-RAD-001</td>
+              <td><small>maria@med.test</small><br><small>+46 70 100 0004</small></td>
+              <td class="num">7 yrs</td>
+              <td><span class="pill pill-muted">—</span></td>
+              <td><span class="pill pill-muted">On leave</span></td>
+              <td class="actions"><a class="btn btn-sm" href="doctor-edit.html">Manage</a></td>
+            </tr>
+            <tr>
+              <td class="id">#005</td>
+              <td><div class="person"><div class="avatar sm" style="background:#7c3aed">PA</div><div class="person-meta"><span class="name">Dr. Peter Andersson</span><span class="sub">Orthopedics</span></div></div></td>
+              <td><span class="badge badge-soft-warning">Orthopedics</span></td>
+              <td class="tabular">SE-ORT-001</td>
+              <td><small>peter@med.test</small><br><small>+46 70 100 0005</small></td>
+              <td class="num">12 yrs</td>
+              <td><span class="pill pill-info">4 appts</span></td>
+              <td><span class="pill pill-success">Available</span></td>
+              <td class="actions"><a class="btn btn-sm" href="doctor-edit.html">Manage</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New appointment · MedFlow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="shell">
+
+<aside class="sidebar">
+  <a class="sidebar-brand" href="dashboard.html"><span class="brand-mark">M</span><span class="brand-text"><strong>MedFlow</strong><small>Operations</small></span></a>
+  <nav class="sidebar-nav">
+    <div class="nav-section">Operations</div>
+    <a class="nav-item" href="dashboard.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg><span>Dashboard</span></a>
+    <a class="nav-item active" href="appointments-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Appointments</span><span class="nav-badge">12</span></a>
+    <div class="nav-section">Directory</div>
+    <a class="nav-item" href="patients-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Patients</span></a>
+    <a class="nav-item" href="doctors-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg><span>Doctors</span></a>
+    <div class="nav-section">Billing</div>
+    <a class="nav-item" href="invoices-list.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span>Invoices</span></a>
+    <div class="nav-section">Clinical</div>
+    <a class="nav-item" href="medical-record-detail.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.66V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5.34"/><polygon points="18 2 22 6 12 16 8 16 8 12 18 2"/></svg><span>Medical Records</span></a>
+  </nav>
+  <div class="sidebar-user">
+    <div class="user-avatar">RK</div>
+    <div class="user-info"><div class="user-name">Rose Karimi</div><div class="user-role">Receptionist</div></div>
+    <button class="theme-toggle" data-theme-toggle aria-label="Toggle theme">
+      <span class="sun"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/></svg></span>
+      <span class="moon" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+    </button>
+  </div>
+</aside>
+
+<div class="content">
+  <div class="topbar">
+    <div class="topbar-title"><h1>New appointment</h1><p>Enter patient, doctor, schedule, and clinical details.</p></div>
+    <div class="topbar-actions">
+      <a class="btn btn-ghost" href="appointments-list.html">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        Back to list
+      </a>
+    </div>
+  </div>
+
+  <main class="page">
+    <!-- Breadcrumb -->
+    <div class="text-xs muted mb-4">
+      <a href="appointments-list.html">Appointments</a> &nbsp;›&nbsp; <span>New</span>
+    </div>
+
+    <!-- Error banner (hidden by default, shown on submit failure) -->
+    <!-- dynamic: validation banner -->
+
+    <div class="grid-2">
+      <!-- Form card -->
+      <section class="card">
+        <div class="card-head">
+          <h3>Visit details</h3>
+          <span class="meta">* required</span>
+        </div>
+
+        <form id="new-form" class="card-body-flush" novalidate>
+          <div class="form-section">
+            <h4>Who</h4>
+            <div class="form-row">
+              <label for="patient_id">Patient<span class="req">*</span></label>
+              <div>
+                <select class="input" id="patient_id" required>
+                  <option value="">Select a patient…</option>
+                  <option>Anna Lindberg · A+ · 1985</option>
+                  <option>Bengt Johansson · O- · 1972</option>
+                  <option>Cecilia Berg · B+ · 1990</option>
+                  <option>Daniel Ek · AB+ · 2010</option>
+                  <option>Eva Sorensen · O+ · 1968</option>
+                  <option>Freja Holm · A- · 1995</option>
+                  <option>Gustav Lind · B- · 1958</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="doctor_id">Doctor<span class="req">*</span></label>
+              <div>
+                <select class="input" id="doctor_id" required>
+                  <option value="">Select a doctor…</option>
+                  <option>Dr. Erik Nilsson — Cardiology</option>
+                  <option>Dr. Anna Lindqvist — Cardiology</option>
+                  <option>Dr. Omar Haddad — Pediatrics</option>
+                  <option>Dr. Maria Costa — Radiology</option>
+                  <option>Dr. Peter Andersson — Orthopedics</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="department_id">Department<span class="opt">optional</span></label>
+              <select class="input" id="department_id">
+                <option value="">— none —</option>
+                <option>Cardiology</option>
+                <option>Pediatrics</option>
+                <option>Radiology</option>
+                <option>Orthopedics</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4>When</h4>
+            <div class="form-row">
+              <label for="scheduled_at">Scheduled<span class="req">*</span></label>
+              <div>
+                <input class="input" id="scheduled_at" type="datetime-local" required>
+                <div class="hint">UTC; past times are blocked.</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="duration_preset">Duration<span class="req">*</span></label>
+              <div style="display:flex; gap:var(--s-2); flex-wrap:wrap; max-width:420px">
+                <select class="input" id="duration_preset" style="flex:1 1 180px; max-width:220px">
+                  <option value="15">15 minutes</option>
+                  <option value="30" selected>30 minutes</option>
+                  <option value="45">45 minutes</option>
+                  <option value="60">1 hour</option>
+                  <option value="90">1 hour 30 min</option>
+                  <option value="120">2 hours</option>
+                  <option value="custom">Custom…</option>
+                </select>
+                <input class="input" id="duration_custom" type="number" placeholder="Minutes" hidden style="flex:0 1 120px; max-width:140px">
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="priority">Priority<span class="req">*</span></label>
+              <select class="input" id="priority">
+                <option value="1">Low</option>
+                <option value="3">Normal</option>
+                <option value="5" selected>Standard</option>
+                <option value="7">High</option>
+                <option value="10">Urgent</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4>Details</h4>
+            <div class="form-row">
+              <label for="reason">Reason<span class="opt">optional</span></label>
+              <div>
+                <textarea class="input" id="reason" rows="2" maxlength="500" data-counter placeholder="Brief reason for the visit"></textarea>
+                <div class="char-counter" data-counter-for="reason">0 / 500</div>
+              </div>
+            </div>
+            <div class="form-row">
+              <label for="notes">Internal notes<span class="opt">optional</span></label>
+              <div>
+                <textarea class="input" id="notes" rows="3" maxlength="1000" data-counter placeholder="Internal notes (not visible to patient)"></textarea>
+                <div class="char-counter" data-counter-for="notes">0 / 1000</div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- Preview card -->
+      <aside class="preview">
+        <h4>Preview</h4>
+        <div class="big empty">
+          <span class="hh">—</span>
+          <span class="md">pick a date &amp; time</span>
+        </div>
+        <!-- dynamic: preview rows update as form changes -->
+        <div class="row"><span class="k">Patient</span><span class="v muted" style="font-style:italic">— not selected —</span></div>
+        <div class="row"><span class="k">Doctor</span> <span class="v muted" style="font-style:italic">— not selected —</span></div>
+        <div class="row"><span class="k">Department</span><span class="v muted">—</span></div>
+        <div class="row"><span class="k">Duration</span><span class="v">30 minutes</span></div>
+        <div class="row"><span class="k">Priority</span><span class="v">Standard</span></div>
+        <div class="cta">
+          <button type="submit" form="new-form" class="btn btn-primary">Create appointment</button>
+          <a class="btn btn-ghost" href="appointments-list.html">Cancel</a>
+          <p class="text-xs muted" style="text-align:center; margin:0">Submit with <span class="kbd">Ctrl</span>+<span class="kbd">Enter</span></p>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
