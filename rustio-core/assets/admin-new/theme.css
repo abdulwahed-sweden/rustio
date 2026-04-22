@@ -1,0 +1,100 @@
+/* =============================================================
+ * RustIO Admin — Design Theme
+ * Exact extraction from rustio-admin.html. No redesign.
+ * ============================================================= */
+
+:root {
+  /* --- Brand / Accent --- */
+  --rust:          #B84318;
+  --rust-dark:     #8F3412;
+  --rust-tint:     #FDF2EE;
+
+  /* --- Ink (text) --- */
+  --ink:           #141A21;
+  --ink-muted:     #3D4755;
+  --ink-subtle:    #6B7483;
+
+  /* --- Borders --- */
+  --border:        #D8DDE5;
+  --border-strong: #B9C1CD;
+
+  /* --- Surfaces --- */
+  --bg:            #FFFFFF;
+  --bg-alt:        #F4F6F9;
+  --bg-hover:      #F0F3F7;
+
+  /* --- Status --- */
+  --success:       #2F7D3A;
+  --success-bg:    #E8F3EA;
+  --warn:          #A86A00;
+  --warn-bg:       #FBF1DC;
+  --danger:        #C23030;
+  --danger-bg:     #FBEAEA;
+
+  /* --- Typography --- */
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+  /* Font sizes (as used in the source) */
+  --fs-base:   18px;  /* html/body */
+  --fs-h1:     28px;  /* .page-title */
+  --fs-h2:     18px;  /* .drawer-title */
+  --fs-brand:  17px;  /* .brand */
+  --fs-item:   15px;  /* .sidebar-item */
+  --fs-body:   14px;  /* table, buttons, inputs, search, chips-ish */
+  --fs-chip:   13px;  /* .filter-chip, .page-btn, .field-label, sub-meta */
+  --fs-mono:   13px;  /* td.mono, .field-help not — this is body mono cells */
+  --fs-meta:   12px;  /* th uppercase, sidebar-count, drawer-subtitle */
+  --fs-micro:  11px;  /* badge, sidebar-label, fieldset-legend, meta-inline */
+  --fs-kbd:    10px;  /* <kbd> inside .search-submit */
+
+  /* --- Border radius scale --- */
+  --radius-xs: 2px;   /* kbd inside search-submit */
+  --radius-sm: 3px;   /* checkbox, badge, count-pill */
+  --radius-md: 4px;   /* brand-mark, page-btn, drawer-close, bulk-bar button, search-submit */
+  --radius-lg: 6px;   /* btn, filter-chip, search input, field inputs, bulk-bar, toast */
+  --radius-xl: 8px;   /* toolbar + table-wrap (top/bottom corners) */
+  --radius-pill: 10px; /* switch-track */
+  --radius-chip: 20px; /* user-chip */
+  --radius-full: 50%; /* user-avatar, toast-dot, switch-track knob */
+
+  /* --- Spacing scale (values that appear in the source) --- */
+  --space-1:  2px;
+  --space-2:  4px;
+  --space-3:  6px;
+  --space-4:  8px;
+  --space-5:  10px;
+  --space-6:  12px;
+  --space-7:  14px;
+  --space-8:  16px;
+  --space-9:  18px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-16: 32px;
+  --space-20: 80px;
+
+  /* --- Layout --- */
+  --topbar-height:  56px;
+  --sidebar-width:  260px;
+  --drawer-width:   560px;
+  --main-max:       1400px;
+
+  /* --- Z-index --- */
+  --z-topbar:      50;
+  --z-backdrop:    90;
+  --z-drawer:     100;
+  --z-toast:      200;
+
+  /* --- Shadows (exact values from source) --- */
+  --shadow-drawer: -8px 0 24px rgba(26, 32, 39, 0.08);
+  --shadow-toast:   0   8px 24px rgba(26, 32, 39, 0.25);
+  --shadow-switch-knob: 0 1px 2px rgba(0, 0, 0, 0.2);
+
+  /* --- Motion --- */
+  --ease-drawer: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast:    0.08s;
+  --dur-base:    0.12s;
+  --dur-med:     0.14s;
+  --dur-slow:    0.18s;
+  --dur-drawer:  0.22s;
+}

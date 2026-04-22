@@ -34,14 +34,18 @@ use crate::router::Router;
 // `::rustio_core::admin::FormData` continues to work.
 pub use crate::http::FormData;
 
+pub mod admin_form_bridge;
 pub mod audit;
+pub mod auto_form;
 pub mod design;
 pub mod entry_builder;
+pub mod form;
 pub mod intelligence;
 pub mod layout;
 pub mod relations;
 pub mod schema_cache;
 pub mod suggestions;
+pub mod ui;
 
 #[cfg(test)]
 mod admin_intelligence_tests;
