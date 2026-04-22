@@ -171,7 +171,7 @@
      is 28 px. 76 px gives the topbar the same vertical weight as
      the sidebar's 72-px brand block and reads as a deliberate
      app-shell bar rather than a hairline strip. */
-  --rio-topbar-h: 76px;
+  --rio-topbar-h: 60px;
 
   /* Density — defaults are "comfortable". Consumers read the vars
      below; switching to `.rio-density-compact` on <body> flips them
@@ -281,16 +281,42 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
 
 /* Sidebar --------------------------------------------------------- */
 
+/*
+ * Two-layer layout so the sidebar is VISUALLY full-height on every
+ * page (even pages where the content scrolls past one viewport), AND
+ * the nav itself stays pinned to the viewport as you scroll:
+ *
+ *   .rio-sidebar          — flex child, stretches to full `.rio-app`
+ *                            height so its background reaches the
+ *                            bottom of every page. Owns the border
+ *                            and surface colour.
+ *   .rio-sidebar-inner    — sticky wrapper at `top: 0; height: 100vh`.
+ *                            Holds brand + nav + footer. Stays locked
+ *                            to the viewport while long content
+ *                            scrolls underneath.
+ *
+ * This replaces the earlier `position: sticky` directly on
+ * `.rio-sidebar` which left a gap at the bottom of tall pages
+ * (sidebar height capped at 100vh).
+ */
 .rio-sidebar {
-  position: sticky;
-  top: 0;
-  width: 280px;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
+  width: 240px;
+  flex-shrink: 0;
   background: var(--rio-surface);
   border-right: 1px solid var(--rio-border);
-  flex-shrink: 0;
+  align-self: stretch; /* fill the full height of `.rio-app` */
+}
+.rio-sidebar-inner {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  max-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  /* Let children scroll if the model list is very long, without
+     losing the pinned brand or the footer. */
+  overscroll-behavior: contain;
 }
 
 .rio-brand {
@@ -493,18 +519,88 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   z-index: 20;
   background: var(--rio-surface);
   border-bottom: 1px solid var(--rio-border);
-  /* Vertical padding bumped from --rio-s-4 (16) to --rio-s-5 (20)
-     so the breadcrumbs + env-chip sit centred in a 76-px bar with
-     comfortable halos above and below the text baseline. */
-  padding: var(--rio-s-5) var(--rio-container-pad-x);
+  padding: 0 var(--rio-container-pad-x);
   display: flex;
   align-items: center;
-  gap: var(--rio-s-5);
+  gap: var(--rio-s-4);
+  /* Fixed height — breadcrumbs + icon cluster align cleanly on a
+     single 60-px bar. Was 76 px with elastic padding; now locked so
+     the shadow, sticky list thead, and sidebar all measure against
+     the same value. */
+  height: var(--rio-topbar-h);
   min-height: var(--rio-topbar-h);
-  /* Subtle shadow so the topbar reads as a distinct app-shell bar
-     when the user scrolls content beneath it. Hairline alone looked
-     thin against the new tinted body bg. */
   box-shadow: 0 1px 0 var(--rio-border), 0 2px 8px -6px rgba(15, 20, 26, 0.06);
+}
+
+/* Breadcrumb takes the left; the action cluster is pushed to the right. */
+.rio-topbar > .rio-breadcrumbs { flex: 1 1 auto; min-width: 0; }
+
+.rio-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--rio-s-2);
+}
+
+.rio-topbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--rio-radius-sm);
+  background: transparent;
+  color: var(--rio-text-subtle);
+  cursor: pointer;
+  position: relative;
+  text-decoration: none;
+}
+.rio-topbar-icon:hover {
+  background: var(--rio-ink-50);
+  color: var(--rio-ink-900);
+  text-decoration: none;
+}
+.rio-topbar-icon svg { width: 18px; height: 18px; }
+.rio-topbar-dot {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--rio-primary);
+  border: 2px solid var(--rio-surface);
+}
+
+.rio-topbar-logout { margin: 0; }
+.rio-topbar-logout button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--rio-border);
+  border-radius: var(--rio-radius-sm);
+  background: var(--rio-surface);
+  color: var(--rio-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  line-height: 1;
+}
+.rio-topbar-logout button svg { width: 16px; height: 16px; color: var(--rio-text-subtle); }
+.rio-topbar-logout button:hover {
+  background: var(--rio-ink-50);
+  border-color: var(--rio-border);
+  color: var(--rio-primary);
+}
+.rio-topbar-logout button:hover svg { color: var(--rio-primary); }
+
+@media (max-width: 720px) {
+  .rio-topbar-logout button span { display: none; }
+  .rio-topbar-logout button { padding: 0 10px; width: 36px; }
 }
 
 .rio-env-chip {

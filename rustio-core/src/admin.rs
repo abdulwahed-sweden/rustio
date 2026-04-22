@@ -219,6 +219,15 @@ pub(crate) const USER_ENTRY: AdminEntry = AdminEntry {
 /// it with a single `<link>`. Projects must not edit this.
 const ADMIN_CSS_BUNDLE: &str = include_str!("../assets/admin.css");
 
+/// Cache-buster appended to the stylesheet `<link>` URL as `?v=…`.
+/// Uses the CSS byte length — changes on every content edit, so the
+/// browser fetches a fresh copy without relying on the etag /
+/// must-revalidate dance (which some browsers treat softly). Served
+/// bytes are still cached at the `/admin/assets/admin.css` route;
+/// the query string is ignored by the handler but re-keys the HTTP
+/// cache entry.
+const ADMIN_CSS_VER: usize = ADMIN_CSS_BUNDLE.len();
+
 /// Framework-owned favicon: a compact SVG rust-coloured square with a
 /// white "R". Scalable, CSP-friendly, zero network dependency. Served
 /// at `/admin/assets/favicon.svg` and referenced from every page
@@ -304,6 +313,24 @@ fn icon_arrow_left() -> String {
 fn icon_activity() -> String {
     svg(
         r#"<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.95 0L9.24 2.18a.5.5 0 0 0-.95 0L5.94 10.54A2 2 0 0 1 4.01 12H2"/>"#,
+    )
+}
+
+fn icon_home() -> String {
+    svg(
+        r#"<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>"#,
+    )
+}
+
+fn icon_bell() -> String {
+    svg(
+        r#"<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>"#,
+    )
+}
+
+fn icon_mail() -> String {
+    svg(
+        r#"<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>"#,
     )
 }
 
@@ -557,7 +584,7 @@ impl Admin {
                 let actions =
                     audit::recent(&db, 200, model_filter.as_deref(), action_filter.as_deref())
                         .await?;
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
+                let shell = Shell::from_ctx(&entries, Some(NAV_ACTIONS), req.ctx());
                 Ok::<Response, Error>(recent_actions_response(
                     &shell,
                     &actions,
@@ -808,8 +835,10 @@ where
 
     // --- create (GET + POST) ---
     let create_entries = entries.clone();
+    let create_form_db = db.clone();
     router = router.get(&create_path, move |req, _params| {
         let entries = create_entries.clone();
+        let db = create_form_db.clone();
         async move {
             if let Err(resp) = admin_guard(req.ctx()) {
                 return Ok(resp);
@@ -819,11 +848,18 @@ where
             // nothing to resolve and no inverse relations to count.
             let cell_ctx = CellCtx::empty();
             let inverse_counts = std::collections::HashMap::new();
+            let registry = current_registry();
+            let form_options = if registry.is_empty() {
+                FormRelationOptions::new()
+            } else {
+                fetch_form_relation_options::<T>(&db, &registry).await
+            };
             Ok::<Response, Error>(form_response::<T>(
                 shell,
                 FormMode::Create,
                 &cell_ctx,
                 &inverse_counts,
+                &form_options,
             ))
         }
     });
@@ -907,11 +943,17 @@ where
                 registry: &registry,
                 fk_labels: &fk_labels,
             };
+            let form_options = if registry.is_empty() {
+                FormRelationOptions::new()
+            } else {
+                fetch_form_relation_options::<T>(&db, &registry).await
+            };
             Ok::<Response, Error>(form_response::<T>(
                 shell,
                 FormMode::Edit { id, item: &item },
                 &cell_ctx,
                 &inverse_counts,
+                &form_options,
             ))
         }
     });
@@ -1479,6 +1521,46 @@ fn render_breadcrumbs(crumbs: &[Crumb<'_>]) -> String {
     out
 }
 
+/// Sentinel passed to `Shell::active` for the built-in "Recent
+/// actions" page. Prefixed with `__` so it cannot collide with any
+/// user model's `admin_name` (which is lowercased, alphanumeric).
+const NAV_ACTIONS: &str = "__actions";
+
+/// Humanise a macro-generated `DISPLAY_NAME` for sidebar/dashboard
+/// display. The macro outputs Rust's camel/pascal plural (e.g.
+/// `VitalSigns`, `AppointmentEvents`, `Staffs`, `CheckIns`) which
+/// reads awkwardly as a nav label. This helper:
+///
+///   * inserts a space before every internal uppercase letter, so
+///     `VitalSigns` → `Vital Signs`, `AppointmentEvents` → `Appointment Events`,
+///     `MedicalRecords` → `Medical Records`, `CheckIns` → `Check Ins`;
+///   * fixes the two English pluralisations the macro gets wrong:
+///     `Staffs` → `Staff` (already a mass noun), `Diagnosis` →
+///     `Diagnoses`.
+///
+/// Returns `String` because some transformations (the two special
+/// cases) substitute; we avoid returning `Cow<str>` to keep the
+/// call site mono-morphic.
+fn humanise_model_label(name: &str) -> String {
+    // Two hard-coded fixes first — English plural edge-cases the
+    // macro cannot infer.
+    if name == "Staffs" {
+        return "Staff".to_string();
+    }
+    if name == "Diagnosis" {
+        return "Diagnoses".to_string();
+    }
+    // Insert a space before each internal uppercase letter.
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if i > 0 && ch.is_ascii_uppercase() {
+            out.push(' ');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 fn render_sidebar(shell: &Shell<'_>) -> String {
     let design = design::Design::global();
     let user_facing: Vec<&AdminEntry> = shell.entries.iter().filter(|e| !e.core).collect();
@@ -1498,13 +1580,22 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
                 cls = active_cls,
                 name = escape_html(e.admin_name),
                 icon = icon_layers(),
-                label = escape_html(e.display_name),
+                label = escape_html(&humanise_model_label(e.display_name)),
             ));
         }
         models_html.push_str("</div>");
     }
 
+    // Dashboard is active by default (no model page, no built-in
+    // sentinel). Recent-actions and the other built-ins set explicit
+    // sentinel strings so they can claim their own highlight without
+    // this falling through and lighting up Dashboard on their pages.
     let dashboard_active = if shell.active.is_none() {
+        "rio-nav-link is-active"
+    } else {
+        "rio-nav-link"
+    };
+    let actions_active = if shell.active == Some(NAV_ACTIONS) {
         "rio-nav-link is-active"
     } else {
         "rio-nav-link"
@@ -1548,6 +1639,7 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
 
     format!(
         r#"<aside class="rio-sidebar">
+<div class="rio-sidebar-inner">
 <a class="rio-brand" href="/admin">
 <span class="rio-brand-mark">{logo}</span>
 <span class="rio-brand-meta">
@@ -1557,18 +1649,20 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
 </a>
 <nav class="rio-nav">
 <a class="{dash}" href="/admin">{dash_icon}<span>Dashboard</span></a>
-<a class="rio-nav-link" href="/admin/actions">{actions_icon}<span>Recent actions</span></a>
+<a class="{actions}" href="/admin/actions">{actions_icon}<span>Recent actions</span></a>
 </nav>
 {models}
 <div class="rio-sidebar-footer">
 {user}
 {logout}
 </div>
+</div>
 </aside>"#,
         logo = escape_html(&design.logo_initial),
         project = escape_html(&design.project_name),
         dash = dashboard_active,
         dash_icon = icon_dashboard(),
+        actions = actions_active,
         actions_icon = icon_activity(),
         models = models_html,
         user = user_block,
@@ -1595,6 +1689,33 @@ fn render_shell_page(
     let crumbs = render_breadcrumbs(breadcrumbs);
 
     let env_chip = env_chip_html();
+
+    // Topbar action cluster: env-chip + Home + Notifications bell +
+    // Messages + Logout button with a visible "Logout" label.
+    // Rendered only when we have an identity (i.e. a CSRF token to
+    // back the logout form). On unauthenticated error pages the
+    // cluster collapses to just the env-chip.
+    let topbar_actions = match shell.csrf {
+        Some(csrf) => format!(
+            r#"<div class="rio-topbar-actions">
+{env}
+<a class="rio-topbar-icon" href="/admin" title="Home" aria-label="Home">{home}</a>
+<button class="rio-topbar-icon" type="button" title="Notifications" aria-label="Notifications">{bell}<span class="rio-topbar-dot"></span></button>
+<button class="rio-topbar-icon" type="button" title="Messages" aria-label="Messages">{mail}</button>
+<form class="rio-topbar-logout" method="post" action="/admin/logout">
+<input type="hidden" name="_csrf" value="{csrf_val}">
+<button type="submit" title="Sign out">{logout}<span>Logout</span></button>
+</form>
+</div>"#,
+            env = env_chip,
+            home = icon_home(),
+            bell = icon_bell(),
+            mail = icon_mail(),
+            logout = icon_logout(),
+            csrf_val = escape_html(csrf),
+        ),
+        None => format!(r#"<div class="rio-topbar-actions">{env}</div>"#, env = env_chip),
+    };
 
     let subtitle_html = page_subtitle
         .map(|s| format!(r#"<p class="rio-page-subtitle">{}</p>"#, escape_html(s)))
@@ -1626,7 +1747,7 @@ fn render_shell_page(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{doc_title} · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
@@ -1637,7 +1758,7 @@ fn render_shell_page(
 <div class="rio-container">
 <header class="rio-topbar">
 {crumbs}
-{env}
+{topbar_actions}
 </header>
 <div class="rio-page-header">
 <div>
@@ -1678,16 +1799,24 @@ document.addEventListener("click", function(e){{
         density = density_class,
         sidebar = sidebar,
         crumbs = crumbs,
-        env = env_chip,
+        topbar_actions = topbar_actions,
         page_title = escape_html(page_title),
         subtitle = subtitle_html,
         actions = actions_block,
         body = body,
+        css_ver = ADMIN_CSS_VER,
     );
 
     let resp = hyper::Response::builder()
         .status(status)
         .header("content-type", "text/html; charset=utf-8")
+        // Kill all HTML caching so the browser always fetches a fresh
+        // admin page and never paints a stale shell. The CSS bundle
+        // has its own `?v=<len>` cache-buster; these headers close
+        // the remaining gap on the HTML itself.
+        .header("cache-control", "no-store, no-cache, must-revalidate, max-age=0")
+        .header("pragma", "no-cache")
+        .header("expires", "0")
         .body(Full::new(Bytes::from(body_html)))
         .expect("valid response");
     with_admin_headers(resp)
@@ -1816,7 +1945,7 @@ fn dashboard_response(
 </div>
 </div>"#,
                     name = escape_html(e.admin_name),
-                    display = escape_html(e.display_name),
+                    display = escape_html(&humanise_model_label(e.display_name)),
                     count = count_line,
                     icon = icon_layers(),
                     plus = icon_plus(),
@@ -2087,6 +2216,20 @@ const SORT_OPTIONS: &[(&str, &str)] = &[
 /// renderer never panics on a missing lookup.
 type FkLabels = std::collections::HashMap<String, std::collections::HashMap<i64, String>>;
 
+/// Per-form dropdown option sets: FK field name → ordered list of
+/// `(id, label)` pairs fetched from the target table. Populated by
+/// [`fetch_form_relation_options`] and consumed by [`render_field`].
+///
+/// A field is present in the map only when:
+///   * the field carries `#[rustio(belongs_to = "…")]`,
+///   * the target declares a `display_field`,
+///   * the target has `<= RELATION_FILTER_DROPDOWN_CAP` rows.
+///
+/// Absence from the map means the form renderer falls back to a raw
+/// `<input type="number">` — same UX as the list-page filter's
+/// `Numeric { too_many }` mode.
+type FormRelationOptions = std::collections::HashMap<String, Vec<(i64, String)>>;
+
 /// Bundle passed into [`render_cell`] so it can resolve foreign-key
 /// columns without further DB work. Construction sites own the
 /// registry and the prefetched labels.
@@ -2253,6 +2396,54 @@ async fn build_relation_filters<T: AdminModel>(
             current_value,
             mode,
         });
+    }
+    out
+}
+
+/// Build a FK-options map for use by admin create / edit forms.
+/// Mirrors [`build_relation_filters`] in structure — same cap, same
+/// SQL shape — but returns a flat per-field map so the form renderer
+/// can look up options by field name without threading the richer
+/// filter-state type through.
+async fn fetch_form_relation_options<T: AdminModel>(
+    db: &Db,
+    registry: &relations::RelationRegistry,
+) -> FormRelationOptions {
+    use sqlx::Row;
+    let mut out: FormRelationOptions = std::collections::HashMap::new();
+    let cap = relations::RELATION_FILTER_DROPDOWN_CAP;
+    for resolved in registry.belongs_to_of(T::singular_name()) {
+        let Some(display_col) = &resolved.target_display_field else {
+            continue;
+        };
+        let sql = format!(
+            "SELECT id AS rio_id, \"{col}\" AS rio_label FROM \"{table}\" ORDER BY \"{col}\" ASC LIMIT {lim}",
+            col = display_col,
+            table = resolved.target_table,
+            lim = cap + 1,
+        );
+        let rows = match sqlx::query(&sql).fetch_all(db.pool()).await {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        if rows.len() > cap {
+            // Too many options for a dropdown — fall back to numeric
+            // input by omitting this field from the map.
+            continue;
+        }
+        let options: Vec<(i64, String)> = rows
+            .into_iter()
+            .map(|row| {
+                let id: i64 = row.try_get::<i64, _>("rio_id").unwrap_or_default();
+                let label: String = row
+                    .try_get::<String, _>("rio_label")
+                    .or_else(|_| row.try_get::<i64, _>("rio_label").map(|n| n.to_string()))
+                    .or_else(|_| row.try_get::<i32, _>("rio_label").map(|n| n.to_string()))
+                    .unwrap_or_default();
+                (id, label)
+            })
+            .collect();
+        out.insert(resolved.source_field.clone(), options);
     }
     out
 }
@@ -3069,7 +3260,7 @@ fn render_list_toolbar<T: AdminModel>(
 {primary_relation}
 {sort}
 <div class="rio-toolbar-actions">
-<button type="submit" class="rio-btn">{submit_icon}<span>Search</span></button>
+<button type="submit" class="rio-btn rio-btn-primary">{submit_icon}<span>Search</span></button>
 {more_filters_btn}
 {reset}
 {columns}
@@ -3305,6 +3496,7 @@ fn form_response<T: AdminModel>(
     mode: FormMode<'_, T>,
     cell_ctx: &CellCtx<'_>,
     inverse_counts: &InverseCounts,
+    form_options: &FormRelationOptions,
 ) -> Response {
     let plural = T::DISPLAY_NAME;
     let singular = T::singular_name();
@@ -3338,6 +3530,7 @@ fn form_response<T: AdminModel>(
                     FormMode::Edit { item, .. } => Some(*item),
                 },
                 cell_ctx,
+                form_options,
             )
         })
         .collect();
@@ -3461,6 +3654,7 @@ fn render_field_block<T: AdminModel>(
     f: &AdminField,
     item: Option<&T>,
     cell_ctx: &CellCtx<'_>,
+    form_options: &FormRelationOptions,
 ) -> String {
     let name = escape_html(f.name);
     let mut ui = intelligence::field_ui_metadata(f, intelligence::context_global());
@@ -3473,7 +3667,7 @@ fn render_field_block<T: AdminModel>(
         ui.hint = None;
         ui.label = field_label(f);
     }
-    let input = render_field::<T>(f, item, ui.placeholder.as_deref());
+    let input = render_field::<T>(f, item, ui.placeholder.as_deref(), form_options);
 
     // Bool fields render as a single checkbox row for compactness.
     if matches!(f.ty, FieldType::Bool) {
@@ -3951,6 +4145,7 @@ fn render_field<T: AdminModel>(
     f: &AdminField,
     item: Option<&T>,
     placeholder: Option<&str>,
+    form_options: &FormRelationOptions,
 ) -> String {
     let current = item
         .and_then(|i| i.field_display(f.name))
@@ -3968,6 +4163,52 @@ fn render_field<T: AdminModel>(
         Some(p) if !p.is_empty() => format!(r#" placeholder="{}""#, escape_html(p)),
         _ => String::new(),
     };
+
+    // FK dropdown — preferred presentation for i32/i64 fields that
+    // carry a `belongs_to` AND have a pre-fetched option list (see
+    // [`fetch_form_relation_options`]). Falls through to the raw
+    // number input when no options are present (no relation, no
+    // `display_field`, or row count over the cap).
+    if matches!(f.ty, FieldType::I32 | FieldType::I64) {
+        if let Some(options) = form_options.get(f.name) {
+            let none_opt = if f.nullable {
+                r#"<option value="">— none —</option>"#
+            } else {
+                r#"<option value="" disabled selected>Select…</option>"#
+            };
+            let options_html: String = options
+                .iter()
+                .map(|(id, label)| {
+                    let selected = if current == id.to_string() {
+                        " selected"
+                    } else {
+                        ""
+                    };
+                    format!(
+                        r#"<option value="{id}"{selected}>{label}</option>"#,
+                        id = id,
+                        selected = selected,
+                        label = escape_html(label),
+                    )
+                })
+                .collect();
+            // Suppress the default-selected "Select…" when editing a
+            // row whose FK already has a value — the matching option
+            // already carries `selected`.
+            let none_opt = if !current.is_empty() && !f.nullable {
+                r#"<option value="" disabled>Select…</option>"#
+            } else {
+                none_opt
+            };
+            return format!(
+                r#"<select class="rio-input rio-select" id="_{n}" name="{n}"{required}>{none}{opts}</select>"#,
+                n = n,
+                required = required,
+                none = none_opt,
+                opts = options_html,
+            );
+        }
+    }
 
     match f.ty {
         FieldType::Bool => format!(
@@ -4357,7 +4598,7 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
@@ -4398,6 +4639,7 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
         email = email_value,
         footer = footer_hint,
         env = env_chip_html(),
+        css_ver = ADMIN_CSS_VER,
     );
 
     let resp = hyper::Response::builder()
@@ -4424,7 +4666,7 @@ fn forbidden_page(csrf: Option<&str>) -> Response {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>403 Forbidden · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
@@ -4450,6 +4692,7 @@ fn forbidden_page(csrf: Option<&str>) -> Response {
         icon = icon_shield_alert(),
         csrf = csrf_hidden,
         logout = icon_logout(),
+        css_ver = ADMIN_CSS_VER,
     );
 
     let resp = hyper::Response::builder()
@@ -4696,7 +4939,7 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign out · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
@@ -4719,6 +4962,7 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
         theme = theme_style,
         logo = escape_html(&d.logo_initial),
         card_body = card_body,
+        css_ver = ADMIN_CSS_VER,
     );
 
     let resp = hyper::Response::builder()
@@ -5920,14 +6164,14 @@ mod tests {
     #[test]
     fn nullable_string_field_omits_required_attribute() {
         let f = string_field("note", true);
-        let html = render_field::<Widgety>(&f, None, None);
+        let html = render_field::<Widgety>(&f, None, None, &FormRelationOptions::new());
         assert!(!html.contains("required"), "html was: {html}");
     }
 
     #[test]
     fn non_nullable_string_field_marks_required() {
         let f = string_field("title", false);
-        let html = render_field::<Widgety>(&f, None, None);
+        let html = render_field::<Widgety>(&f, None, None, &FormRelationOptions::new());
         assert!(html.contains("required"), "html was: {html}");
     }
 
@@ -5940,14 +6184,14 @@ mod tests {
             nullable: false,
             relation: None,
         };
-        let html = render_field::<Widgety>(&f, None, None);
+        let html = render_field::<Widgety>(&f, None, None, &FormRelationOptions::new());
         assert!(!html.contains("required"), "html was: {html}");
     }
 
     #[test]
     fn datetime_field_uses_datetime_local_input() {
         let f = datetime_field("starts_at", false);
-        let html = render_field::<Widgety>(&f, None, None);
+        let html = render_field::<Widgety>(&f, None, None, &FormRelationOptions::new());
         assert!(
             html.contains(r#"type="datetime-local""#),
             "html was: {html}"
@@ -5957,7 +6201,7 @@ mod tests {
     #[test]
     fn datetime_field_renders_existing_value() {
         let f = datetime_field("filled", true);
-        let html = render_field::<Widgety>(&f, Some(&Widgety), None);
+        let html = render_field::<Widgety>(&f, Some(&Widgety), None, &FormRelationOptions::new());
         assert!(
             html.contains(r#"value="2026-04-18T10:12""#),
             "html was: {html}"
@@ -5967,7 +6211,7 @@ mod tests {
     #[test]
     fn nullable_field_with_none_value_does_not_panic() {
         let f = string_field("empty", true);
-        let html = render_field::<Widgety>(&f, Some(&Widgety), None);
+        let html = render_field::<Widgety>(&f, Some(&Widgety), None, &FormRelationOptions::new());
         assert!(html.contains(r#"value="""#));
         assert!(!html.contains("required"));
     }
@@ -5975,7 +6219,7 @@ mod tests {
     #[test]
     fn field_display_returning_none_renders_empty_value() {
         let f = string_field("unknown_field", false);
-        let html = render_field::<Widgety>(&f, Some(&Widgety), None);
+        let html = render_field::<Widgety>(&f, Some(&Widgety), None, &FormRelationOptions::new());
         assert!(html.contains(r#"value="""#));
     }
 
