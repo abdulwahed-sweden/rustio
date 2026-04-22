@@ -184,6 +184,36 @@ const FORM_KEYBOARD_JS: &str = r#"
 })();
 "#;
 
+/// Switch toggle handler. Listens for clicks on `.switch`, flips the
+/// inner `<input type="checkbox">`, and syncs the visual `.on` class
+/// in the same step (the approved CSS keys the track-knob position
+/// off `.switch.on`, not off `:checked`, so the class swap is what
+/// makes the visual move).
+///
+/// `e.preventDefault()` suppresses the browser's native label-input
+/// activation — without it, the label-wrapped checkbox would receive
+/// a synthesized click immediately after our handler runs and toggle
+/// itself a second time, cancelling the JS toggle. The `INPUT` early
+/// return covers direct clicks on the (hidden) checkbox, e.g. from
+/// keyboard activation, so those go through the native path
+/// untouched.
+const SWITCH_JS: &str = r#"
+(function () {
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.tagName === 'INPUT') return;
+    var sw = (e.target && typeof e.target.closest === 'function')
+      ? e.target.closest('.switch')
+      : null;
+    if (!sw) return;
+    var checkbox = sw.querySelector('input[type="checkbox"]');
+    if (!checkbox) return;
+    e.preventDefault();
+    checkbox.checked = !checkbox.checked;
+    sw.classList.toggle('on', checkbox.checked);
+  });
+})();
+"#;
+
 // ---------------------------------------------------------------
 // Shell assembler
 // ---------------------------------------------------------------
@@ -213,7 +243,7 @@ pub fn render_layout(topbar: String, sidebar: String, content: String) -> String
 {content}
 </main>
 </div>
-<script>{keyboard}{form_keyboard}</script>
+<script>{keyboard}{form_keyboard}{switch}</script>
 </body>
 </html>"#,
         theme = THEME_CSS,
@@ -224,6 +254,7 @@ pub fn render_layout(topbar: String, sidebar: String, content: String) -> String
         content = content,
         keyboard = KEYBOARD_JS,
         form_keyboard = FORM_KEYBOARD_JS,
+        switch = SWITCH_JS,
     )
 }
 

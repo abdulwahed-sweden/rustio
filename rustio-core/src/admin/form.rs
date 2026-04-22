@@ -190,7 +190,18 @@ pub fn bind_form(form: &mut FormConfig, params: &HashMap<String, String>) {
     form.submitted = true;
     for field in form.fields.iter_mut() {
         if field.field_type == FieldType::Boolean {
-            field.value = Some(params.contains_key(&field.name).to_string());
+            // Boolean now ships a real `<input>` pair: a hidden
+            // baseline (`value="false"`) plus a real checkbox
+            // (`value="true"`). When checked, both submit and
+            // last-write-wins parsing yields `"true"`. When
+            // unchecked, only the hidden submits → `"false"`. So
+            // we just read the value through and fall back to
+            // `"false"` for the (now rare) case where neither input
+            // was present in the body at all.
+            field.value = params
+                .get(&field.name)
+                .cloned()
+                .or(Some("false".to_string()));
         } else if let Some(v) = params.get(&field.name) {
             field.value = Some(v.clone());
         }
@@ -358,9 +369,24 @@ fn render_select(f: &FieldConfig, autofocus: bool) -> String {
 /// *is* the field and carries its own visible label via `.switch-label`
 /// — no redundant `.field-label` above it. `.field-help` and the
 /// validation `.field-error` block still render below when supplied.
+///
+/// Two real form controls are injected inside the existing `.switch`
+/// label so the field actually submits data:
+///
+/// 1. A hidden `<input type="hidden" value="false">` always sends a
+///    `false` baseline. This guarantees the field name appears in
+///    every POST body even when the switch is off.
+/// 2. A real `<input type="checkbox" value="true" hidden>` overrides
+///    the baseline when checked — its `value` is sent *after* the
+///    hidden's, and `FormData::parse` uses last-write-wins, so the
+///    final bound value is `"true"` when checked, `"false"` when not.
+///
+/// The `hidden` HTML attribute keeps the checkbox out of the visual
+/// flow — no CSS changes needed, no class names added.
 fn render_boolean_field(f: &FieldConfig) -> String {
     let on = matches!(f.value.as_deref(), Some("1" | "true" | "on" | "yes"));
     let on_cls = if on { " on" } else { "" };
+    let checked_attr = if on { " checked" } else { "" };
     let help = match &f.help {
         Some(h) if !h.is_empty() => {
             format!(r#"<div class="field-help">{}</div>"#, html_escape(h))
@@ -374,6 +400,8 @@ fn render_boolean_field(f: &FieldConfig) -> String {
     format!(
         r#"<div class="field">
   <label class="switch{cls}">
+    <input type="hidden" name="{name}" value="false">
+    <input type="checkbox" name="{name}" value="true" hidden{checked}>
     <span class="switch-track"></span>
     <span class="switch-label">{label}</span>
   </label>
@@ -381,6 +409,8 @@ fn render_boolean_field(f: &FieldConfig) -> String {
   {error}
 </div>"#,
         cls = on_cls,
+        name = html_escape(&f.name),
+        checked = checked_attr,
         label = html_escape(&f.label),
         help = help,
         error = error,
