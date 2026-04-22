@@ -19,4 +19,17 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # `chrono` is used for `DateTime<Utc>` model fields. Leave it even if
 # your first model only uses primitives — you'll want it the moment you
 # add a `created_at` or `published_at` column.
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+
+# Added for the HTTP API layer (apps/api.rs):
+#   * serde / serde_json — DTO (de)serialisation
+#   * hyper / http-body-util / bytes — direct response construction,
+#     since rustio-core only ships a 200-only `json_raw` helper and the
+#     API needs 201 / 400 / 404 / 409 status codes.
+# Versions pinned to the same majors as rustio-core uses internally so
+# there's a single resolved copy in the dep graph.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hyper = { version = "1", features = ["http1", "server"] }
+http-body-util = "0.1"
+bytes = "1"

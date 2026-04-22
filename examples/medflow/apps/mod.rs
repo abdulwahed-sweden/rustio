@@ -16,6 +16,18 @@ pub mod workflow;
 // the four apps.
 pub mod services;
 
+// HTTP API layer. Maps POST endpoints to service functions; no
+// business logic, no direct DB access. Registered in
+// `register_all` below, after the view registrations.
+pub mod api;
+
+// End-to-end integration test — compiled only for `cargo test`.
+// Exercises every service against a fresh in-memory DB with all
+// migrations applied. Covers the full 13-step hospital flow plus
+// lifecycle / billing / uniqueness guards.
+#[cfg(test)]
+mod services_flow_test;
+
 /// Build the admin registry.
 ///
 /// Split from [`register_all`] so `main.rs --dump-schema` can introspect
@@ -42,5 +54,10 @@ pub fn register_all(mut router: Router, db: &Db) -> Router {
     router = billing::views::register(router);
     router = workflow::views::register(router);
     // -- end view registrations --
+
+    // HTTP API — registered after the app views so view routes stay
+    // authoritative for any shared path (currently none).
+    router = api::register(router, db);
+
     router
 }

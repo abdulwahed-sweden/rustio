@@ -782,8 +782,13 @@ dependencies = [
 name = "medflow"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "chrono",
+ "http-body-util",
+ "hyper",
  "rustio-core",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
