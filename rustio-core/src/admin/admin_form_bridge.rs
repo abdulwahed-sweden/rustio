@@ -72,6 +72,7 @@ pub fn form_from_admin_ui_model<T: AdminUiModel>() -> FormConfig {
         title: format!("Edit {}", T::model_name()),
         subtitle: String::new(),
         fields,
+        submitted: false,
     }
 }
 

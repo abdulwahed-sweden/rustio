@@ -17,6 +17,8 @@
 //! `.field-error` block below — both classes are referenced but **not
 //! styled here**; styling is assumed to live in the bundled CSS.
 
+use std::collections::HashMap;
+
 use crate::admin::ui::html_escape;
 
 // ---------------------------------------------------------------
@@ -66,6 +68,13 @@ pub struct FormConfig {
     pub title: String,
     pub subtitle: String,
     pub fields: Vec<FieldConfig>,
+
+    /// `true` once values have been bound from a real submission. The
+    /// renderer uses this to swap the inline error summary for a
+    /// `.form-success` banner when validation passes, so the user
+    /// sees an explicit confirmation rather than a silent re-render.
+    /// Set automatically by [`bind_form`].
+    pub submitted: bool,
 }
 
 // ---------------------------------------------------------------
@@ -158,6 +167,35 @@ pub fn render_error(msg: &str) -> String {
         return String::new();
     }
     format!(r#"<div class="field-error">{}</div>"#, html_escape(msg))
+}
+
+/// Pull submitted values out of a parsed urlencoded body and write
+/// them into the form's fields.
+///
+/// - Non-Boolean: the field's `value` is set to the matching `params`
+///   entry if present, otherwise left as-is.
+/// - Boolean: HTML form submission omits unchecked checkboxes /
+///   switches entirely, so the rule is *presence-of-key*, not value:
+///   `value = Some(params.contains_key(name).to_string())`.
+///
+/// Pre-existing per-field `error`s are cleared so subsequent calls
+/// to [`validate_form`] start from a clean slate. The form's
+/// `submitted` flag flips to `true` so [`render_form`] can swap the
+/// error summary for the `.form-success` banner when validation
+/// passes.
+///
+/// Never panics; missing keys silently leave non-boolean fields
+/// untouched.
+pub fn bind_form(form: &mut FormConfig, params: &HashMap<String, String>) {
+    form.submitted = true;
+    for field in form.fields.iter_mut() {
+        if field.field_type == FieldType::Boolean {
+            field.value = Some(params.contains_key(&field.name).to_string());
+        } else if let Some(v) = params.get(&field.name) {
+            field.value = Some(v.clone());
+        }
+        field.error = None;
+    }
 }
 
 // ---------------------------------------------------------------
@@ -363,6 +401,13 @@ pub fn render_form(form: &FormConfig) -> String {
     let summary = if has_errors {
         String::from(
             r#"<div class="form-error-summary" role="alert">Please fix the errors below.</div>"#,
+        )
+    } else if form.submitted {
+        // No errors *and* the form went through submission → success
+        // banner. On a fresh GET (submitted = false) we render
+        // nothing — there's nothing to confirm yet.
+        String::from(
+            r#"<div class="form-success" role="status">Saved successfully (simulation)</div>"#,
         )
     } else {
         String::new()

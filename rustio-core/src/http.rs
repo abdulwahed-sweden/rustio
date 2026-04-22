@@ -209,6 +209,13 @@ impl FormData {
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
+
+    /// Consume into the underlying key/value map. Useful for callers
+    /// that want to hand the parsed form to a handler that takes a
+    /// plain `&HashMap<String, String>`.
+    pub fn into_map(self) -> HashMap<String, String> {
+        self.map
+    }
 }
 
 pub(crate) fn percent_decode(input: &str) -> String {

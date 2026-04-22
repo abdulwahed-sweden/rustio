@@ -10,6 +10,8 @@
 //! inline `const` strings. No filesystem reads, no `/static` links,
 //! no external stylesheet dependencies.
 
+use std::collections::HashMap;
+
 use crate::admin::admin_form_bridge::{AdminDataType, AdminUiField, AdminUiModel};
 use crate::admin::auto_form::{AutoField, FieldOverride, FormBuilder, FormModel};
 use crate::admin::form::{render_form, FieldConfig, FieldType, FormConfig};
@@ -229,11 +231,13 @@ pub fn render_layout(topbar: String, sidebar: String, content: String) -> String
 // Public entry point — handler body for /admin-new
 // ---------------------------------------------------------------
 
-/// Render the foundation page for `/admin-new`. Uses sample/static
-/// data modelled after the approved Users page; no DB access yet.
-/// The structure, spacing, and components are what every future admin
-/// page will inherit.
-pub fn admin_index() -> String {
+/// Render the foundation page for `/admin-new`.
+///
+/// `submitted = None` is the GET path: the demo form seeds invalid
+/// values to showcase validation UX. `submitted = Some(params)` is
+/// the POST path: values come from the parsed form body, the form is
+/// validated, and the success banner appears when nothing failed.
+pub fn admin_index(submitted: Option<&HashMap<String, String>>) -> String {
     let topbar = render_topbar(&TopbarConfig {
         brand: "RustIO".into(),
         brand_mark: "R".into(),
@@ -312,7 +316,7 @@ pub fn admin_index() -> String {
     let toolbar = render_toolbar(&search_cfg);
     let table = render_table_shell(&sample_users_table());
     let foundation_note = r#"<p style="margin: 20px 0 0; font-family: var(--mono); font-size: 12px; color: var(--ink-subtle);">Foundation build · sample data · DB wiring deferred to the next step.</p>"#;
-    let drawer = demo_admin_form();
+    let drawer = demo_admin_form(submitted);
 
     let content = format!("{page_header}{toolbar}{table}{foundation_note}{drawer}");
 
@@ -388,20 +392,22 @@ impl AdminUiModel for UserAdmin {
     }
 }
 
-/// Render the bridge-driven form for [`UserAdmin`]. Demonstrates:
-/// - storage-type → widget mapping (String → Text, Email → Email,
-///   Boolean → switch, Float → Number, Integer + `is_relation` → FK
-///   dropdown);
-/// - the relation override beating the base `AdminDataType::Integer`
-///   so `doctor_id` renders as a `<select>` of names, not a number
-///   input;
-/// - the hybrid override path (`override_field` to attach help);
-/// - the new validation engine: `username` is left empty (required
-///   error), `email` is set to a value missing `@` (email error),
-///   and `salary_amount` is set to a non-numeric string (number
-///   error). All three render with `class="invalid"` on the input
-///   and a `.field-error` block beneath.
-pub fn demo_admin_form() -> String {
+/// Render the bridge-driven form for [`UserAdmin`].
+///
+/// Two paths share one body, depending on whether the page was
+/// reached via GET (`submitted = None`) or POST (`submitted = Some`):
+///
+/// - **GET** seeds an invalid demo state so the page is self-explanatory
+///   on first load: `username` is left empty (required error),
+///   `email` is `"not-an-email"`, `salary_amount` is non-numeric.
+/// - **POST** binds values via [`crate::admin::form::bind_form`], then
+///   validates. Boolean fields submit as missing-when-unchecked, so
+///   `bind_form` derives them from key presence in `params`.
+///
+/// In both paths the same [`render_form`] runs, so the user sees a
+/// drawer with their values intact, error states (or success banner)
+/// on top, and `class="invalid"` on any field that failed.
+pub fn demo_admin_form(submitted: Option<&HashMap<String, String>>) -> String {
     let mut form = FormBuilder::from_admin_ui_model::<UserAdmin>()
         .override_field(
             "doctor_id",
@@ -413,15 +419,25 @@ pub fn demo_admin_form() -> String {
         )
         .build();
 
-    // Seed values that exercise each validation rule. Real handlers
-    // would populate `value` from form submission; here we set them
-    // by hand so /admin-new can show the visual error states.
-    for field in form.fields.iter_mut() {
-        match field.name.as_str() {
-            // `username` left as None → triggers "required".
-            "email" => field.value = Some("not-an-email".into()),
-            "salary_amount" => field.value = Some("twelve thousand".into()),
-            _ => {}
+    match submitted {
+        None => {
+            // GET: seed invalid demo values so the page is self-
+            // explanatory on first load (matches the previous
+            // step's behaviour exactly).
+            for field in form.fields.iter_mut() {
+                match field.name.as_str() {
+                    // `username` left as None → triggers "required".
+                    "email" => field.value = Some("not-an-email".into()),
+                    "salary_amount" => field.value = Some("twelve thousand".into()),
+                    _ => {}
+                }
+            }
+        }
+        Some(params) => {
+            // POST: bind real submitted values; flips the form's
+            // `submitted` flag, which the renderer uses to show the
+            // success banner when validation passes.
+            crate::admin::form::bind_form(&mut form, params);
         }
     }
 
@@ -529,6 +545,7 @@ pub fn demo_form() -> String {
     render_form(&FormConfig {
         title: "Edit user".into(),
         subtitle: "auth.User · id=1".into(),
+        submitted: false,
         fields: vec![
             FieldConfig {
                 name: "username".into(),

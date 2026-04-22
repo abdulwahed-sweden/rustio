@@ -850,3 +850,13 @@ td.primary-col {
   font-size: 13px;
   margin-bottom: 12px;
 }
+
+.form-success {
+  background: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}

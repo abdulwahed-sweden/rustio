@@ -488,8 +488,17 @@ impl Admin {
 
         // Parallel new-layout scaffold. Mounted alongside /admin so the
         // two systems coexist while the new admin is being built out.
+        // GET renders the foundation page; POST runs the
+        // bind → validate → re-render submit pipeline against the
+        // urlencoded body. No persistence — values are never written
+        // anywhere; the success banner is purely a simulation.
         router = router.get("/admin-new", |_req, _params| async move {
-            Ok::<Response, Error>(crate::http::html(layout::admin_index()))
+            Ok::<Response, Error>(crate::http::html(layout::admin_index(None)))
+        });
+        router = router.post("/admin-new", |req, _params| async move {
+            let form_data = read_form(req).await?;
+            let params = form_data.into_map();
+            Ok::<Response, Error>(crate::http::html(layout::admin_index(Some(&params))))
         });
 
         // Login + logout. Unauthenticated users *need* to reach

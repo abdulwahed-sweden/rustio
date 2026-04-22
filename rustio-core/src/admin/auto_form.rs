@@ -74,6 +74,7 @@ pub fn form_from_model<T: FormModel>() -> FormConfig {
         // `.drawer-subtitle` div, which the approved CSS handles.
         subtitle: String::new(),
         fields,
+        submitted: false,
     }
 }
 
