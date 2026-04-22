@@ -21,12 +21,28 @@ pub mod services;
 // `register_all` below, after the view registrations.
 pub mod api;
 
+// Offline-first operation queue (prototype). Standalone client-side
+// utility — no routes, no admin models. Callers (future tablet app,
+// CLI sync job, deferred-write worker) enqueue workflow actions
+// while offline and replay them via the API once connectivity
+// returns. Does not participate in `register_all` / `build_admin`.
+pub mod offline;
+
+// Shared UI helpers for the `/ops` operational pages (shell, styles,
+// escape_html, redirect). Used by `care::views`.
+pub mod ui;
+
 // End-to-end integration test — compiled only for `cargo test`.
 // Exercises every service against a fresh in-memory DB with all
 // migrations applied. Covers the full 13-step hospital flow plus
 // lifecycle / billing / uniqueness guards.
 #[cfg(test)]
 mod services_flow_test;
+
+// Offline queue tests — enqueue without network, sync happy-path,
+// sync failure persistence, retry recovery, mixed outcomes.
+#[cfg(test)]
+mod offline_test;
 
 /// Build the admin registry.
 ///
@@ -50,7 +66,7 @@ pub fn register_all(mut router: Router, db: &Db) -> Router {
 
     // -- view registrations --
     router = people::views::register(router);
-    router = care::views::register(router);
+    router = care::views::register(router, db);
     router = billing::views::register(router);
     router = workflow::views::register(router);
     // -- end view registrations --

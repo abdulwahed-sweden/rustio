@@ -26,13 +26,32 @@
 //! iteration; their service functions already exist and are ready to
 //! be wired.
 //!
-//! ## Authentication — deliberately absent
+//! ## Authentication — bearer tokens over the session table
 //!
-//! No auth is wired in this iteration. When it arrives it goes in
-//! [`require_actor`] below (currently a no-op returning `Ok(())`)
-//! and as middleware on the api sub-router. Handlers should keep
-//! calling `require_actor(&req).await?` at the top so the eventual
-//! wiring is a single-point edit, not a handler-by-handler rewrite.
+//! `POST /api/auth/login` validates email + password and returns an
+//! opaque bearer token (the `rustio_sessions.id` — a 64-char hex
+//! string). Every other handler extracts that token from the
+//! `Authorization: Bearer <token>` header, looks up a valid session,
+//! loads the user, and passes it into a role check.
+//!
+//!   * **Missing / invalid / expired token** → `401 Unauthorized`
+//!   * **Valid token, wrong role for this action** → `403 Forbidden`
+//!
+//! Reused directly from `rustio_core::auth`:
+//!
+//!   * the `rustio_users` and `rustio_sessions` tables (created by
+//!     `migrations::apply`),
+//!   * argon2id hashing via `auth::password::verify`,
+//!   * cryptographic token generation + expiry via `auth::session::create`
+//!     and `auth::session::find_valid`,
+//!   * the `User` struct.
+//!
+//! ## Role model
+//!
+//!   * `receptionist` — schedule / confirm / check-in / cancel
+//!   * `doctor` — start / complete / cancel
+//!   * `billing` — (medical + billing endpoints, not yet wired)
+//!   * `admin` — super-role, passes every check
 //!
 //! ## Error mapping
 //!
@@ -40,6 +59,8 @@
 //! | --------------------------------- | ----------- | ----------------------- |
 //! | `Error::BadRequest(msg)`          | 400         | `{"error": <msg>}`      |
 //! | `Error::NotFound`                 | 404         | `{"error": "not_found"}`|
+//! | `Error::Unauthorized`             | 401         | `{"error": "unauthorized"}` |
+//! | `Error::Forbidden`                | 403         | `{"error": "forbidden"}` |
 //! | `Error::Internal(msg)` w/ UNIQUE  | 409         | `{"error": <msg>}`      |
 //! | `Error::Internal(msg)` w/ FOREIGN | 400         | `{"error": <msg>}`      |
 //! | other `Error::Internal`           | 500         | `{"error": <msg>}`      |
@@ -50,10 +71,18 @@
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use http_body_util::{BodyExt, Full, Limited};
+use rustio_core::auth::{password, session, user, User};
 use rustio_core::{Db, Error, Params, Request, Response, Router};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use super::services;
+
+// Role vocabulary. Must match the strings passed to
+// `rustio user create --role …` when seeding API accounts.
+const ROLE_RECEPTIONIST: &str = "receptionist";
+const ROLE_DOCTOR: &str = "doctor";
+const ROLE_BILLING: &str = "billing";
+const ROLE_ADMIN: &str = "admin";
 
 // ═══════════════════════════════════════════════════════════════
 // Route registration
@@ -64,6 +93,15 @@ use super::services;
 /// closure so handlers own their own handle without sharing mutable
 /// state across threads.
 pub fn register(mut router: Router, db: &Db) -> Router {
+    // --- Auth ---
+    router = router.post("/api/auth/login", {
+        let db = db.clone();
+        move |req, _params| {
+            let db = db.clone();
+            async move { dispatch(login(&db, req).await) }
+        }
+    });
+
     // --- Appointments ---
     router = router.post("/api/appointments", {
         let db = db.clone();
@@ -79,9 +117,13 @@ pub fn register(mut router: Router, db: &Db) -> Router {
             let db = db.clone();
             async move {
                 dispatch(
-                    run_transition(&db, &params, req, |db, id| {
-                        Box::pin(services::confirm_appointment(db, id))
-                    })
+                    run_transition(
+                        &db,
+                        &params,
+                        req,
+                        &[ROLE_RECEPTIONIST],
+                        |db, id| Box::pin(services::confirm_appointment(db, id)),
+                    )
                     .await,
                 )
             }
@@ -102,7 +144,7 @@ pub fn register(mut router: Router, db: &Db) -> Router {
             let db = db.clone();
             async move {
                 dispatch(
-                    run_transition(&db, &params, req, |db, id| {
+                    run_transition(&db, &params, req, &[ROLE_DOCTOR], |db, id| {
                         Box::pin(services::start_consultation(db, id))
                     })
                     .await,
@@ -117,7 +159,7 @@ pub fn register(mut router: Router, db: &Db) -> Router {
             let db = db.clone();
             async move {
                 dispatch(
-                    run_transition(&db, &params, req, |db, id| {
+                    run_transition(&db, &params, req, &[ROLE_DOCTOR], |db, id| {
                         Box::pin(services::complete_appointment(db, id))
                     })
                     .await,
@@ -132,9 +174,13 @@ pub fn register(mut router: Router, db: &Db) -> Router {
             let db = db.clone();
             async move {
                 dispatch(
-                    run_transition(&db, &params, req, |db, id| {
-                        Box::pin(services::cancel_appointment(db, id))
-                    })
+                    run_transition(
+                        &db,
+                        &params,
+                        req,
+                        &[ROLE_RECEPTIONIST, ROLE_DOCTOR],
+                        |db, id| Box::pin(services::cancel_appointment(db, id)),
+                    )
                     .await,
                 )
             }
@@ -148,8 +194,41 @@ pub fn register(mut router: Router, db: &Db) -> Router {
 // Handler helpers — each delegates to exactly one service fn
 // ═══════════════════════════════════════════════════════════════
 
+async fn login(db: &Db, req: Request) -> Result<Response, Error> {
+    let body: LoginRequest = read_json(req).await?;
+
+    // Constant-time-ish lookup: verify against a dummy hash when the
+    // user row is missing, so the response latency doesn't leak
+    // whether the email exists. `password::verify` is itself
+    // constant-time.
+    let user_row = user::find_by_email(db, &body.email).await?;
+    let valid = match &user_row {
+        Some(u) => u.is_active && password::verify(&body.password, &u.password_hash),
+        None => {
+            let _ = password::verify(&body.password, rustio_core::auth::dummy_password_hash());
+            false
+        }
+    };
+    let actor = match (valid, user_row) {
+        (true, Some(u)) => u,
+        _ => return Err(Error::Unauthorized),
+    };
+
+    let sess = session::create(db, actor.id).await?;
+    Ok(json_response(
+        200,
+        &LoginResponse {
+            token: sess.id,
+            role: actor.role,
+            user_id: actor.id,
+            expires_at: sess.expires_at,
+        },
+    ))
+}
+
 async fn schedule(db: &Db, req: Request) -> Result<Response, Error> {
-    require_actor(&req).await?;
+    let actor = require_actor(db, &req).await?;
+    require_role(&actor, &[ROLE_RECEPTIONIST])?;
     let body: ScheduleAppointmentRequest = read_json(req).await?;
     let input = services::ScheduleAppointmentInput {
         patient_id: body.patient_id,
@@ -168,14 +247,14 @@ async fn schedule(db: &Db, req: Request) -> Result<Response, Error> {
 /// Dispatch a lifecycle transition to one of the four
 /// `services::{confirm,start_consultation,complete,cancel}_appointment`
 /// functions. Each has the same shape — `(&Db, i64) -> Result<(), Error>` —
-/// so one helper handles them all. The caller passes a boxed future
-/// builder because the higher-ranked lifetime on the `&Db` parameter
-/// makes a plain `Fn(&Db, i64) -> impl Future` hard to satisfy with
-/// bare service-function references.
+/// so one helper handles them all. `allowed_roles` is the per-route
+/// permission set; the `admin` role always passes via
+/// [`require_role`].
 async fn run_transition<'a, F>(
     db: &'a Db,
     params: &'a Params,
     req: Request,
+    allowed_roles: &[&str],
     service_fn: F,
 ) -> Result<Response, Error>
 where
@@ -186,14 +265,16 @@ where
         Box<dyn std::future::Future<Output = Result<(), Error>> + Send + 'a>,
     >,
 {
-    require_actor(&req).await?;
+    let actor = require_actor(db, &req).await?;
+    require_role(&actor, allowed_roles)?;
     let id = parse_id(params)?;
     service_fn(db, id).await?;
     Ok(json_response(200, &OkResponse { ok: true }))
 }
 
 async fn check_in(db: &Db, params: &Params, req: Request) -> Result<Response, Error> {
-    require_actor(&req).await?;
+    let actor = require_actor(db, &req).await?;
+    require_role(&actor, &[ROLE_RECEPTIONIST])?;
     let id = parse_id(params)?;
     let body: CheckInRequest = read_json(req).await?;
     let input = services::CheckInInput {
@@ -204,15 +285,27 @@ async fn check_in(db: &Db, params: &Params, req: Request) -> Result<Response, Er
         notes: body.notes.unwrap_or_default(),
     };
     let check_in_id = services::check_in_appointment(db, input).await?;
-    Ok(json_response(
-        201,
-        &IdResponse { id: check_in_id },
-    ))
+    Ok(json_response(201, &IdResponse { id: check_in_id }))
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Request / Response DTOs
 // ═══════════════════════════════════════════════════════════════
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    email: String,
+    password: String,
+}
+
+#[derive(Serialize)]
+struct LoginResponse {
+    /// Opaque bearer token — pass back as `Authorization: Bearer <token>`.
+    token: String,
+    role: String,
+    user_id: i64,
+    expires_at: DateTime<Utc>,
+}
 
 #[derive(Deserialize)]
 struct ScheduleAppointmentRequest {
@@ -363,16 +456,55 @@ fn classify(err: Error) -> (u16, String) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Authentication hook — intentionally a no-op for now
+// Authentication + role enforcement
 // ═══════════════════════════════════════════════════════════════
 
-/// Placeholder for the per-handler actor check. When auth lands it
-/// will read `req.ctx().get::<Identity>()`, validate the session /
-/// token, and attach the actor id to the request context for service
-/// functions that need it. For now: every caller is permitted.
+/// Resolve the current actor from the request's `Authorization`
+/// header. Returns the full [`User`] on success — the caller is
+/// expected to follow up with [`require_role`] for per-route
+/// permission checks.
 ///
-/// Keep calling this from every handler so the eventual wiring is a
-/// one-file change.
-async fn require_actor(_req: &Request) -> Result<(), Error> {
-    Ok(())
+///   * Missing / malformed / expired token → [`Error::Unauthorized`] (401)
+///   * Token valid but the backing user is deactivated → [`Error::Forbidden`] (403)
+async fn require_actor(db: &Db, req: &Request) -> Result<User, Error> {
+    let token = extract_bearer(req)?;
+    let sess = session::find_valid(db, &token)
+        .await?
+        .ok_or(Error::Unauthorized)?;
+    let actor = user::find_by_id(db, sess.user_id)
+        .await?
+        .ok_or(Error::Unauthorized)?;
+    if !actor.is_active {
+        return Err(Error::Forbidden);
+    }
+    Ok(actor)
+}
+
+/// Reject unless the actor's role is in `allowed` (or the actor is
+/// an `admin`, which bypasses every role check as a super-role).
+fn require_role(actor: &User, allowed: &[&str]) -> Result<(), Error> {
+    if actor.role == ROLE_ADMIN {
+        return Ok(());
+    }
+    if allowed.contains(&actor.role.as_str()) {
+        Ok(())
+    } else {
+        Err(Error::Forbidden)
+    }
+}
+
+/// Pull the raw token out of `Authorization: Bearer <token>`. Every
+/// failure mode collapses to [`Error::Unauthorized`] so we don't
+/// leak whether a header was present / non-UTF-8 / wrong scheme.
+fn extract_bearer(req: &Request) -> Result<String, Error> {
+    let header = req
+        .headers()
+        .get(hyper::header::AUTHORIZATION)
+        .ok_or(Error::Unauthorized)?;
+    let raw = header.to_str().map_err(|_| Error::Unauthorized)?;
+    raw.strip_prefix("Bearer ")
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string)
+        .ok_or(Error::Unauthorized)
 }
