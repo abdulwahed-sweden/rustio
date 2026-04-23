@@ -1796,3 +1796,135 @@ pub fn demo_form() -> String {
 // — the sidebar now comes straight from the registered AdminUiModel
 // registry via `render_admin_sidebar_for`. No placeholder items, no
 // fake groupings. Only real models ship.
+
+// ---------------------------------------------------------------
+// 0.10.0 template-based renderers (stage 4d+)
+//
+// These replace the string-concat renderers above for pages ported to
+// `minijinja`. The old functions remain until stage 5 removes them;
+// both paths coexist while the port is in progress.
+// ---------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct DesignView<'a> {
+    project_name: &'a str,
+    logo_initial: &'a str,
+    primary_color: &'a str,
+    accent_color: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct UserView {
+    email: String,
+    display_name: String,
+}
+
+#[derive(serde::Serialize)]
+struct SidebarEntryView {
+    label: String,
+    href: String,
+    active: bool,
+    visible: bool,
+}
+
+#[derive(serde::Serialize)]
+struct DashboardCardView {
+    label: String,
+    value: i64,
+}
+
+fn design_view() -> DesignView<'static> {
+    let d = crate::admin::design::Design::global();
+    // `Design::global()` returns `&'static Self`, so field borrows
+    // satisfy the `'static` lifetime without any allocation.
+    DesignView {
+        project_name: d.project_name.as_str(),
+        logo_initial: d.logo_initial.as_str(),
+        primary_color: d.primary_color.as_str(),
+        accent_color: d.accent_color.as_str(),
+    }
+}
+
+fn user_view(identity: Option<&crate::auth::Identity>) -> Option<UserView> {
+    identity.map(|id| UserView {
+        email: id.email.clone(),
+        display_name: id.email.clone(),
+    })
+}
+
+fn sidebar_from_entries(
+    entries: &[DashboardEntry],
+    active_slug: Option<&str>,
+) -> Vec<SidebarEntryView> {
+    entries
+        .iter()
+        .map(|e| SidebarEntryView {
+            label: format!("{}s", e.model_name),
+            href: format!("/admin/{}", e.slug),
+            active: active_slug == Some(e.slug),
+            visible: true,
+        })
+        .collect()
+}
+
+/// 0.10+ dashboard renderer. Collects the same registry-driven entry
+/// list as the legacy `admin_dashboard_get`, but builds a typed
+/// context and lets `minijinja` render `admin/dashboard.html`.
+///
+/// `csrf_token` is rendered as a hidden input inside the header's
+/// logout form (the only state-changing form on the dashboard). If
+/// the template fails to render, falls back to a minimal inline
+/// shell so the server never crashes on a bad override.
+pub async fn dashboard_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+) -> String {
+    let entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_from_entries(&entries, None);
+    let cards: Vec<DashboardCardView> = entries
+        .iter()
+        .map(|e| DashboardCardView {
+            label: format!("{}s", e.model_name),
+            value: e.count,
+        })
+        .collect();
+    let design = design_view();
+    let user = user_view(identity);
+
+    let env = crate::admin::templating::env();
+    match env.get_template("admin/dashboard.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => design,
+            current_user => user,
+            sidebar_entries => sidebar,
+            dashboard_cards => cards,
+            page_title => "Dashboard",
+            csrf_token => csrf_token.unwrap_or(""),
+            rustio_version => env!("CARGO_PKG_VERSION"),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin dashboard template render failed: {err}");
+            dashboard_fallback(&entries)
+        }
+    }
+}
+
+fn dashboard_fallback(entries: &[DashboardEntry]) -> String {
+    let mut out = String::from(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>Dashboard</title></head><body style=\"font-family:system-ui\"><h1>Dashboard</h1><ul>",
+    );
+    for e in entries {
+        out.push_str(&format!(
+            "<li><a href=\"/admin/{}\">{}</a> ({})</li>",
+            html_escape(e.slug),
+            html_escape(e.model_name),
+            e.count
+        ));
+    }
+    out.push_str("</ul></body></html>");
+    out
+}

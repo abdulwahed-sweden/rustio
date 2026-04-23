@@ -9,6 +9,7 @@
     {% if current_user is defined and current_user %}
       <span class="admin-header__username small">{{ current_user.display_name | default(current_user.email) }}</span>
       <form method="post" action="/admin/logout" class="m-0">
+        {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
         <button type="submit" class="btn btn-sm btn-outline-secondary">Log out</button>
       </form>
     {% endif %}

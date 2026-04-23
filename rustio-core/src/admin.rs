@@ -501,10 +501,18 @@ impl Admin {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
+                // 0.10+ template render. Identity is cloned out of the
+                // request context so the borrow ends before the async
+                // `dashboard_render` awaits on DB queries.
+                let identity = crate::auth::identity(req.ctx()).cloned();
                 let csrf = ctx_csrf(req.ctx()).map(str::to_string);
-                let html =
-                    crate::admin::layout::admin_dashboard_get(&db, &registry, csrf.as_deref())
-                        .await;
+                let html = crate::admin::layout::dashboard_render(
+                    &db,
+                    &registry,
+                    identity.as_ref(),
+                    csrf.as_deref(),
+                )
+                .await;
                 Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
