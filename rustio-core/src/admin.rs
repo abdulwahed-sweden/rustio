@@ -499,23 +499,45 @@ impl Admin {
         router = router.get("/admin-new", move |req, _params| {
             let db = admin_new_get_db.clone();
             async move {
-                let q = req.query();
-                let id = q.get("id").filter(|s| !s.is_empty()).map(String::from);
-                let query = q
+                let q_map = req.query().into_map();
+                let id = q_map.get("id").filter(|s| !s.is_empty()).cloned();
+                let query = q_map
                     .get("q")
-                    .map(str::trim)
+                    .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
                     .map(String::from);
-                let page = q
+                let page = q_map
                     .get("page")
                     .and_then(|p| p.parse::<i64>().ok())
                     .filter(|p| *p > 0)
                     .unwrap_or(1);
+                let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
+                let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
+                // Anything left over after stripping the reserved
+                // query keys (q / page / id / sort / dir) is treated
+                // as a metadata-driven filter. Empty values are
+                // ignored so `?is_active=` is a no-op (= "All").
+                // Whitelisting happens downstream in the layout layer.
+                let filters: std::collections::HashMap<String, String> = q_map
+                    .iter()
+                    .filter(|(k, v)| {
+                        !v.is_empty()
+                            && k.as_str() != "q"
+                            && k.as_str() != "page"
+                            && k.as_str() != "id"
+                            && k.as_str() != "sort"
+                            && k.as_str() != "dir"
+                    })
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
                 let html = layout::admin_index_get(
                     &db,
                     id.as_deref(),
                     query.as_deref(),
                     page,
+                    &filters,
+                    sort.as_deref(),
+                    dir.as_deref(),
                 )
                 .await;
                 Ok::<Response, Error>(crate::http::html(html))
@@ -527,20 +549,34 @@ impl Admin {
             async move {
                 // Extract URL state from the request *before*
                 // consuming the body — `read_form` takes `req` by
-                // value. We need search query + page so the table
-                // re-renders with the same window the user was on
-                // before submitting.
-                let q = req.query();
-                let query = q
+                // value. Search query, page, and any filter params
+                // come off the URL, body params drive the form
+                // submission itself.
+                let q_map = req.query().into_map();
+                let query = q_map
                     .get("q")
-                    .map(str::trim)
+                    .map(|s| s.trim())
                     .filter(|s| !s.is_empty())
                     .map(String::from);
-                let page = q
+                let page = q_map
                     .get("page")
                     .and_then(|p| p.parse::<i64>().ok())
                     .filter(|p| *p > 0)
                     .unwrap_or(1);
+                let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
+                let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
+                let filters: std::collections::HashMap<String, String> = q_map
+                    .iter()
+                    .filter(|(k, v)| {
+                        !v.is_empty()
+                            && k.as_str() != "q"
+                            && k.as_str() != "page"
+                            && k.as_str() != "id"
+                            && k.as_str() != "sort"
+                            && k.as_str() != "dir"
+                    })
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
                 let form_data = read_form(req).await?;
                 let params = form_data.into_map();
                 let editing_id = params
@@ -553,6 +589,9 @@ impl Admin {
                     editing_id,
                     query.as_deref(),
                     page,
+                    &filters,
+                    sort.as_deref(),
+                    dir.as_deref(),
                 )
                 .await;
                 Ok::<Response, Error>(crate::http::html(html))

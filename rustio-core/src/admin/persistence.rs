@@ -266,6 +266,134 @@ pub async fn count_search_records(db: &Db, table: &str, query: &str) -> Result<i
     Ok(count)
 }
 
+// ---------------------------------------------------------------
+// Combined filter + search
+// ---------------------------------------------------------------
+
+/// Run a windowed `SELECT` against `table` combining
+/// metadata-driven filters and free-text search:
+///
+/// - `eq_filters`   → `column = ?` (one per entry, AND-combined).
+///   Used for `Boolean` and `Select` filter types.
+/// - `like_filters` → `LOWER(column) LIKE ?` with `%value%` (AND).
+///   Used for `Exact` text filters.
+/// - `query` (Some) → `(LOWER("username") LIKE ? OR LOWER("email")
+///   LIKE ? OR LOWER("doctor_id") LIKE ?)` AND-combined with the
+///   filter clauses above.
+///
+/// Column names go through [`quote_ident`]; values are bound
+/// positionally — never interpolated into the SQL text. Sort +
+/// window match [`list_records`] / [`search_records`]
+/// (`ORDER BY "id" DESC LIMIT ? OFFSET ?`).
+#[allow(clippy::too_many_arguments)]
+pub async fn filter_records(
+    db: &Db,
+    table: &str,
+    eq_filters: &HashMap<String, String>,
+    like_filters: &HashMap<String, String>,
+    query: Option<&str>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<HashMap<String, String>>, Error> {
+    let (where_sql, binds) = build_filter_where(eq_filters, like_filters, query);
+    // Validation lives in the layout layer (column must come from
+    // metadata). Persistence trusts the inputs and only applies the
+    // safe quoting + the ASC/DESC normalisation. A `None` sort
+    // collapses to the default `ORDER BY "id" DESC`.
+    let order_sql = match sort {
+        Some(col) => {
+            let direction = if matches!(dir, Some("desc")) {
+                "DESC"
+            } else {
+                "ASC"
+            };
+            format!("ORDER BY {} {}", quote_ident(col), direction)
+        }
+        None => "ORDER BY \"id\" DESC".to_string(),
+    };
+    let sql = format!(
+        "SELECT * FROM {t} WHERE {where_sql} {order_sql} LIMIT ? OFFSET ?",
+        t = quote_ident(table),
+    );
+    let mut q = sqlx::query(&sql);
+    for b in &binds {
+        q = q.bind(b.as_str());
+    }
+    q = q.bind(limit).bind(offset);
+    let rows = q.fetch_all(db.pool()).await.map_err(Error::from)?;
+    Ok(rows.iter().map(row_to_map).collect())
+}
+
+/// `SELECT COUNT(*)` counterpart of [`filter_records`]. Same
+/// `WHERE` shape, no `ORDER BY` / `LIMIT` / `OFFSET`. Feeds the
+/// page-count math.
+pub async fn count_filtered_records(
+    db: &Db,
+    table: &str,
+    eq_filters: &HashMap<String, String>,
+    like_filters: &HashMap<String, String>,
+    query: Option<&str>,
+) -> Result<i64, Error> {
+    let (where_sql, binds) = build_filter_where(eq_filters, like_filters, query);
+    let sql = format!(
+        "SELECT COUNT(*) FROM {t} WHERE {where_sql}",
+        t = quote_ident(table),
+    );
+    let mut q = sqlx::query_scalar::<_, i64>(&sql);
+    for b in &binds {
+        q = q.bind(b.as_str());
+    }
+    let count = q.fetch_one(db.pool()).await.map_err(Error::from)?;
+    Ok(count)
+}
+
+/// Shared `WHERE` clause builder for [`filter_records`] /
+/// [`count_filtered_records`]. Returns the clause body (without the
+/// leading `WHERE`) plus the ordered list of bind values. Filter
+/// keys are sorted so the emitted SQL is deterministic across runs.
+fn build_filter_where(
+    eq_filters: &HashMap<String, String>,
+    like_filters: &HashMap<String, String>,
+    query: Option<&str>,
+) -> (String, Vec<String>) {
+    let mut clauses: Vec<String> = vec!["1=1".to_string()];
+    let mut binds: Vec<String> = Vec::new();
+
+    let mut eq_keys: Vec<&String> = eq_filters.keys().collect();
+    eq_keys.sort();
+    for k in eq_keys {
+        clauses.push(format!("{} = ?", quote_ident(k)));
+        binds.push(eq_filters.get(k).cloned().unwrap_or_default());
+    }
+
+    let mut like_keys: Vec<&String> = like_filters.keys().collect();
+    like_keys.sort();
+    for k in like_keys {
+        clauses.push(format!("LOWER({}) LIKE ?", quote_ident(k)));
+        let v = like_filters
+            .get(k)
+            .map(|s| s.to_lowercase())
+            .unwrap_or_default();
+        binds.push(format!("%{v}%"));
+    }
+
+    let trimmed_query = query.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(q) = trimmed_query {
+        clauses.push(
+            "(LOWER(\"username\") LIKE ? OR LOWER(\"email\") LIKE ? OR LOWER(\"doctor_id\") LIKE ?)"
+                .to_string(),
+        );
+        let q_param = format!("%{}%", q.to_lowercase());
+        binds.push(q_param.clone());
+        binds.push(q_param.clone());
+        binds.push(q_param);
+    }
+
+    (clauses.join(" AND "), binds)
+}
+
 /// Flatten a SQLite row into a `column → string` map. Same coercion
 /// chain as the single-row reader: try TEXT, then INTEGER, then
 /// REAL; NULL or exotic types collapse to the empty string. Sharing

@@ -12,7 +12,9 @@
 
 use std::collections::HashMap;
 
-use crate::admin::admin_form_bridge::{AdminDataType, AdminUiField, AdminUiModel};
+use crate::admin::admin_form_bridge::{
+    resolve_filter_type, AdminDataType, AdminUiField, AdminUiModel, FilterType,
+};
 use crate::admin::auto_form::{AutoField, FieldOverride, FormBuilder, FormModel};
 use crate::admin::form::{render_form, FieldConfig, FieldType, FormConfig};
 use crate::admin::persistence::{self, PersistableModel};
@@ -277,7 +279,17 @@ pub fn render_layout(topbar: String, sidebar: String, content: String) -> String
 /// and pull the user list + count from the demo table.
 pub fn admin_index(prefill: Option<&HashMap<String, String>>, editing_id: Option<&str>) -> String {
     let drawer = build_drawer_for_get(prefill, editing_id);
-    admin_index_with_drawer(drawer, Vec::new(), 0, None, 1, 1)
+    admin_index_with_drawer(
+        drawer,
+        Vec::new(),
+        0,
+        None,
+        1,
+        1,
+        &HashMap::new(),
+        None,
+        None,
+    )
 }
 
 /// GET orchestrator: ensures the demo table exists, loads the row
@@ -291,6 +303,9 @@ pub async fn admin_index_get(
     editing_id: Option<&str>,
     query: Option<&str>,
     page: i64,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
 ) -> String {
     // Ensure the table exists before *any* DB read below — both the
     // single-row lookup and the list path need it. Idempotent.
@@ -311,8 +326,19 @@ pub async fn admin_index_get(
     let effective_id = if prefill.is_some() { editing_id } else { None };
 
     let drawer = build_drawer_for_get(prefill.as_ref(), effective_id);
-    let (rows, total, current_page, total_pages) = fetch_users_table_state(db, query, page).await;
-    admin_index_with_drawer(drawer, rows, total, query, current_page, total_pages)
+    let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
+        fetch_users_table_state(db, query, filters, page, sort, dir).await;
+    admin_index_with_drawer(
+        drawer,
+        rows,
+        total,
+        query,
+        current_page,
+        total_pages,
+        filters,
+        validated_sort.as_deref(),
+        validated_dir.as_deref(),
+    )
 }
 
 /// Build the form-side drawer for the GET path. Shared between the
@@ -345,27 +371,38 @@ fn build_drawer_for_get(
 /// modes. Failures degrade silently to `(empty Vec, 0)` so the page
 /// chrome can still render — a transient DB error must not 500 a
 /// page that is mostly chrome.
-/// Returns `(rows, total, current_page, total_pages)`. The total is
-/// fetched first so the page can be clamped to a valid range before
-/// the windowed query runs — `?page=999` against a 30-row table
-/// snaps to the last real page instead of returning nothing.
-/// `total_pages` is always at least `1` so the chrome can render
-/// `(Page 1 of 1)` even on an empty DB.
+/// Returns `(rows, total, current_page, total_pages)`. Filters are
+/// classified by metadata (`resolve_filter_type`) into equality vs
+/// `LIKE` clauses, then handed to [`persistence::filter_records`] /
+/// [`persistence::count_filtered_records`] alongside the search
+/// query. Total is fetched first so the page can be clamped to a
+/// valid range before the windowed query runs — `?page=999` against
+/// a 30-row table snaps to the last real page instead of returning
+/// nothing. `total_pages` is always at least `1` so the chrome can
+/// render `(Page 1 of 1)` even on an empty DB.
 async fn fetch_users_table_state(
     db: &Db,
     query: Option<&str>,
+    filters: &HashMap<String, String>,
     page: i64,
-) -> (Vec<HashMap<String, String>>, i64, i64, i64) {
+    sort: Option<&str>,
+    dir: Option<&str>,
+) -> (
+    Vec<HashMap<String, String>>,
+    i64,
+    i64,
+    i64,
+    Option<String>,
+    Option<String>,
+) {
     const PAGE_SIZE: i64 = 20;
-    let trimmed = query.map(str::trim).filter(|s| !s.is_empty());
     let table = UserAdmin::table_name();
+    let (eq_filters, like_filters) = classify_user_admin_filters(filters);
+    let (validated_sort, validated_dir) = validate_sort_state(sort, dir);
 
-    let total = match trimmed {
-        Some(q) => persistence::count_search_records(db, table, q)
-            .await
-            .unwrap_or(0),
-        None => persistence::count_records(db, table).await.unwrap_or(0),
-    };
+    let total = persistence::count_filtered_records(db, table, &eq_filters, &like_filters, query)
+        .await
+        .unwrap_or(0);
 
     let total_pages = if total > 0 {
         // `i64::div_ceil` is still unstable as of MSRV 1.75; the
@@ -377,16 +414,132 @@ async fn fetch_users_table_state(
     let current_page = page.clamp(1, total_pages);
     let offset = (current_page - 1) * PAGE_SIZE;
 
-    let rows = match trimmed {
-        Some(q) => persistence::search_records(db, table, q, PAGE_SIZE, offset)
-            .await
-            .unwrap_or_default(),
-        None => persistence::list_records(db, table, PAGE_SIZE, offset)
-            .await
-            .unwrap_or_default(),
-    };
+    let rows = persistence::filter_records(
+        db,
+        table,
+        &eq_filters,
+        &like_filters,
+        query,
+        validated_sort.as_deref(),
+        validated_dir.as_deref(),
+        PAGE_SIZE,
+        offset,
+    )
+    .await
+    .unwrap_or_default();
 
-    (rows, total, current_page, total_pages)
+    (
+        rows,
+        total,
+        current_page,
+        total_pages,
+        validated_sort,
+        validated_dir,
+    )
+}
+
+/// Validate the URL's `sort` + `dir` against `UserAdmin` metadata.
+/// `sort` must name a field that's both declared and `sortable`;
+/// `dir` is normalised to `"asc"` or `"desc"` (any other value
+/// becomes `"asc"`). An invalid sort drops both to `None` so
+/// persistence falls back to `ORDER BY "id" DESC`. All validation
+/// happens here so persistence stays a simple SQL emitter that
+/// trusts its inputs.
+fn validate_sort_state(sort: Option<&str>, dir: Option<&str>) -> (Option<String>, Option<String>) {
+    let valid_sort = sort.filter(|s| {
+        UserAdmin::fields()
+            .iter()
+            .any(|f| f.name == *s && f.sortable)
+    });
+    match valid_sort {
+        Some(s) => {
+            let d = if matches!(dir, Some("desc")) {
+                "desc"
+            } else {
+                "asc"
+            };
+            (Some(s.to_string()), Some(d.to_string()))
+        }
+        None => (None, None),
+    }
+}
+
+/// Single source of truth for back-link URLs — pagination links and
+/// sortable header links both go through this so the parameter set
+/// stays consistent. `None`/empty values are skipped; filter keys
+/// are sorted so the same state always produces the same URL string
+/// (browser cache + back-button friendly).
+fn build_query_url(
+    page: Option<i64>,
+    query: Option<&str>,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(p) = page {
+        parts.push(format!("page={p}"));
+    }
+    if let Some(q) = query {
+        if !q.is_empty() {
+            parts.push(format!("q={}", url_encode_value(q)));
+        }
+    }
+    let mut filter_keys: Vec<&String> = filters.keys().collect();
+    filter_keys.sort();
+    for k in filter_keys {
+        if let Some(v) = filters.get(k) {
+            if !v.is_empty() {
+                parts.push(format!("{}={}", url_encode_value(k), url_encode_value(v),));
+            }
+        }
+    }
+    if let Some(s) = sort {
+        parts.push(format!("sort={}", url_encode_value(s)));
+    }
+    if let Some(d) = dir {
+        parts.push(format!("dir={}", url_encode_value(d)));
+    }
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", parts.join("&"))
+    }
+}
+
+/// Walk `UserAdmin::fields()` and split the raw URL filter map into
+/// two buckets keyed off [`resolve_filter_type`]: equality filters
+/// (Boolean, Select) and `LIKE` filters (Exact text). Any URL key
+/// that doesn't correspond to a declared `AdminUiField` is silently
+/// dropped — this is the security boundary that stops an attacker
+/// from injecting `?random_column=x` to query columns that admin
+/// metadata never exposed as filterable.
+fn classify_user_admin_filters(
+    raw: &HashMap<String, String>,
+) -> (HashMap<String, String>, HashMap<String, String>) {
+    let fields = UserAdmin::fields();
+    let mut eq = HashMap::new();
+    let mut like = HashMap::new();
+    for (k, v) in raw {
+        let Some(field) = fields.iter().find(|f| f.name == k.as_str()) else {
+            continue;
+        };
+        // Don't filter on a column the admin model didn't mark
+        // filterable — same idea as the unknown-key drop above,
+        // just for declared-but-unfilterable columns.
+        if !field.filterable && !field.advanced_filter {
+            continue;
+        }
+        match resolve_filter_type(field) {
+            FilterType::Boolean | FilterType::Select => {
+                eq.insert(k.clone(), v.clone());
+            }
+            FilterType::Exact => {
+                like.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    (eq, like)
 }
 
 /// POST path for `/admin-new`. Builds the form, binds the submitted
@@ -404,12 +557,16 @@ async fn fetch_users_table_state(
 /// The hidden `id` input is injected into the rendered drawer so
 /// subsequent POSTs from the same page hit the UPDATE path
 /// automatically (after a CREATE, the new row id is round-tripped).
+#[allow(clippy::too_many_arguments)]
 pub async fn admin_index_post(
     db: &Db,
     params: &HashMap<String, String>,
     editing_id: Option<&str>,
     query: Option<&str>,
     page: i64,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
 ) -> String {
     // First POST against a fresh DB needs the demo table; the helper
     // is `CREATE TABLE IF NOT EXISTS` so this is cheap to call every
@@ -456,8 +613,19 @@ pub async fn admin_index_post(
     let drawer = inject_hidden_id(&drawer, effective_id.as_deref());
     let drawer = patch_save_banner(&drawer, save_failed);
 
-    let (rows, total, current_page, total_pages) = fetch_users_table_state(db, query, page).await;
-    admin_index_with_drawer(drawer, rows, total, query, current_page, total_pages)
+    let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
+        fetch_users_table_state(db, query, filters, page, sort, dir).await;
+    admin_index_with_drawer(
+        drawer,
+        rows,
+        total,
+        query,
+        current_page,
+        total_pages,
+        filters,
+        validated_sort.as_deref(),
+        validated_dir.as_deref(),
+    )
 }
 
 /// Build the page shell — topbar / sidebar / page header / table /
@@ -467,6 +635,7 @@ pub async fn admin_index_post(
 /// identical regardless of how the drawer was produced. `rows` and
 /// `total` come from the persistence layer (or `(empty, 0)` for the
 /// no-DB sync path).
+#[allow(clippy::too_many_arguments)]
 fn admin_index_with_drawer(
     drawer: String,
     rows: Vec<HashMap<String, String>>,
@@ -474,6 +643,9 @@ fn admin_index_with_drawer(
     query: Option<&str>,
     current_page: i64,
     total_pages: i64,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
 ) -> String {
     let topbar = render_topbar(&TopbarConfig {
         brand: "RustIO".into(),
@@ -544,8 +716,29 @@ fn admin_index_with_drawer(
         }],
     };
 
-    let toolbar = render_toolbar(&search_cfg);
-    let table = render_users_table(&rows, total, trimmed_query, current_page, total_pages);
+    // Render the canonical toolbar (search input + filter chips
+    // exactly as `ui::render_toolbar` produces it), then weave the
+    // metadata-driven filter inputs *into* the search form so they
+    // submit alongside `q` on a single GET. Finally append the
+    // "+ Add filter" stub + the (currently hidden) advanced-filter
+    // block so the affordance is visible without any JS.
+    let toolbar_base = render_toolbar(&search_cfg);
+    let toolbar_with_filters = inject_filter_inputs_into_toolbar(&toolbar_base, filters);
+    let toolbar = format!(
+        "{toolbar_with_filters}{}",
+        render_advanced_filter_section(filters),
+    );
+
+    let table = render_users_table(
+        &rows,
+        total,
+        trimmed_query,
+        current_page,
+        total_pages,
+        filters,
+        sort,
+        dir,
+    );
     let foundation_note = r#"<p style="margin: 20px 0 0; font-family: var(--mono); font-size: 12px; color: var(--ink-subtle);">Live data from <code>admin_new_demo_users</code>. Submit the drawer to insert / update.</p>"#;
 
     let content = format!("{page_header}{toolbar}{table}{foundation_note}{drawer}");
@@ -559,21 +752,39 @@ fn admin_index_with_drawer(
 /// found</td></tr>` row (or the search-specific "No results found
 /// for …" variant when `query` is supplied) so we don't need a new
 /// variant on [`TableCell`] (which lives in `ui.rs`, off-limits).
+#[allow(clippy::too_many_arguments)]
 fn render_users_table(
     rows: &[HashMap<String, String>],
     total: i64,
     query: Option<&str>,
     current_page: i64,
     total_pages: i64,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
 ) -> String {
-    let columns = vec![
-        TableColumn::checkbox(),
-        TableColumn::text("Username").sorted("↓"),
-        TableColumn::text("Email"),
-        TableColumn::text("Status"),
-        TableColumn::text("Doctor"),
-        TableColumn::text("Salary"),
+    // Each (label, sort_key) pair drives both the rendered `<th>`
+    // and the post-process pass that linkifies the header. The sort
+    // arrow is set on whichever column matches the current sort.
+    let header_specs: &[(&str, &str)] = &[
+        ("Username", "username"),
+        ("Email", "email"),
+        ("Status", "is_active"),
+        ("Doctor", "doctor_id"),
+        ("Salary", "salary_amount"),
     ];
+    let columns = {
+        let mut cols = vec![TableColumn::checkbox()];
+        for (label, key) in header_specs {
+            let mut col = TableColumn::text(*label);
+            if sort == Some(*key) {
+                let arrow = if dir == Some("desc") { "↓" } else { "↑" };
+                col = col.sorted(arrow);
+            }
+            cols.push(col);
+        }
+        cols
+    };
 
     let table_rows: Vec<TableRow> = rows
         .iter()
@@ -618,6 +829,60 @@ fn render_users_table(
     };
 
     let mut html = render_table_shell(&cfg);
+
+    // Wrap each sortable header label in a real `<a href>` so the
+    // column toggles sort state on click. We can't change
+    // `render_table_shell` (lives in `ui.rs`, off-limits), so we
+    // rebuild the exact substring it emits and swap it for a linked
+    // version. For each column the toggle direction is computed
+    // against the current state — fresh click → `asc`, click on the
+    // already-asc column → `desc`, click on the already-desc column
+    // → `asc`. New sorts always reset to page 1.
+    let trimmed_for_link = query.map(str::trim).filter(|s| !s.is_empty());
+    for (label, key) in header_specs {
+        let escaped_label = html_escape(label);
+        let is_current = sort == Some(*key);
+        let next_dir = if is_current && dir == Some("asc") {
+            "desc"
+        } else {
+            "asc"
+        };
+        let arrow_suffix = if is_current {
+            if dir == Some("desc") {
+                " ↓"
+            } else {
+                " ↑"
+            }
+        } else {
+            ""
+        };
+        let href_url = build_query_url(
+            None, // sort change resets to page 1
+            trimmed_for_link,
+            filters,
+            Some(key),
+            Some(next_dir),
+        );
+        let escaped_href = html_escape(&href_url);
+
+        let original = if is_current {
+            let arrow_char = if dir == Some("desc") { "↓" } else { "↑" };
+            format!(
+                r#"<th class="sorted">{escaped_label} <span class="sort-arrow">{arrow_char}</span></th>"#,
+            )
+        } else {
+            format!(r#"<th>{escaped_label}</th>"#)
+        };
+        let replacement = if is_current {
+            format!(
+                r#"<th class="sorted"><a href="{escaped_href}">{escaped_label}{arrow_suffix}</a></th>"#,
+            )
+        } else {
+            format!(r#"<th><a href="{escaped_href}">{escaped_label}</a></th>"#)
+        };
+        html = html.replacen(&original, &replacement, 1);
+    }
+
     if rows.is_empty() {
         // `render_table_shell` emits `<tbody></tbody>` for an empty
         // row set — replace it with the spec's empty-state row. When
@@ -639,8 +904,17 @@ fn render_users_table(
     // `</div>` of `.table-wrap`. `render_table_shell` (with no
     // built-in pagination) emits exactly one `</div>` at the very
     // end, so a single `replacen` is safe.
-    let pagination_html =
-        render_users_pagination(query, current_page, total_pages, total, 20, rows.len());
+    let pagination_html = render_users_pagination(
+        query,
+        current_page,
+        total_pages,
+        total,
+        20,
+        rows.len(),
+        filters,
+        sort,
+        dir,
+    );
     html = html.replacen("</div>", &format!("{pagination_html}</div>"), 1);
     html
 }
@@ -657,6 +931,7 @@ fn render_users_table(
 ///
 /// The query string is preserved verbatim through every link so a
 /// `search + page` combination round-trips cleanly.
+#[allow(clippy::too_many_arguments)]
 fn render_users_pagination(
     query: Option<&str>,
     current_page: i64,
@@ -664,6 +939,9 @@ fn render_users_pagination(
     total: i64,
     page_size: i64,
     window_size: usize,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
 ) -> String {
     use std::fmt::Write as _;
 
@@ -679,13 +957,15 @@ fn render_users_pagination(
 
     let trimmed_query = query.map(str::trim).filter(|s| !s.is_empty());
     let make_href = |page: i64| -> String {
-        let mut url = format!("?page={page}");
-        if let Some(q) = trimmed_query {
-            let _ = write!(url, "&q={}", url_encode_value(q));
-        }
-        // HTML-escape the URL (`&` → `&amp;` mainly) before it lands
-        // inside an `href` attribute.
-        html_escape(&url)
+        // Reuses the shared link builder so pagination + sort
+        // headers can never drift on the parameter set.
+        html_escape(&build_query_url(
+            Some(page),
+            trimmed_query,
+            filters,
+            sort,
+            dir,
+        ))
     };
 
     let mut html = String::from(r#"<div class="pagination">"#);
@@ -737,6 +1017,110 @@ fn render_users_pagination(
 
     html.push_str("</div></div>");
     html
+}
+
+/// Inject the metadata-driven filter inputs (one per `filterable`
+/// AdminUiField) into the toolbar's search form, just before its
+/// closing `</form>`. This piggy-backs on the existing search form
+/// — no new form, no new toolbar — so filters submit alongside `q`
+/// on a single GET via the existing search-submit button or Enter.
+///
+/// Each input's value is re-populated from the current `filters`
+/// map so the toolbar reflects the active filter state on every
+/// re-render. Boolean → tri-state `<select>`, FK / enum → typed
+/// `<select>` from `options`, free text → `<input type="text">`.
+fn inject_filter_inputs_into_toolbar(
+    toolbar_html: &str,
+    filters: &HashMap<String, String>,
+) -> String {
+    let inputs = build_filter_inputs(false, filters);
+    if inputs.is_empty() {
+        return toolbar_html.to_string();
+    }
+    // Single search form per toolbar — `replacen(1)` is safe.
+    toolbar_html.replacen("</form>", &format!("{inputs}</form>"), 1)
+}
+
+/// Render the "+ Add filter" affordance + the (HTML-`hidden`)
+/// advanced-filter block. Only renders when at least one
+/// `advanced_filter == true` field exists. The block lives in the
+/// DOM so the structure is observable, but stays invisible until JS
+/// or a future server-side toggle reveals it.
+fn render_advanced_filter_section(filters: &HashMap<String, String>) -> String {
+    let advanced_inputs = build_filter_inputs(true, filters);
+    if advanced_inputs.is_empty() {
+        return String::new();
+    }
+    format!(
+        r#"<div class="toolbar toolbar-filters-only" style="border-radius:0;border-top:none;border-bottom:none;">
+  <button type="button" class="btn">+ Add filter</button>
+</div>
+<div class="advanced-filters" hidden>{advanced_inputs}</div>"#
+    )
+}
+
+/// Walk `UserAdmin::fields()` and emit the input HTML for each
+/// field that matches `advanced` (`false` = default toolbar
+/// filters, `true` = advanced filters). Output respects the spec's
+/// HTML patterns: tri-state `<select>` for Boolean, typed
+/// `<select>` for Select / FK, plain `<input type="text">` for
+/// Exact. Each control's `value` is taken from `filters` so the
+/// toolbar stays consistent with the URL after every submit.
+fn build_filter_inputs(advanced: bool, filters: &HashMap<String, String>) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for field in UserAdmin::fields() {
+        let want = if advanced {
+            field.advanced_filter
+        } else {
+            field.filterable
+        };
+        if !want {
+            continue;
+        }
+        let current = filters.get(field.name).map(String::as_str).unwrap_or("");
+        match resolve_filter_type(&field) {
+            FilterType::Boolean => {
+                let _ = write!(
+                    out,
+                    r#"<select name="{name}" aria-label="{label}"><option value="">All {label}</option><option value="true"{sel_t}>{label}: Yes</option><option value="false"{sel_f}>{label}: No</option></select>"#,
+                    name = html_escape(field.name),
+                    label = html_escape(field.label),
+                    sel_t = if current == "true" { " selected" } else { "" },
+                    sel_f = if current == "false" { " selected" } else { "" },
+                );
+            }
+            FilterType::Select => {
+                let _ = write!(
+                    out,
+                    r#"<select name="{name}" aria-label="{label}"><option value="">All {label}</option>"#,
+                    name = html_escape(field.name),
+                    label = html_escape(field.label),
+                );
+                for (val, label) in &field.options {
+                    let sel = if val == current { " selected" } else { "" };
+                    let _ = write!(
+                        out,
+                        r#"<option value="{}"{}>{}</option>"#,
+                        html_escape(val),
+                        sel,
+                        html_escape(label),
+                    );
+                }
+                out.push_str("</select>");
+            }
+            FilterType::Exact => {
+                let _ = write!(
+                    out,
+                    r#"<input type="text" name="{name}" value="{value}" placeholder="{label}" aria-label="{label}">"#,
+                    name = html_escape(field.name),
+                    value = html_escape(current),
+                    label = html_escape(field.label),
+                );
+            }
+        }
+    }
+    out
 }
 
 /// Percent-encode a query-parameter value per RFC 3986. Only the
@@ -888,6 +1272,9 @@ impl AdminUiModel for UserAdmin {
                 readonly: false,
                 is_relation: false,
                 options: vec![],
+                filterable: true,
+                advanced_filter: false,
+                sortable: true,
             },
             AdminUiField {
                 name: "email",
@@ -897,6 +1284,9 @@ impl AdminUiModel for UserAdmin {
                 readonly: false,
                 is_relation: false,
                 options: vec![],
+                filterable: false,
+                advanced_filter: true,
+                sortable: true,
             },
             AdminUiField {
                 name: "is_active",
@@ -906,6 +1296,9 @@ impl AdminUiModel for UserAdmin {
                 readonly: false,
                 is_relation: false,
                 options: vec![],
+                filterable: true,
+                advanced_filter: false,
+                sortable: true,
             },
             AdminUiField {
                 name: "doctor_id",
@@ -918,6 +1311,9 @@ impl AdminUiModel for UserAdmin {
                     ("1".into(), "Dr. Erik".into()),
                     ("2".into(), "Dr. Sara".into()),
                 ],
+                filterable: true,
+                advanced_filter: false,
+                sortable: true,
             },
             AdminUiField {
                 name: "salary_amount",
@@ -927,6 +1323,9 @@ impl AdminUiModel for UserAdmin {
                 readonly: false,
                 is_relation: false,
                 options: vec![],
+                filterable: false,
+                advanced_filter: true,
+                sortable: true,
             },
         ]
     }

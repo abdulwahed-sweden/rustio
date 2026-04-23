@@ -49,6 +49,49 @@ pub struct AdminUiField {
 
     /// `(value, label)` pairs supplied for FK / enum-like columns.
     pub options: Vec<(String, String)>,
+
+    /// `true` → field is rendered as a default filter in the
+    /// toolbar. The control type is decided by [`resolve_filter_type`]
+    /// from the field's `data_type` / `is_relation` / `options`.
+    pub filterable: bool,
+
+    /// `true` → field is offered in the "+ Add filter" advanced
+    /// dropdown, not the always-visible toolbar. A field can set
+    /// neither (no filter), one, or both.
+    pub advanced_filter: bool,
+
+    /// `true` → table column header for this field becomes a
+    /// clickable sort link (`?sort=<name>&dir=asc|desc`). Fields
+    /// with `sortable = false` are silently rejected even if the
+    /// URL asks for them — metadata is the gate.
+    pub sortable: bool,
+}
+
+/// How a filter input should render and how SQL should query it.
+/// Resolved from [`AdminUiField`] via [`resolve_filter_type`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilterType {
+    /// Boolean column → tri-state `<select>` (All / true / false),
+    /// SQL: `column = ?`.
+    Boolean,
+    /// Enum-like / FK column → `<select>` populated from `options`,
+    /// SQL: `column = ?`.
+    Select,
+    /// Free-text column → `<input type="text">`,
+    /// SQL: `LOWER(column) LIKE ?` with `%value%`.
+    Exact,
+}
+
+/// Decide which control + SQL operator a filter on `field` should
+/// use. Pure function — does not look at any data, only metadata.
+pub fn resolve_filter_type(field: &AdminUiField) -> FilterType {
+    if field.data_type == AdminDataType::Boolean {
+        FilterType::Boolean
+    } else if field.is_relation || !field.options.is_empty() {
+        FilterType::Select
+    } else {
+        FilterType::Exact
+    }
 }
 
 /// A model that can describe its admin-UI shape (display name +
