@@ -1,106 +1,127 @@
 /* =============================================================
- * RustIO Admin — Design Theme (Neutral / Light)
+ * RustIO Admin — Design Tokens (v3, 2026-04-23)
  *
- * Token-only file. Components.css consumes these names; values
- * here are the only thing that should differ between palettes.
- * Inspired by Stripe Dashboard / Linear: airy surfaces, cool
- * neutral text, single subtle blue accent. No dark mode, no
- * heavy gradients, no brand-saturated chrome.
+ * Fresh token layer after the full-UI-reset. Design direction:
+ *
+ * - Slate-and-indigo neutral palette (Stripe / Linear family).
+ * - System font stack; Inter if available; JetBrains Mono for
+ *   IDs / codes / sorted columns.
+ * - 4-pixel spacing scale. Generous type sizes for daily reading.
+ * - One accent color, used sparingly. Status colors calm, not
+ *   saturated.
+ *
+ * No component rules here — `components.css` consumes these
+ * tokens. This file is the only place palette / typography /
+ * spacing decisions live.
  * ============================================================= */
 
 :root {
-  /* --- Brand / Accent (single subtle blue, no orange) --- */
-  --primary:       #2563EB;
-  --primary-dark:  #1D4ED8;
-  --primary-tint:  #EFF4FF;
+  /* === Surfaces ============================================= */
+  --surface-page:      #F7F8FA;  /* page canvas */
+  --surface-card:      #FFFFFF;  /* cards, panels, rows, drawer */
+  --surface-muted:     #F9FAFB;  /* table head, drawer footer, subtle */
+  --surface-hover:     #F3F4F6;  /* row hover, button hover */
 
-  /* --- Ink (text) --- */
-  --ink:           #111827;
-  --ink-muted:     #374151;
-  --ink-subtle:    #6B7280;
+  /* === Borders ============================================== */
+  --border-subtle:     #E5E7EB;  /* default hairline */
+  --border-strong:     #D1D5DB;  /* inputs, emphasized divisions */
 
-  /* --- Borders --- */
-  --border:        #E5E7EB;
-  --border-strong: #D1D5DB;
+  /* === Text ================================================= */
+  --text-primary:      #0F172A;  /* near-black, body */
+  --text-secondary:    #334155;  /* labels, secondary body */
+  --text-muted:        #64748B;  /* captions, meta, placeholders */
+  --text-on-accent:    #FFFFFF;
 
-  /* --- Surfaces --- */
-  --bg:            #FFFFFF;
-  --bg-alt:        #F9FAFB;
-  --bg-hover:      #F3F4F6;
+  /* === Accent (single indigo family) ======================== */
+  --accent-50:         #EEF2FF;
+  --accent-100:        #E0E7FF;
+  --accent-500:        #6366F1;
+  --accent-600:        #4F46E5;  /* primary */
+  --accent-700:        #4338CA;  /* hover / pressed */
 
-  /* --- Status (kept calm, not saturated) --- */
-  --success:       #047857;
-  --success-bg:    #ECFDF5;
-  --warn:          #B45309;
-  --warn-bg:       #FFFBEB;
-  --danger:        #B91C1C;
-  --danger-bg:     #FEF2F2;
+  /* === Status =============================================== */
+  --success:           #15803D;
+  --success-bg:        #F0FDF4;
+  --warning:           #B45309;
+  --warning-bg:        #FEFCE8;
+  --danger:            #B91C1C;
+  --danger-bg:         #FEF2F2;
 
-  /* --- Typography --- */
-  --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  /* === Typography =========================================== */
+  --font-sans:
+    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas,
+    monospace;
 
-  /* Font sizes (kept identical to prior extraction so component
-   * spacing remains unchanged after a token-only swap). */
-  --fs-base:   18px;
-  --fs-h1:     28px;
-  --fs-h2:     18px;
-  --fs-brand:  17px;
-  --fs-item:   15px;
-  --fs-body:   14px;
-  --fs-chip:   13px;
-  --fs-mono:   13px;
-  --fs-meta:   12px;
-  --fs-micro:  11px;
-  --fs-kbd:    10px;
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-md:   15px;
+  --text-lg:   17px;
+  --text-xl:   20px;
+  --text-2xl:  26px;
+  --text-3xl:  32px;
 
-  /* --- Border radius scale --- */
-  --radius-xs: 2px;
-  --radius-sm: 3px;
-  --radius-md: 4px;
-  --radius-lg: 6px;
-  --radius-xl: 8px;
-  --radius-pill: 10px;
-  --radius-chip: 20px;
-  --radius-full: 50%;
+  --leading-tight: 1.2;
+  --leading-snug:  1.4;
+  --leading-base:  1.55;
 
-  /* --- Spacing scale --- */
-  --space-1:  2px;
-  --space-2:  4px;
-  --space-3:  6px;
-  --space-4:  8px;
-  --space-5:  10px;
-  --space-6:  12px;
-  --space-7:  14px;
-  --space-8:  16px;
-  --space-9:  18px;
-  --space-10: 20px;
-  --space-12: 24px;
-  --space-16: 32px;
-  --space-20: 80px;
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
 
-  /* --- Layout --- */
-  --topbar-height:  56px;
-  --sidebar-width:  260px;
-  --drawer-width:   560px;
-  --main-max:       1400px;
+  /* === Spacing (4px base) =================================== */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-7:  32px;
+  --space-8:  40px;
+  --space-9:  48px;
+  --space-10: 64px;
 
-  /* --- Z-index --- */
-  --z-topbar:      50;
-  --z-backdrop:    90;
-  --z-drawer:     100;
-  --z-toast:      200;
+  /* === Layout =============================================== */
+  --topbar-h:    60px;
+  --sidebar-w:   240px;
+  --content-w:   1280px;
+  --drawer-w:    560px;
 
-  /* --- Shadows (softer for the light palette) --- */
-  --shadow-drawer: -8px 0 24px rgba(17, 24, 39, 0.06);
-  --shadow-toast:   0   8px 24px rgba(17, 24, 39, 0.18);
-  --shadow-switch-knob: 0 1px 2px rgba(0, 0, 0, 0.15);
+  /* === Radius =============================================== */
+  --radius-sm:   4px;
+  --radius-md:   6px;
+  --radius-lg:   10px;
+  --radius-xl:   14px;
+  --radius-full: 9999px;
 
-  /* --- Motion --- */
-  --ease-drawer: cubic-bezier(0.2, 0, 0, 1);
-  --dur-fast:    0.08s;
-  --dur-base:    0.12s;
-  --dur-med:     0.14s;
-  --dur-slow:    0.18s;
-  --dur-drawer:  0.22s;
+  /* === Shadow (soft; use sparingly) ========================= */
+  --shadow-sm:
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md:
+    0 2px 4px rgba(15, 23, 42, 0.06),
+    0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-lg:
+    0 8px 24px rgba(15, 23, 42, 0.08),
+    0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-modal:
+    0 20px 48px rgba(15, 23, 42, 0.16),
+    0 8px 16px rgba(15, 23, 42, 0.08);
+
+  /* === Motion =============================================== */
+  --easing-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --easing-inout:  cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:      80ms;
+  --dur-base:      160ms;
+  --dur-slow:      260ms;
+
+  /* === Z-index ============================================== */
+  --z-sticky:    10;
+  --z-topbar:    20;
+  --z-backdrop:  40;
+  --z-drawer:    50;
+  --z-toast:     60;
 }

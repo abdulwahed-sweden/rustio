@@ -1,14 +1,11 @@
-//! Admin-new page assembler.
+//! Admin page assembler (v3, 2026-04-23 full-UI-reset).
 //!
-//! Stitches the `ui` component renderers into a full HTML document,
-//! injects the approved design CSS (`assets/admin-new/theme.css` +
-//! `components.css`), bundles the minimal JS that powers the search
-//! keyboard shortcuts, and exposes [`admin_index`] — the handler body
-//! that `/admin-new` serves.
+//! Renders every page the admin engine serves. The shell is one
+//! grid: sidebar on the left (real models only), sticky topbar on
+//! the right, main content centered inside a 1280px-max column.
 //!
-//! All CSS and JS is baked in at compile time via `include_str!` and
-//! inline `const` strings. No filesystem reads, no `/static` links,
-//! no external stylesheet dependencies.
+//! All CSS + JS is inlined at compile time via `include_str!`. No
+//! external stylesheets, no filesystem reads, no `/static` links.
 
 use std::collections::HashMap;
 
@@ -19,8 +16,8 @@ use crate::admin::auto_form::{AutoField, FieldOverride, FormBuilder, FormModel};
 use crate::admin::form::{render_form, FieldConfig, FieldType, FormConfig};
 use crate::admin::persistence;
 use crate::admin::ui::{
-    html_escape, render_page_header, render_sidebar, render_topbar, Breadcrumb, PageAction,
-    PageHeaderConfig, SidebarGroup, SidebarItem, TopbarConfig,
+    html_escape, render_page_header, render_sidebar, render_topbar, PageAction, PageHeaderConfig,
+    SidebarGroup, SidebarItem, TopbarConfig,
 };
 use crate::orm::Db;
 
@@ -30,200 +27,22 @@ use crate::orm::Db;
 
 const THEME_CSS: &str = include_str!("../../assets/admin-new/theme.css");
 const COMPONENTS_CSS: &str = include_str!("../../assets/admin-new/components.css");
-
-/// Thin glue layer on top of the approved components CSS:
-///
-/// - `.sr-only` for accessible-but-invisible labels (the approved
-///   design uses placeholders as the visible label, but assistive tech
-///   still needs a real `<label>`).
-/// - `.search-primary` size bump for `SearchProminence::Primary`.
-/// - `.search-hint` row below the toolbar that surfaces the keyboard
-///   shortcut in plain text (text-first rule).
-/// - Wrapper classes around the search form so the approved flex
-///   toolbar keeps its behaviour without a layout rewrite.
-const LAYOUT_EXTRAS_CSS: &str = r#"
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.toolbar .search-form {
-  flex: 1;
-  display: flex;
-  min-width: 280px;
-}
-.toolbar .search-form .search {
-  flex: 1;
-  min-width: 0;
-}
-
-.search-primary-wrap {
-  margin-bottom: 12px;
-}
-.search-primary-wrap .search-form {
-  display: block;
-}
-.search-primary-wrap .search.search-primary {
-  min-width: 0;
-  width: 100%;
-}
-.search-primary-wrap .search.search-primary input {
-  font-size: 15px;
-  padding: 11px 96px 11px 40px;
-}
-.search-primary-wrap .search.search-primary .search-icon {
-  left: 14px;
-}
-.toolbar.toolbar-filters-only {
-  border-radius: 8px 8px 0 0;
-}
-
-.search-hint {
-  font-family: var(--mono);
-  font-size: 12px;
-  color: var(--ink-subtle);
-  padding: 6px 4px 10px;
-}
-.search-hint .kbd-inline {
-  font-family: var(--mono);
-  font-size: 11px;
-  padding: 1px 6px;
-  border: 1px solid var(--border-strong);
-  border-bottom-width: 2px;
-  border-radius: 3px;
-  background: var(--bg);
-  color: var(--ink-muted);
-}
-
-/* Give the Inter reference a sensible default when the webfont isn't
-   loaded — the approved design expects Inter, but the engine must not
-   depend on a network stylesheet. System stack below renders very
-   close on macOS/iOS/Win11. */
-html, body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* Apply the approved 1400px max-width centering on large screens. */
-.main {
-  margin: 0 auto;
-}
-"#;
-
-/// Global keyboard shortcuts — the only JS that ships with the
-/// foundation. Silent no-op when no search input is present.
-///
-/// - `/` focuses the visible search (unless the user is already typing)
-/// - `Ctrl+K` / `Cmd+K` also focuses it
-/// - `Escape` blurs the focused search
-///
-/// Deliberately does NOT open a palette, a modal, or any other
-/// discovery affordance — the approved rule is: text-first, search-first.
-const KEYBOARD_JS: &str = r#"
-(function () {
-  function search() {
-    return document.querySelector('[data-role="search-input"]');
-  }
-  function isTyping(el) {
-    if (!el || !el.tagName) return false;
-    var t = el.tagName;
-    return t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || el.isContentEditable === true;
-  }
-  document.addEventListener('keydown', function (e) {
-    var el = search();
-    if ((e.key === 'k' || e.key === 'K') && (e.ctrlKey || e.metaKey)) {
-      if (el) { e.preventDefault(); el.focus(); if (el.select) el.select(); }
-      return;
-    }
-    if (e.key === '/' && !isTyping(document.activeElement)) {
-      if (el) { e.preventDefault(); el.focus(); }
-      return;
-    }
-    if (e.key === 'Escape') {
-      if (el && document.activeElement === el) { el.blur(); }
-    }
-  });
-})();
-"#;
-
-/// Form-scoped keyboard helpers. Active only when the keydown
-/// originates inside a `[data-admin-form]` subtree, so the search
-/// shortcuts above and unrelated UI are never affected.
-///
-/// - Ctrl/Cmd + Enter explicitly submits — required because plain
-///   Enter inside a `<textarea>` inserts a newline rather than
-///   submitting. Plain Enter inside text inputs already submits
-///   natively via the form's `type="submit"` Save button, so no
-///   handler is needed for that path.
-/// - Escape blurs the focused control inside the form. Doesn't close
-///   the drawer — there is no JS-driven drawer toggle yet.
-const FORM_KEYBOARD_JS: &str = r#"
-(function () {
-  document.addEventListener('keydown', function (e) {
-    var form = (e.target && typeof e.target.closest === 'function')
-      ? e.target.closest('[data-admin-form]')
-      : null;
-    if (!form) return;
-    if (e.key === 'Escape') {
-      if (e.target && typeof e.target.blur === 'function') e.target.blur();
-      return;
-    }
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      if (typeof form.requestSubmit === 'function') {
-        form.requestSubmit();
-      } else {
-        form.submit();
-      }
-    }
-  });
-})();
-"#;
-
-/// Switch toggle handler. Listens for clicks on `.switch`, flips the
-/// inner `<input type="checkbox">`, and syncs the visual `.on` class
-/// in the same step (the approved CSS keys the track-knob position
-/// off `.switch.on`, not off `:checked`, so the class swap is what
-/// makes the visual move).
-///
-/// `e.preventDefault()` suppresses the browser's native label-input
-/// activation — without it, the label-wrapped checkbox would receive
-/// a synthesized click immediately after our handler runs and toggle
-/// itself a second time, cancelling the JS toggle. The `INPUT` early
-/// return covers direct clicks on the (hidden) checkbox, e.g. from
-/// keyboard activation, so those go through the native path
-/// untouched.
-const SWITCH_JS: &str = r#"
-(function () {
-  document.addEventListener('click', function (e) {
-    if (e.target && e.target.tagName === 'INPUT') return;
-    var sw = (e.target && typeof e.target.closest === 'function')
-      ? e.target.closest('.switch')
-      : null;
-    if (!sw) return;
-    var checkbox = sw.querySelector('input[type="checkbox"]');
-    if (!checkbox) return;
-    e.preventDefault();
-    checkbox.checked = !checkbox.checked;
-    sw.classList.toggle('on', checkbox.checked);
-  });
-})();
-"#;
+const ADMIN_JS: &str = include_str!("../../assets/admin-new/admin.js");
 
 // ---------------------------------------------------------------
 // Shell assembler
 // ---------------------------------------------------------------
 
-/// Assemble a full admin-new page. `topbar` / `sidebar` / `content`
-/// are already-rendered HTML fragments; they are embedded verbatim
-/// into the approved layout shell.
-pub fn render_layout(topbar: String, sidebar: String, content: String) -> String {
+/// Assemble a full admin page. `topbar` / `sidebar` / `content`
+/// are already-rendered HTML fragments; they are embedded into the
+/// `<div class="app">` shell. `drawer_html` renders outside the
+/// main column so its fixed-position styles layer above everything.
+pub fn render_layout(
+    topbar: String,
+    sidebar: String,
+    content: String,
+    drawer_html: String,
+) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -234,30 +53,162 @@ pub fn render_layout(topbar: String, sidebar: String, content: String) -> String
 <style>
 {theme}
 {components}
-{extras}
 </style>
 </head>
 <body>
-{topbar}
-<div class="layout">
+<div class="app">
 {sidebar}
-<main class="main">
+<div class="main-col">
+{topbar}
+<main class="content">
 {content}
 </main>
 </div>
-<script>{keyboard}{form_keyboard}{switch}</script>
+</div>
+{drawer_html}
+<script>{admin_js}</script>
 </body>
 </html>"#,
         theme = THEME_CSS,
         components = COMPONENTS_CSS,
-        extras = LAYOUT_EXTRAS_CSS,
         topbar = topbar,
         sidebar = sidebar,
         content = content,
-        keyboard = KEYBOARD_JS,
-        form_keyboard = FORM_KEYBOARD_JS,
-        switch = SWITCH_JS,
+        drawer_html = drawer_html,
+        admin_js = ADMIN_JS,
     )
+}
+
+// ---------------------------------------------------------------
+// Dashboard (admin index — GET /admin)
+// ---------------------------------------------------------------
+
+/// One card + one sidebar entry per registered model.
+struct DashboardEntry {
+    slug: &'static str,
+    model_name: &'static str,
+    table_name: &'static str,
+    count: i64,
+}
+
+/// Walk the registry, count rows per table, return a sorted list.
+/// Extracted so both the dashboard and the per-model pages share one
+/// source of truth for the sidebar contents.
+async fn collect_dashboard_entries(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+) -> Vec<DashboardEntry> {
+    use sqlx::Row;
+    let mut slugs: Vec<&'static str> = registry.slugs().copied().collect();
+    slugs.sort();
+    let mut out = Vec::with_capacity(slugs.len());
+    for slug in slugs {
+        let Some(model) = registry.get(slug) else {
+            continue;
+        };
+        if let Some(sql) = model.ensure_table_sql() {
+            let _ = persistence::ensure_table(db, sql).await;
+        }
+        let table = model.table_name();
+        let count: i64 = {
+            let sql = format!(
+                "SELECT COUNT(*) AS c FROM \"{}\"",
+                table.replace('"', "\"\"")
+            );
+            match sqlx::query(&sql).fetch_one(db.pool()).await {
+                Ok(row) => row.try_get::<i64, _>("c").unwrap_or(0),
+                Err(_) => 0,
+            }
+        };
+        out.push(DashboardEntry {
+            slug: model.slug(),
+            model_name: model.model_name(),
+            table_name: table,
+            count,
+        });
+    }
+    out
+}
+
+/// Build the single "Models" sidebar group from the registry.
+/// `active_slug = Some("users")` marks that row as active. Same
+/// shape on the dashboard (no item active) and on per-model pages
+/// (the current model active).
+fn build_admin_sidebar(entries: &[DashboardEntry], active_slug: Option<&str>) -> String {
+    let items: Vec<SidebarItem> = entries
+        .iter()
+        .map(|e| SidebarItem {
+            // Pluralize by appending "s" — fine for users / orders;
+            // future models with irregular plurals will need a
+            // `plural_name` accessor on AdminUiModel.
+            label: format!("{}s", e.model_name),
+            count: Some(e.count.to_string()),
+            href: format!("/admin/{}", e.slug),
+            active: active_slug == Some(e.slug),
+        })
+        .collect();
+    render_sidebar(&[SidebarGroup {
+        label: Some("Models".to_string()),
+        items,
+    }])
+}
+
+/// Render the admin dashboard: one stat card per registered model.
+/// Uses the same shell as per-model pages — sidebar shows every
+/// registered model with its live row count.
+pub async fn admin_dashboard_get(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    csrf_token: Option<&str>,
+) -> String {
+    use std::fmt::Write as _;
+    let entries = collect_dashboard_entries(db, registry).await;
+
+    let mut cards = String::new();
+    for e in &entries {
+        let model_href = format!("/admin/{}", e.slug);
+        let _ = write!(
+            cards,
+            r#"<a class="stat-card" href="{href}"><span class="stat-card-label">{label}</span><span class="stat-card-value">{count}</span><span class="stat-card-meta">{table}</span></a>"#,
+            href = html_escape(&model_href),
+            label = html_escape(&format!("{}s", e.model_name)),
+            count = e.count,
+            table = html_escape(e.table_name),
+        );
+    }
+
+    let topbar = render_topbar(&TopbarConfig {
+        title: "Dashboard".to_string(),
+        user_initials: "AM".to_string(),
+        user_email: "admin@rustio.dev".to_string(),
+        csrf_token: csrf_token.map(String::from),
+    });
+    let sidebar = build_admin_sidebar(&entries, None);
+
+    let header = render_page_header(&PageHeaderConfig {
+        eyebrow: Some("Overview".to_string()),
+        title: "Dashboard".to_string(),
+        subtitle: Some(format!(
+            "{} model{} registered",
+            entries.len(),
+            if entries.len() == 1 { "" } else { "s" }
+        )),
+        actions: Vec::new(),
+        breadcrumbs: Vec::new(),
+    });
+    let content = format!(r#"{header}<div class="stat-grid">{cards}</div>"#);
+    render_layout(topbar, sidebar, content, String::new())
+}
+
+/// Public entry point kept for backwards compat: expose the
+/// registry-driven sidebar so the per-model page path can call it.
+pub async fn render_admin_sidebar_for(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    active_slug: Option<&str>,
+) -> String {
+    let entries = collect_dashboard_entries(db, registry).await;
+    build_admin_sidebar(&entries, active_slug)
 }
 
 // ---------------------------------------------------------------
@@ -273,6 +224,7 @@ pub fn render_layout(topbar: String, sidebar: String, content: String) -> String
 #[allow(clippy::too_many_arguments)]
 pub async fn admin_index_get(
     db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
     model: &dyn AdminUiModel,
     editing_id: Option<&str>,
     query: Option<&str>,
@@ -286,22 +238,42 @@ pub async fn admin_index_get(
         let _ = persistence::ensure_table(db, sql).await;
     }
 
-    let prefill = match editing_id {
-        Some(id) if !id.is_empty() => {
-            match persistence::get_record_by_id(db, model.table_name(), id).await {
-                Ok(map) if !map.is_empty() => Some(map),
-                _ => None,
+    // Drawer mode:
+    //   editing_id = None         → drawer not rendered (list-only view)
+    //   editing_id = Some("new")  → drawer open, create mode (empty form)
+    //   editing_id = Some("<id>") → drawer open, edit mode (prefilled)
+    // A real id that doesn't match any row falls back to create mode
+    // so "+ Add" links don't dead-end on a racing delete.
+    let is_new = matches!(editing_id, Some("new"));
+    let prefill = if is_new {
+        None
+    } else {
+        match editing_id {
+            Some(id) if !id.is_empty() => {
+                match persistence::get_record_by_id(db, model.table_name(), id).await {
+                    Ok(map) if !map.is_empty() => Some(map),
+                    _ => None,
+                }
             }
+            _ => None,
         }
-        _ => None,
     };
-    let effective_id = if prefill.is_some() { editing_id } else { None };
+    let drawer = match editing_id {
+        Some(id) if !id.is_empty() => {
+            // id is present — render the drawer. prefill decides
+            // create vs edit mode.
+            let effective_id = if is_new { None } else { Some(id) };
+            build_drawer_for_get(model, prefill.as_ref(), effective_id)
+        }
+        _ => String::new(),
+    };
 
-    let drawer = build_drawer_for_get(model, prefill.as_ref(), effective_id);
     let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
         fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
+    let sidebar_html = render_admin_sidebar_for(db, registry, Some(model.slug())).await;
     admin_index_with_drawer(
         model,
+        sidebar_html,
         drawer,
         rows,
         total,
@@ -430,6 +402,7 @@ async fn fetch_users_table_state(
 #[allow(clippy::too_many_arguments)]
 pub async fn admin_index_bulk(
     db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
     model: &dyn AdminUiModel,
     action: &str,
     ids: &[String],
@@ -486,7 +459,8 @@ pub async fn admin_index_bulk(
         }
     }
 
-    let drawer = build_drawer_for_get(model, None, None);
+    // Bulk action results land back on the list with drawer closed.
+    let drawer = String::new();
     let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
         fetch_users_table_state(db, model, query, filters, 1, sort, dir).await;
     let banner_opt = if banner.is_empty() {
@@ -494,8 +468,10 @@ pub async fn admin_index_bulk(
     } else {
         Some(banner.as_str())
     };
+    let sidebar_html = render_admin_sidebar_for(db, registry, Some(model.slug())).await;
     admin_index_with_drawer(
         model,
+        sidebar_html,
         drawer,
         rows,
         total,
@@ -637,6 +613,7 @@ fn classify_filters(
 #[allow(clippy::too_many_arguments)]
 pub async fn admin_index_post(
     db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
     model: &dyn AdminUiModel,
     params: &HashMap<String, String>,
     editing_id: Option<&str>,
@@ -684,12 +661,22 @@ pub async fn admin_index_post(
     form.hidden_fields
         .push(("id".to_string(), effective_id.clone().unwrap_or_default()));
     form.save_failed = save_failed;
-    let drawer = render_form(&form);
+    // After a successful save, close the drawer so the user sees the
+    // list with the new / updated row. After a validation error or
+    // save failure, leave the drawer open with the user's values and
+    // the error banner so they can fix and retry.
+    let drawer = if any_errors || save_failed {
+        render_form(&form)
+    } else {
+        String::new()
+    };
 
     let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
         fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
+    let sidebar_html = render_admin_sidebar_for(db, registry, Some(model.slug())).await;
     admin_index_with_drawer(
         model,
+        sidebar_html,
         drawer,
         rows,
         total,
@@ -714,6 +701,7 @@ pub async fn admin_index_post(
 #[allow(clippy::too_many_arguments)]
 fn admin_index_with_drawer(
     model: &dyn AdminUiModel,
+    sidebar_html: String,
     drawer: String,
     rows: Vec<HashMap<String, String>>,
     total: i64,
@@ -726,64 +714,50 @@ fn admin_index_with_drawer(
     advanced: bool,
     top_banner: Option<&str>,
 ) -> String {
-    let topbar = render_topbar(&TopbarConfig {
-        brand: "RustIO".into(),
-        brand_mark: "R".into(),
-        env_label: "admin".into(),
-        user_initials: "AM".into(),
-        user_email: "admin@rustio.dev".into(),
-    });
-
-    let sidebar = render_sidebar(&sample_sidebar());
-
     let model_name = model.model_name();
     let model_slug = model.slug();
-    let model_table = model.table_name();
     let title_label = format!("{model_name}s");
-    let breadcrumbs = vec![
-        Breadcrumb {
-            label: "Home".into(),
-            href: Some(format!("/admin-new/{model_slug}")),
-        },
-        Breadcrumb {
-            label: "Admin".into(),
-            href: Some(format!("/admin-new/{model_slug}")),
-        },
-        Breadcrumb {
-            label: title_label.clone(),
-            href: None,
-        },
-    ];
+
+    let topbar = render_topbar(&TopbarConfig {
+        title: title_label.clone(),
+        user_initials: "AM".into(),
+        user_email: "admin@rustio.dev".into(),
+        // Per-model pages render the topbar without a CSRF input
+        // for now — its Sign-out link falls back to the GET
+        // confirmation page. Threading CSRF here is a follow-up:
+        // the model handlers would need to pass req.ctx() through.
+        csrf_token: None,
+    });
 
     let trimmed_query = query.map(str::trim).filter(|s| !s.is_empty());
     let subtitle = match trimmed_query {
-        Some(q) => {
-            format!("Search: '{q}' · {total} results (Page {current_page} of {total_pages})")
-        }
-        None => format!("{model_name} · {total} records (Page {current_page} of {total_pages})"),
+        Some(q) => format!(
+            "Searching “{q}” · {total} match{plural} · page {current_page} of {total_pages}",
+            plural = if total == 1 { "" } else { "es" },
+        ),
+        None => format!(
+            "{total} record{plural} · page {current_page} of {total_pages}",
+            plural = if total == 1 { "" } else { "s" },
+        ),
     };
 
+    let add_href = format!("/admin/{model_slug}?id=new");
     let page_header = render_page_header(&PageHeaderConfig {
-        breadcrumbs,
+        eyebrow: Some("Models".to_string()),
         title: title_label,
         subtitle: Some(subtitle),
-        actions: vec![
-            PageAction {
-                label: "Export CSV".into(),
-                href: None,
-                primary: false,
-            },
-            PageAction {
-                label: format!("+ Add {model_name}"),
-                href: None,
-                primary: true,
-            },
-        ],
+        actions: vec![PageAction {
+            label: format!("New {model_name}"),
+            href: Some(add_href),
+            primary: true,
+        }],
+        breadcrumbs: Vec::new(),
     });
 
-    let toolbar = render_users_toolbar(model, trimmed_query, filters, total, advanced);
+    let toolbar_html =
+        render_users_toolbar(model, trimmed_query, filters, sort, dir, total, advanced);
 
-    let table = render_users_table(
+    let table_html = render_users_table(
         model,
         &rows,
         total,
@@ -796,24 +770,31 @@ fn admin_index_with_drawer(
         advanced,
     );
 
+    let advanced_panel = if advanced {
+        let inputs = build_filter_inputs(model, true, filters);
+        if inputs.is_empty() {
+            String::new()
+        } else {
+            format!(r#"<div class="advanced-panel">{inputs}</div>"#)
+        }
+    } else {
+        String::new()
+    };
+
+    let surface = format!(
+        r#"<section class="surface">{toolbar_html}{advanced_panel}<div class="table-wrap">{table_html}</div></section>"#,
+    );
+
     let bulk_bar = render_bulk_bar();
     let hidden_state = render_bulk_hidden_state(trimmed_query, filters, sort, dir);
     let bulk_form = format!(
-        r#"<form method="post" action="" data-bulk-form>{hidden_state}{bulk_bar}{table}</form>"#,
+        r#"<form method="post" action="" data-bulk-form>{hidden_state}{surface}{bulk_bar}</form>"#,
     );
 
-    let foundation_note = format!(
-        r#"<p style="margin: 20px 0 0; font-family: var(--mono); font-size: 12px; color: var(--ink-subtle);">Live data from <code>{model_table}</code>. Submit the drawer to insert / update; tick row checkboxes to bulk-act.</p>"#,
-    );
-
-    // `top_banner` is rendered above the page header so transient
-    // outcomes (bulk action result) are seen first. Empty when the
-    // page didn't go through any bulk operation.
     let banner_html = top_banner.unwrap_or("");
-    let content =
-        format!("{banner_html}{page_header}{toolbar}{bulk_form}{foundation_note}{drawer}");
+    let content = format!("{banner_html}{page_header}{bulk_form}");
 
-    render_layout(topbar, sidebar, content)
+    render_layout(topbar, sidebar_html, content, drawer)
 }
 
 /// Render the entire users table — header (with sortable links and
@@ -850,9 +831,7 @@ fn render_users_table(
         dir,
         advanced,
     );
-    format!(
-        r#"<div class="table-wrap"><table>{header_html}{body_html}</table>{pagination_html}</div>"#,
-    )
+    format!(r#"<table class="data-table">{header_html}{body_html}</table>{pagination_html}"#,)
 }
 
 /// Emit the `<thead>` block: disabled select-all checkbox, one
@@ -871,7 +850,7 @@ fn render_users_table_header(
     use std::fmt::Write as _;
     let mut html = String::from(r#"<thead><tr>"#);
     html.push_str(
-        r#"<th style="width: 36px; cursor: default;"><input type="checkbox" disabled aria-label="Select all (no JS yet)"></th>"#,
+        r#"<th class="col-checkbox"><input type="checkbox" id="check-all" class="checkbox" aria-label="Select all rows"></th>"#,
     );
     for field in model.fields() {
         if !field.visible_in_table {
@@ -884,11 +863,11 @@ fn render_users_table_header(
         } else {
             "asc"
         };
-        let arrow_suffix = if is_current {
+        let arrow = if is_current {
             if dir == Some("desc") {
-                " ↓"
+                r#"<span class="sort-arrow">↓</span>"#
             } else {
-                " ↑"
+                r#"<span class="sort-arrow">↑</span>"#
             }
         } else {
             ""
@@ -905,16 +884,13 @@ fn render_users_table_header(
             Some(next_dir),
             advanced,
         ));
-        if is_current {
-            let _ = write!(
-                html,
-                r#"<th class="sorted"><a href="{href}">{escaped_label}{arrow_suffix}</a></th>"#,
-            );
-        } else {
-            let _ = write!(html, r#"<th><a href="{href}">{escaped_label}</a></th>"#);
-        }
+        let cls = if is_current { r#" class="sorted""# } else { "" };
+        let _ = write!(
+            html,
+            r#"<th{cls}><a href="{href}">{escaped_label}{arrow}</a></th>"#,
+        );
     }
-    html.push_str("<th>Actions</th>");
+    html.push_str(r#"<th class="col-actions">Actions</th>"#);
     html.push_str("</tr></thead>");
     html
 }
@@ -939,10 +915,10 @@ fn render_users_table_rows(
     if rows.is_empty() {
         let inner = match query {
             Some(q) => format!(
-                r#"<tr><td colspan="100%">No results found for "<strong>{}</strong>"</td></tr>"#,
+                r#"<tr><td colspan="100%"><div class="empty-state"><p class="empty-state-title">No matches</p><p>Nothing matches “{}”. Try a different search.</p></div></td></tr>"#,
                 html_escape(q),
             ),
-            None => r#"<tr><td colspan="100%">No records found</td></tr>"#.to_string(),
+            None => r#"<tr><td colspan="100%"><div class="empty-state"><p class="empty-state-title">No records yet</p><p>Use the New button to add the first row.</p></div></td></tr>"#.to_string(),
         };
         return format!("<tbody>{inner}</tbody>");
     }
@@ -956,9 +932,10 @@ fn render_users_table_rows(
     for r in rows {
         let id = r.get("id").map(String::as_str).unwrap_or("");
         let escaped_id = html_escape(id);
+        let edit_href = format!("/admin/{model_slug}?id={escaped_id}");
         let _ = write!(
             html,
-            r#"<tr><td><input type="checkbox" name="ids" value="{escaped_id}" aria-label="Select row {escaped_id}"></td>"#,
+            r#"<tr data-edit-href="{edit_href}"><td class="col-checkbox"><input type="checkbox" class="checkbox" name="ids" value="{escaped_id}" aria-label="Select row {escaped_id}"></td>"#,
         );
         for (i, field) in visible_fields.iter().enumerate() {
             let value = r.get(field.name).map(String::as_str).unwrap_or("");
@@ -966,23 +943,20 @@ fn render_users_table_rows(
                 AdminDataType::Boolean => {
                     let on = matches!(value, "true" | "1" | "yes" | "on");
                     let (badge_class, badge_label) = if on {
-                        ("badge-success", "ACTIVE")
+                        ("badge badge-success", "Active")
                     } else {
-                        ("badge-muted", "INACTIVE")
+                        ("badge badge-muted", "Inactive")
                     };
-                    format!(r#"<td><span class="badge {badge_class}">{badge_label}</span></td>"#,)
+                    format!(r#"<td><span class="{badge_class}">{badge_label}</span></td>"#,)
                 }
-                _ if i == 0 => format!(
-                    r#"<td class="primary-col mono">{}</td>"#,
-                    html_escape(value),
-                ),
-                _ => format!(r#"<td class="mono">{}</td>"#, html_escape(value)),
+                _ if i == 0 => format!(r#"<td class="cell-primary">{}</td>"#, html_escape(value),),
+                _ => format!(r#"<td class="cell-mono">{}</td>"#, html_escape(value)),
             };
             html.push_str(&cell);
         }
         let _ = write!(
             html,
-            r#"<td><a href="/admin-new/{model_slug}?id={escaped_id}">Edit</a> <form method="post" action="" style="display:inline"><input type="hidden" name="bulk_action" value="delete"><input type="hidden" name="ids" value="{escaped_id}"><button type="submit" class="danger">Delete</button></form></td></tr>"#,
+            r#"<td class="col-actions"><span class="row-actions"><a class="btn btn-ghost btn-sm" href="{edit_href}">Edit</a><form method="post" action=""><input type="hidden" name="bulk_action" value="delete"><input type="hidden" name="ids" value="{escaped_id}"><button type="submit" class="btn btn-danger btn-sm">Delete</button></form></span></td></tr>"#,
         );
     }
     html.push_str("</tbody>");
@@ -1040,73 +1014,72 @@ fn render_users_pagination(
         ))
     };
 
+    // Pagination row: range counter on the left, navigation on the
+    // right. The page-size select was removed — it had no backend
+    // (`?per_page=` doesn't exist), and showing a disabled control
+    // reads as broken. Bring it back when paging size is wired.
+    let _ = page_size; // kept in signature for future per-page support
     let mut html = String::from(r#"<div class="pagination">"#);
     let _ = write!(
         html,
-        r#"<div>Showing <span>{showing_from}</span>–<span>{showing_to}</span> of <span>{total}</span></div>"#,
+        r#"<div class="pagination-meta">Showing <strong>{showing_from}</strong>–<strong>{showing_to}</strong> of <strong>{total}</strong></div><div class="pagination-controls">"#,
     );
-    html.push_str(r#"<div class="pagination-controls">"#);
 
-    // Prev — clickable when not on the first page.
+    // Prev
     if current_page > 1 {
         let _ = write!(
             html,
-            r#"<a class="page-btn" href="{}">‹ Prev</a>"#,
+            r#"<a class="pagination-btn" href="{}" aria-label="Previous page">‹</a>"#,
             make_href(current_page - 1),
         );
     } else {
-        html.push_str(r#"<button type="button" class="page-btn" disabled>‹ Prev</button>"#);
+        html.push_str(r#"<button type="button" class="pagination-btn" disabled aria-label="Previous page">‹</button>"#);
     }
 
-    // Numbered pages — `<a>` for navigable, `<button disabled>` for
-    // the current page (visually highlighted via `.active`,
-    // unclickable).
+    // Numbered pages — current is non-clickable button with aria-current.
     for p in 1..=total_pages {
         if p == current_page {
             let _ = write!(
                 html,
-                r#"<button type="button" class="page-btn active" disabled aria-current="page">{p}</button>"#,
+                r#"<button type="button" class="pagination-btn" disabled aria-current="page">{p}</button>"#,
             );
         } else {
             let _ = write!(
                 html,
-                r#"<a class="page-btn" href="{}">{p}</a>"#,
+                r#"<a class="pagination-btn" href="{}">{p}</a>"#,
                 make_href(p),
             );
         }
     }
 
-    // Next — clickable when not on the last page.
+    // Next
     if current_page < total_pages {
         let _ = write!(
             html,
-            r#"<a class="page-btn" href="{}">Next ›</a>"#,
+            r#"<a class="pagination-btn" href="{}" aria-label="Next page">›</a>"#,
             make_href(current_page + 1),
         );
     } else {
-        html.push_str(r#"<button type="button" class="page-btn" disabled>Next ›</button>"#);
+        html.push_str(r#"<button type="button" class="pagination-btn" disabled aria-label="Next page">›</button>"#);
     }
 
     html.push_str("</div></div>");
     html
 }
 
-/// Render the bulk-action bar. Three submit buttons (`activate`,
-/// `deactivate`, `delete`), each carrying its `bulk_action` value.
-/// The wrapping form is added by the caller in
-/// [`admin_index_with_drawer`]. `.bulk-bar visible` keeps the bar
-/// always rendered (the existing CSS hides bare `.bulk-bar`); the
-/// "no JS" rule means we can't toggle visibility based on selection
-/// count, so the bar is always there. `.danger` on Delete picks up
-/// the existing `.bulk-bar button.danger` styling.
+/// Render the bulk-action bar. Default-hidden via `.bulk-bar` (CSS
+/// `display: none`); admin.js adds `.visible` and updates the
+/// `.count-pill` whenever the user toggles row checkboxes. With JS
+/// disabled, the bar stays hidden — bulk actions are still reachable
+/// via direct URL POSTs from any HTTP client.
 fn render_bulk_bar() -> String {
     String::from(
-        r#"<div class="bulk-bar visible">
-  <span>Bulk actions:</span>
-  <div class="bulk-actions">
-    <button type="submit" name="bulk_action" value="activate">Activate</button>
-    <button type="submit" name="bulk_action" value="deactivate">Deactivate</button>
-    <button type="submit" name="bulk_action" value="delete" class="danger">Delete</button>
+        r#"<div class="bulk-bar" role="region" aria-label="Bulk actions">
+  <div class="bulk-bar-summary"><span class="bulk-bar-count">0</span> selected</div>
+  <div class="bulk-bar-actions">
+    <button type="submit" name="bulk_action" value="activate" class="bulk-btn">Activate</button>
+    <button type="submit" name="bulk_action" value="deactivate" class="bulk-btn">Deactivate</button>
+    <button type="submit" name="bulk_action" value="delete" class="bulk-btn bulk-btn-danger">Delete</button>
   </div>
 </div>"#,
     )
@@ -1175,6 +1148,8 @@ fn render_users_toolbar(
     model: &dyn AdminUiModel,
     query: Option<&str>,
     filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
     total: i64,
     advanced: bool,
 ) -> String {
@@ -1188,49 +1163,144 @@ fn render_users_toolbar(
     ));
     let label_text = html_escape(&format!("Search {}s", model.model_name().to_lowercase()));
     let chip_count = html_escape(&total.to_string());
-    let default_filters = build_filter_inputs(model, false, filters);
+    let pill_filters = build_filter_pills(model, filters);
     let advanced_inputs = build_filter_inputs(model, true, filters);
-    let action_url = html_escape(&format!("/admin-new/{}", model.slug()));
+    let action_url = html_escape(&format!("/admin/{}", model.slug()));
+    // "All" chip = same URL with no q + no filters (sort/advanced preserved).
+    let empty_filters: HashMap<String, String> = HashMap::new();
+    let chip_all_href = html_escape(&build_query_url(
+        None,
+        None,
+        &empty_filters,
+        sort,
+        dir,
+        advanced,
+    ));
+    // Hidden inputs that round-trip sort/dir/advanced through the
+    // toolbar's GET form so a search/filter submit doesn't clobber them.
+    let mut hidden_state = String::new();
+    if let Some(s) = sort {
+        let _ = write!(
+            hidden_state,
+            r#"<input type="hidden" name="sort" value="{}">"#,
+            html_escape(s)
+        );
+    }
+    if let Some(d) = dir {
+        let _ = write!(
+            hidden_state,
+            r#"<input type="hidden" name="dir" value="{}">"#,
+            html_escape(d)
+        );
+    }
+    if advanced {
+        hidden_state.push_str(r#"<input type="hidden" name="advanced" value="1">"#);
+    }
 
     let mut html = String::new();
     let _ = write!(
         html,
-        r#"<div class="toolbar"><form class="search-form" role="search" method="get" action="{action_url}" aria-label="{label_text}">
-  <div class="search">
-    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        r#"<form class="toolbar-form" role="search" method="get" action="{action_url}" aria-label="{label_text}">{hidden_state}<div class="toolbar">
+  <div class="toolbar-search">
+    <svg class="toolbar-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <circle cx="11" cy="11" r="8"></circle>
       <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
     </svg>
-    <label class="sr-only" for="admin-new-search">{label_text}</label>
-    <input id="admin-new-search" name="q" type="search" value="{value}" placeholder="{placeholder}" data-role="search-input" autocomplete="off">
-    <button type="submit" class="search-submit" aria-label="Submit search">Search <kbd>⏎</kbd></button>
-  </div>{default_filters}</form><button type="button" class="filter-chip active">All <span class="count">{chip_count}</span></button></div>"#,
+    <label class="sr-only" for="admin-search">{label_text}</label>
+    <input id="admin-search" name="q" type="search" value="{value}" placeholder="{placeholder}" autocomplete="off">
+    <kbd class="toolbar-search-kbd">/</kbd>
+  </div>
+  <a class="filter-pill active" href="{chip_all_href}">All <span class="filter-pill-count">{chip_count}</span></a>
+  {pill_filters}"#,
     );
-    // Keyboard hint + advanced section both sit *outside* the
-    // toolbar div, mirroring the original render_toolbar ordering.
-    html.push_str(
-        r#"<div class="search-hint">Press <kbd class="kbd-inline">/</kbd> or <kbd class="kbd-inline">⌘K</kbd> to search instantly · <kbd class="kbd-inline">Esc</kbd> to exit</div>"#,
-    );
+
     if !advanced_inputs.is_empty() {
-        // "+ Add filter" is now a real link that toggles the
-        // `advanced=1` URL flag — clicking with the panel open
-        // collapses it again. Filters / search / sort / page
-        // state survive the toggle via `build_query_url`.
-        let toggle_href = html_escape(&build_query_url(
-            None, query, filters, None, None, !advanced,
-        ));
+        let toggle_href = html_escape(&build_query_url(None, query, filters, sort, dir, !advanced));
         let toggle_label = if advanced {
-            "− Hide filters"
+            "Hide advanced"
         } else {
-            "+ Add filter"
+            "More filters"
         };
-        let hidden_attr = if advanced { "" } else { " hidden" };
         let _ = write!(
             html,
-            r#"<div class="toolbar toolbar-filters-only" style="border-radius:0;border-top:none;border-bottom:none;"><a class="btn" href="{toggle_href}">{toggle_label}</a></div><div class="advanced-filters"{hidden_attr}>{advanced_inputs}</div>"#,
+            r#"<a class="filter-pill" href="{toggle_href}">{toggle_label}</a>"#,
         );
     }
+
+    html.push_str("</div></form>");
     html
+}
+
+/// Build the toolbar pill-style filters. Each renders as a
+/// `<label class="field-pill">` wrapping a transparent `<select>`
+/// so changing it submits the parent toolbar form (admin.js wires
+/// the change → form.submit()). Free-text filters are skipped here
+/// — they only fit the Advanced panel.
+fn build_filter_pills(model: &dyn AdminUiModel, filters: &HashMap<String, String>) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for field in model.fields() {
+        if !field.filterable {
+            continue;
+        }
+        let current = filters.get(field.name).map(String::as_str).unwrap_or("");
+        let has_value = !current.is_empty();
+        let pill_cls = if has_value {
+            "field-pill has-value"
+        } else {
+            "field-pill"
+        };
+        // Choose visible value text + select options based on filter type.
+        let (display_value, options_html) = match resolve_filter_type(&field) {
+            FilterType::Boolean => {
+                let display = match current {
+                    "true" => "Yes",
+                    "false" => "No",
+                    _ => "any",
+                };
+                let opts = format!(
+                    r#"<option value="">any</option><option value="true"{sel_t}>Yes</option><option value="false"{sel_f}>No</option>"#,
+                    sel_t = if current == "true" { " selected" } else { "" },
+                    sel_f = if current == "false" { " selected" } else { "" },
+                );
+                (display.to_string(), opts)
+            }
+            FilterType::Select => {
+                let mut display = String::from("any");
+                let mut opts = String::from(r#"<option value="">any</option>"#);
+                for (val, label) in &field.options {
+                    let sel = if val == current { " selected" } else { "" };
+                    if val == current {
+                        display = label.clone();
+                    }
+                    let _ = write!(
+                        opts,
+                        r#"<option value="{}"{}>{}</option>"#,
+                        html_escape(val),
+                        sel,
+                        html_escape(label)
+                    );
+                }
+                (display, opts)
+            }
+            FilterType::Exact => {
+                // Free-text filters don't fit the pill metaphor cleanly;
+                // skip and let them surface in the Advanced panel.
+                continue;
+            }
+        };
+        let _ = write!(
+            out,
+            r#"<label class="{cls}"><span class="field-pill-key">{key}:</span><span class="field-pill-val">{val}</span><span class="field-pill-caret">▾</span><select name="{name}" aria-label="Filter by {label}">{options}</select></label>"#,
+            cls = pill_cls,
+            key = html_escape(field.label),
+            val = html_escape(&display_value),
+            name = html_escape(field.name),
+            label = html_escape(field.label),
+            options = options_html,
+        );
+    }
+    out
 }
 
 /// Walk `UserAdmin::fields()` and emit the input HTML for each
@@ -1722,91 +1792,7 @@ pub fn demo_form() -> String {
     })
 }
 
-// ---------------------------------------------------------------
-// Sample data (foundation step — replaced by DB in a later step)
-// ---------------------------------------------------------------
-
-fn sample_sidebar() -> Vec<SidebarGroup> {
-    vec![
-        SidebarGroup {
-            label: "Auth".into(),
-            items: vec![
-                SidebarItem {
-                    label: "Users".into(),
-                    count: Some("142".into()),
-                    href: "/admin-new".into(),
-                    active: true,
-                },
-                SidebarItem {
-                    label: "Groups".into(),
-                    count: Some("8".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-                SidebarItem {
-                    label: "Permissions".into(),
-                    count: Some("64".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-                SidebarItem {
-                    label: "API Tokens".into(),
-                    count: Some("23".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-            ],
-        },
-        SidebarGroup {
-            label: "Content".into(),
-            items: vec![
-                SidebarItem {
-                    label: "Articles".into(),
-                    count: Some("318".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-                SidebarItem {
-                    label: "Categories".into(),
-                    count: Some("12".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-                SidebarItem {
-                    label: "Media".into(),
-                    count: Some("1.2k".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-            ],
-        },
-        SidebarGroup {
-            label: "System".into(),
-            items: vec![
-                SidebarItem {
-                    label: "Migrations".into(),
-                    count: Some("47".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-                SidebarItem {
-                    label: "Audit Log".into(),
-                    count: Some("—".into()),
-                    href: "#".into(),
-                    active: false,
-                },
-                SidebarItem {
-                    label: "Settings".into(),
-                    count: None,
-                    href: "#".into(),
-                    active: false,
-                },
-            ],
-        },
-    ]
-}
-
-// `sample_users_table()` (the previous static demo data source) was
-// removed when the table was wired to `admin_new_demo_users`. The
-// real table builder lives at `render_users_table` near
-// `admin_index_with_drawer`.
+// The sample "Auth / Content / System" sidebar was retired 2026-04-23
+// — the sidebar now comes straight from the registered AdminUiModel
+// registry via `render_admin_sidebar_for`. No placeholder items, no
+// fake groupings. Only real models ship.

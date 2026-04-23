@@ -58,11 +58,12 @@ impl Default for Design {
         Self {
             project_name: "RustIO".to_string(),
             logo_initial: "R".to_string(),
-            // Neutral Stripe/Linear-class blue. Single brand accent
-            // shared with the new admin engine; overrideable via
+            // Rust-600 — single brand accent shared with the new
+            // admin engine. Canonical visual language lives in
+            // rustio-core/design-reference/. Overrideable via
             // rustio.design.json.
-            primary_color: "#2563EB".to_string(),
-            accent_color: "#2563EB".to_string(),
+            primary_color: "#B84318".to_string(),
+            accent_color: "#B84318".to_string(),
             density: Density::Comfortable,
         }
     }
@@ -139,6 +140,6 @@ mod tests {
         assert_eq!(d.primary_color, "#1e40af");
         // Missing fields fall back to defaults.
         assert_eq!(d.logo_initial, "R");
-        assert_eq!(d.accent_color, "#2563EB");
+        assert_eq!(d.accent_color, "#B84318");
     }
 }

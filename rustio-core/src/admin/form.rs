@@ -253,7 +253,7 @@ fn render_field_inner(f: &FieldConfig, autofocus: bool) -> String {
 
 fn wrap_field(f: &FieldConfig, input_html: &str) -> String {
     let req = if f.required {
-        r#"<span class="required">*</span>"#
+        r#"<span class="field-required">*</span>"#
     } else {
         ""
     };
@@ -467,31 +467,34 @@ pub fn render_form(form: &FormConfig) -> String {
 
     let save_disabled_attr = if has_errors { " disabled" } else { "" };
 
-    // The drawer is wrapped in a `<form data-admin-form>` so:
-    // - native browser submission via Enter inside text inputs works
-    //   through the `type="submit"` Save button;
-    // - the inline JS in `layout.rs::FORM_KEYBOARD_JS` can scope its
-    //   Ctrl/Cmd+Enter and Escape handlers to admin forms only;
-    // - the existing `.drawer` styles still apply since the form
-    //   element is a transparent block-level wrapper.
+    // The drawer is wrapped in a single `<form data-admin-form>`:
+    //   - Save / Cancel both belong to one POST submission flow.
+    //   - admin.js scopes Esc-to-close + Cmd+Enter-to-submit to
+    //     `[data-admin-form]`, so unrelated UI is unaffected.
+    //   - Backdrop is a sibling element so a click outside the drawer
+    //     closes it via the same `href="?"` cancel target.
+    // Header × and footer Cancel both navigate to `?` — empty query
+    // string drops `?id=` and the browser re-renders the list view
+    // with the drawer hidden. Search / filter / sort state is lost on
+    // cancel; a follow-up could thread the current state through.
     format!(
-        r#"<form data-admin-form action="" method="post">{hidden}<div class="drawer open">
-  <div class="drawer-header">
-    <div>
+        r#"<a class="drawer-backdrop open" href="?" aria-label="Close drawer"></a>
+<form data-admin-form class="drawer open" action="" method="post">
+  {hidden}
+  <header class="drawer-header">
+    <div class="drawer-title-group">
       <h2 class="drawer-title">{title}</h2>
       <div class="drawer-subtitle">{subtitle}</div>
     </div>
-  </div>
+    <a class="drawer-close" href="?" aria-label="Close">×</a>
+  </header>
   <div class="drawer-body">
     {body}
   </div>
-  <div class="drawer-footer">
-    <div class="btn-group">
-      <button type="button" class="btn">Cancel</button>
-      <button type="submit" class="btn btn-primary"{save_disabled}>Save</button>
-    </div>
-  </div>
-</div>
+  <footer class="drawer-footer">
+    <a class="btn btn-ghost" href="?">Cancel</a>
+    <button type="submit" class="btn btn-primary"{save_disabled}>Save changes</button>
+  </footer>
 </form>"#,
         title = html_escape(&form.title),
         subtitle = html_escape(&form.subtitle),
@@ -508,16 +511,18 @@ pub fn render_form(form: &FormConfig) -> String {
 fn render_form_banner(form: &FormConfig, has_errors: bool) -> String {
     if has_errors {
         return String::from(
-            r#"<div class="form-error-summary" role="alert">Please fix the errors below.</div>"#,
+            r#"<div class="form-banner form-banner-error" role="alert">Please fix the errors below.</div>"#,
         );
     }
     if form.save_failed {
         return String::from(
-            r#"<div class="form-error-summary" role="alert">Failed to save record</div>"#,
+            r#"<div class="form-banner form-banner-error" role="alert">Could not save the record.</div>"#,
         );
     }
     if form.submitted {
-        return String::from(r#"<div class="form-success" role="status">Saved successfully</div>"#);
+        return String::from(
+            r#"<div class="form-banner form-banner-success" role="status">Changes saved.</div>"#,
+        );
     }
     String::new()
 }

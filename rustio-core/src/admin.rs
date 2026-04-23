@@ -461,195 +461,62 @@ impl Admin {
             Ok::<Response, Error>(admin_favicon_response())
         });
 
-        // Admin index.
-        let index_entries = entries.clone();
-        let index_db = db.clone();
-        router = router.get("/admin", move |req, _params| {
-            let entries = index_entries.clone();
-            let db = index_db.clone();
-            async move {
-                if let Err(resp) = admin_guard(req.ctx()) {
-                    return Ok(resp);
-                }
-                // Pass through the schema-reload flash, if any — the
-                // dashboard renders a small banner based on it.
-                let flash = req
-                    .query()
-                    .get("schema_reload")
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(String::from);
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                // Live row-counts for the model cards. Each model is
-                // a cheap `SELECT COUNT(*)`; failing silently degrades
-                // the card to the table name rather than 500-ing the
-                // whole dashboard over one bad query.
-                let counts = fetch_model_row_counts(&db, &entries).await;
-                Ok::<Response, Error>(dashboard_response(shell, flash.as_deref(), &counts))
-            }
-        });
-
-        // Generic admin engine routes. The `:model` path segment is
-        // looked up against an `AdminRegistry`; an unknown slug
-        // returns 404. All persistence / rendering is driven by the
-        // looked-up model's metadata — no per-route hardcoding.
+        // Build the AdminUiModel registry first — both the dashboard
+        // (GET /admin) and the per-model routes (/admin/:model and
+        // the temporary /admin-new/:model alias) read from it.
         let admin_new_registry = std::sync::Arc::new({
             let mut reg = crate::admin::admin_form_bridge::AdminRegistry::new();
             reg.register("users", crate::admin::layout::new_user_admin);
             register_generated(&mut reg, build_orders_config());
             reg
         });
-        let admin_new_get_db = db.clone();
-        let admin_new_get_registry = admin_new_registry.clone();
-        router = router.get("/admin-new/:model", move |req, params| {
-            let db = admin_new_get_db.clone();
-            let registry = admin_new_get_registry.clone();
+
+        // GET /admin — dashboard rendered by the new admin engine
+        // (one card per registered AdminUiModel). Uses the same shell
+        // / topbar / sidebar / CSS as the per-model pages so the
+        // visual identity stays consistent across the admin surface.
+        // The legacy `dashboard_response` (built on AdminEntry) is no
+        // longer mounted; its renderer remains in the file for
+        // reference but is dead code from this commit on.
+        let _ = entries.clone(); // retained so the surrounding scope still compiles
+        let index_db = db.clone();
+        let index_registry = admin_new_registry.clone();
+        router = router.get("/admin", move |req, _params| {
+            let db = index_db.clone();
+            let registry = index_registry.clone();
             async move {
-                let model_slug = params.get("model").unwrap_or("").to_string();
-                let Some(model) = registry.get(&model_slug) else {
-                    return Err(Error::NotFound);
-                };
-                let q_map = req.query().into_map();
-                let id = q_map.get("id").filter(|s| !s.is_empty()).cloned();
-                let query = q_map
-                    .get("q")
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .map(String::from);
-                let page = q_map
-                    .get("page")
-                    .and_then(|p| p.parse::<i64>().ok())
-                    .filter(|p| *p > 0)
-                    .unwrap_or(1);
-                let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
-                let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
-                // Anything left over after stripping the reserved
-                // keys (q / page / id / sort / dir) is treated as a
-                // metadata-driven filter. Empty values are ignored
-                // so `?is_active=` is a no-op (= "All"). Whitelisting
-                // happens downstream against the model's metadata.
-                let filters: std::collections::HashMap<String, String> = q_map
-                    .iter()
-                    .filter(|(k, v)| {
-                        !v.is_empty()
-                            && k.as_str() != "q"
-                            && k.as_str() != "page"
-                            && k.as_str() != "id"
-                            && k.as_str() != "sort"
-                            && k.as_str() != "dir"
-                            && k.as_str() != "advanced"
-                    })
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-                let advanced = q_map
-                    .get("advanced")
-                    .map(|s| !s.is_empty())
-                    .unwrap_or(false);
-                let html = layout::admin_index_get(
-                    &db,
-                    &*model,
-                    id.as_deref(),
-                    query.as_deref(),
-                    page,
-                    &filters,
-                    sort.as_deref(),
-                    dir.as_deref(),
-                    advanced,
-                )
-                .await;
-                Ok::<Response, Error>(crate::http::html(html))
+                if let Err(resp) = admin_guard(req.ctx()) {
+                    return Ok(resp);
+                }
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let html =
+                    crate::admin::layout::admin_dashboard_get(&db, &registry, csrf.as_deref())
+                        .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
-        let admin_new_post_db = db.clone();
-        let admin_new_post_registry = admin_new_registry.clone();
-        router = router.post("/admin-new/:model", move |req, params| {
-            let db = admin_new_post_db.clone();
-            let registry = admin_new_post_registry.clone();
-            async move {
-                let model_slug = params.get("model").unwrap_or("").to_string();
-                let Some(model) = registry.get(&model_slug) else {
-                    return Err(Error::NotFound);
-                };
-                // Extract URL state from the request *before*
-                // consuming the body — `read_form` takes `req` by
-                // value.
-                let q_map = req.query().into_map();
-                let query = q_map
-                    .get("q")
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .map(String::from);
-                let page = q_map
-                    .get("page")
-                    .and_then(|p| p.parse::<i64>().ok())
-                    .filter(|p| *p > 0)
-                    .unwrap_or(1);
-                let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
-                let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
-                let filters: std::collections::HashMap<String, String> = q_map
-                    .iter()
-                    .filter(|(k, v)| {
-                        !v.is_empty()
-                            && k.as_str() != "q"
-                            && k.as_str() != "page"
-                            && k.as_str() != "id"
-                            && k.as_str() != "sort"
-                            && k.as_str() != "dir"
-                            && k.as_str() != "advanced"
-                    })
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect();
-                let advanced = q_map
-                    .get("advanced")
-                    .map(|s| !s.is_empty())
-                    .unwrap_or(false);
-                let form_data = read_form(req).await?;
-                let bulk_action = form_data
-                    .get("bulk_action")
-                    .filter(|s| !s.is_empty())
-                    .map(String::from);
-                let bulk_ids: Vec<String> = form_data
-                    .get_all("ids")
-                    .into_iter()
-                    .filter(|s| !s.is_empty())
-                    .map(String::from)
-                    .collect();
-                let params = form_data.into_map();
-                let html = if let Some(action) = bulk_action.as_deref() {
-                    layout::admin_index_bulk(
-                        &db,
-                        &*model,
-                        action,
-                        &bulk_ids,
-                        query.as_deref(),
-                        &filters,
-                        sort.as_deref(),
-                        dir.as_deref(),
-                        advanced,
-                    )
-                    .await
-                } else {
-                    let editing_id = params
-                        .get("id")
-                        .map(String::as_str)
-                        .filter(|s| !s.is_empty());
-                    layout::admin_index_post(
-                        &db,
-                        &*model,
-                        &params,
-                        editing_id,
-                        query.as_deref(),
-                        page,
-                        &filters,
-                        sort.as_deref(),
-                        dir.as_deref(),
-                        advanced,
-                    )
-                    .await
-                };
-                Ok::<Response, Error>(crate::http::html(html))
-            }
-        });
+        // /admin-new/:model is a temporary alias kept for verification
+        // during the migration to /admin/:model. Both routes call the
+        // same shared handler. Remove this block once parity is
+        // confirmed and bookmarks are migrated.
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            router = router.get("/admin-new/:model", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                async move { admin_model_index_get(&db, &registry, req, params).await }
+            });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            router = router.post("/admin-new/:model", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                async move { admin_model_index_post(&db, &registry, req, params).await }
+            });
+        }
 
         // Login + logout. Unauthenticated users *need* to reach
         // /admin/login; POST /admin/logout is CSRF-protected inside
@@ -836,6 +703,33 @@ impl Admin {
             };
             Ok::<Response, Error>(with_admin_headers(redirect(redirect_url)))
         });
+
+        // /admin/:model is the canonical model path. Registered
+        // *after* every literal /admin/<word> route above so the
+        // router's first-match-wins lookup keeps reserved literals
+        // (login, logout, profile, password_change, actions,
+        // suggestions, schema, assets) bound to their dedicated
+        // handlers. Anything else under /admin/<slug> resolves into
+        // the new admin engine via the same shared helper that
+        // /admin-new/:model uses.
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            router = router.get("/admin/:model", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                async move { admin_model_index_get(&db, &registry, req, params).await }
+            });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            router = router.post("/admin/:model", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                async move { admin_model_index_post(&db, &registry, req, params).await }
+            });
+        }
 
         for registrar in self.registrars {
             router = registrar(router, db, entries.clone());
@@ -2098,6 +1992,12 @@ fn build_orders_config() -> crate::admin::admin_generator::AdminModelConfig {
 /// a `HashMap<admin_name, count>`. A failure on any single model
 /// leaves that model out of the map; the dashboard renders it
 /// without a count rather than 500-ing the whole page.
+///
+/// **Dead code retained.** GET /admin now renders the new-engine
+/// dashboard; this helper was only consumed by `dashboard_response`.
+/// Kept as a reference for the upcoming Phase 6 cleanup pass that
+/// removes the legacy AdminEntry-driven dashboard renderers entirely.
+#[allow(dead_code)]
 async fn fetch_model_row_counts(
     db: &Db,
     entries: &[AdminEntry],
@@ -2117,6 +2017,10 @@ async fn fetch_model_row_counts(
     out
 }
 
+/// **Dead code retained.** Legacy dashboard renderer (AdminEntry +
+/// admin.css). GET /admin now uses `layout::admin_dashboard_get`.
+/// Kept until the Phase 6 alias-removal cleanup.
+#[allow(dead_code)]
 fn dashboard_response(
     shell: Shell<'_>,
     schema_reload_flash: Option<&str>,
@@ -2277,6 +2181,10 @@ fn empty_state_hint<T: AdminModel>(context: Option<&crate::ai::ContextConfig>) -
 /// After an apply + `rustio schema` + `[Reload schema]`, the just-
 /// added field stops showing up as a suggestion on the next
 /// dashboard render, no restart required.
+///
+/// **Dead code retained** along with `dashboard_response` until
+/// Phase 6 cleanup.
+#[allow(dead_code)]
 fn render_dashboard_alerts(entries: &[&AdminEntry]) -> String {
     let ctx = match intelligence::context_global() {
         Some(c) => c,
@@ -4805,6 +4713,170 @@ The admin could not complete your request. The detail has been logged server-sid
 }
 
 // ---------------------------------------------------------------------------
+// Shared admin-engine model handlers
+// ---------------------------------------------------------------------------
+//
+// `/admin/:model` and `/admin-new/:model` both delegate here so the
+// engine has exactly one implementation. Routing is the only thing
+// that differs between the two surfaces. After parity is confirmed
+// the alias `/admin-new/:model` will be removed; this file stays
+// untouched at that point.
+
+async fn admin_model_index_get(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let Some(model) = registry.get(&model_slug) else {
+        return Err(Error::NotFound);
+    };
+    let q_map = req.query().into_map();
+    let id = q_map.get("id").filter(|s| !s.is_empty()).cloned();
+    let query = q_map
+        .get("q")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    let page = q_map
+        .get("page")
+        .and_then(|p| p.parse::<i64>().ok())
+        .filter(|p| *p > 0)
+        .unwrap_or(1);
+    let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
+    let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
+    let filters: std::collections::HashMap<String, String> = q_map
+        .iter()
+        .filter(|(k, v)| {
+            !v.is_empty()
+                && k.as_str() != "q"
+                && k.as_str() != "page"
+                && k.as_str() != "id"
+                && k.as_str() != "sort"
+                && k.as_str() != "dir"
+                && k.as_str() != "advanced"
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let advanced = q_map
+        .get("advanced")
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let html = crate::admin::layout::admin_index_get(
+        db,
+        registry,
+        &*model,
+        id.as_deref(),
+        query.as_deref(),
+        page,
+        &filters,
+        sort.as_deref(),
+        dir.as_deref(),
+        advanced,
+    )
+    .await;
+    Ok(with_admin_headers(crate::http::html(html)))
+}
+
+async fn admin_model_index_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let Some(model) = registry.get(&model_slug) else {
+        return Err(Error::NotFound);
+    };
+    // Extract URL state before consuming the body — `read_form` takes
+    // ownership of the request.
+    let q_map = req.query().into_map();
+    let query = q_map
+        .get("q")
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    let page = q_map
+        .get("page")
+        .and_then(|p| p.parse::<i64>().ok())
+        .filter(|p| *p > 0)
+        .unwrap_or(1);
+    let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
+    let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
+    let filters: std::collections::HashMap<String, String> = q_map
+        .iter()
+        .filter(|(k, v)| {
+            !v.is_empty()
+                && k.as_str() != "q"
+                && k.as_str() != "page"
+                && k.as_str() != "id"
+                && k.as_str() != "sort"
+                && k.as_str() != "dir"
+                && k.as_str() != "advanced"
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let advanced = q_map
+        .get("advanced")
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let form_data = read_form(req).await?;
+    let bulk_action = form_data
+        .get("bulk_action")
+        .filter(|s| !s.is_empty())
+        .map(String::from);
+    let bulk_ids: Vec<String> = form_data
+        .get_all("ids")
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect();
+    let body_params = form_data.into_map();
+    let html = if let Some(action) = bulk_action.as_deref() {
+        crate::admin::layout::admin_index_bulk(
+            db,
+            registry,
+            &*model,
+            action,
+            &bulk_ids,
+            query.as_deref(),
+            &filters,
+            sort.as_deref(),
+            dir.as_deref(),
+            advanced,
+        )
+        .await
+    } else {
+        let editing_id = body_params
+            .get("id")
+            .map(String::as_str)
+            .filter(|s| !s.is_empty());
+        crate::admin::layout::admin_index_post(
+            db,
+            registry,
+            &*model,
+            &body_params,
+            editing_id,
+            query.as_deref(),
+            page,
+            &filters,
+            sort.as_deref(),
+            dir.as_deref(),
+            advanced,
+        )
+        .await
+    };
+    Ok(with_admin_headers(crate::http::html(html)))
+}
+
+// ---------------------------------------------------------------------------
 // Admin guard + login/forbidden auth pages
 // ---------------------------------------------------------------------------
 
@@ -4821,28 +4893,28 @@ fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
 /// Render the login page. Status 401 on a pure auth-gate hit; 400 on
 /// missing fields; 403 on inactive account; 429 on rate-limit trip.
 fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response {
+    // Standalone page rendered with the v3 design system. Inline
+    // theme.css + components.css via the layout module so the login
+    // shares typography and palette with the rest of the admin —
+    // no `/admin/assets/admin.css` dependency.
+    const THEME_CSS: &str = include_str!("../assets/admin-new/theme.css");
+    const COMPONENTS_CSS: &str = include_str!("../assets/admin-new/components.css");
+
     let design = design::Design::global();
+    let project = escape_html(&design.project_name);
 
     let error_html = match error {
         Some(msg) => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<span>{msg}</span></div>"#,
-            icon = icon_triangle_alert(),
-            msg = escape_html(msg),
+            r#"<div class="form-banner form-banner-error" role="alert">{}</div>"#,
+            escape_html(msg),
         ),
         None => String::new(),
     };
     let email_value = email.map(escape_html).unwrap_or_default();
-
-    let theme_style = format!(
-        "\n:root {{\n  --rio-primary: {p};\n  --rio-accent: {a};\n}}\n",
-        p = escape_css_color(&design.primary_color),
-        a = escape_css_color(&design.accent_color),
-    );
-
     let footer_hint = if crate::auth::in_production() {
-        r#"<p class="rio-auth-footer"><strong>production</strong> · only real user accounts sign in here.</p>"#.to_string()
+        r#"<p class="page-subtitle" style="margin-top: var(--space-6); text-align: center;"><strong>production</strong> · only real user accounts sign in here.</p>"#.to_string()
     } else {
-        r#"<p class="rio-auth-footer">No admin user yet? Run <code>rustio user create</code> from your project directory.</p>"#.to_string()
+        r#"<p class="page-subtitle" style="margin-top: var(--space-6); text-align: center;">No admin user yet? Run <kbd>rustio user create</kbd> in your project.</p>"#.to_string()
     };
 
     let body = format!(
@@ -4852,48 +4924,40 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
-<link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
-<style>{theme}</style>
+<style>{theme}{components}</style>
 </head>
-<body>
-<div class="rio-auth-shell">
-<div class="rio-auth-card">
-<div class="rio-auth-logo">
-<span class="rio-brand-mark">{logo}</span>
-<span class="rio-brand-meta">
-<span class="rio-brand-name">{project}</span>
-<span class="rio-brand-label">Admin</span>
-</span>
-{env}
-</div>
-<h1 class="rio-auth-title">Sign in</h1>
-<p class="rio-auth-subtitle">Enter your credentials to access the admin.</p>
-{error}
-<form method="post" action="/admin/login" autocomplete="on">
-<div class="rio-field">
-<label for="_email">Email</label>
-<input class="rio-input" id="_email" type="email" name="email" value="{email}" autocomplete="username" autofocus required>
-</div>
-<div class="rio-field">
-<label for="_password">Password</label>
-<input class="rio-input" id="_password" type="password" name="password" autocomplete="current-password" required>
-</div>
-<button class="rio-btn rio-btn-primary rio-btn-block" type="submit">Sign in</button>
-</form>
-{footer}
-</div>
-</div>
+<body class="login-page">
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="sidebar-brand-mark">R</span>
+      {project}
+    </div>
+    <h1 class="login-title">Sign in</h1>
+    <p class="login-subtitle">Enter your credentials to access the admin.</p>
+    {error}
+    <form method="post" action="/admin/login" autocomplete="on">
+      <div class="field">
+        <label class="field-label" for="login-email">Email</label>
+        <input id="login-email" type="email" name="email" value="{email}" autocomplete="username" autofocus required>
+      </div>
+      <div class="field">
+        <label class="field-label" for="login-password">Password</label>
+        <input id="login-password" type="password" name="password" autocomplete="current-password" required>
+      </div>
+      <div class="login-actions">
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Sign in</button>
+      </div>
+    </form>
+    {footer}
+  </div>
 </body>
 </html>"#,
-        project = escape_html(&design.project_name),
-        theme = theme_style,
-        logo = escape_html(&design.logo_initial),
+        project = project,
+        theme = THEME_CSS,
+        components = COMPONENTS_CSS,
         error = error_html,
         email = email_value,
         footer = footer_hint,
-        env = env_chip_html(),
-        css_ver = ADMIN_CSS_VER,
     );
 
     let resp = hyper::Response::builder()
