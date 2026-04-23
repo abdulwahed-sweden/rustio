@@ -15,7 +15,7 @@ Phase 1 (Foundation, 0.4.x) and Phase 2 (Intelligence, 0.5.x–0.8.x) have shipp
 
 ## Design filter
 
-Every feature must answer: *Does it make building a real system faster, clearer, or safer?* If no, it doesn't belong in RustIO. See `ROADMAP.md` "What RustIO is NOT" for the explicit out-of-scope list — Django API compatibility, template engines, frontend frameworks, sync runtime, microservice tooling, MySQL/Oracle/SQL Server.
+Every feature must answer: *Does it make building a real system faster, clearer, or safer?* If no, it doesn't belong in RustIO. See `ROADMAP.md` "What RustIO is NOT" for the explicit out-of-scope list — Django API compatibility, frontend frameworks, sync runtime, microservice tooling, MySQL/Oracle/SQL Server. A Jinja-style template engine (`minijinja`) is in scope **only** for the admin — public-site rendering in user apps stays opinion-free.
 
 ## Development commands
 
@@ -59,15 +59,27 @@ When publishing from a machine with `~/.cargo/config.toml` pinned to `protocol =
 
 `register_app_in_mod` searches for these markers and inserts before them. If you change the shape of the generated `apps/mod.rs`, the markers **must stay in the same form** or every existing project's `rustio new app` breaks. The template split into `build_admin()` + `register_all()` exists specifically so `main.rs --dump-schema` can introspect the admin without touching the DB or binding a port.
 
-## Admin is framework-owned
+## Admin rendering (0.10+: templated)
 
-The admin HTML shell, layout, forms, tables, auth pages, and error states have **no template override hook**. A generated project's `templates/` and `static/` directories are for public site pages only. Visual customisation of the admin flows exclusively through `rustio.design.json` → `admin::design::Design`. When a request lands to "theme the admin" or "override the admin template", redirect it through `Design` fields or reject — don't add an escape hatch.
+As of 0.10.0 the admin is rendered by `minijinja` against templates bundled inside `rustio-core/assets/templates/` (compiled in via `include_str!`). User projects MAY override any admin template by placing a file of the same relative path under their project's `templates/` directory — the filesystem loader is tried before the embedded defaults. Rust code in `rustio-core::admin` passes **data only** (typed context dicts) to the renderer; no HTML is concatenated in Rust.
+
+- **What user projects can override.** Any file under `templates/admin/…`, `templates/auth/…`, `templates/includes/…`, or the two roots `templates/base.html` / `templates/base_admin.html`. The framework ships a complete default set; overrides are additive by filename, not patches.
+- **What stays framework-owned.** Route shape (`/admin/<model>` / `/admin/<model>/new` / `/admin/<model>/<id>/edit`), form semantics, validation, audit logging, RBAC gates, and the context dicts passed into templates. A missing template falls back to the embedded default; a template that throws renders the framework's 500 page, never crashes the server.
+- **Assets.** Bootstrap 5 CSS + JS and `admin.css` / `app.js` are bundled via `include_bytes!` and served under `/admin/static/…` by the core. `rustio.design.json` still drives the accent colour and logo — it's passed into the base-admin template as plain context, not injected as CSS.
+
+### RBAC
+
+Roles live in a first-class subsystem at `rustio-core/src/admin/rbac.rs`. Four built-in roles (`SuperAdmin`, `Admin`, `Editor`, `Viewer`); per-model permissions (`view` / `create` / `edit` / `delete`) resolved from `roles` + `user_roles` tables. The RBAC middleware populates a `PermissionSet` on the request; both handlers and templates consume it. If a user lacks `view` on a model, the model never appears in the sidebar; lacking `create` hides the `+ Add` button; lacking `edit` / `delete` disables the row actions. A handler entered by URL without the required permission returns a framework 403 page — do not softly allow it with a warning.
+
+### Admin submodules
 
 The admin submodules under `rustio-core/src/admin/` carry most of the Phase 2 admin behaviour:
 
 - `schema_cache.rs` — process-local `RwLock<Option<Schema>>` reread at runtime. `/admin/schema/reload` and a successful `ai apply` both refresh it, so the dashboard + suggestion engine reflect schema changes without a restart. A poisoned lock degrades to "cache empty", never panics.
 - `intelligence.rs` + `suggestions.rs` — role classification, filters, search intent, masking, and suggestion confidence. These pattern-match on `FieldType` and on context, so they're a required update site when the type vocabulary changes.
 - `entry_builder.rs` — constructs `AdminEntry` lists dynamically from the cached schema.
+- `rbac.rs` — roles, permissions, middleware, template helpers (0.10+).
+- `templating.rs` — `minijinja` environment setup, filesystem-then-embedded loader chain, context-dict builders (0.10+).
 - `audit.rs`, `design.rs` — audit logging and visual-identity config.
 
 ## The macro ↔ core contract

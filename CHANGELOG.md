@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — 0.10.0 Admin rebuild (breaking, in progress on `feat/admin-templates-v2`)
+
+The admin UI is being rebuilt from the ground up on `minijinja` templates + Bootstrap 5 + a first-class RBAC layer. Tracking branch: `feat/admin-templates-v2`. Landed in stages; nothing in this section has shipped to `main` yet.
+
+- **Rendering.** Rust code in `rustio-core::admin` now passes typed context dicts to `minijinja`; it no longer concatenates HTML. Default templates ship bundled in `rustio-core/assets/templates/` via `include_str!`.
+- **Per-project override.** User projects can override any admin template by placing a file of the same relative path under their project's `templates/` directory. Override is additive by filename — no patch format. This reverses the 0.8.x rule that admin templates had no override hook.
+- **Bootstrap 5** bundled via `include_bytes!`, served under `/admin/static/…`. Accent colour still driven by `rustio.design.json`, now passed as template context.
+- **RBAC.** New `admin::rbac` module; `Role` enum (`SuperAdmin` / `Admin` / `Editor` / `Viewer`); per-model `view` / `create` / `edit` / `delete`. Migration for `roles` + `user_roles` tables. Lacking `view` hides a model from the sidebar entirely; lacking `create` / `edit` / `delete` disables the corresponding UI paths, and a direct URL returns 403.
+- **Removed.** Legacy string-concat rendering in `admin.rs`, `admin/layout.rs`, `admin/ui.rs`, and the hand-rolled CSS at `assets/admin-new/`. Projects that relied on scraping admin HTML will break.
+- **Palette.** Default `Design::primary_color` / `accent_color` shifts from rust-orange `#B84318` to indigo. Projects with `rustio.design.json` pinning a colour are unaffected.
+
+This is a pre-1.0 breaking change, documented here before wiring.
+
 ### Added — 0.9.0 Relation Intelligence Layer
 
 The admin stops treating foreign keys as anonymous integers. This is a

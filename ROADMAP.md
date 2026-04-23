@@ -165,7 +165,7 @@ If the answer is no, it does not belong in RustIO. This principle supersedes any
 
 ## Explicitly out of scope
 
-- **Template engines** beyond what the admin needs.
+- **A generic template engine for user apps.** `minijinja` is bundled for admin rendering only (as of 0.10.0); we don't document it, stabilise its context, or expose helpers for public-site templating.
 - **Frontend framework integrations.** Ship JSON, use a separate frontend.
 - **Microservice tooling** (service discovery, RPC, mesh). RustIO targets monoliths.
 - **MySQL, Oracle, SQL Server.** SQLite + PostgreSQL is the working set.
