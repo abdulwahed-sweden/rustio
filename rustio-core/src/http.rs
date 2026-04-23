@@ -175,14 +175,23 @@ fn response(status: u16, content_type: &'static str, body: Vec<u8>) -> Response 
 ///
 /// Used for both URL query strings (via [`Request::query`]) and POST
 /// request bodies (the admin layer reads form submissions this way).
+///
+/// Stores both a deduped `key → last-value` map (for the common
+/// single-value lookup path via [`get`](Self::get)) **and** the full
+/// ordered pair list (for forms that submit the same key multiple
+/// times — e.g. bulk-action checkboxes producing
+/// `ids=1&ids=2&ids=3`). [`get_all`](Self::get_all) returns every
+/// value bound to a key.
 pub struct FormData {
     map: HashMap<String, String>,
+    pairs: Vec<(String, String)>,
 }
 
 impl FormData {
     /// Parse a URL-encoded key/value string.
     pub fn parse(body: &str) -> Self {
         let mut map = HashMap::new();
+        let mut pairs = Vec::new();
         for pair in body.split('&') {
             if pair.is_empty() {
                 continue;
@@ -193,13 +202,26 @@ impl FormData {
                 _ => continue,
             };
             let raw_val = iter.next().unwrap_or("");
-            map.insert(percent_decode(raw_key), percent_decode(raw_val));
+            let key = percent_decode(raw_key);
+            let val = percent_decode(raw_val);
+            map.insert(key.clone(), val.clone());
+            pairs.push((key, val));
         }
-        FormData { map }
+        FormData { map, pairs }
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
         self.map.get(key).map(String::as_str)
+    }
+
+    /// Return every value bound to `key`, in submission order. Used
+    /// by bulk-action handlers to read all `ids=…` entries (HTML
+    /// checkbox groups send the same key once per checked row).
+    pub fn get_all(&self, key: &str) -> Vec<&str> {
+        self.pairs
+            .iter()
+            .filter_map(|(k, v)| (k == key).then_some(v.as_str()))
+            .collect()
     }
 
     pub fn len(&self) -> usize {

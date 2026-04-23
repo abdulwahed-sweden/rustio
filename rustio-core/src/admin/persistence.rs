@@ -349,6 +349,62 @@ pub async fn count_filtered_records(
     Ok(count)
 }
 
+// ---------------------------------------------------------------
+// Bulk operations (multi-id update / delete)
+// ---------------------------------------------------------------
+
+/// `UPDATE table SET "<field>" = ? WHERE "id" IN (?, ?, …)`.
+///
+/// Each id is bound positionally — the IN-clause placeholders are
+/// generated from `ids.len()`, never spliced from caller text.
+/// `field` and `table` go through [`quote_ident`]. Empty `ids` is a
+/// no-op so callers don't need to gate the call.
+pub async fn bulk_update(
+    db: &Db,
+    table: &str,
+    ids: &[String],
+    field: &str,
+    value: &str,
+) -> Result<(), Error> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders = vec!["?"; ids.len()].join(", ");
+    let sql = format!(
+        "UPDATE {} SET {} = ? WHERE \"id\" IN ({})",
+        quote_ident(table),
+        quote_ident(field),
+        placeholders,
+    );
+    let mut q = sqlx::query(&sql);
+    q = q.bind(value);
+    for id in ids {
+        q = q.bind(id.as_str());
+    }
+    q.execute(db.pool()).await.map_err(Error::from)?;
+    Ok(())
+}
+
+/// `DELETE FROM table WHERE "id" IN (?, ?, …)`. Same parameter-only
+/// guarantees as [`bulk_update`]. Empty `ids` → no-op.
+pub async fn bulk_delete(db: &Db, table: &str, ids: &[String]) -> Result<(), Error> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders = vec!["?"; ids.len()].join(", ");
+    let sql = format!(
+        "DELETE FROM {} WHERE \"id\" IN ({})",
+        quote_ident(table),
+        placeholders,
+    );
+    let mut q = sqlx::query(&sql);
+    for id in ids {
+        q = q.bind(id.as_str());
+    }
+    q.execute(db.pool()).await.map_err(Error::from)?;
+    Ok(())
+}
+
 /// Shared `WHERE` clause builder for [`filter_records`] /
 /// [`count_filtered_records`]. Returns the clause body (without the
 /// leading `WHERE`) plus the ordered list of bind values. Filter

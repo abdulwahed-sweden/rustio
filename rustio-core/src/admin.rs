@@ -578,22 +578,49 @@ impl Admin {
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
                 let form_data = read_form(req).await?;
+                // Read multi-valued + single-valued things off the
+                // FormData *before* `into_map` consumes it.
+                let bulk_action = form_data
+                    .get("bulk_action")
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let bulk_ids: Vec<String> = form_data
+                    .get_all("ids")
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
                 let params = form_data.into_map();
-                let editing_id = params
-                    .get("id")
-                    .map(String::as_str)
-                    .filter(|s| !s.is_empty());
-                let html = layout::admin_index_post(
-                    &db,
-                    &params,
-                    editing_id,
-                    query.as_deref(),
-                    page,
-                    &filters,
-                    sort.as_deref(),
-                    dir.as_deref(),
-                )
-                .await;
+                let html = if let Some(action) = bulk_action.as_deref() {
+                    // Bulk path: ids + action drive the operation;
+                    // page is forced to 1 in the renderer.
+                    layout::admin_index_bulk(
+                        &db,
+                        action,
+                        &bulk_ids,
+                        query.as_deref(),
+                        &filters,
+                        sort.as_deref(),
+                        dir.as_deref(),
+                    )
+                    .await
+                } else {
+                    let editing_id = params
+                        .get("id")
+                        .map(String::as_str)
+                        .filter(|s| !s.is_empty());
+                    layout::admin_index_post(
+                        &db,
+                        &params,
+                        editing_id,
+                        query.as_deref(),
+                        page,
+                        &filters,
+                        sort.as_deref(),
+                        dir.as_deref(),
+                    )
+                    .await
+                };
                 Ok::<Response, Error>(crate::http::html(html))
             }
         });

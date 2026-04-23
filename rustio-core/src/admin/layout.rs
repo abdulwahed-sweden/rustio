@@ -438,6 +438,94 @@ async fn fetch_users_table_state(
     )
 }
 
+/// Bulk-action POST path. Validates `ids` as numeric (anything that
+/// can't `parse::<i64>` is dropped — the client should never send
+/// non-numeric values, but this keeps a malicious / malformed body
+/// from reaching the SQL layer). Dispatches `action` to the right
+/// persistence helper, captures success / failure into a banner,
+/// and re-renders the page with `page=1` per the spec's reset rule.
+/// `q` / `filters` / `sort` / `dir` are preserved verbatim.
+pub async fn admin_index_bulk(
+    db: &Db,
+    action: &str,
+    ids: &[String],
+    query: Option<&str>,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+) -> String {
+    let _ = persistence::ensure_demo_table(db).await;
+
+    let valid_ids: Vec<String> = ids
+        .iter()
+        .filter(|s| s.parse::<i64>().is_ok())
+        .cloned()
+        .collect();
+
+    let mut banner = String::new();
+    if !valid_ids.is_empty() {
+        let table = UserAdmin::table_name();
+        let result: Option<Result<(), crate::error::Error>> = match action {
+            "activate" => {
+                Some(persistence::bulk_update(db, table, &valid_ids, "is_active", "true").await)
+            }
+            "deactivate" => {
+                Some(persistence::bulk_update(db, table, &valid_ids, "is_active", "false").await)
+            }
+            "delete" => Some(persistence::bulk_delete(db, table, &valid_ids).await),
+            // Unknown action → silent no-op. Better than guessing.
+            _ => None,
+        };
+        match result {
+            Some(Ok(())) => {
+                banner = String::from(
+                    r#"<div class="form-success" role="status">Bulk action completed</div>"#,
+                );
+            }
+            Some(Err(err)) => {
+                eprintln!("admin-new bulk error: {err}");
+                banner = String::from(
+                    r#"<div class="form-error-summary" role="alert">Bulk action failed</div>"#,
+                );
+            }
+            None => {}
+        }
+    }
+    // Empty-ids path silently no-ops (per test case 4): no DB call,
+    // no banner — the page just re-renders with the preserved state.
+
+    // Page resets to 1 after a bulk action (per spec). Drawer falls
+    // back to the create-mode demo (we don't carry an editing id
+    // through bulk requests).
+    let drawer = build_drawer_for_get(None, None);
+    let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
+        fetch_users_table_state(db, query, filters, 1, sort, dir).await;
+    let mut html = admin_index_with_drawer(
+        drawer,
+        rows,
+        total,
+        query,
+        current_page,
+        total_pages,
+        filters,
+        validated_sort.as_deref(),
+        validated_dir.as_deref(),
+    );
+
+    if !banner.is_empty() {
+        // Place the banner at the very top of the main content area
+        // so the user sees the outcome before anything else. The
+        // existing `.form-success` / `.form-error-summary` styles
+        // handle the visuals — no new CSS.
+        html = html.replacen(
+            r#"<main class="main">"#,
+            &format!(r#"<main class="main">{banner}"#),
+            1,
+        );
+    }
+    html
+}
+
 /// Validate the URL's `sort` + `dir` against `UserAdmin` metadata.
 /// `sort` must name a field that's both declared and `sortable`;
 /// `dir` is normalised to `"asc"` or `"desc"` (any other value
@@ -739,9 +827,21 @@ fn admin_index_with_drawer(
         sort,
         dir,
     );
-    let foundation_note = r#"<p style="margin: 20px 0 0; font-family: var(--mono); font-size: 12px; color: var(--ink-subtle);">Live data from <code>admin_new_demo_users</code>. Submit the drawer to insert / update.</p>"#;
 
-    let content = format!("{page_header}{toolbar}{table}{foundation_note}{drawer}");
+    // Wrap the bulk-action bar + table in a sibling form (separate
+    // from the drawer's `data-admin-form`). Hidden inputs preserve
+    // q / filters / sort / dir across the POST so the page state
+    // round-trips. `page` is intentionally NOT preserved — the spec
+    // resets to page 1 after every bulk action.
+    let bulk_bar = render_bulk_bar();
+    let hidden_state = render_bulk_hidden_state(trimmed_query, filters, sort, dir);
+    let bulk_form = format!(
+        r#"<form method="post" action="" data-bulk-form>{hidden_state}{bulk_bar}{table}</form>"#,
+    );
+
+    let foundation_note = r#"<p style="margin: 20px 0 0; font-family: var(--mono); font-size: 12px; color: var(--ink-subtle);">Live data from <code>admin_new_demo_users</code>. Submit the drawer to insert / update; tick row checkboxes to bulk-act.</p>"#;
+
+    let content = format!("{page_header}{toolbar}{bulk_form}{foundation_note}{drawer}");
 
     render_layout(topbar, sidebar, content)
 }
@@ -904,6 +1004,45 @@ fn render_users_table(
     // `</div>` of `.table-wrap`. `render_table_shell` (with no
     // built-in pagination) emits exactly one `</div>` at the very
     // end, so a single `replacen` is safe.
+    // Replace the placeholder header `.checkbox` span with a real
+    // (disabled, no JS) `<input>`. Single-occurrence — there's only
+    // one checkbox column header in the rendered shell.
+    html = html.replacen(
+        r#"<th style="width: 36px; cursor: default;"><span class="checkbox"></span></th>"#,
+        r#"<th style="width: 36px; cursor: default;"><input type="checkbox" disabled aria-label="Select all (no JS yet)"></th>"#,
+        1,
+    );
+
+    // Replace each row's `.checkbox` placeholder with a real
+    // `<input type="checkbox" name="ids" value="<row id>">` in
+    // submission order. We walk the rendered HTML left-to-right and
+    // pair consecutive checkbox placeholders with consecutive rows.
+    {
+        let placeholder = r#"<td><span class="checkbox"></span></td>"#;
+        let mut new_html = String::with_capacity(html.len() + rows.len() * 80);
+        let mut remaining = html.as_str();
+        let mut row_iter = rows.iter();
+        while let Some(pos) = remaining.find(placeholder) {
+            new_html.push_str(&remaining[..pos]);
+            if let Some(row) = row_iter.next() {
+                let id = row.get("id").map(String::as_str).unwrap_or("");
+                let escaped_id = html_escape(id);
+                new_html.push_str(&format!(
+                    r#"<td><input type="checkbox" name="ids" value="{escaped_id}" aria-label="Select row {escaped_id}"></td>"#,
+                ));
+            } else {
+                // More placeholders than rows would mean
+                // render_table_shell or our row-builder went out of
+                // sync — keep the original placeholder rather than
+                // dropping cells.
+                new_html.push_str(placeholder);
+            }
+            remaining = &remaining[pos + placeholder.len()..];
+        }
+        new_html.push_str(remaining);
+        html = new_html;
+    }
+
     let pagination_html = render_users_pagination(
         query,
         current_page,
@@ -1017,6 +1156,77 @@ fn render_users_pagination(
 
     html.push_str("</div></div>");
     html
+}
+
+/// Render the bulk-action bar. Three submit buttons (`activate`,
+/// `deactivate`, `delete`), each carrying its `bulk_action` value.
+/// The wrapping form is added by the caller in
+/// [`admin_index_with_drawer`]. `.bulk-bar visible` keeps the bar
+/// always rendered (the existing CSS hides bare `.bulk-bar`); the
+/// "no JS" rule means we can't toggle visibility based on selection
+/// count, so the bar is always there. `.danger` on Delete picks up
+/// the existing `.bulk-bar button.danger` styling.
+fn render_bulk_bar() -> String {
+    String::from(
+        r#"<div class="bulk-bar visible">
+  <span>Bulk actions:</span>
+  <div class="bulk-actions">
+    <button type="submit" name="bulk_action" value="activate">Activate</button>
+    <button type="submit" name="bulk_action" value="deactivate">Deactivate</button>
+    <button type="submit" name="bulk_action" value="delete" class="danger">Delete</button>
+  </div>
+</div>"#,
+    )
+}
+
+/// Render the hidden inputs that round-trip URL state through the
+/// bulk-action POST. Mirrors what `build_query_url` would emit but
+/// as form fields. `page` is deliberately omitted — bulk resets to
+/// page 1.
+fn render_bulk_hidden_state(
+    query: Option<&str>,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    if let Some(q) = query {
+        let _ = write!(
+            out,
+            r#"<input type="hidden" name="q" value="{}">"#,
+            html_escape(q),
+        );
+    }
+    let mut keys: Vec<&String> = filters.keys().collect();
+    keys.sort();
+    for k in keys {
+        if let Some(v) = filters.get(k) {
+            if !v.is_empty() {
+                let _ = write!(
+                    out,
+                    r#"<input type="hidden" name="{}" value="{}">"#,
+                    html_escape(k),
+                    html_escape(v),
+                );
+            }
+        }
+    }
+    if let Some(s) = sort {
+        let _ = write!(
+            out,
+            r#"<input type="hidden" name="sort" value="{}">"#,
+            html_escape(s),
+        );
+    }
+    if let Some(d) = dir {
+        let _ = write!(
+            out,
+            r#"<input type="hidden" name="dir" value="{}">"#,
+            html_escape(d),
+        );
+    }
+    out
 }
 
 /// Inject the metadata-driven filter inputs (one per `filterable`
