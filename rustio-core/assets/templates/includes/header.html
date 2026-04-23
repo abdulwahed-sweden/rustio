@@ -1,0 +1,16 @@
+<header class="admin-header d-flex align-items-center justify-content-between px-4 py-3 border-bottom">
+  <div class="admin-header__title">
+    <h1 class="h5 mb-0">{% block page_title %}{{ page_title | default('') }}{% endblock %}</h1>
+    {% if page_subtitle is defined and page_subtitle %}
+      <p class="admin-header__subtitle text-muted small mb-0">{{ page_subtitle }}</p>
+    {% endif %}
+  </div>
+  <div class="admin-header__user d-flex align-items-center gap-3">
+    {% if current_user is defined and current_user %}
+      <span class="admin-header__username small">{{ current_user.display_name | default(current_user.email) }}</span>
+      <form method="post" action="/admin/logout" class="m-0">
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Log out</button>
+      </form>
+    {% endif %}
+  </div>
+</header>

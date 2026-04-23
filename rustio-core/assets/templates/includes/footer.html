@@ -1,0 +1,7 @@
+<footer class="admin-footer text-muted small px-4 py-3 border-top">
+  <span>{{ design.project_name | default('RustIO') }}</span>
+  {% if rustio_version is defined and rustio_version %}
+    <span class="mx-1">·</span>
+    <span>v{{ rustio_version }}</span>
+  {% endif %}
+</footer>

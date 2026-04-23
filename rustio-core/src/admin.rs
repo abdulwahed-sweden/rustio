@@ -48,6 +48,7 @@ pub mod relations;
 pub mod schema_cache;
 pub mod schema_introspect;
 pub mod suggestions;
+pub mod templating;
 pub mod ui;
 
 #[cfg(test)]

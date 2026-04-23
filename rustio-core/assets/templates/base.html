@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="{{ lang | default('en') }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ design.project_name | default('RustIO') }}{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/admin/static/favicon.svg">
+  <link rel="stylesheet" href="/admin/static/bootstrap/bootstrap.min.css">
+  <link rel="stylesheet" href="/admin/static/admin.css">
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  {% block body %}{% endblock %}
+  <script src="/admin/static/bootstrap/bootstrap.bundle.min.js" defer></script>
+  <script src="/admin/static/app.js" defer></script>
+  {% block body_extra %}{% endblock %}
+</body>
+</html>
