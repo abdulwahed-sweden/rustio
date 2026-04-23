@@ -35,6 +35,7 @@ use crate::router::Router;
 pub use crate::http::FormData;
 
 pub mod admin_form_bridge;
+pub mod admin_generator;
 pub mod audit;
 pub mod auto_form;
 pub mod design;
@@ -494,7 +495,7 @@ impl Admin {
         let admin_new_registry = std::sync::Arc::new({
             let mut reg = crate::admin::admin_form_bridge::AdminRegistry::new();
             reg.register("users", crate::admin::layout::new_user_admin);
-            reg.register("orders", crate::admin::layout::new_order_admin);
+            register_generated(&mut reg, build_orders_config());
             reg
         });
         let admin_new_get_db = db.clone();
@@ -2013,6 +2014,58 @@ fn escape_css_color(s: &str) -> &str {
 // ---------------------------------------------------------------------------
 // Dashboard (admin index)
 // ---------------------------------------------------------------------------
+
+/// Register a config-driven model under its own slug. The closure
+/// captures `cfg` and clones it on every lookup, so the registry's
+/// `Fn` factory can build a fresh `Box<dyn AdminUiModel>` per
+/// request without any global state.
+pub fn register_generated(
+    registry: &mut crate::admin::admin_form_bridge::AdminRegistry,
+    cfg: crate::admin::admin_generator::AdminModelConfig,
+) {
+    let slug = cfg.slug;
+    registry.register(slug, move || {
+        crate::admin::admin_generator::from_config(cfg.clone())
+    });
+}
+
+/// Declarative replacement for the hand-written `OrderAdmin` impl.
+/// Same metadata (table, primary key, fields, search columns,
+/// status flag, ensure-table SQL) — just expressed through the
+/// generator builder API instead of an `impl AdminUiModel` block.
+fn build_orders_config() -> crate::admin::admin_generator::AdminModelConfig {
+    use crate::admin::admin_form_bridge::AdminUiField;
+    use crate::admin::admin_generator::AdminModelConfig;
+
+    AdminModelConfig::new("orders", "Order")
+        .table("admin_new_demo_orders")
+        .primary_key("id")
+        .fields(vec![
+            AdminUiField::text("order_number", "Order #")
+                .required(true)
+                .filterable(true)
+                .sortable(true),
+            AdminUiField::email("customer_email", "Customer")
+                .required(true)
+                .filterable(true)
+                .advanced_filter(true),
+            AdminUiField::float("total_amount", "Total").sortable(true),
+            AdminUiField::boolean("is_paid", "Paid")
+                .filterable(true)
+                .sortable(true),
+        ])
+        .searchable(vec!["order_number", "customer_email"])
+        .status_field("is_paid")
+        .ensure_sql(
+            "CREATE TABLE IF NOT EXISTS admin_new_demo_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_number TEXT,
+                customer_email TEXT,
+                total_amount TEXT,
+                is_paid TEXT
+            )",
+        )
+}
 
 /// Query `SELECT COUNT(*)` on every user-facing admin entry. Returns
 /// a `HashMap<admin_name, count>`. A failure on any single model

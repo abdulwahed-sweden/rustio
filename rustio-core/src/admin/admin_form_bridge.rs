@@ -78,6 +78,84 @@ pub struct AdminUiField {
     pub visible_in_table: bool,
 }
 
+impl AdminUiField {
+    /// Internal helper. All public constructors funnel through this
+    /// so defaults stay in one place: `required = false`,
+    /// `readonly = false`, no relation, no options, no filter, not
+    /// sortable, visible in the listing table. The generator builder
+    /// methods below flip individual flags.
+    fn base(name: &'static str, label: &'static str, data_type: AdminDataType) -> Self {
+        Self {
+            name,
+            label,
+            data_type,
+            required: false,
+            readonly: false,
+            is_relation: false,
+            options: Vec::new(),
+            filterable: false,
+            advanced_filter: false,
+            sortable: false,
+            visible_in_table: true,
+        }
+    }
+
+    pub fn text(name: &'static str, label: &'static str) -> Self {
+        Self::base(name, label, AdminDataType::String)
+    }
+    pub fn textarea(name: &'static str, label: &'static str) -> Self {
+        Self::base(name, label, AdminDataType::Text)
+    }
+    pub fn integer(name: &'static str, label: &'static str) -> Self {
+        Self::base(name, label, AdminDataType::Integer)
+    }
+    pub fn float(name: &'static str, label: &'static str) -> Self {
+        Self::base(name, label, AdminDataType::Float)
+    }
+    pub fn boolean(name: &'static str, label: &'static str) -> Self {
+        Self::base(name, label, AdminDataType::Boolean)
+    }
+    pub fn datetime(name: &'static str, label: &'static str) -> Self {
+        Self::base(name, label, AdminDataType::DateTime)
+    }
+    pub fn email(name: &'static str, label: &'static str) -> Self {
+        Self::base(name, label, AdminDataType::Email)
+    }
+
+    pub fn required(mut self, value: bool) -> Self {
+        self.required = value;
+        self
+    }
+    pub fn readonly(mut self, value: bool) -> Self {
+        self.readonly = value;
+        self
+    }
+    pub fn relation(mut self, value: bool) -> Self {
+        self.is_relation = value;
+        self
+    }
+    pub fn options(mut self, options: Vec<(String, String)>) -> Self {
+        self.options = options;
+        self
+    }
+    pub fn filterable(mut self, value: bool) -> Self {
+        self.filterable = value;
+        self
+    }
+    pub fn advanced_filter(mut self, value: bool) -> Self {
+        self.advanced_filter = value;
+        self
+    }
+    pub fn sortable(mut self, value: bool) -> Self {
+        self.sortable = value;
+        self
+    }
+    pub fn visible_in_table(mut self, value: bool) -> Self {
+        self.visible_in_table = value;
+        self
+    }
+}
+
 /// How a filter input should render and how SQL should query it.
 /// Resolved from [`AdminUiField`] via [`resolve_filter_type`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,14 +302,20 @@ impl FormBuilder {
 // Registry: URL slug → boxed model
 // ---------------------------------------------------------------
 
+/// Boxed factory: any `Fn` (closure or `fn` pointer) that yields a
+/// fresh `Box<dyn AdminUiModel>` and is safe to share across the
+/// async runtime.
+pub type ModelFactory = Box<dyn Fn() -> Box<dyn AdminUiModel> + Send + Sync>;
+
 /// Slug → factory mapping for the `/admin-new/<slug>` dispatcher.
 ///
-/// Each registered model is stored as a constructor function; a
-/// fresh `Box<dyn AdminUiModel>` is built per lookup. Models are
-/// typically zero-sized unit structs so the allocation is
-/// effectively free.
+/// Each registered model is stored as a constructor closure; a
+/// fresh `Box<dyn AdminUiModel>` is built per lookup. Hand-written
+/// models are typically zero-sized unit structs (allocation is
+/// effectively free); generator-driven models capture an
+/// `AdminModelConfig` and clone it on each call.
 pub struct AdminRegistry {
-    factories: HashMap<&'static str, fn() -> Box<dyn AdminUiModel>>,
+    factories: HashMap<&'static str, ModelFactory>,
 }
 
 impl AdminRegistry {
@@ -241,8 +325,15 @@ impl AdminRegistry {
         }
     }
 
-    pub fn register(&mut self, slug: &'static str, factory: fn() -> Box<dyn AdminUiModel>) {
-        self.factories.insert(slug, factory);
+    /// Register any `Fn` factory under `slug`. A bare `fn` pointer
+    /// satisfies the bound, so existing call sites
+    /// (`reg.register("users", new_user_admin)`) continue to compile
+    /// unchanged.
+    pub fn register<F>(&mut self, slug: &'static str, factory: F)
+    where
+        F: Fn() -> Box<dyn AdminUiModel> + Send + Sync + 'static,
+    {
+        self.factories.insert(slug, Box::new(factory));
     }
 
     /// Look the slug up; returns a fresh boxed model on hit, `None`
