@@ -46,6 +46,7 @@ pub mod layout;
 pub mod persistence;
 pub mod relations;
 pub mod schema_cache;
+pub mod schema_introspect;
 pub mod suggestions;
 pub mod ui;
 
@@ -2027,6 +2028,22 @@ pub fn register_generated(
     registry.register(slug, move || {
         crate::admin::admin_generator::from_config(cfg.clone())
     });
+}
+
+/// Schema-driven counterpart to [`register_generated`]. Reads the
+/// table's columns via `PRAGMA table_info`, builds an
+/// [`AdminModelConfig`](crate::admin::admin_generator::AdminModelConfig)
+/// from them, and registers it under the derived slug. The table
+/// must already exist — this helper does **not** issue
+/// `CREATE TABLE`.
+pub async fn register_from_table(
+    db: &Db,
+    registry: &mut crate::admin::admin_form_bridge::AdminRegistry,
+    table: &str,
+) -> Result<(), Error> {
+    let cfg = crate::admin::schema_introspect::generate_from_table(db, table).await?;
+    register_generated(registry, cfg);
+    Ok(())
 }
 
 /// Declarative replacement for the hand-written `OrderAdmin` impl.

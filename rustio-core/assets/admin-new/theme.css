@@ -1,64 +1,70 @@
 /* =============================================================
- * RustIO Admin — Design Theme
- * Exact extraction from rustio-admin.html. No redesign.
+ * RustIO Admin — Design Theme (Neutral / Light)
+ *
+ * Token-only file. Components.css consumes these names; values
+ * here are the only thing that should differ between palettes.
+ * Inspired by Stripe Dashboard / Linear: airy surfaces, cool
+ * neutral text, single subtle blue accent. No dark mode, no
+ * heavy gradients, no brand-saturated chrome.
  * ============================================================= */
 
 :root {
-  /* --- Brand / Accent --- */
-  --rust:          #B84318;
-  --rust-dark:     #8F3412;
-  --rust-tint:     #FDF2EE;
+  /* --- Brand / Accent (single subtle blue, no orange) --- */
+  --primary:       #2563EB;
+  --primary-dark:  #1D4ED8;
+  --primary-tint:  #EFF4FF;
 
   /* --- Ink (text) --- */
-  --ink:           #141A21;
-  --ink-muted:     #3D4755;
-  --ink-subtle:    #6B7483;
+  --ink:           #111827;
+  --ink-muted:     #374151;
+  --ink-subtle:    #6B7280;
 
   /* --- Borders --- */
-  --border:        #D8DDE5;
-  --border-strong: #B9C1CD;
+  --border:        #E5E7EB;
+  --border-strong: #D1D5DB;
 
   /* --- Surfaces --- */
   --bg:            #FFFFFF;
-  --bg-alt:        #F4F6F9;
-  --bg-hover:      #F0F3F7;
+  --bg-alt:        #F9FAFB;
+  --bg-hover:      #F3F4F6;
 
-  /* --- Status --- */
-  --success:       #2F7D3A;
-  --success-bg:    #E8F3EA;
-  --warn:          #A86A00;
-  --warn-bg:       #FBF1DC;
-  --danger:        #C23030;
-  --danger-bg:     #FBEAEA;
+  /* --- Status (kept calm, not saturated) --- */
+  --success:       #047857;
+  --success-bg:    #ECFDF5;
+  --warn:          #B45309;
+  --warn-bg:       #FFFBEB;
+  --danger:        #B91C1C;
+  --danger-bg:     #FEF2F2;
 
   /* --- Typography --- */
   --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
 
-  /* Font sizes (as used in the source) */
-  --fs-base:   18px;  /* html/body */
-  --fs-h1:     28px;  /* .page-title */
-  --fs-h2:     18px;  /* .drawer-title */
-  --fs-brand:  17px;  /* .brand */
-  --fs-item:   15px;  /* .sidebar-item */
-  --fs-body:   14px;  /* table, buttons, inputs, search, chips-ish */
-  --fs-chip:   13px;  /* .filter-chip, .page-btn, .field-label, sub-meta */
-  --fs-mono:   13px;  /* td.mono, .field-help not — this is body mono cells */
-  --fs-meta:   12px;  /* th uppercase, sidebar-count, drawer-subtitle */
-  --fs-micro:  11px;  /* badge, sidebar-label, fieldset-legend, meta-inline */
-  --fs-kbd:    10px;  /* <kbd> inside .search-submit */
+  /* Font sizes (kept identical to prior extraction so component
+   * spacing remains unchanged after a token-only swap). */
+  --fs-base:   18px;
+  --fs-h1:     28px;
+  --fs-h2:     18px;
+  --fs-brand:  17px;
+  --fs-item:   15px;
+  --fs-body:   14px;
+  --fs-chip:   13px;
+  --fs-mono:   13px;
+  --fs-meta:   12px;
+  --fs-micro:  11px;
+  --fs-kbd:    10px;
 
   /* --- Border radius scale --- */
-  --radius-xs: 2px;   /* kbd inside search-submit */
-  --radius-sm: 3px;   /* checkbox, badge, count-pill */
-  --radius-md: 4px;   /* brand-mark, page-btn, drawer-close, bulk-bar button, search-submit */
-  --radius-lg: 6px;   /* btn, filter-chip, search input, field inputs, bulk-bar, toast */
-  --radius-xl: 8px;   /* toolbar + table-wrap (top/bottom corners) */
-  --radius-pill: 10px; /* switch-track */
-  --radius-chip: 20px; /* user-chip */
-  --radius-full: 50%; /* user-avatar, toast-dot, switch-track knob */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-pill: 10px;
+  --radius-chip: 20px;
+  --radius-full: 50%;
 
-  /* --- Spacing scale (values that appear in the source) --- */
+  /* --- Spacing scale --- */
   --space-1:  2px;
   --space-2:  4px;
   --space-3:  6px;
@@ -85,10 +91,10 @@
   --z-drawer:     100;
   --z-toast:      200;
 
-  /* --- Shadows (exact values from source) --- */
-  --shadow-drawer: -8px 0 24px rgba(26, 32, 39, 0.08);
-  --shadow-toast:   0   8px 24px rgba(26, 32, 39, 0.25);
-  --shadow-switch-knob: 0 1px 2px rgba(0, 0, 0, 0.2);
+  /* --- Shadows (softer for the light palette) --- */
+  --shadow-drawer: -8px 0 24px rgba(17, 24, 39, 0.06);
+  --shadow-toast:   0   8px 24px rgba(17, 24, 39, 0.18);
+  --shadow-switch-knob: 0 1px 2px rgba(0, 0, 0, 0.15);
 
   /* --- Motion --- */
   --ease-drawer: cubic-bezier(0.2, 0, 0, 1);
