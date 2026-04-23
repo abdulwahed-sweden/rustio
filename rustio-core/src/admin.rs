@@ -764,6 +764,48 @@ impl Admin {
             });
         }
 
+        // 0.10 stage 4f-a: GET /admin/:model/new and
+        // /admin/:model/:id/edit route through the template-based
+        // `form_render`. Registered BEFORE the `for registrar` loop
+        // below so the generic routes shadow any legacy literals like
+        // `/admin/patients/:id/edit` — unified template styling for
+        // both registration surfaces.
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let form_new_entries = entries.clone();
+            router = router.get("/admin/:model/new", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = form_new_entries.clone();
+                async move {
+                    admin_model_form_get(&db, &registry, &legacy_entries, req, params, None).await
+                }
+            });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let form_edit_entries = entries.clone();
+            router = router.get("/admin/:model/:id/edit", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = form_edit_entries.clone();
+                async move {
+                    let id = params.get("id").map(str::to_string);
+                    admin_model_form_get(
+                        &db,
+                        &registry,
+                        &legacy_entries,
+                        req,
+                        params,
+                        id.as_deref(),
+                    )
+                    .await
+                }
+            });
+        }
+
         for registrar in self.registrars {
             router = registrar(router, db, entries.clone());
         }
@@ -4890,6 +4932,72 @@ async fn admin_model_index_get(
                 dir.as_deref(),
                 identity.as_ref(),
                 csrf.as_deref(),
+            )
+            .await
+        }
+    };
+    Ok(with_admin_headers(crate::http::html(html)))
+}
+
+/// GET handler for both `/admin/:model/new` and
+/// `/admin/:model/:id/edit`. Resolves the slug through the same
+/// new-registry → legacy-entries fallback that
+/// `admin_model_index_get` uses, then delegates to
+/// `layout::form_render`. No mutation — stage 4f-b wires POST.
+async fn admin_model_form_get(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+    editing_id: Option<&str>,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+
+    enum ResolvedModel {
+        New(Box<dyn crate::admin::admin_form_bridge::AdminUiModel>),
+        Legacy(crate::admin::layout::LegacyEntryModel),
+    }
+    let resolved = if let Some(model) = registry.get(&model_slug) {
+        ResolvedModel::New(model)
+    } else if let Some(entry) = legacy_entries
+        .iter()
+        .find(|e| !e.core && e.admin_name == model_slug)
+    {
+        ResolvedModel::Legacy(crate::admin::layout::LegacyEntryModel::new(entry))
+    } else {
+        return Err(Error::NotFound);
+    };
+
+    let identity = crate::auth::identity(req.ctx()).cloned();
+    let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+    let html = match &resolved {
+        ResolvedModel::New(model) => {
+            crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                &**model,
+                editing_id,
+                identity.as_ref(),
+                csrf.as_deref(),
+                None,
+            )
+            .await
+        }
+        ResolvedModel::Legacy(model) => {
+            crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                model,
+                editing_id,
+                identity.as_ref(),
+                csrf.as_deref(),
+                None,
             )
             .await
         }

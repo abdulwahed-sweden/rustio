@@ -1952,6 +1952,220 @@ fn admin_field_to_ui_field(field: &crate::admin::AdminField) -> AdminUiField {
     }
 }
 
+// ---------------------------------------------------------------
+// 0.10 form rendering (stage 4f-a)
+//
+// GET /admin/:model/new and GET /admin/:model/:id/edit both flow
+// through `form_render`. POST submission, validation, and mutation
+// land in stage 4f-b.
+// ---------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct FormFieldView {
+    id: String,
+    name: String,
+    label: String,
+    required: bool,
+    readonly: bool,
+    control: String,
+    help: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct FormView {
+    title: String,
+    action: String,
+    cancel_url: String,
+    submit_label: String,
+    error: Option<String>,
+    fields: Vec<FormFieldView>,
+}
+
+fn render_field_control(field: &AdminUiField, value: &str) -> String {
+    let id = format!("field_{}", field.name);
+    let name = field.name;
+    let val = html_escape(value);
+    let readonly = if field.readonly { " readonly" } else { "" };
+    let required = if field.required && !field.readonly {
+        " required"
+    } else {
+        ""
+    };
+
+    match field.data_type {
+        AdminDataType::Text => format!(
+            r#"<textarea class="form-control" id="{id}" name="{name}"{readonly}{required} rows="4">{val}</textarea>"#,
+        ),
+        AdminDataType::Email => format!(
+            r#"<input type="email" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required} autocomplete="off">"#,
+        ),
+        AdminDataType::Integer => format!(
+            r#"<input type="number" step="1" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+        ),
+        AdminDataType::Float => format!(
+            r#"<input type="number" step="any" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+        ),
+        AdminDataType::Boolean => {
+            let checked = if value == "1" || value.eq_ignore_ascii_case("true") {
+                " checked"
+            } else {
+                ""
+            };
+            // Hidden input keeps the field in the POST body when the
+            // box is unchecked, so "unchecked" means "false" rather
+            // than "omitted".
+            format!(
+                r#"<input type="hidden" name="{name}" value="0"><div class="form-check"><input type="checkbox" class="form-check-input" id="{id}" name="{name}" value="1"{checked}{readonly}></div>"#,
+            )
+        }
+        AdminDataType::DateTime => format!(
+            r#"<input type="datetime-local" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+        ),
+        AdminDataType::String => {
+            if field.is_relation && !field.options.is_empty() {
+                let mut options = String::from(r#"<option value="">— choose —</option>"#);
+                for (ov, ol) in &field.options {
+                    let sel = if ov == value { " selected" } else { "" };
+                    options.push_str(&format!(
+                        r#"<option value="{v}"{sel}>{l}</option>"#,
+                        v = html_escape(ov),
+                        l = html_escape(ol),
+                    ));
+                }
+                format!(
+                    r#"<select class="form-select" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
+                )
+            } else {
+                format!(
+                    r#"<input type="text" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+                )
+            }
+        }
+    }
+}
+
+/// Render the form page for `GET /admin/:model/new` (when
+/// `editing_id = None`) or `GET /admin/:model/:id/edit` (when
+/// `editing_id = Some(id)`). No mutation — stage 4f-b wires POST.
+#[allow(clippy::too_many_arguments)]
+pub async fn form_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    model: &dyn AdminUiModel,
+    editing_id: Option<&str>,
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+    form_error: Option<&str>,
+) -> String {
+    if let Some(sql) = model.ensure_table_sql() {
+        let _ = persistence::ensure_table(db, sql).await;
+    }
+
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, Some(model.slug()));
+
+    let is_edit = editing_id.is_some();
+    let prefill = if let Some(id) = editing_id {
+        persistence::get_record_by_id(db, model.table_name(), id)
+            .await
+            .unwrap_or_default()
+    } else {
+        HashMap::new()
+    };
+
+    let pk = model.primary_key();
+    let slug = model.slug();
+    let fields: Vec<FormFieldView> = model
+        .fields()
+        .into_iter()
+        .filter(|f| {
+            // Create form skips the PK (DB auto-assigns). Edit form
+            // keeps it visible + readonly so the reader sees which
+            // row they're editing.
+            if !is_edit && f.name == pk {
+                return false;
+            }
+            true
+        })
+        .map(|mut f| {
+            if f.name == pk {
+                f.readonly = true;
+            }
+            let raw_value = prefill.get(f.name).cloned().unwrap_or_default();
+            let control = render_field_control(&f, &raw_value);
+            FormFieldView {
+                id: format!("field_{}", f.name),
+                name: f.name.to_string(),
+                label: f.label.to_string(),
+                required: f.required && !f.readonly,
+                readonly: f.readonly,
+                control,
+                help: None,
+                error: None,
+            }
+        })
+        .collect();
+
+    let (title, action, submit_label) = match editing_id {
+        Some(id) => (
+            format!("Edit {}", model.model_name()),
+            format!("/admin/{slug}/{id}/edit"),
+            "Save changes".to_string(),
+        ),
+        None => (
+            format!("New {}", model.model_name()),
+            format!("/admin/{slug}/new"),
+            format!("Create {}", model.model_name()),
+        ),
+    };
+
+    let form = FormView {
+        title,
+        action,
+        cancel_url: format!("/admin/{slug}"),
+        submit_label,
+        error: form_error.map(str::to_string),
+        fields,
+    };
+
+    let design = design_view();
+    let user = user_view(identity);
+
+    let env = crate::admin::templating::env();
+    match env.get_template("admin/form.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => design,
+            current_user => user,
+            sidebar_entries => sidebar,
+            form => form,
+            page_title => format!(
+                "{} · {}s",
+                if is_edit { "Edit" } else { "New" },
+                model.model_name()
+            ),
+            csrf_token => csrf_token.unwrap_or(""),
+            rustio_version => env!("CARGO_PKG_VERSION"),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin form template render failed: {err}");
+            form_fallback(model, editing_id)
+        }
+    }
+}
+
+fn form_fallback(model: &dyn AdminUiModel, editing_id: Option<&str>) -> String {
+    let kind = if editing_id.is_some() { "Edit" } else { "New" };
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{kind} {mn}</title></head><body style=\"font-family:system-ui\"><h1>{kind} {mn}</h1><p>The form template failed to render. Check the server log.</p><p><a href=\"/admin/{slug}\">Back to list</a></p></body></html>",
+        mn = html_escape(model.model_name()),
+        slug = html_escape(model.slug()),
+    )
+}
+
 impl AdminUiModel for LegacyEntryModel {
     fn slug(&self) -> &'static str {
         self.entry.admin_name
@@ -2162,14 +2376,15 @@ pub async fn list_render(
         new_url: format!("/admin/{slug}/new"),
     };
 
-    // Stage 4e: RBAC is wired only far enough to gate the ACTIONS
-    // (add / edit / delete) off. Stage 4f flips these on and reads
-    // the Role from `identity` once the form routes exist.
-    let _ = identity;
+    // Stage 4f-a: GET form routes exist, so Add / Edit are safe to
+    // show. Delete needs a POST handler (stage 4f-b) so it stays
+    // hidden. RBAC gating beyond "is the user signed in" lands with
+    // the Role-in-context work, also stage 4f-b.
+    let signed_in = identity.is_some();
     let permissions = ListPermissionsView {
         view: true,
-        create: false,
-        edit: false,
+        create: signed_in,
+        edit: signed_in,
         delete: false,
     };
 
