@@ -1913,6 +1913,275 @@ pub async fn dashboard_render(
     }
 }
 
+#[derive(serde::Serialize)]
+struct ModelView {
+    display_name: String,
+    singular_name: String,
+    new_url: String,
+}
+
+#[derive(serde::Serialize)]
+struct ColumnView {
+    name: String,
+    label: String,
+    sortable: bool,
+}
+
+#[derive(serde::Serialize)]
+struct RowView {
+    id: String,
+    cells: Vec<String>,
+    edit_url: String,
+    delete_url: String,
+}
+
+#[derive(serde::Serialize)]
+struct PageLinkView {
+    label: String,
+    href: String,
+    active: bool,
+    disabled: bool,
+}
+
+#[derive(serde::Serialize)]
+struct PaginationView {
+    pages: i64,
+    current: i64,
+    links: Vec<PageLinkView>,
+}
+
+#[derive(serde::Serialize)]
+struct ListPermissionsView {
+    view: bool,
+    create: bool,
+    edit: bool,
+    delete: bool,
+}
+
+/// 0.10+ list-page renderer. Mirrors the data flow of the legacy
+/// `admin_index_get` — same searchable / filter / sort / paginate
+/// query under `fetch_users_table_state` — but renders through
+/// `minijinja`. Create / edit / delete actions are hidden at this
+/// stage (permissions are pinned to view-only); stage 4f will add the
+/// form routes and flip them on when RBAC allows.
+#[allow(clippy::too_many_arguments)]
+pub async fn list_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    model: &dyn AdminUiModel,
+    query: Option<&str>,
+    page: i64,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+) -> String {
+    if let Some(sql) = model.ensure_table_sql() {
+        let _ = persistence::ensure_table(db, sql).await;
+    }
+
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_from_entries(&dashboard_entries, Some(model.slug()));
+
+    let (rows_raw, total, current_page, total_pages, validated_sort, validated_dir) =
+        fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
+
+    let fields = model.fields();
+    let columns: Vec<ColumnView> = fields
+        .iter()
+        .filter(|f| f.visible_in_table)
+        .map(|f| ColumnView {
+            name: f.name.to_string(),
+            label: f.label.to_string(),
+            sortable: f.sortable,
+        })
+        .collect();
+
+    let pk = model.primary_key();
+    let slug = model.slug();
+    let rows: Vec<RowView> = rows_raw
+        .iter()
+        .map(|row| {
+            let id = row.get(pk).cloned().unwrap_or_default();
+            let cells = columns
+                .iter()
+                .map(|col| row.get(&col.name).cloned().unwrap_or_default())
+                .collect();
+            RowView {
+                id: id.clone(),
+                cells,
+                edit_url: format!("/admin/{slug}/{id}/edit"),
+                delete_url: format!("/admin/{slug}/{id}/delete"),
+            }
+        })
+        .collect();
+
+    let pagination = build_pagination_view(
+        slug,
+        query,
+        current_page,
+        total_pages,
+        &validated_sort,
+        &validated_dir,
+    );
+
+    let model_view = ModelView {
+        display_name: format!("{}s", model.model_name()),
+        singular_name: model.model_name().to_string(),
+        new_url: format!("/admin/{slug}/new"),
+    };
+
+    // Stage 4e: RBAC is wired only far enough to gate the ACTIONS
+    // (add / edit / delete) off. Stage 4f flips these on and reads
+    // the Role from `identity` once the form routes exist.
+    let _ = identity;
+    let permissions = ListPermissionsView {
+        view: true,
+        create: false,
+        edit: false,
+        delete: false,
+    };
+
+    let design = design_view();
+    let user = user_view(identity);
+
+    let env = crate::admin::templating::env();
+    match env.get_template("admin/list.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => design,
+            current_user => user,
+            sidebar_entries => sidebar,
+            model => model_view,
+            columns => columns,
+            rows => rows,
+            total => total,
+            pagination => pagination,
+            permissions => permissions,
+            page_title => format!("{}s", model.model_name()),
+            query => query.unwrap_or(""),
+            csrf_token => csrf_token.unwrap_or(""),
+            rustio_version => env!("CARGO_PKG_VERSION"),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin list template render failed: {err}");
+            list_fallback(model, &rows_raw, &columns)
+        }
+    }
+}
+
+fn build_pagination_view(
+    slug: &str,
+    query: Option<&str>,
+    current: i64,
+    pages: i64,
+    sort: &Option<String>,
+    dir: &Option<String>,
+) -> PaginationView {
+    if pages <= 1 {
+        return PaginationView {
+            pages,
+            current,
+            links: Vec::new(),
+        };
+    }
+    let q_param = query.unwrap_or("");
+    let sort_param = sort.as_deref().unwrap_or("");
+    let dir_param = dir.as_deref().unwrap_or("");
+    let base_href = |p: i64| -> String {
+        let mut parts = vec![format!("page={p}")];
+        if !q_param.is_empty() {
+            parts.push(format!("q={}", urlencode(q_param)));
+        }
+        if !sort_param.is_empty() {
+            parts.push(format!("sort={sort_param}"));
+        }
+        if !dir_param.is_empty() {
+            parts.push(format!("dir={dir_param}"));
+        }
+        format!("/admin/{slug}?{}", parts.join("&"))
+    };
+
+    let mut links = Vec::with_capacity(pages as usize + 2);
+    links.push(PageLinkView {
+        label: "‹ Prev".into(),
+        href: if current > 1 {
+            base_href(current - 1)
+        } else {
+            "#".into()
+        },
+        active: false,
+        disabled: current <= 1,
+    });
+    for p in 1..=pages {
+        links.push(PageLinkView {
+            label: p.to_string(),
+            href: base_href(p),
+            active: p == current,
+            disabled: false,
+        });
+    }
+    links.push(PageLinkView {
+        label: "Next ›".into(),
+        href: if current < pages {
+            base_href(current + 1)
+        } else {
+            "#".into()
+        },
+        active: false,
+        disabled: current >= pages,
+    });
+
+    PaginationView {
+        pages,
+        current,
+        links,
+    }
+}
+
+/// Minimal percent-encoding for pagination query params. Only covers
+/// the subset of ASCII that needs escaping in a URL query value —
+/// enough for search strings. Not a general-purpose encoder.
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+fn list_fallback(
+    model: &dyn AdminUiModel,
+    rows: &[HashMap<String, String>],
+    columns: &[ColumnView],
+) -> String {
+    let mut out = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>{} - list</title></head><body style=\"font-family:system-ui\"><h1>{}s</h1><table border=\"1\" cellpadding=\"6\"><tr>",
+        html_escape(model.model_name()),
+        html_escape(model.model_name()),
+    );
+    for c in columns {
+        out.push_str(&format!("<th>{}</th>", html_escape(&c.label)));
+    }
+    out.push_str("</tr>");
+    for row in rows {
+        out.push_str("<tr>");
+        for c in columns {
+            let v = row.get(&c.name).cloned().unwrap_or_default();
+            out.push_str(&format!("<td>{}</td>", html_escape(&v)));
+        }
+        out.push_str("</tr>");
+    }
+    out.push_str("</table></body></html>");
+    out
+}
+
 fn dashboard_fallback(entries: &[DashboardEntry]) -> String {
     let mut out = String::from(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Dashboard</title></head><body style=\"font-family:system-ui\"><h1>Dashboard</h1><ul>",

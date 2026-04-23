@@ -4820,21 +4820,28 @@ async fn admin_model_index_get(
         })
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let advanced = q_map
+    let _ = q_map
         .get("advanced")
         .map(|s| !s.is_empty())
         .unwrap_or(false);
-    let html = crate::admin::layout::admin_index_get(
+    // Stage 4e: route to the template-based list renderer. The `id`
+    // query param (drawer-edit in the legacy flow) is intentionally
+    // ignored here; stage 4f adds dedicated /admin/:model/:id/edit
+    // routes as the replacement.
+    let _ = id;
+    let identity = crate::auth::identity(req.ctx()).cloned();
+    let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+    let html = crate::admin::layout::list_render(
         db,
         registry,
         &*model,
-        id.as_deref(),
         query.as_deref(),
         page,
         &filters,
         sort.as_deref(),
         dir.as_deref(),
-        advanced,
+        identity.as_ref(),
+        csrf.as_deref(),
     )
     .await;
     Ok(with_admin_headers(crate::http::html(html)))
