@@ -44,6 +44,7 @@ pub mod form;
 pub mod intelligence;
 pub mod layout;
 pub mod persistence;
+pub mod rbac;
 pub mod relations;
 pub mod schema_cache;
 pub mod schema_introspect;
