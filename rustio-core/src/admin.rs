@@ -463,6 +463,17 @@ impl Admin {
             Ok::<Response, Error>(admin_favicon_response())
         });
 
+        // 0.10+ bundled assets for the template-based admin. Served
+        // under the new `/admin/static/…` namespace (the legacy
+        // `/admin/assets/` routes above keep working for the
+        // pre-template pages until stage 5 removes them).
+        for &(path, content_type, bytes) in crate::admin::templating::BUNDLED_ASSETS {
+            let full_path = format!("/admin/static/{path}");
+            router = router.get(&full_path, move |_req, _params| async move {
+                Ok::<Response, Error>(bundled_asset_response(bytes, content_type))
+            });
+        }
+
         // Build the AdminUiModel registry first — both the dashboard
         // (GET /admin) and the per-model routes (/admin/:model and
         // the temporary /admin-new/:model alias) read from it.
@@ -1509,6 +1520,43 @@ fn env_chip_html() -> String {
     } else {
         r#"<span class="rio-env-chip">development</span>"#.to_string()
     }
+}
+
+/// Generic static-asset response for the 0.10+ `/admin/static/…` bundle.
+/// The bytes are pinned to the compiled binary, so a long-ish cache is
+/// safe — when the binary redeploys, the content-length changes and
+/// the etag changes with it. `nosniff` for the same reason every other
+/// admin asset has it.
+fn bundled_asset_response(bytes: &'static [u8], content_type: &'static str) -> Response {
+    use hyper::header::HeaderValue;
+    let etag = {
+        let len = bytes.len();
+        let head = u32::from_le_bytes([
+            *bytes.first().unwrap_or(&0),
+            *bytes.get(1).unwrap_or(&0),
+            *bytes.get(2).unwrap_or(&0),
+            *bytes.get(3).unwrap_or(&0),
+        ]);
+        let tail = u32::from_le_bytes([
+            *bytes.get(len.saturating_sub(4)).unwrap_or(&0),
+            *bytes.get(len.saturating_sub(3)).unwrap_or(&0),
+            *bytes.get(len.saturating_sub(2)).unwrap_or(&0),
+            *bytes.get(len.saturating_sub(1)).unwrap_or(&0),
+        ]);
+        format!("W/\"rio-{len}-{head:x}-{tail:x}\"")
+    };
+    let mut resp = hyper::Response::builder()
+        .status(200)
+        .header("content-type", content_type)
+        .header("cache-control", "public, max-age=3600")
+        .header("etag", etag)
+        .body(Full::new(Bytes::from_static(bytes)))
+        .expect("valid static asset response");
+    resp.headers_mut().insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    resp
 }
 
 fn admin_favicon_response() -> Response {

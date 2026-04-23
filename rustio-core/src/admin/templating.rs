@@ -7,12 +7,23 @@
 //! file of the same relative path under their project's `templates/`
 //! directory — the loader chain is filesystem-first, embedded-fallback.
 //!
-//! No admin handler consumes this module yet; stage 4 wires it up.
+//! Stage 4a onwards consumes [`env()`] — the process-wide
+//! `Arc<Environment>` shared by every admin handler.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use minijinja::{Environment, ErrorKind};
+
+/// Process-wide admin template environment. Built once on first
+/// access from [`TemplatingConfig::default()`]; auto-reload is
+/// enabled under `debug_assertions`, so template edits are picked up
+/// without a restart in development.
+pub fn env() -> Arc<Environment<'static>> {
+    static CELL: OnceLock<Arc<Environment<'static>>> = OnceLock::new();
+    CELL.get_or_init(|| Arc::new(environment(&TemplatingConfig::default())))
+        .clone()
+}
 
 /// Runtime configuration for the admin template environment.
 #[derive(Clone, Debug)]
@@ -252,5 +263,16 @@ mod tests {
         for (path, _ctype, bytes) in BUNDLED_ASSETS {
             assert!(!bytes.is_empty(), "bundled asset {path} is empty");
         }
+    }
+
+    #[test]
+    fn env_accessor_is_cached() {
+        let a = super::env();
+        let b = super::env();
+        assert!(
+            Arc::ptr_eq(&a, &b),
+            "env() should return the same Arc on repeated calls"
+        );
+        a.get_template("base.html").expect("base.html missing");
     }
 }
