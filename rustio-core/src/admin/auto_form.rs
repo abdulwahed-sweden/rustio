@@ -75,6 +75,8 @@ pub fn form_from_model<T: FormModel>() -> FormConfig {
         subtitle: String::new(),
         fields,
         submitted: false,
+        save_failed: false,
+        hidden_fields: Vec::new(),
     }
 }
 

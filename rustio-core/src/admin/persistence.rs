@@ -14,45 +14,26 @@ use crate::admin::form::FormConfig;
 use crate::error::Error;
 use crate::orm::Db;
 
-/// A model that knows how to map its admin form onto SQL columns.
-///
-/// Implementors expose:
-/// - the **target table**,
-/// - the **primary-key column**,
-/// - and two converters that turn a [`FormConfig`] into the
-///   `column → value` map [`insert_record`] / [`update_record`] need.
-///
-/// Splitting `to_insert_map` and `to_update_map` lets implementors
-/// decide which columns participate in each path (e.g. omit
-/// immutable fields on update). For models where both maps are
-/// identical, callers just delegate.
-pub trait PersistableModel {
-    fn table_name() -> &'static str;
-    fn primary_key() -> &'static str;
-
-    fn to_insert_map(form: &FormConfig) -> HashMap<String, String>;
-    fn to_update_map(form: &FormConfig) -> HashMap<String, String>;
+/// Run an arbitrary `CREATE TABLE IF NOT EXISTS …` (or any other
+/// idempotent DDL) supplied by an `AdminUiModel`. Generic — every
+/// model brings its own schema string.
+pub async fn ensure_table(db: &Db, sql: &str) -> Result<(), Error> {
+    db.execute(sql).await
 }
 
-/// Idempotent migration for the `/admin-new` demo table.
-///
-/// Lives here (rather than in `migrations.rs`) because the demo is
-/// not part of the framework's core schema — it's a sandbox for the
-/// admin-new submit pipeline, created lazily on first POST. Cheap to
-/// invoke repeatedly: SQLite's `CREATE TABLE IF NOT EXISTS` is a
-/// no-op when the table already exists.
-pub async fn ensure_demo_table(db: &Db) -> Result<(), Error> {
-    db.execute(
-        "CREATE TABLE IF NOT EXISTS admin_new_demo_users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
-            email TEXT NOT NULL,
-            is_active TEXT NOT NULL DEFAULT 'false',
-            doctor_id TEXT,
-            salary_amount TEXT
-        )",
-    )
-    .await
+/// Project a [`FormConfig`]'s field values into a `column → value`
+/// map suitable for [`insert_record`] / [`update_record`]. The
+/// primary-key column is always skipped — the id is auto-generated
+/// on INSERT and bound separately on UPDATE.
+pub fn form_to_column_map(form: &FormConfig, primary_key: &str) -> HashMap<String, String> {
+    let mut m = HashMap::new();
+    for f in &form.fields {
+        if f.name == primary_key {
+            continue;
+        }
+        m.insert(f.name.clone(), f.value.clone().unwrap_or_default());
+    }
+    m
 }
 
 /// Run an `INSERT INTO <table> (<cols>) VALUES (<placeholders>)`
@@ -210,60 +191,74 @@ pub async fn count_records(db: &Db, table: &str) -> Result<i64, Error> {
     Ok(count)
 }
 
-/// Case-insensitive partial match against `username`, `email`, and
-/// `doctor_id`. The query is lower-cased once, wrapped in `%…%`,
-/// and bound three times — no interpolation into the SQL text.
-/// Results are ordered newest-first and windowed by `LIMIT` /
-/// `OFFSET`, matching [`list_records`].
+/// Case-insensitive partial match across an arbitrary list of
+/// `searchable_fields`. The query is lower-cased once, wrapped in
+/// `%…%`, and bound once per searchable field — no interpolation
+/// into the SQL text. Results are ordered newest-first and windowed
+/// by `LIMIT` / `OFFSET`, matching [`list_records`]. An empty
+/// `searchable_fields` slice (model declared no search columns)
+/// degrades to a normal `SELECT * … ORDER BY id DESC LIMIT…`.
 pub async fn search_records(
     db: &Db,
     table: &str,
+    searchable_fields: &[&str],
     query: &str,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<HashMap<String, String>>, Error> {
+    if searchable_fields.is_empty() {
+        return list_records(db, table, limit, offset).await;
+    }
     let q = format!("%{}%", query.to_lowercase());
+    let where_sql = build_search_where(searchable_fields);
     let sql = format!(
-        "SELECT * FROM {t} \
-         WHERE LOWER(\"username\") LIKE ? \
-            OR LOWER(\"email\") LIKE ? \
-            OR LOWER(\"doctor_id\") LIKE ? \
-         ORDER BY \"id\" DESC \
-         LIMIT ? OFFSET ?",
+        "SELECT * FROM {t} WHERE {where_sql} ORDER BY \"id\" DESC LIMIT ? OFFSET ?",
         t = quote_ident(table),
     );
-    let rows = sqlx::query(&sql)
-        .bind(&q)
-        .bind(&q)
-        .bind(&q)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(db.pool())
-        .await
-        .map_err(Error::from)?;
+    let mut stmt = sqlx::query(&sql);
+    for _ in searchable_fields {
+        stmt = stmt.bind(&q);
+    }
+    stmt = stmt.bind(limit).bind(offset);
+    let rows = stmt.fetch_all(db.pool()).await.map_err(Error::from)?;
     Ok(rows.iter().map(row_to_map).collect())
 }
 
 /// `SELECT COUNT(*)` counterpart of [`search_records`] — same
 /// `WHERE` clause, no `ORDER BY` / `LIMIT`. Feeds the "Showing N of
 /// M" label when the table is in search mode.
-pub async fn count_search_records(db: &Db, table: &str, query: &str) -> Result<i64, Error> {
+pub async fn count_search_records(
+    db: &Db,
+    table: &str,
+    searchable_fields: &[&str],
+    query: &str,
+) -> Result<i64, Error> {
+    if searchable_fields.is_empty() {
+        return count_records(db, table).await;
+    }
     let q = format!("%{}%", query.to_lowercase());
+    let where_sql = build_search_where(searchable_fields);
     let sql = format!(
-        "SELECT COUNT(*) FROM {t} \
-         WHERE LOWER(\"username\") LIKE ? \
-            OR LOWER(\"email\") LIKE ? \
-            OR LOWER(\"doctor_id\") LIKE ?",
+        "SELECT COUNT(*) FROM {t} WHERE {where_sql}",
         t = quote_ident(table),
     );
-    let count: i64 = sqlx::query_scalar(&sql)
-        .bind(&q)
-        .bind(&q)
-        .bind(&q)
-        .fetch_one(db.pool())
-        .await
-        .map_err(Error::from)?;
+    let mut stmt = sqlx::query_scalar::<_, i64>(&sql);
+    for _ in searchable_fields {
+        stmt = stmt.bind(&q);
+    }
+    let count = stmt.fetch_one(db.pool()).await.map_err(Error::from)?;
     Ok(count)
+}
+
+/// Build the `OR`-joined `WHERE` body for a free-text search. Each
+/// field name goes through [`quote_ident`]; the `?` placeholders
+/// are positional and bound by the caller.
+fn build_search_where(searchable_fields: &[&str]) -> String {
+    searchable_fields
+        .iter()
+        .map(|f| format!("LOWER({}) LIKE ?", quote_ident(f)))
+        .collect::<Vec<_>>()
+        .join(" OR ")
 }
 
 // ---------------------------------------------------------------
@@ -292,12 +287,13 @@ pub async fn filter_records(
     eq_filters: &HashMap<String, String>,
     like_filters: &HashMap<String, String>,
     query: Option<&str>,
+    searchable_fields: &[&str],
     sort: Option<&str>,
     dir: Option<&str>,
     limit: i64,
     offset: i64,
 ) -> Result<Vec<HashMap<String, String>>, Error> {
-    let (where_sql, binds) = build_filter_where(eq_filters, like_filters, query);
+    let (where_sql, binds) = build_filter_where(eq_filters, like_filters, query, searchable_fields);
     // Validation lives in the layout layer (column must come from
     // metadata). Persistence trusts the inputs and only applies the
     // safe quoting + the ASC/DESC normalisation. A `None` sort
@@ -335,8 +331,9 @@ pub async fn count_filtered_records(
     eq_filters: &HashMap<String, String>,
     like_filters: &HashMap<String, String>,
     query: Option<&str>,
+    searchable_fields: &[&str],
 ) -> Result<i64, Error> {
-    let (where_sql, binds) = build_filter_where(eq_filters, like_filters, query);
+    let (where_sql, binds) = build_filter_where(eq_filters, like_filters, query, searchable_fields);
     let sql = format!(
         "SELECT COUNT(*) FROM {t} WHERE {where_sql}",
         t = quote_ident(table),
@@ -409,10 +406,14 @@ pub async fn bulk_delete(db: &Db, table: &str, ids: &[String]) -> Result<(), Err
 /// [`count_filtered_records`]. Returns the clause body (without the
 /// leading `WHERE`) plus the ordered list of bind values. Filter
 /// keys are sorted so the emitted SQL is deterministic across runs.
+/// `searchable_fields` is the list of columns the optional search
+/// query (`q`) is matched against — empty slice means "no search
+/// clause".
 fn build_filter_where(
     eq_filters: &HashMap<String, String>,
     like_filters: &HashMap<String, String>,
     query: Option<&str>,
+    searchable_fields: &[&str],
 ) -> (String, Vec<String>) {
     let mut clauses: Vec<String> = vec!["1=1".to_string()];
     let mut binds: Vec<String> = Vec::new();
@@ -437,14 +438,14 @@ fn build_filter_where(
 
     let trimmed_query = query.map(str::trim).filter(|s| !s.is_empty());
     if let Some(q) = trimmed_query {
-        clauses.push(
-            "(LOWER(\"username\") LIKE ? OR LOWER(\"email\") LIKE ? OR LOWER(\"doctor_id\") LIKE ?)"
-                .to_string(),
-        );
-        let q_param = format!("%{}%", q.to_lowercase());
-        binds.push(q_param.clone());
-        binds.push(q_param.clone());
-        binds.push(q_param);
+        if !searchable_fields.is_empty() {
+            let or_body = build_search_where(searchable_fields);
+            clauses.push(format!("({or_body})"));
+            let q_param = format!("%{}%", q.to_lowercase());
+            for _ in searchable_fields {
+                binds.push(q_param.clone());
+            }
+        }
     }
 
     (clauses.join(" AND "), binds)

@@ -75,6 +75,19 @@ pub struct FormConfig {
     /// sees an explicit confirmation rather than a silent re-render.
     /// Set automatically by [`bind_form`].
     pub submitted: bool,
+
+    /// `true` if a submission was bound + validated cleanly but the
+    /// downstream persistence write returned an error. The renderer
+    /// shows a `.form-error-summary` "save failed" banner instead of
+    /// the success banner. Independent of `submitted` so callers can
+    /// flip just this one field.
+    pub save_failed: bool,
+
+    /// Extra `<input type="hidden">` fields to emit inside the form,
+    /// in order. Used to round-trip the editing primary key (and any
+    /// other state the route handler wants preserved across a POST)
+    /// without requiring the field to appear in `fields`.
+    pub hidden_fields: Vec<(String, String)>,
 }
 
 // ---------------------------------------------------------------
@@ -188,6 +201,9 @@ pub fn render_error(msg: &str) -> String {
 /// untouched.
 pub fn bind_form(form: &mut FormConfig, params: &HashMap<String, String>) {
     form.submitted = true;
+    // A fresh bind clears any previous save failure — the caller
+    // will re-set it from the new persistence outcome.
+    form.save_failed = false;
     for field in form.fields.iter_mut() {
         if field.field_type == FieldType::Boolean {
             // Boolean now ships a real `<input>` pair: a hidden
@@ -428,26 +444,25 @@ pub fn render_form(form: &FormConfig) -> String {
     let first_invalid = form.fields.iter().position(|f| f.error.is_some());
     let has_errors = first_invalid.is_some();
 
-    let summary = if has_errors {
-        String::from(
-            r#"<div class="form-error-summary" role="alert">Please fix the errors below.</div>"#,
-        )
-    } else if form.submitted {
-        // No errors *and* the form went through submission → success
-        // banner. On a fresh GET (submitted = false) we render
-        // nothing — there's nothing to confirm yet.
-        String::from(
-            r#"<div class="form-success" role="status">Saved successfully (simulation)</div>"#,
-        )
-    } else {
-        String::new()
-    };
+    let summary = render_form_banner(form, has_errors);
 
     let mut body = String::new();
     body.push_str(&summary);
     for (i, field) in form.fields.iter().enumerate() {
         let autofocus = Some(i) == first_invalid;
         body.push_str(&render_field_inner(field, autofocus));
+    }
+
+    // Hidden state pieces (e.g. the editing `id`) live inside the
+    // form so they round-trip on submit. Caller-controlled order;
+    // values are HTML-escaped.
+    let mut hidden = String::new();
+    for (k, v) in &form.hidden_fields {
+        hidden.push_str(&format!(
+            r#"<input type="hidden" name="{}" value="{}">"#,
+            html_escape(k),
+            html_escape(v),
+        ));
     }
 
     let save_disabled_attr = if has_errors { " disabled" } else { "" };
@@ -460,8 +475,7 @@ pub fn render_form(form: &FormConfig) -> String {
     // - the existing `.drawer` styles still apply since the form
     //   element is a transparent block-level wrapper.
     format!(
-        r#"<form data-admin-form action="" method="post">
-<div class="drawer open">
+        r#"<form data-admin-form action="" method="post">{hidden}<div class="drawer open">
   <div class="drawer-header">
     <div>
       <h2 class="drawer-title">{title}</h2>
@@ -482,6 +496,28 @@ pub fn render_form(form: &FormConfig) -> String {
         title = html_escape(&form.title),
         subtitle = html_escape(&form.subtitle),
         body = body,
+        hidden = hidden,
         save_disabled = save_disabled_attr,
     )
+}
+
+/// Render the banner that appears at the top of the form's body —
+/// validation errors take priority, then save failure, then the
+/// "Saved successfully" success banner. `Pristine` (GET, never
+/// submitted) renders nothing.
+fn render_form_banner(form: &FormConfig, has_errors: bool) -> String {
+    if has_errors {
+        return String::from(
+            r#"<div class="form-error-summary" role="alert">Please fix the errors below.</div>"#,
+        );
+    }
+    if form.save_failed {
+        return String::from(
+            r#"<div class="form-error-summary" role="alert">Failed to save record</div>"#,
+        );
+    }
+    if form.submitted {
+        return String::from(r#"<div class="form-success" role="status">Saved successfully</div>"#);
+    }
+    String::new()
 }

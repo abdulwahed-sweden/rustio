@@ -487,18 +487,26 @@ impl Admin {
             }
         });
 
-        // Parallel new-layout scaffold. Mounted alongside /admin so the
-        // two systems coexist while the new admin is being built out.
-        // GET renders the foundation page; when `?id=N` is present in
-        // the query string the row is loaded from the demo table and
-        // injected into the form (edit mode). POST runs the
-        // bind → validate → persist → re-render submit pipeline.
-        // The CREATE / UPDATE branch is decided by the `id` field in
-        // the body (empty / missing → INSERT, non-empty → UPDATE).
+        // Generic admin engine routes. The `:model` path segment is
+        // looked up against an `AdminRegistry`; an unknown slug
+        // returns 404. All persistence / rendering is driven by the
+        // looked-up model's metadata — no per-route hardcoding.
+        let admin_new_registry = std::sync::Arc::new({
+            let mut reg = crate::admin::admin_form_bridge::AdminRegistry::new();
+            reg.register("users", crate::admin::layout::new_user_admin);
+            reg.register("orders", crate::admin::layout::new_order_admin);
+            reg
+        });
         let admin_new_get_db = db.clone();
-        router = router.get("/admin-new", move |req, _params| {
+        let admin_new_get_registry = admin_new_registry.clone();
+        router = router.get("/admin-new/:model", move |req, params| {
             let db = admin_new_get_db.clone();
+            let registry = admin_new_get_registry.clone();
             async move {
+                let model_slug = params.get("model").unwrap_or("").to_string();
+                let Some(model) = registry.get(&model_slug) else {
+                    return Err(Error::NotFound);
+                };
                 let q_map = req.query().into_map();
                 let id = q_map.get("id").filter(|s| !s.is_empty()).cloned();
                 let query = q_map
@@ -514,10 +522,10 @@ impl Admin {
                 let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
                 let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
                 // Anything left over after stripping the reserved
-                // query keys (q / page / id / sort / dir) is treated
-                // as a metadata-driven filter. Empty values are
-                // ignored so `?is_active=` is a no-op (= "All").
-                // Whitelisting happens downstream in the layout layer.
+                // keys (q / page / id / sort / dir) is treated as a
+                // metadata-driven filter. Empty values are ignored
+                // so `?is_active=` is a no-op (= "All"). Whitelisting
+                // happens downstream against the model's metadata.
                 let filters: std::collections::HashMap<String, String> = q_map
                     .iter()
                     .filter(|(k, v)| {
@@ -527,31 +535,42 @@ impl Admin {
                             && k.as_str() != "id"
                             && k.as_str() != "sort"
                             && k.as_str() != "dir"
+                            && k.as_str() != "advanced"
                     })
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
+                let advanced = q_map
+                    .get("advanced")
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
                 let html = layout::admin_index_get(
                     &db,
+                    &*model,
                     id.as_deref(),
                     query.as_deref(),
                     page,
                     &filters,
                     sort.as_deref(),
                     dir.as_deref(),
+                    advanced,
                 )
                 .await;
                 Ok::<Response, Error>(crate::http::html(html))
             }
         });
         let admin_new_post_db = db.clone();
-        router = router.post("/admin-new", move |req, _params| {
+        let admin_new_post_registry = admin_new_registry.clone();
+        router = router.post("/admin-new/:model", move |req, params| {
             let db = admin_new_post_db.clone();
+            let registry = admin_new_post_registry.clone();
             async move {
+                let model_slug = params.get("model").unwrap_or("").to_string();
+                let Some(model) = registry.get(&model_slug) else {
+                    return Err(Error::NotFound);
+                };
                 // Extract URL state from the request *before*
                 // consuming the body — `read_form` takes `req` by
-                // value. Search query, page, and any filter params
-                // come off the URL, body params drive the form
-                // submission itself.
+                // value.
                 let q_map = req.query().into_map();
                 let query = q_map
                     .get("q")
@@ -574,12 +593,15 @@ impl Admin {
                             && k.as_str() != "id"
                             && k.as_str() != "sort"
                             && k.as_str() != "dir"
+                            && k.as_str() != "advanced"
                     })
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect();
+                let advanced = q_map
+                    .get("advanced")
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
                 let form_data = read_form(req).await?;
-                // Read multi-valued + single-valued things off the
-                // FormData *before* `into_map` consumes it.
                 let bulk_action = form_data
                     .get("bulk_action")
                     .filter(|s| !s.is_empty())
@@ -592,16 +614,16 @@ impl Admin {
                     .collect();
                 let params = form_data.into_map();
                 let html = if let Some(action) = bulk_action.as_deref() {
-                    // Bulk path: ids + action drive the operation;
-                    // page is forced to 1 in the renderer.
                     layout::admin_index_bulk(
                         &db,
+                        &*model,
                         action,
                         &bulk_ids,
                         query.as_deref(),
                         &filters,
                         sort.as_deref(),
                         dir.as_deref(),
+                        advanced,
                     )
                     .await
                 } else {
@@ -611,6 +633,7 @@ impl Admin {
                         .filter(|s| !s.is_empty());
                     layout::admin_index_post(
                         &db,
+                        &*model,
                         &params,
                         editing_id,
                         query.as_deref(),
@@ -618,6 +641,7 @@ impl Admin {
                         &filters,
                         sort.as_deref(),
                         dir.as_deref(),
+                        advanced,
                     )
                     .await
                 };
@@ -1858,7 +1882,10 @@ fn render_shell_page(
             logout = icon_logout(),
             csrf_val = escape_html(csrf),
         ),
-        None => format!(r#"<div class="rio-topbar-actions">{env}</div>"#, env = env_chip),
+        None => format!(
+            r#"<div class="rio-topbar-actions">{env}</div>"#,
+            env = env_chip
+        ),
     };
 
     let subtitle_html = page_subtitle
@@ -1958,7 +1985,10 @@ document.addEventListener("click", function(e){{
         // admin page and never paints a stale shell. The CSS bundle
         // has its own `?v=<len>` cache-buster; these headers close
         // the remaining gap on the HTML itself.
-        .header("cache-control", "no-store, no-cache, must-revalidate, max-age=0")
+        .header(
+            "cache-control",
+            "no-store, no-cache, must-revalidate, max-age=0",
+        )
         .header("pragma", "no-cache")
         .header("expires", "0")
         .body(Full::new(Bytes::from(body_html)))

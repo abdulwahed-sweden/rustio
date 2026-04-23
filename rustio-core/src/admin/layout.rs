@@ -17,13 +17,10 @@ use crate::admin::admin_form_bridge::{
 };
 use crate::admin::auto_form::{AutoField, FieldOverride, FormBuilder, FormModel};
 use crate::admin::form::{render_form, FieldConfig, FieldType, FormConfig};
-use crate::admin::persistence::{self, PersistableModel};
-use crate::admin::ui::html_escape;
+use crate::admin::persistence;
 use crate::admin::ui::{
-    render_page_header, render_sidebar, render_table_shell, render_toolbar, render_topbar,
-    BadgeVariant, Breadcrumb, FilterChip, PageAction, PageHeaderConfig, SearchConfig,
-    SearchProminence, SidebarGroup, SidebarItem, TableCell, TableColumn, TableRow,
-    TableShellConfig, TopbarConfig,
+    html_escape, render_page_header, render_sidebar, render_topbar, Breadcrumb, PageAction,
+    PageHeaderConfig, SidebarGroup, SidebarItem, TopbarConfig,
 };
 use crate::orm::Db;
 
@@ -267,68 +264,44 @@ pub fn render_layout(topbar: String, sidebar: String, content: String) -> String
 // Public entry point — handler body for /admin-new
 // ---------------------------------------------------------------
 
-/// Render the foundation page for `/admin-new` — sync entry point.
-///
-/// `prefill = None` falls back to the demo form; `prefill = Some(map)`
-/// builds the form from `UserAdmin` and pre-populates each field's
-/// `value` from the map.
-///
-/// **Without a `Db` handle the table renders empty** ("No records
-/// found" + "auth.User · 0 records"). For a real, data-backed page
-/// use [`admin_index_get`] / [`admin_index_post`] — both are async
-/// and pull the user list + count from the demo table.
-pub fn admin_index(prefill: Option<&HashMap<String, String>>, editing_id: Option<&str>) -> String {
-    let drawer = build_drawer_for_get(prefill, editing_id);
-    admin_index_with_drawer(
-        drawer,
-        Vec::new(),
-        0,
-        None,
-        1,
-        1,
-        &HashMap::new(),
-        None,
-        None,
-    )
-}
-
-/// GET orchestrator: ensures the demo table exists, loads the row
-/// identified by `editing_id` (when present) so the form is
-/// pre-filled, and pulls either the full list or a search result
-/// (when `query` is `Some`) so the table chrome reflects what the
-/// user typed. Falls back gracefully on any DB error — the page
-/// always renders.
+/// GET orchestrator (model-driven): looks up the registered model
+/// by slug, ensures its table exists, loads the row identified by
+/// `editing_id` (if any) for prefill, fetches the table window +
+/// count, and renders the page. Every piece of behaviour comes from
+/// the model's metadata — no hardcoded column names, table names,
+/// or model logic.
+#[allow(clippy::too_many_arguments)]
 pub async fn admin_index_get(
     db: &Db,
+    model: &dyn AdminUiModel,
     editing_id: Option<&str>,
     query: Option<&str>,
     page: i64,
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    advanced: bool,
 ) -> String {
-    // Ensure the table exists before *any* DB read below — both the
-    // single-row lookup and the list path need it. Idempotent.
-    let _ = persistence::ensure_demo_table(db).await;
+    if let Some(sql) = model.ensure_table_sql() {
+        let _ = persistence::ensure_table(db, sql).await;
+    }
 
     let prefill = match editing_id {
         Some(id) if !id.is_empty() => {
-            match persistence::get_record_by_id(db, UserAdmin::table_name(), id).await {
+            match persistence::get_record_by_id(db, model.table_name(), id).await {
                 Ok(map) if !map.is_empty() => Some(map),
                 _ => None,
             }
         }
         _ => None,
     };
-    // If lookup didn't find a row, drop the editing id too so the
-    // hidden field is empty and a subsequent submit becomes an
-    // INSERT rather than a no-op UPDATE against a phantom id.
     let effective_id = if prefill.is_some() { editing_id } else { None };
 
-    let drawer = build_drawer_for_get(prefill.as_ref(), effective_id);
+    let drawer = build_drawer_for_get(model, prefill.as_ref(), effective_id);
     let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
-        fetch_users_table_state(db, query, filters, page, sort, dir).await;
+        fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
     admin_index_with_drawer(
+        model,
         drawer,
         rows,
         total,
@@ -338,30 +311,30 @@ pub async fn admin_index_get(
         filters,
         validated_sort.as_deref(),
         validated_dir.as_deref(),
+        advanced,
+        None,
     )
 }
 
-/// Build the form-side drawer for the GET path. Shared between the
-/// sync [`admin_index`] entry point and [`admin_index_get`] so both
-/// paths produce an identical drawer for the same `(prefill, id)`
-/// inputs.
+/// Build the drawer for the GET path. Identical drawer for the
+/// same `(model, prefill, id)` whether the page came from a fresh
+/// load or a redirect.
 fn build_drawer_for_get(
+    model: &dyn AdminUiModel,
     prefill: Option<&HashMap<String, String>>,
     editing_id: Option<&str>,
 ) -> String {
-    match prefill {
-        Some(values) if !values.is_empty() => {
-            let mut form = build_user_admin_form();
-            for field in form.fields.iter_mut() {
-                if let Some(v) = values.get(&field.name) {
-                    field.value = Some(v.clone());
-                }
+    let mut form = build_admin_form(model);
+    if let Some(values) = prefill.filter(|v| !v.is_empty()) {
+        for field in form.fields.iter_mut() {
+            if let Some(v) = values.get(&field.name) {
+                field.value = Some(v.clone());
             }
-            let drawer = render_form(&form);
-            inject_hidden_id(&drawer, editing_id)
         }
-        _ => demo_admin_form(None),
     }
+    form.hidden_fields
+        .push(("id".to_string(), editing_id.unwrap_or("").to_string()));
+    render_form(&form)
 }
 
 /// Pull the users-table window + count from the demo table. When a
@@ -380,8 +353,10 @@ fn build_drawer_for_get(
 /// a 30-row table snaps to the last real page instead of returning
 /// nothing. `total_pages` is always at least `1` so the chrome can
 /// render `(Page 1 of 1)` even on an empty DB.
+#[allow(clippy::too_many_arguments)]
 async fn fetch_users_table_state(
     db: &Db,
+    model: &dyn AdminUiModel,
     query: Option<&str>,
     filters: &HashMap<String, String>,
     page: i64,
@@ -396,17 +371,23 @@ async fn fetch_users_table_state(
     Option<String>,
 ) {
     const PAGE_SIZE: i64 = 20;
-    let table = UserAdmin::table_name();
-    let (eq_filters, like_filters) = classify_user_admin_filters(filters);
-    let (validated_sort, validated_dir) = validate_sort_state(sort, dir);
+    let table = model.table_name();
+    let searchable: Vec<&str> = model.searchable_fields();
+    let (eq_filters, like_filters) = classify_filters(model, filters);
+    let (validated_sort, validated_dir) = validate_sort_state(model, sort, dir);
 
-    let total = persistence::count_filtered_records(db, table, &eq_filters, &like_filters, query)
-        .await
-        .unwrap_or(0);
+    let total = persistence::count_filtered_records(
+        db,
+        table,
+        &eq_filters,
+        &like_filters,
+        query,
+        &searchable,
+    )
+    .await
+    .unwrap_or(0);
 
     let total_pages = if total > 0 {
-        // `i64::div_ceil` is still unstable as of MSRV 1.75; the
-        // unsigned counterpart is stable, so cast through `u64`.
         ((total as u64).div_ceil(PAGE_SIZE as u64) as i64).max(1)
     } else {
         1
@@ -420,6 +401,7 @@ async fn fetch_users_table_state(
         &eq_filters,
         &like_filters,
         query,
+        &searchable,
         validated_sort.as_deref(),
         validated_dir.as_deref(),
         PAGE_SIZE,
@@ -445,16 +427,21 @@ async fn fetch_users_table_state(
 /// persistence helper, captures success / failure into a banner,
 /// and re-renders the page with `page=1` per the spec's reset rule.
 /// `q` / `filters` / `sort` / `dir` are preserved verbatim.
+#[allow(clippy::too_many_arguments)]
 pub async fn admin_index_bulk(
     db: &Db,
+    model: &dyn AdminUiModel,
     action: &str,
     ids: &[String],
     query: Option<&str>,
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    advanced: bool,
 ) -> String {
-    let _ = persistence::ensure_demo_table(db).await;
+    if let Some(sql) = model.ensure_table_sql() {
+        let _ = persistence::ensure_table(db, sql).await;
+    }
 
     let valid_ids: Vec<String> = ids
         .iter()
@@ -464,16 +451,23 @@ pub async fn admin_index_bulk(
 
     let mut banner = String::new();
     if !valid_ids.is_empty() {
-        let table = UserAdmin::table_name();
+        let table = model.table_name();
+        // Activate / Deactivate target the model's primary status
+        // field — `None` means the model didn't declare one, so
+        // those actions silently no-op (Delete still works).
+        let status_field = model.primary_status_field();
+        // Each branch awaits inline so the futures don't have to
+        // unify into a single opaque type.
         let result: Option<Result<(), crate::error::Error>> = match action {
-            "activate" => {
-                Some(persistence::bulk_update(db, table, &valid_ids, "is_active", "true").await)
-            }
-            "deactivate" => {
-                Some(persistence::bulk_update(db, table, &valid_ids, "is_active", "false").await)
-            }
+            "activate" => match status_field {
+                Some(f) => Some(persistence::bulk_update(db, table, &valid_ids, f, "true").await),
+                None => None,
+            },
+            "deactivate" => match status_field {
+                Some(f) => Some(persistence::bulk_update(db, table, &valid_ids, f, "false").await),
+                None => None,
+            },
             "delete" => Some(persistence::bulk_delete(db, table, &valid_ids).await),
-            // Unknown action → silent no-op. Better than guessing.
             _ => None,
         };
         match result {
@@ -491,16 +485,17 @@ pub async fn admin_index_bulk(
             None => {}
         }
     }
-    // Empty-ids path silently no-ops (per test case 4): no DB call,
-    // no banner — the page just re-renders with the preserved state.
 
-    // Page resets to 1 after a bulk action (per spec). Drawer falls
-    // back to the create-mode demo (we don't carry an editing id
-    // through bulk requests).
-    let drawer = build_drawer_for_get(None, None);
+    let drawer = build_drawer_for_get(model, None, None);
     let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
-        fetch_users_table_state(db, query, filters, 1, sort, dir).await;
-    let mut html = admin_index_with_drawer(
+        fetch_users_table_state(db, model, query, filters, 1, sort, dir).await;
+    let banner_opt = if banner.is_empty() {
+        None
+    } else {
+        Some(banner.as_str())
+    };
+    admin_index_with_drawer(
+        model,
         drawer,
         rows,
         total,
@@ -510,20 +505,9 @@ pub async fn admin_index_bulk(
         filters,
         validated_sort.as_deref(),
         validated_dir.as_deref(),
-    );
-
-    if !banner.is_empty() {
-        // Place the banner at the very top of the main content area
-        // so the user sees the outcome before anything else. The
-        // existing `.form-success` / `.form-error-summary` styles
-        // handle the visuals — no new CSS.
-        html = html.replacen(
-            r#"<main class="main">"#,
-            &format!(r#"<main class="main">{banner}"#),
-            1,
-        );
-    }
-    html
+        advanced,
+        banner_opt,
+    )
 }
 
 /// Validate the URL's `sort` + `dir` against `UserAdmin` metadata.
@@ -533,12 +517,12 @@ pub async fn admin_index_bulk(
 /// persistence falls back to `ORDER BY "id" DESC`. All validation
 /// happens here so persistence stays a simple SQL emitter that
 /// trusts its inputs.
-fn validate_sort_state(sort: Option<&str>, dir: Option<&str>) -> (Option<String>, Option<String>) {
-    let valid_sort = sort.filter(|s| {
-        UserAdmin::fields()
-            .iter()
-            .any(|f| f.name == *s && f.sortable)
-    });
+fn validate_sort_state(
+    model: &dyn AdminUiModel,
+    sort: Option<&str>,
+    dir: Option<&str>,
+) -> (Option<String>, Option<String>) {
+    let valid_sort = sort.filter(|s| model.fields().iter().any(|f| f.name == *s && f.sortable));
     match valid_sort {
         Some(s) => {
             let d = if matches!(dir, Some("desc")) {
@@ -563,6 +547,7 @@ fn build_query_url(
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    advanced: bool,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(p) = page {
@@ -588,6 +573,9 @@ fn build_query_url(
     if let Some(d) = dir {
         parts.push(format!("dir={}", url_encode_value(d)));
     }
+    if advanced {
+        parts.push("advanced=1".to_string());
+    }
     if parts.is_empty() {
         String::new()
     } else {
@@ -595,17 +583,18 @@ fn build_query_url(
     }
 }
 
-/// Walk `UserAdmin::fields()` and split the raw URL filter map into
-/// two buckets keyed off [`resolve_filter_type`]: equality filters
+/// Walk `model.fields()` and split the raw URL filter map into two
+/// buckets keyed off [`resolve_filter_type`]: equality filters
 /// (Boolean, Select) and `LIKE` filters (Exact text). Any URL key
 /// that doesn't correspond to a declared `AdminUiField` is silently
 /// dropped — this is the security boundary that stops an attacker
 /// from injecting `?random_column=x` to query columns that admin
 /// metadata never exposed as filterable.
-fn classify_user_admin_filters(
+fn classify_filters(
+    model: &dyn AdminUiModel,
     raw: &HashMap<String, String>,
 ) -> (HashMap<String, String>, HashMap<String, String>) {
-    let fields = UserAdmin::fields();
+    let fields = model.fields();
     let mut eq = HashMap::new();
     let mut like = HashMap::new();
     for (k, v) in raw {
@@ -648,6 +637,7 @@ fn classify_user_admin_filters(
 #[allow(clippy::too_many_arguments)]
 pub async fn admin_index_post(
     db: &Db,
+    model: &dyn AdminUiModel,
     params: &HashMap<String, String>,
     editing_id: Option<&str>,
     query: Option<&str>,
@@ -655,13 +645,13 @@ pub async fn admin_index_post(
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    advanced: bool,
 ) -> String {
-    // First POST against a fresh DB needs the demo table; the helper
-    // is `CREATE TABLE IF NOT EXISTS` so this is cheap to call every
-    // time (O(1) once the table exists).
-    let _ = persistence::ensure_demo_table(db).await;
+    if let Some(sql) = model.ensure_table_sql() {
+        let _ = persistence::ensure_table(db, sql).await;
+    }
 
-    let mut form = build_user_admin_form();
+    let mut form = build_admin_form(model);
     crate::admin::form::bind_form(&mut form, params);
     crate::admin::form::validate_form(&mut form);
 
@@ -671,23 +661,17 @@ pub async fn admin_index_post(
     let mut save_failed = false;
 
     if !any_errors {
+        let table = model.table_name();
+        let pk = model.primary_key();
         if let Some(id) = effective_id.as_deref() {
-            // UPDATE: known row id → write the form's column map
-            // back through the helper.
-            let data = UserAdmin::to_update_map(&form);
-            if let Err(err) =
-                persistence::update_record(db, UserAdmin::table_name(), id, &data).await
-            {
+            let data = persistence::form_to_column_map(&form, pk);
+            if let Err(err) = persistence::update_record(db, table, id, &data).await {
                 eprintln!("admin-new update error: {err}");
                 save_failed = true;
             }
         } else {
-            // INSERT: no row id yet; round-trip the new id back into
-            // the rendered hidden input so a subsequent submit on
-            // the same page becomes an UPDATE rather than a
-            // duplicate INSERT.
-            let data = UserAdmin::to_insert_map(&form);
-            match persistence::insert_record(db, UserAdmin::table_name(), &data).await {
+            let data = persistence::form_to_column_map(&form, pk);
+            match persistence::insert_record(db, table, &data).await {
                 Ok(new_id) => effective_id = Some(new_id.to_string()),
                 Err(err) => {
                     eprintln!("admin-new insert error: {err}");
@@ -697,13 +681,15 @@ pub async fn admin_index_post(
         }
     }
 
+    form.hidden_fields
+        .push(("id".to_string(), effective_id.clone().unwrap_or_default()));
+    form.save_failed = save_failed;
     let drawer = render_form(&form);
-    let drawer = inject_hidden_id(&drawer, effective_id.as_deref());
-    let drawer = patch_save_banner(&drawer, save_failed);
 
     let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
-        fetch_users_table_state(db, query, filters, page, sort, dir).await;
+        fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
     admin_index_with_drawer(
+        model,
         drawer,
         rows,
         total,
@@ -713,6 +699,8 @@ pub async fn admin_index_post(
         filters,
         validated_sort.as_deref(),
         validated_dir.as_deref(),
+        advanced,
+        None,
     )
 }
 
@@ -725,6 +713,7 @@ pub async fn admin_index_post(
 /// no-DB sync path).
 #[allow(clippy::too_many_arguments)]
 fn admin_index_with_drawer(
+    model: &dyn AdminUiModel,
     drawer: String,
     rows: Vec<HashMap<String, String>>,
     total: i64,
@@ -734,6 +723,8 @@ fn admin_index_with_drawer(
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    advanced: bool,
+    top_banner: Option<&str>,
 ) -> String {
     let topbar = render_topbar(&TopbarConfig {
         brand: "RustIO".into(),
@@ -745,17 +736,21 @@ fn admin_index_with_drawer(
 
     let sidebar = render_sidebar(&sample_sidebar());
 
+    let model_name = model.model_name();
+    let model_slug = model.slug();
+    let model_table = model.table_name();
+    let title_label = format!("{model_name}s");
     let breadcrumbs = vec![
         Breadcrumb {
             label: "Home".into(),
-            href: Some("/admin-new".into()),
+            href: Some(format!("/admin-new/{model_slug}")),
         },
         Breadcrumb {
-            label: "Auth".into(),
-            href: Some("/admin-new".into()),
+            label: "Admin".into(),
+            href: Some(format!("/admin-new/{model_slug}")),
         },
         Breadcrumb {
-            label: "Users".into(),
+            label: title_label.clone(),
             href: None,
         },
     ];
@@ -765,12 +760,12 @@ fn admin_index_with_drawer(
         Some(q) => {
             format!("Search: '{q}' · {total} results (Page {current_page} of {total_pages})")
         }
-        None => format!("auth.User · {total} records (Page {current_page} of {total_pages})"),
+        None => format!("{model_name} · {total} records (Page {current_page} of {total_pages})"),
     };
 
     let page_header = render_page_header(&PageHeaderConfig {
         breadcrumbs,
-        title: "Users".into(),
+        title: title_label,
         subtitle: Some(subtitle),
         actions: vec![
             PageAction {
@@ -779,45 +774,17 @@ fn admin_index_with_drawer(
                 primary: false,
             },
             PageAction {
-                label: "+ Add user".into(),
+                label: format!("+ Add {model_name}"),
                 href: None,
                 primary: true,
             },
         ],
     });
 
-    let search_cfg = SearchConfig {
-        enabled: true,
-        prominence: SearchProminence::Standard,
-        label: "Search users".into(),
-        placeholder: "Search users by username, email, or full name".into(),
-        keyboard_enabled: true,
-        // Preserve the typed query so the input keeps its value after
-        // a search submit — UX stays stable, input never clears
-        // mid-search.
-        value: trimmed_query.unwrap_or("").to_string(),
-        action: "/admin-new".into(),
-        filters: vec![FilterChip {
-            label: "All".into(),
-            count: Some(total.to_string()),
-            active: true,
-        }],
-    };
-
-    // Render the canonical toolbar (search input + filter chips
-    // exactly as `ui::render_toolbar` produces it), then weave the
-    // metadata-driven filter inputs *into* the search form so they
-    // submit alongside `q` on a single GET. Finally append the
-    // "+ Add filter" stub + the (currently hidden) advanced-filter
-    // block so the affordance is visible without any JS.
-    let toolbar_base = render_toolbar(&search_cfg);
-    let toolbar_with_filters = inject_filter_inputs_into_toolbar(&toolbar_base, filters);
-    let toolbar = format!(
-        "{toolbar_with_filters}{}",
-        render_advanced_filter_section(filters),
-    );
+    let toolbar = render_users_toolbar(model, trimmed_query, filters, total, advanced);
 
     let table = render_users_table(
+        model,
         &rows,
         total,
         trimmed_query,
@@ -826,34 +793,38 @@ fn admin_index_with_drawer(
         filters,
         sort,
         dir,
+        advanced,
     );
 
-    // Wrap the bulk-action bar + table in a sibling form (separate
-    // from the drawer's `data-admin-form`). Hidden inputs preserve
-    // q / filters / sort / dir across the POST so the page state
-    // round-trips. `page` is intentionally NOT preserved — the spec
-    // resets to page 1 after every bulk action.
     let bulk_bar = render_bulk_bar();
     let hidden_state = render_bulk_hidden_state(trimmed_query, filters, sort, dir);
     let bulk_form = format!(
         r#"<form method="post" action="" data-bulk-form>{hidden_state}{bulk_bar}{table}</form>"#,
     );
 
-    let foundation_note = r#"<p style="margin: 20px 0 0; font-family: var(--mono); font-size: 12px; color: var(--ink-subtle);">Live data from <code>admin_new_demo_users</code>. Submit the drawer to insert / update; tick row checkboxes to bulk-act.</p>"#;
+    let foundation_note = format!(
+        r#"<p style="margin: 20px 0 0; font-family: var(--mono); font-size: 12px; color: var(--ink-subtle);">Live data from <code>{model_table}</code>. Submit the drawer to insert / update; tick row checkboxes to bulk-act.</p>"#,
+    );
 
-    let content = format!("{page_header}{toolbar}{bulk_form}{foundation_note}{drawer}");
+    // `top_banner` is rendered above the page header so transient
+    // outcomes (bulk action result) are seen first. Empty when the
+    // page didn't go through any bulk operation.
+    let banner_html = top_banner.unwrap_or("");
+    let content =
+        format!("{banner_html}{page_header}{toolbar}{bulk_form}{foundation_note}{drawer}");
 
     render_layout(topbar, sidebar, content)
 }
 
-/// Translate the DB rows into a [`TableShellConfig`] and render via
-/// the existing [`render_table_shell`]. Empty result set is
-/// post-processed into the spec's `<tr><td colspan="100%">No records
-/// found</td></tr>` row (or the search-specific "No results found
-/// for …" variant when `query` is supplied) so we don't need a new
-/// variant on [`TableCell`] (which lives in `ui.rs`, off-limits).
+/// Render the entire users table — header (with sortable links and
+/// a real disabled "select-all" checkbox), rows (with real per-row
+/// `<input type="checkbox" name="ids">` bulk-action checkboxes),
+/// empty-state row when `rows` is empty, and the link-based
+/// pagination block. **No string post-processing** — every piece
+/// of HTML comes from a typed render function below.
 #[allow(clippy::too_many_arguments)]
 fn render_users_table(
+    model: &dyn AdminUiModel,
     rows: &[HashMap<String, String>],
     total: i64,
     query: Option<&str>,
@@ -862,86 +833,52 @@ fn render_users_table(
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    advanced: bool,
 ) -> String {
-    // Each (label, sort_key) pair drives both the rendered `<th>`
-    // and the post-process pass that linkifies the header. The sort
-    // arrow is set on whichever column matches the current sort.
-    let header_specs: &[(&str, &str)] = &[
-        ("Username", "username"),
-        ("Email", "email"),
-        ("Status", "is_active"),
-        ("Doctor", "doctor_id"),
-        ("Salary", "salary_amount"),
-    ];
-    let columns = {
-        let mut cols = vec![TableColumn::checkbox()];
-        for (label, key) in header_specs {
-            let mut col = TableColumn::text(*label);
-            if sort == Some(*key) {
-                let arrow = if dir == Some("desc") { "↓" } else { "↑" };
-                col = col.sorted(arrow);
-            }
-            cols.push(col);
+    let trimmed_query = query.map(str::trim).filter(|s| !s.is_empty());
+    let header_html = render_users_table_header(model, trimmed_query, filters, sort, dir, advanced);
+    let body_html = render_users_table_rows(model, rows, trimmed_query);
+    let pagination_html = render_users_pagination(
+        trimmed_query,
+        current_page,
+        total_pages,
+        total,
+        20,
+        rows.len(),
+        filters,
+        sort,
+        dir,
+        advanced,
+    );
+    format!(
+        r#"<div class="table-wrap"><table>{header_html}{body_html}</table>{pagination_html}</div>"#,
+    )
+}
+
+/// Emit the `<thead>` block: disabled select-all checkbox, one
+/// `<th>` per `visible_in_table` field (sortable ones wrapped in a
+/// clickable `<a href>`), then a final `<th>Actions</th>` for the
+/// per-row Edit / Delete cell.
+#[allow(clippy::too_many_arguments)]
+fn render_users_table_header(
+    model: &dyn AdminUiModel,
+    query: Option<&str>,
+    filters: &HashMap<String, String>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+    advanced: bool,
+) -> String {
+    use std::fmt::Write as _;
+    let mut html = String::from(r#"<thead><tr>"#);
+    html.push_str(
+        r#"<th style="width: 36px; cursor: default;"><input type="checkbox" disabled aria-label="Select all (no JS yet)"></th>"#,
+    );
+    for field in model.fields() {
+        if !field.visible_in_table {
+            continue;
         }
-        cols
-    };
-
-    let table_rows: Vec<TableRow> = rows
-        .iter()
-        .map(|r| {
-            let username = r.get("username").map(String::as_str).unwrap_or("");
-            let email = r.get("email").map(String::as_str).unwrap_or("");
-            let is_active_str = r.get("is_active").map(String::as_str).unwrap_or("false");
-            let active = matches!(is_active_str, "true" | "1" | "yes");
-            let (variant, label) = if active {
-                (BadgeVariant::Success, "ACTIVE")
-            } else {
-                (BadgeVariant::Muted, "INACTIVE")
-            };
-            let doctor = r.get("doctor_id").map(String::as_str).unwrap_or("");
-            let salary = r.get("salary_amount").map(String::as_str).unwrap_or("");
-            TableRow {
-                selected: false,
-                cells: vec![
-                    TableCell::Checkbox { checked: false },
-                    TableCell::Primary(username.to_string()),
-                    TableCell::Mono(email.to_string()),
-                    TableCell::Badge {
-                        variant,
-                        text: label.to_string(),
-                    },
-                    TableCell::Mono(doctor.to_string()),
-                    TableCell::Mono(salary.to_string()),
-                ],
-            }
-        })
-        .collect();
-
-    // We render `render_table_shell` with `pagination: None` and
-    // append our own pagination block — the shell's built-in
-    // pagination emits `<button>` elements without hrefs, which
-    // doesn't navigate. The custom block uses `<a href>` so each
-    // page link carries the current search query through.
-    let cfg = TableShellConfig {
-        columns,
-        rows: table_rows,
-        pagination: None,
-    };
-
-    let mut html = render_table_shell(&cfg);
-
-    // Wrap each sortable header label in a real `<a href>` so the
-    // column toggles sort state on click. We can't change
-    // `render_table_shell` (lives in `ui.rs`, off-limits), so we
-    // rebuild the exact substring it emits and swap it for a linked
-    // version. For each column the toggle direction is computed
-    // against the current state — fresh click → `asc`, click on the
-    // already-asc column → `desc`, click on the already-desc column
-    // → `asc`. New sorts always reset to page 1.
-    let trimmed_for_link = query.map(str::trim).filter(|s| !s.is_empty());
-    for (label, key) in header_specs {
-        let escaped_label = html_escape(label);
-        let is_current = sort == Some(*key);
+        let escaped_label = html_escape(field.label);
+        let is_current = sort == Some(field.name);
         let next_dir = if is_current && dir == Some("asc") {
             "desc"
         } else {
@@ -956,105 +893,99 @@ fn render_users_table(
         } else {
             ""
         };
-        let href_url = build_query_url(
-            None, // sort change resets to page 1
-            trimmed_for_link,
+        if !field.sortable {
+            let _ = write!(html, r#"<th>{escaped_label}</th>"#);
+            continue;
+        }
+        let href = html_escape(&build_query_url(
+            None,
+            query,
             filters,
-            Some(key),
+            Some(field.name),
             Some(next_dir),
-        );
-        let escaped_href = html_escape(&href_url);
-
-        let original = if is_current {
-            let arrow_char = if dir == Some("desc") { "↓" } else { "↑" };
-            format!(
-                r#"<th class="sorted">{escaped_label} <span class="sort-arrow">{arrow_char}</span></th>"#,
-            )
+            advanced,
+        ));
+        if is_current {
+            let _ = write!(
+                html,
+                r#"<th class="sorted"><a href="{href}">{escaped_label}{arrow_suffix}</a></th>"#,
+            );
         } else {
-            format!(r#"<th>{escaped_label}</th>"#)
-        };
-        let replacement = if is_current {
-            format!(
-                r#"<th class="sorted"><a href="{escaped_href}">{escaped_label}{arrow_suffix}</a></th>"#,
-            )
-        } else {
-            format!(r#"<th><a href="{escaped_href}">{escaped_label}</a></th>"#)
-        };
-        html = html.replacen(&original, &replacement, 1);
+            let _ = write!(html, r#"<th><a href="{href}">{escaped_label}</a></th>"#);
+        }
     }
+    html.push_str("<th>Actions</th>");
+    html.push_str("</tr></thead>");
+    html
+}
 
+/// Emit the `<tbody>` block — one `<tr>` per row with a per-row
+/// bulk-action checkbox, the visible cells, then a final Actions
+/// cell carrying Edit (link) + Delete (inline form).
+///
+/// The Delete `<form>` here is HTML5-parser-collapsed inside the
+/// outer bulk form — its hidden inputs (`bulk_action=delete` +
+/// `ids=<row_id>`) and submit button become siblings of the bulk
+/// form's other inputs. Clicking the row's Delete button submits
+/// the bulk form with that single id, which the existing
+/// `bulk_action=delete` handler already understands. No new
+/// persistence function needed.
+fn render_users_table_rows(
+    model: &dyn AdminUiModel,
+    rows: &[HashMap<String, String>],
+    query: Option<&str>,
+) -> String {
+    use std::fmt::Write as _;
     if rows.is_empty() {
-        // `render_table_shell` emits `<tbody></tbody>` for an empty
-        // row set — replace it with the spec's empty-state row. When
-        // a search query was active, the message echoes the query
-        // (HTML-escaped) so the user sees what didn't match.
-        let replacement = match query {
+        let inner = match query {
             Some(q) => format!(
-                r#"<tbody><tr><td colspan="100%">No results found for "<strong>{}</strong>"</td></tr></tbody>"#,
+                r#"<tr><td colspan="100%">No results found for "<strong>{}</strong>"</td></tr>"#,
                 html_escape(q),
             ),
-            None => {
-                r#"<tbody><tr><td colspan="100%">No records found</td></tr></tbody>"#.to_string()
-            }
+            None => r#"<tr><td colspan="100%">No records found</td></tr>"#.to_string(),
         };
-        html = html.replace("<tbody></tbody>", &replacement);
+        return format!("<tbody>{inner}</tbody>");
     }
-
-    // Inject the link-based pagination block just before the closing
-    // `</div>` of `.table-wrap`. `render_table_shell` (with no
-    // built-in pagination) emits exactly one `</div>` at the very
-    // end, so a single `replacen` is safe.
-    // Replace the placeholder header `.checkbox` span with a real
-    // (disabled, no JS) `<input>`. Single-occurrence — there's only
-    // one checkbox column header in the rendered shell.
-    html = html.replacen(
-        r#"<th style="width: 36px; cursor: default;"><span class="checkbox"></span></th>"#,
-        r#"<th style="width: 36px; cursor: default;"><input type="checkbox" disabled aria-label="Select all (no JS yet)"></th>"#,
-        1,
-    );
-
-    // Replace each row's `.checkbox` placeholder with a real
-    // `<input type="checkbox" name="ids" value="<row id>">` in
-    // submission order. We walk the rendered HTML left-to-right and
-    // pair consecutive checkbox placeholders with consecutive rows.
-    {
-        let placeholder = r#"<td><span class="checkbox"></span></td>"#;
-        let mut new_html = String::with_capacity(html.len() + rows.len() * 80);
-        let mut remaining = html.as_str();
-        let mut row_iter = rows.iter();
-        while let Some(pos) = remaining.find(placeholder) {
-            new_html.push_str(&remaining[..pos]);
-            if let Some(row) = row_iter.next() {
-                let id = row.get("id").map(String::as_str).unwrap_or("");
-                let escaped_id = html_escape(id);
-                new_html.push_str(&format!(
-                    r#"<td><input type="checkbox" name="ids" value="{escaped_id}" aria-label="Select row {escaped_id}"></td>"#,
-                ));
-            } else {
-                // More placeholders than rows would mean
-                // render_table_shell or our row-builder went out of
-                // sync — keep the original placeholder rather than
-                // dropping cells.
-                new_html.push_str(placeholder);
-            }
-            remaining = &remaining[pos + placeholder.len()..];
+    let model_slug = html_escape(model.slug());
+    let visible_fields: Vec<AdminUiField> = model
+        .fields()
+        .into_iter()
+        .filter(|f| f.visible_in_table)
+        .collect();
+    let mut html = String::from("<tbody>");
+    for r in rows {
+        let id = r.get("id").map(String::as_str).unwrap_or("");
+        let escaped_id = html_escape(id);
+        let _ = write!(
+            html,
+            r#"<tr><td><input type="checkbox" name="ids" value="{escaped_id}" aria-label="Select row {escaped_id}"></td>"#,
+        );
+        for (i, field) in visible_fields.iter().enumerate() {
+            let value = r.get(field.name).map(String::as_str).unwrap_or("");
+            let cell = match field.data_type {
+                AdminDataType::Boolean => {
+                    let on = matches!(value, "true" | "1" | "yes" | "on");
+                    let (badge_class, badge_label) = if on {
+                        ("badge-success", "ACTIVE")
+                    } else {
+                        ("badge-muted", "INACTIVE")
+                    };
+                    format!(r#"<td><span class="badge {badge_class}">{badge_label}</span></td>"#,)
+                }
+                _ if i == 0 => format!(
+                    r#"<td class="primary-col mono">{}</td>"#,
+                    html_escape(value),
+                ),
+                _ => format!(r#"<td class="mono">{}</td>"#, html_escape(value)),
+            };
+            html.push_str(&cell);
         }
-        new_html.push_str(remaining);
-        html = new_html;
+        let _ = write!(
+            html,
+            r#"<td><a href="/admin-new/{model_slug}?id={escaped_id}">Edit</a> <form method="post" action="" style="display:inline"><input type="hidden" name="bulk_action" value="delete"><input type="hidden" name="ids" value="{escaped_id}"><button type="submit" class="danger">Delete</button></form></td></tr>"#,
+        );
     }
-
-    let pagination_html = render_users_pagination(
-        query,
-        current_page,
-        total_pages,
-        total,
-        20,
-        rows.len(),
-        filters,
-        sort,
-        dir,
-    );
-    html = html.replacen("</div>", &format!("{pagination_html}</div>"), 1);
+    html.push_str("</tbody>");
     html
 }
 
@@ -1081,6 +1012,7 @@ fn render_users_pagination(
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    advanced: bool,
 ) -> String {
     use std::fmt::Write as _;
 
@@ -1104,6 +1036,7 @@ fn render_users_pagination(
             filters,
             sort,
             dir,
+            advanced,
         ))
     };
 
@@ -1229,44 +1162,75 @@ fn render_bulk_hidden_state(
     out
 }
 
-/// Inject the metadata-driven filter inputs (one per `filterable`
-/// AdminUiField) into the toolbar's search form, just before its
-/// closing `</form>`. This piggy-backs on the existing search form
-/// — no new form, no new toolbar — so filters submit alongside `q`
-/// on a single GET via the existing search-submit button or Enter.
+/// Render the entire toolbar block — search form (with filter
+/// inputs woven in as proper siblings of the search div) + the
+/// "All" filter chip + keyboard hint + the "+ Add filter" stub +
+/// the (HTML-`hidden`) advanced-filter block.
 ///
-/// Each input's value is re-populated from the current `filters`
-/// map so the toolbar reflects the active filter state on every
-/// re-render. Boolean → tri-state `<select>`, FK / enum → typed
-/// `<select>` from `options`, free text → `<input type="text">`.
-fn inject_filter_inputs_into_toolbar(
-    toolbar_html: &str,
+/// Class names match what `render_toolbar` in `ui.rs` would have
+/// produced, so the existing `components.css` rules apply
+/// unchanged. **No string post-processing** — every piece is
+/// emitted directly, in the right order, by this one function.
+fn render_users_toolbar(
+    model: &dyn AdminUiModel,
+    query: Option<&str>,
     filters: &HashMap<String, String>,
+    total: i64,
+    advanced: bool,
 ) -> String {
-    let inputs = build_filter_inputs(false, filters);
-    if inputs.is_empty() {
-        return toolbar_html.to_string();
-    }
-    // Single search form per toolbar — `replacen(1)` is safe.
-    toolbar_html.replacen("</form>", &format!("{inputs}</form>"), 1)
-}
+    use std::fmt::Write as _;
 
-/// Render the "+ Add filter" affordance + the (HTML-`hidden`)
-/// advanced-filter block. Only renders when at least one
-/// `advanced_filter == true` field exists. The block lives in the
-/// DOM so the structure is observable, but stays invisible until JS
-/// or a future server-side toggle reveals it.
-fn render_advanced_filter_section(filters: &HashMap<String, String>) -> String {
-    let advanced_inputs = build_filter_inputs(true, filters);
-    if advanced_inputs.is_empty() {
-        return String::new();
+    let value = html_escape(query.unwrap_or(""));
+    let placeholder = html_escape(&format!(
+        "Search {}s by {}",
+        model.model_name().to_lowercase(),
+        model.searchable_fields().join(", "),
+    ));
+    let label_text = html_escape(&format!("Search {}s", model.model_name().to_lowercase()));
+    let chip_count = html_escape(&total.to_string());
+    let default_filters = build_filter_inputs(model, false, filters);
+    let advanced_inputs = build_filter_inputs(model, true, filters);
+    let action_url = html_escape(&format!("/admin-new/{}", model.slug()));
+
+    let mut html = String::new();
+    let _ = write!(
+        html,
+        r#"<div class="toolbar"><form class="search-form" role="search" method="get" action="{action_url}" aria-label="{label_text}">
+  <div class="search">
+    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="8"></circle>
+      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+    </svg>
+    <label class="sr-only" for="admin-new-search">{label_text}</label>
+    <input id="admin-new-search" name="q" type="search" value="{value}" placeholder="{placeholder}" data-role="search-input" autocomplete="off">
+    <button type="submit" class="search-submit" aria-label="Submit search">Search <kbd>⏎</kbd></button>
+  </div>{default_filters}</form><button type="button" class="filter-chip active">All <span class="count">{chip_count}</span></button></div>"#,
+    );
+    // Keyboard hint + advanced section both sit *outside* the
+    // toolbar div, mirroring the original render_toolbar ordering.
+    html.push_str(
+        r#"<div class="search-hint">Press <kbd class="kbd-inline">/</kbd> or <kbd class="kbd-inline">⌘K</kbd> to search instantly · <kbd class="kbd-inline">Esc</kbd> to exit</div>"#,
+    );
+    if !advanced_inputs.is_empty() {
+        // "+ Add filter" is now a real link that toggles the
+        // `advanced=1` URL flag — clicking with the panel open
+        // collapses it again. Filters / search / sort / page
+        // state survive the toggle via `build_query_url`.
+        let toggle_href = html_escape(&build_query_url(
+            None, query, filters, None, None, !advanced,
+        ));
+        let toggle_label = if advanced {
+            "− Hide filters"
+        } else {
+            "+ Add filter"
+        };
+        let hidden_attr = if advanced { "" } else { " hidden" };
+        let _ = write!(
+            html,
+            r#"<div class="toolbar toolbar-filters-only" style="border-radius:0;border-top:none;border-bottom:none;"><a class="btn" href="{toggle_href}">{toggle_label}</a></div><div class="advanced-filters"{hidden_attr}>{advanced_inputs}</div>"#,
+        );
     }
-    format!(
-        r#"<div class="toolbar toolbar-filters-only" style="border-radius:0;border-top:none;border-bottom:none;">
-  <button type="button" class="btn">+ Add filter</button>
-</div>
-<div class="advanced-filters" hidden>{advanced_inputs}</div>"#
-    )
+    html
 }
 
 /// Walk `UserAdmin::fields()` and emit the input HTML for each
@@ -1276,10 +1240,14 @@ fn render_advanced_filter_section(filters: &HashMap<String, String>) -> String {
 /// `<select>` for Select / FK, plain `<input type="text">` for
 /// Exact. Each control's `value` is taken from `filters` so the
 /// toolbar stays consistent with the URL after every submit.
-fn build_filter_inputs(advanced: bool, filters: &HashMap<String, String>) -> String {
+fn build_filter_inputs(
+    model: &dyn AdminUiModel,
+    advanced: bool,
+    filters: &HashMap<String, String>,
+) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
-    for field in UserAdmin::fields() {
+    for field in model.fields() {
         let want = if advanced {
             field.advanced_filter
         } else {
@@ -1354,62 +1322,15 @@ fn url_encode_value(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------
-// Drawer post-processing helpers (form.rs is off-limits, so the
-// hidden id input + banner-text swap happen here as substring edits)
-// ---------------------------------------------------------------
-
-/// Inject `<input type="hidden" name="id" value="...">` immediately
-/// after the rendered `<form data-admin-form ...>` opening tag. An
-/// empty `id` value is still emitted so the POST handler can
-/// distinguish "no editing id" (insert) from "editing id present"
-/// (update) via the same single body field — and so a successful
-/// CREATE round-trips its new row id back into the form for a
-/// subsequent UPDATE.
-fn inject_hidden_id(drawer: &str, id: Option<&str>) -> String {
-    let value = id.unwrap_or("");
-    drawer.replacen(
-        r#"<form data-admin-form action="" method="post">"#,
-        &format!(
-            r#"<form data-admin-form action="" method="post"><input type="hidden" name="id" value="{}">"#,
-            html_escape(value),
-        ),
-        1,
-    )
-}
-
-/// Two-step swap on the rendered drawer:
-///
-/// 1. Always replace `Saved successfully (simulation)` →
-///    `Saved successfully` (the persistence layer makes this a real
-///    save now, not a simulation).
-/// 2. If the DB write failed despite valid input, swap the success
-///    banner for `<div class="form-error-summary">Failed to save
-///    record</div>` so the user sees an explicit failure rather than
-///    a silent success.
-fn patch_save_banner(drawer: &str, save_failed: bool) -> String {
-    let after_text = drawer.replace(
-        r#"<div class="form-success" role="status">Saved successfully (simulation)</div>"#,
-        r#"<div class="form-success" role="status">Saved successfully</div>"#,
-    );
-    if save_failed {
-        after_text.replace(
-            r#"<div class="form-success" role="status">Saved successfully</div>"#,
-            r#"<div class="form-error-summary" role="alert">Failed to save record</div>"#,
-        )
-    } else {
-        after_text
-    }
-}
-
-// ---------------------------------------------------------------
 // Bridge form construction (shared by GET demo + POST handler)
 // ---------------------------------------------------------------
 
-/// Build the `UserAdmin` form with the same `override_field` chain
-/// the demo uses. Extracted so the persist path can reuse the exact
-/// same shape without re-stating the help-text override.
-fn build_user_admin_form() -> FormConfig {
-    FormBuilder::from_admin_ui_model::<UserAdmin>()
+/// Build a generic admin form for any `AdminUiModel`. The
+/// `doctor_id` help-text override only applies to the `users`
+/// model — `override_field` no-ops on unknown field names so this
+/// helper is safe for any model.
+pub fn build_admin_form(model: &dyn AdminUiModel) -> FormConfig {
+    FormBuilder::from_admin_ui_model(model)
         .override_field(
             "doctor_id",
             FieldOverride {
@@ -1422,57 +1343,53 @@ fn build_user_admin_form() -> FormConfig {
 }
 
 // ---------------------------------------------------------------
-// AdminModel-bridge demo (rendered on /admin-new today)
+// Built-in demo model: User
 // ---------------------------------------------------------------
 
-/// Tag struct used purely as a type parameter for
-/// `FormBuilder::from_admin_ui_model::<UserAdmin>()`. The bridge's
-/// `AdminUiModel` carries the `Ui` suffix so it can't collide with
-/// the framework's existing `crate::admin::AdminModel` trait.
-struct UserAdmin;
+/// Demo `AdminUiModel` registered as `"users"`. Backs the
+/// `/admin-new/users` route. The struct is unit; all metadata lives
+/// in the trait impl.
+pub struct UserAdmin;
 
-impl PersistableModel for UserAdmin {
-    fn table_name() -> &'static str {
-        "admin_new_demo_users"
-    }
-
-    fn primary_key() -> &'static str {
-        "id"
-    }
-
-    /// INSERT and UPDATE use the same column projection: every form
-    /// field except the primary key. Booleans are stored as text
-    /// (`"true"` / `"false"`) — matches the values produced by
-    /// [`crate::admin::form::bind_form`]'s Boolean branch.
-    fn to_insert_map(form: &FormConfig) -> HashMap<String, String> {
-        user_admin_column_map(form)
-    }
-
-    fn to_update_map(form: &FormConfig) -> HashMap<String, String> {
-        user_admin_column_map(form)
-    }
-}
-
-fn user_admin_column_map(form: &FormConfig) -> HashMap<String, String> {
-    let mut m = HashMap::new();
-    for f in &form.fields {
-        // Never write the primary key from form fields. The `id` is
-        // either auto-generated on INSERT or comes from the URL /
-        // hidden input on UPDATE.
-        if f.name == "id" {
-            continue;
-        }
-        m.insert(f.name.clone(), f.value.clone().unwrap_or_default());
-    }
-    m
+/// Factory used by the registry to produce a fresh boxed model per
+/// request. `UserAdmin` is zero-sized so the allocation is free.
+pub fn new_user_admin() -> Box<dyn AdminUiModel> {
+    Box::new(UserAdmin)
 }
 
 impl AdminUiModel for UserAdmin {
-    fn model_name() -> &'static str {
+    fn slug(&self) -> &'static str {
+        "users"
+    }
+    fn model_name(&self) -> &'static str {
         "User"
     }
+    fn table_name(&self) -> &'static str {
+        "admin_new_demo_users"
+    }
+    fn primary_key(&self) -> &'static str {
+        "id"
+    }
+    fn searchable_fields(&self) -> Vec<&'static str> {
+        vec!["username", "email", "doctor_id"]
+    }
+    fn primary_status_field(&self) -> Option<&'static str> {
+        Some("is_active")
+    }
+    fn ensure_table_sql(&self) -> Option<&'static str> {
+        Some(
+            "CREATE TABLE IF NOT EXISTS admin_new_demo_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                email TEXT NOT NULL,
+                is_active TEXT NOT NULL DEFAULT 'false',
+                doctor_id TEXT,
+                salary_amount TEXT
+            )",
+        )
+    }
 
-    fn fields() -> Vec<AdminUiField> {
+    fn fields(&self) -> Vec<AdminUiField> {
         vec![
             AdminUiField {
                 name: "username",
@@ -1485,6 +1402,7 @@ impl AdminUiModel for UserAdmin {
                 filterable: true,
                 advanced_filter: false,
                 sortable: true,
+                visible_in_table: true,
             },
             AdminUiField {
                 name: "email",
@@ -1497,6 +1415,7 @@ impl AdminUiModel for UserAdmin {
                 filterable: false,
                 advanced_filter: true,
                 sortable: true,
+                visible_in_table: true,
             },
             AdminUiField {
                 name: "is_active",
@@ -1509,6 +1428,7 @@ impl AdminUiModel for UserAdmin {
                 filterable: true,
                 advanced_filter: false,
                 sortable: true,
+                visible_in_table: true,
             },
             AdminUiField {
                 name: "doctor_id",
@@ -1524,6 +1444,7 @@ impl AdminUiModel for UserAdmin {
                 filterable: true,
                 advanced_filter: false,
                 sortable: true,
+                visible_in_table: true,
             },
             AdminUiField {
                 name: "salary_amount",
@@ -1536,6 +1457,107 @@ impl AdminUiModel for UserAdmin {
                 filterable: false,
                 advanced_filter: true,
                 sortable: true,
+                visible_in_table: true,
+            },
+        ]
+    }
+}
+
+// ---------------------------------------------------------------
+// Built-in demo model #2: Order — proves the engine is reusable
+// for any AdminUiModel without per-model rendering code.
+// ---------------------------------------------------------------
+
+pub struct OrderAdmin;
+
+pub fn new_order_admin() -> Box<dyn AdminUiModel> {
+    Box::new(OrderAdmin)
+}
+
+impl AdminUiModel for OrderAdmin {
+    fn slug(&self) -> &'static str {
+        "orders"
+    }
+    fn model_name(&self) -> &'static str {
+        "Order"
+    }
+    fn table_name(&self) -> &'static str {
+        "admin_new_demo_orders"
+    }
+    fn primary_key(&self) -> &'static str {
+        "id"
+    }
+    fn searchable_fields(&self) -> Vec<&'static str> {
+        vec!["order_number", "customer_email"]
+    }
+    fn primary_status_field(&self) -> Option<&'static str> {
+        Some("is_paid")
+    }
+    fn ensure_table_sql(&self) -> Option<&'static str> {
+        Some(
+            "CREATE TABLE IF NOT EXISTS admin_new_demo_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_number TEXT,
+                customer_email TEXT,
+                total_amount TEXT,
+                is_paid TEXT
+            )",
+        )
+    }
+
+    fn fields(&self) -> Vec<AdminUiField> {
+        vec![
+            AdminUiField {
+                name: "order_number",
+                label: "Order #",
+                data_type: AdminDataType::String,
+                required: true,
+                readonly: false,
+                is_relation: false,
+                options: vec![],
+                filterable: true,
+                advanced_filter: false,
+                sortable: true,
+                visible_in_table: true,
+            },
+            AdminUiField {
+                name: "customer_email",
+                label: "Customer",
+                data_type: AdminDataType::Email,
+                required: true,
+                readonly: false,
+                is_relation: false,
+                options: vec![],
+                filterable: true,
+                advanced_filter: true,
+                sortable: false,
+                visible_in_table: true,
+            },
+            AdminUiField {
+                name: "total_amount",
+                label: "Total",
+                data_type: AdminDataType::Float,
+                required: false,
+                readonly: false,
+                is_relation: false,
+                options: vec![],
+                filterable: false,
+                advanced_filter: false,
+                sortable: true,
+                visible_in_table: true,
+            },
+            AdminUiField {
+                name: "is_paid",
+                label: "Paid",
+                data_type: AdminDataType::Boolean,
+                required: false,
+                readonly: false,
+                is_relation: false,
+                options: vec![],
+                filterable: true,
+                advanced_filter: false,
+                sortable: true,
+                visible_in_table: true,
             },
         ]
     }
@@ -1557,16 +1579,11 @@ impl AdminUiModel for UserAdmin {
 /// drawer with their values intact, error states (or success banner)
 /// on top, and `class="invalid"` on any field that failed.
 pub fn demo_admin_form(submitted: Option<&HashMap<String, String>>) -> String {
-    let mut form = FormBuilder::from_admin_ui_model::<UserAdmin>()
-        .override_field(
-            "doctor_id",
-            FieldOverride {
-                field_type: None,
-                label: None,
-                help: Some("Assigned doctor — shown by name, never by id.".into()),
-            },
-        )
-        .build();
+    let mut form = build_admin_form(&UserAdmin);
+    // Always emit the hidden id field (empty when there's no
+    // editing target) so the POST body shape is identical between
+    // CREATE and UPDATE submissions.
+    form.hidden_fields.push(("id".to_string(), String::new()));
 
     match submitted {
         None => {
@@ -1695,6 +1712,8 @@ pub fn demo_form() -> String {
         title: "Edit user".into(),
         subtitle: "auth.User · id=1".into(),
         submitted: false,
+        save_failed: false,
+        hidden_fields: Vec::new(),
         fields: vec![
             FieldConfig {
                 name: "username".into(),

@@ -1,4 +1,4 @@
-//! AdminUiModel → Form bridge.
+//! AdminUiModel → Form bridge + model registry.
 //!
 //! Lifts an admin-level metadata description (column data types,
 //! relations, options) into a [`FormConfig`] the existing form engine
@@ -10,6 +10,12 @@
 //! existing admin layer in `crate::admin` already owns the unsuffixed
 //! names with a different shape; the `Ui` suffix keeps the two
 //! vocabularies unambiguous in any glob import.
+//!
+//! As of this step the trait uses **`&self` methods** (object-safe)
+//! so an [`AdminRegistry`] can store `Box<dyn AdminUiModel>` and the
+//! `/admin-new/<slug>` route can pick a model by URL slug.
+
+use std::collections::HashMap;
 
 use crate::admin::auto_form::FormBuilder;
 use crate::admin::form::{FieldConfig, FieldType, FormConfig};
@@ -65,6 +71,11 @@ pub struct AdminUiField {
     /// with `sortable = false` are silently rejected even if the
     /// URL asks for them — metadata is the gate.
     pub sortable: bool,
+
+    /// `true` → column appears in the listing table. `false` keeps
+    /// the field in the form / detail view but hides it from the
+    /// rows. Defaults to `true` for editable columns.
+    pub visible_in_table: bool,
 }
 
 /// How a filter input should render and how SQL should query it.
@@ -95,11 +106,47 @@ pub fn resolve_filter_type(field: &AdminUiField) -> FilterType {
 }
 
 /// A model that can describe its admin-UI shape (display name +
-/// column list). Invoked through the turbofish:
-/// `FormBuilder::from_admin_ui_model::<UserAdmin>()`.
-pub trait AdminUiModel {
-    fn model_name() -> &'static str;
-    fn fields() -> Vec<AdminUiField>;
+/// table mapping + column list + searchable / sortable / filterable
+/// / status semantics).
+///
+/// **Object-safe** (`&self` methods + `Send + Sync + 'static`) so
+/// implementations can be stored as `Box<dyn AdminUiModel>` in
+/// [`AdminRegistry`] for dynamic-by-URL-slug dispatch.
+pub trait AdminUiModel: Send + Sync + 'static {
+    /// URL slug used as the `:model` path segment, e.g. `"users"` →
+    /// `/admin-new/users`. Must be unique within a registry.
+    fn slug(&self) -> &'static str;
+
+    /// Human-readable display name shown in subtitles / banners,
+    /// e.g. `"User"`. Used in `format!("{} · {} records", …)`.
+    fn model_name(&self) -> &'static str;
+
+    /// SQL table name. `quote_ident` is applied by the persistence
+    /// layer, so callers can safely pass a static identifier.
+    fn table_name(&self) -> &'static str;
+
+    /// Primary-key column name. Used by the persistence layer for
+    /// `WHERE pk = ?` lookups and by the form engine to skip the
+    /// PK from auto-generated INSERT / UPDATE column maps.
+    fn primary_key(&self) -> &'static str;
+
+    fn fields(&self) -> Vec<AdminUiField>;
+
+    /// Field names participating in free-text search (`?q=…`).
+    /// Persistence emits a single `OR`-clause across these columns
+    /// with `LOWER(col) LIKE ?`.
+    fn searchable_fields(&self) -> Vec<&'static str>;
+
+    /// Boolean column the bulk Activate/Deactivate actions flip
+    /// (typically `is_active`). `None` disables those bulk actions
+    /// for the model — Delete still works since it doesn't depend on
+    /// a status column.
+    fn primary_status_field(&self) -> Option<&'static str>;
+
+    /// Optional `CREATE TABLE IF NOT EXISTS …` statement run on
+    /// every request. Returning `None` skips auto-creation (caller
+    /// is responsible for migrations). Idempotent SQL is required.
+    fn ensure_table_sql(&self) -> Option<&'static str>;
 }
 
 // ---------------------------------------------------------------
@@ -109,13 +156,15 @@ pub trait AdminUiModel {
 /// Build a [`FormConfig`] from an [`AdminUiModel`] impl. The drawer
 /// title becomes `"Edit <model_name>"`; subtitle is empty (the
 /// `AdminUiModel` contract has no subtitle slot today).
-pub fn form_from_admin_ui_model<T: AdminUiModel>() -> FormConfig {
-    let fields = T::fields().into_iter().map(field_config_from).collect();
+pub fn form_from_admin_ui_model(model: &dyn AdminUiModel) -> FormConfig {
+    let fields = model.fields().into_iter().map(field_config_from).collect();
     FormConfig {
-        title: format!("Edit {}", T::model_name()),
+        title: format!("Edit {}", model.model_name()),
         subtitle: String::new(),
         fields,
         submitted: false,
+        save_failed: false,
+        hidden_fields: Vec::new(),
     }
 }
 
@@ -164,11 +213,52 @@ fn field_config_from(f: AdminUiField) -> FieldConfig {
 
 impl FormBuilder {
     /// Construct a builder seeded from an [`AdminUiModel`] impl.
-    /// Equivalent to `FormBuilder { form: form_from_admin_ui_model::<T>() }`,
-    /// but reads naturally at the call site.
-    pub fn from_admin_ui_model<T: AdminUiModel>() -> Self {
+    pub fn from_admin_ui_model(model: &dyn AdminUiModel) -> Self {
         Self {
-            form: form_from_admin_ui_model::<T>(),
+            form: form_from_admin_ui_model(model),
         }
+    }
+}
+
+// ---------------------------------------------------------------
+// Registry: URL slug → boxed model
+// ---------------------------------------------------------------
+
+/// Slug → factory mapping for the `/admin-new/<slug>` dispatcher.
+///
+/// Each registered model is stored as a constructor function; a
+/// fresh `Box<dyn AdminUiModel>` is built per lookup. Models are
+/// typically zero-sized unit structs so the allocation is
+/// effectively free.
+pub struct AdminRegistry {
+    factories: HashMap<&'static str, fn() -> Box<dyn AdminUiModel>>,
+}
+
+impl AdminRegistry {
+    pub fn new() -> Self {
+        Self {
+            factories: HashMap::new(),
+        }
+    }
+
+    pub fn register(&mut self, slug: &'static str, factory: fn() -> Box<dyn AdminUiModel>) {
+        self.factories.insert(slug, factory);
+    }
+
+    /// Look the slug up; returns a fresh boxed model on hit, `None`
+    /// on miss (the route handler turns that into a 404).
+    pub fn get(&self, slug: &str) -> Option<Box<dyn AdminUiModel>> {
+        self.factories.get(slug).map(|f| f())
+    }
+
+    /// Iterate registered slugs (for future model-index pages).
+    pub fn slugs(&self) -> impl Iterator<Item = &&'static str> {
+        self.factories.keys()
+    }
+}
+
+impl Default for AdminRegistry {
+    fn default() -> Self {
+        Self::new()
     }
 }
