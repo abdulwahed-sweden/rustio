@@ -58,12 +58,14 @@ impl Default for Design {
         Self {
             project_name: "RustIO".to_string(),
             logo_initial: "R".to_string(),
-            // Rust-600 — single brand accent shared with the new
-            // admin engine. Canonical visual language lives in
-            // rustio-core/design-reference/. Overrideable via
-            // rustio.design.json.
-            primary_color: "#B84318".to_string(),
-            accent_color: "#B84318".to_string(),
+            // Indigo-600 (#4f46e5). Matches the 0.10 template-based
+            // admin's default accent (see
+            // `rustio-core/assets/static/admin.css` — `--admin-accent`).
+            // Legacy rust-orange `#B84318` is the pre-0.10 default;
+            // projects with `rustio.design.json` pinning a colour
+            // continue to override.
+            primary_color: "#4f46e5".to_string(),
+            accent_color: "#4f46e5".to_string(),
             density: Density::Comfortable,
         }
     }
@@ -140,6 +142,13 @@ mod tests {
         assert_eq!(d.primary_color, "#1e40af");
         // Missing fields fall back to defaults.
         assert_eq!(d.logo_initial, "R");
-        assert_eq!(d.accent_color, "#B84318");
+        assert_eq!(d.accent_color, "#4f46e5");
+    }
+
+    #[test]
+    fn default_palette_is_indigo_as_of_0_10() {
+        let d = Design::default();
+        assert_eq!(d.primary_color, "#4f46e5");
+        assert_eq!(d.accent_color, "#4f46e5");
     }
 }
