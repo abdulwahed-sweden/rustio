@@ -491,12 +491,13 @@ impl Admin {
         // The legacy `dashboard_response` (built on AdminEntry) is no
         // longer mounted; its renderer remains in the file for
         // reference but is dead code from this commit on.
-        let _ = entries.clone(); // retained so the surrounding scope still compiles
         let index_db = db.clone();
         let index_registry = admin_new_registry.clone();
+        let index_entries = entries.clone();
         router = router.get("/admin", move |req, _params| {
             let db = index_db.clone();
             let registry = index_registry.clone();
+            let legacy_entries = index_entries.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
@@ -509,6 +510,7 @@ impl Admin {
                 let html = crate::admin::layout::dashboard_render(
                     &db,
                     &registry,
+                    legacy_entries.as_slice(),
                     identity.as_ref(),
                     csrf.as_deref(),
                 )
@@ -523,11 +525,16 @@ impl Admin {
         {
             let db = db.clone();
             let registry = admin_new_registry.clone();
-            router = router.get("/admin-new/:model", move |req, params| {
-                let db = db.clone();
-                let registry = registry.clone();
-                async move { admin_model_index_get(&db, &registry, req, params).await }
-            });
+            let alias_entries = entries.clone();
+            router =
+                router.get("/admin-new/:model", move |req, params| {
+                    let db = db.clone();
+                    let registry = registry.clone();
+                    let legacy_entries = alias_entries.clone();
+                    async move {
+                        admin_model_index_get(&db, &registry, &legacy_entries, req, params).await
+                    }
+                });
         }
         {
             let db = db.clone();
@@ -736,11 +743,16 @@ impl Admin {
         {
             let db = db.clone();
             let registry = admin_new_registry.clone();
-            router = router.get("/admin/:model", move |req, params| {
-                let db = db.clone();
-                let registry = registry.clone();
-                async move { admin_model_index_get(&db, &registry, req, params).await }
-            });
+            let model_entries = entries.clone();
+            router =
+                router.get("/admin/:model", move |req, params| {
+                    let db = db.clone();
+                    let registry = registry.clone();
+                    let legacy_entries = model_entries.clone();
+                    async move {
+                        admin_model_index_get(&db, &registry, &legacy_entries, req, params).await
+                    }
+                });
         }
         {
             let db = db.clone();
@@ -4783,6 +4795,7 @@ The admin could not complete your request. The detail has been logged server-sid
 async fn admin_model_index_get(
     db: &Db,
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
     req: Request,
     params: crate::router::Params,
 ) -> Result<Response, Error> {
@@ -4790,7 +4803,23 @@ async fn admin_model_index_get(
         return Ok(resp);
     }
     let model_slug = params.get("model").unwrap_or("").to_string();
-    let Some(model) = registry.get(&model_slug) else {
+
+    // Resolve the model: new registry first, then fall back to
+    // a legacy `AdminEntry` (wrapped in a `LegacyEntryModel` adapter
+    // so the template-based renderer doesn't care which source it
+    // came from). If neither source knows the slug, 404.
+    enum ResolvedModel {
+        New(Box<dyn crate::admin::admin_form_bridge::AdminUiModel>),
+        Legacy(crate::admin::layout::LegacyEntryModel),
+    }
+    let resolved = if let Some(model) = registry.get(&model_slug) {
+        ResolvedModel::New(model)
+    } else if let Some(entry) = legacy_entries
+        .iter()
+        .find(|e| !e.core && e.admin_name == model_slug)
+    {
+        ResolvedModel::Legacy(crate::admin::layout::LegacyEntryModel::new(entry))
+    } else {
         return Err(Error::NotFound);
     };
     let q_map = req.query().into_map();
@@ -4831,19 +4860,40 @@ async fn admin_model_index_get(
     let _ = id;
     let identity = crate::auth::identity(req.ctx()).cloned();
     let csrf = ctx_csrf(req.ctx()).map(str::to_string);
-    let html = crate::admin::layout::list_render(
-        db,
-        registry,
-        &*model,
-        query.as_deref(),
-        page,
-        &filters,
-        sort.as_deref(),
-        dir.as_deref(),
-        identity.as_ref(),
-        csrf.as_deref(),
-    )
-    .await;
+    let html = match &resolved {
+        ResolvedModel::New(model) => {
+            crate::admin::layout::list_render(
+                db,
+                registry,
+                legacy_entries,
+                &**model,
+                query.as_deref(),
+                page,
+                &filters,
+                sort.as_deref(),
+                dir.as_deref(),
+                identity.as_ref(),
+                csrf.as_deref(),
+            )
+            .await
+        }
+        ResolvedModel::Legacy(model) => {
+            crate::admin::layout::list_render(
+                db,
+                registry,
+                legacy_entries,
+                model,
+                query.as_deref(),
+                page,
+                &filters,
+                sort.as_deref(),
+                dir.as_deref(),
+                identity.as_ref(),
+                csrf.as_deref(),
+            )
+            .await
+        }
+    };
     Ok(with_admin_headers(crate::http::html(html)))
 }
 

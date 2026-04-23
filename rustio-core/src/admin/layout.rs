@@ -1867,6 +1867,134 @@ fn sidebar_from_entries(
         .collect()
 }
 
+/// Merge sidebar sources: the "new" registry (DashboardEntry list
+/// from `admin_new_registry`) first, then any legacy `AdminEntry`
+/// registered via `Admin::model::<T>()` that isn't already in the
+/// new registry. Dedup is by slug (`entry.admin_name`), so a model
+/// registered in both surfaces keeps its new-registry entry. Core
+/// entries (framework-synthetic) are omitted.
+fn sidebar_merged(
+    dashboard_entries: &[DashboardEntry],
+    legacy_entries: &[crate::admin::AdminEntry],
+    active_slug: Option<&str>,
+) -> Vec<SidebarEntryView> {
+    let mut merged = sidebar_from_entries(dashboard_entries, active_slug);
+    let known: std::collections::HashSet<&str> = dashboard_entries.iter().map(|e| e.slug).collect();
+    for entry in legacy_entries {
+        if entry.core || known.contains(entry.admin_name) {
+            continue;
+        }
+        merged.push(SidebarEntryView {
+            label: entry.display_name.to_string(),
+            href: format!("/admin/{}", entry.admin_name),
+            active: active_slug == Some(entry.admin_name),
+            visible: true,
+        });
+    }
+    merged
+}
+
+/// Adapter that implements [`AdminUiModel`] for a legacy
+/// [`crate::admin::AdminEntry`] so the template-based `list_render`
+/// can serve its rows without a separate rendering path. No form /
+/// mutation behaviour — legacy create / edit / delete still flow
+/// through `mount_model`'s literal routes; this adapter only needs
+/// to describe the table shape well enough for the list view.
+pub struct LegacyEntryModel {
+    entry: crate::admin::AdminEntry,
+}
+
+impl LegacyEntryModel {
+    /// Clone-construct from an `AdminEntry` ref. Cheap — every field
+    /// inside `AdminEntry` is either a `&'static str`, `&'static
+    /// [AdminField]`, or a `bool`, so `Clone` is effectively a shallow
+    /// pointer copy.
+    pub fn new(entry: &crate::admin::AdminEntry) -> Self {
+        Self {
+            entry: entry.clone(),
+        }
+    }
+}
+
+fn admin_field_to_ui_field(field: &crate::admin::AdminField) -> AdminUiField {
+    use crate::admin::FieldType;
+    // FieldType is `#[non_exhaustive]`. Exhaustive matching inside
+    // this crate is required — the compiler will flag a new variant
+    // here if one lands without updating this mapping.
+    let data_type = match field.ty {
+        FieldType::String => AdminDataType::String,
+        FieldType::I32 | FieldType::I64 => AdminDataType::Integer,
+        FieldType::Bool => AdminDataType::Boolean,
+        FieldType::DateTime => AdminDataType::DateTime,
+    };
+    AdminUiField {
+        name: field.name,
+        // Legacy `AdminField` carries no display label; synthesise
+        // the column name itself. Stage 5 may capitalise / prettify
+        // this, but the bare name is readable and unambiguous.
+        label: field.name,
+        data_type,
+        required: !field.nullable,
+        readonly: !field.editable,
+        is_relation: field.relation.is_some(),
+        options: Vec::new(),
+        filterable: false,
+        advanced_filter: false,
+        sortable: matches!(
+            data_type,
+            AdminDataType::Integer
+                | AdminDataType::Float
+                | AdminDataType::DateTime
+                | AdminDataType::String
+                | AdminDataType::Email
+        ),
+        visible_in_table: true,
+    }
+}
+
+impl AdminUiModel for LegacyEntryModel {
+    fn slug(&self) -> &'static str {
+        self.entry.admin_name
+    }
+    fn model_name(&self) -> &'static str {
+        self.entry.singular_name
+    }
+    fn table_name(&self) -> &'static str {
+        self.entry.table
+    }
+    fn primary_key(&self) -> &'static str {
+        // Convention: the first non-editable field is the PK ("id").
+        // Falls back to "id" if no match.
+        self.entry
+            .fields
+            .iter()
+            .find(|f| !f.editable && f.name == "id")
+            .map(|f| f.name)
+            .unwrap_or("id")
+    }
+    fn fields(&self) -> Vec<AdminUiField> {
+        self.entry
+            .fields
+            .iter()
+            .map(admin_field_to_ui_field)
+            .collect()
+    }
+    fn searchable_fields(&self) -> Vec<&'static str> {
+        self.entry
+            .fields
+            .iter()
+            .filter(|f| matches!(f.ty, crate::admin::FieldType::String))
+            .map(|f| f.name)
+            .collect()
+    }
+    fn primary_status_field(&self) -> Option<&'static str> {
+        None
+    }
+    fn ensure_table_sql(&self) -> Option<&'static str> {
+        None
+    }
+}
+
 /// 0.10+ dashboard renderer. Collects the same registry-driven entry
 /// list as the legacy `admin_dashboard_get`, but builds a typed
 /// context and lets `minijinja` render `admin/dashboard.html`.
@@ -1878,11 +2006,12 @@ fn sidebar_from_entries(
 pub async fn dashboard_render(
     db: &Db,
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
     identity: Option<&crate::auth::Identity>,
     csrf_token: Option<&str>,
 ) -> String {
     let entries = collect_dashboard_entries(db, registry).await;
-    let sidebar = sidebar_from_entries(&entries, None);
+    let sidebar = sidebar_merged(&entries, legacy_entries, None);
     let cards: Vec<DashboardCardView> = entries
         .iter()
         .map(|e| DashboardCardView {
@@ -1968,6 +2097,7 @@ struct ListPermissionsView {
 pub async fn list_render(
     db: &Db,
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
     model: &dyn AdminUiModel,
     query: Option<&str>,
     page: i64,
@@ -1982,7 +2112,7 @@ pub async fn list_render(
     }
 
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
-    let sidebar = sidebar_from_entries(&dashboard_entries, Some(model.slug()));
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, Some(model.slug()));
 
     let (rows_raw, total, current_page, total_pages, validated_sort, validated_dir) =
         fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
