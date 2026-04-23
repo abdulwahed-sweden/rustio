@@ -2376,16 +2376,15 @@ pub async fn list_render(
         new_url: format!("/admin/{slug}/new"),
     };
 
-    // Stage 4f-a: GET form routes exist, so Add / Edit are safe to
-    // show. Delete needs a POST handler (stage 4f-b) so it stays
-    // hidden. RBAC gating beyond "is the user signed in" lands with
-    // the Role-in-context work, also stage 4f-b.
+    // Stage 4f-b: full CRUD wired. Gate each action on "user is
+    // signed in" for now; per-model RBAC resolution lands in a
+    // follow-up once the Role is surfaced in the request context.
     let signed_in = identity.is_some();
     let permissions = ListPermissionsView {
         view: true,
         create: signed_in,
         edit: signed_in,
-        delete: false,
+        delete: signed_in,
     };
 
     let design = design_view();

@@ -806,6 +806,47 @@ impl Admin {
             });
         }
 
+        // Stage 4f-b: matching POST handlers.
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let create_entries = entries.clone();
+            router = router.post("/admin/:model/new", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = create_entries.clone();
+                async move {
+                    admin_model_create_post(&db, &registry, &legacy_entries, req, params).await
+                }
+            });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let update_entries = entries.clone();
+            router = router.post("/admin/:model/:id/edit", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = update_entries.clone();
+                async move {
+                    admin_model_update_post(&db, &registry, &legacy_entries, req, params).await
+                }
+            });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let delete_entries = entries.clone();
+            router = router.post("/admin/:model/:id/delete", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = delete_entries.clone();
+                async move {
+                    admin_model_delete_post(&db, &registry, &legacy_entries, req, params).await
+                }
+            });
+        }
+
         for registrar in self.registrars {
             router = registrar(router, db, entries.clone());
         }
@@ -5003,6 +5044,197 @@ async fn admin_model_form_get(
         }
     };
     Ok(with_admin_headers(crate::http::html(html)))
+}
+
+// 0.10 stage 4f-b: POST handlers for the new form routes.
+//
+// Each handler resolves the `:model` slug through the same
+// new-registry → legacy-entries fallback the GET handlers use,
+// validates CSRF against the session, then mutates via
+// `admin::persistence`. Success → 303 redirect to the list page
+// (Post/Redirect/Get). Failure → re-render the form with an error
+// banner (no input preservation yet — see TODO in `form_render`).
+
+fn resolve_form_model(
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    slug: &str,
+) -> Result<FormResolvedModel, Error> {
+    if let Some(model) = registry.get(slug) {
+        return Ok(FormResolvedModel::New(model));
+    }
+    if let Some(entry) = legacy_entries
+        .iter()
+        .find(|e| !e.core && e.admin_name == slug)
+    {
+        return Ok(FormResolvedModel::Legacy(
+            crate::admin::layout::LegacyEntryModel::new(entry),
+        ));
+    }
+    Err(Error::NotFound)
+}
+
+enum FormResolvedModel {
+    New(Box<dyn crate::admin::admin_form_bridge::AdminUiModel>),
+    Legacy(crate::admin::layout::LegacyEntryModel),
+}
+
+impl FormResolvedModel {
+    fn as_ui_model(&self) -> &dyn crate::admin::admin_form_bridge::AdminUiModel {
+        match self {
+            FormResolvedModel::New(m) => &**m,
+            FormResolvedModel::Legacy(m) => m,
+        }
+    }
+}
+
+/// Build a `column → value` map from a submitted form body, scoped
+/// to the model's declared fields. The PK is excluded so a client
+/// can't overwrite it. Readonly fields are excluded too — they
+/// display on the edit form but must not be accepted as inputs.
+fn build_mutation_data(
+    model: &dyn crate::admin::admin_form_bridge::AdminUiModel,
+    form: &FormData,
+) -> std::collections::HashMap<String, String> {
+    let pk = model.primary_key();
+    let mut out = std::collections::HashMap::new();
+    for field in model.fields() {
+        if field.name == pk || field.readonly {
+            continue;
+        }
+        let value = form.get(field.name).unwrap_or("");
+        out.insert(field.name.to_string(), value.to_string());
+    }
+    out
+}
+
+async fn admin_model_create_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    let data = build_mutation_data(resolved.as_ui_model(), &form);
+    match crate::admin::persistence::insert_record(db, resolved.as_ui_model().table_name(), &data)
+        .await
+    {
+        Ok(_) => Ok(with_admin_headers(redirect(&format!(
+            "/admin/{model_slug}"
+        )))),
+        Err(e) => {
+            let identity = crate::auth::identity(&ctx).cloned();
+            let csrf = ctx_csrf(&ctx).map(str::to_string);
+            let error_msg = format!("Could not create: {e}");
+            let html = crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                resolved.as_ui_model(),
+                None,
+                identity.as_ref(),
+                csrf.as_deref(),
+                Some(&error_msg),
+            )
+            .await;
+            Ok(with_admin_headers(crate::http::html(html)))
+        }
+    }
+}
+
+async fn admin_model_update_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let id = params.get("id").unwrap_or("").to_string();
+    if id.is_empty() {
+        return Err(Error::BadRequest("missing id".into()));
+    }
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    let data = build_mutation_data(resolved.as_ui_model(), &form);
+    match crate::admin::persistence::update_record(
+        db,
+        resolved.as_ui_model().table_name(),
+        &id,
+        &data,
+    )
+    .await
+    {
+        Ok(_) => Ok(with_admin_headers(redirect(&format!(
+            "/admin/{model_slug}"
+        )))),
+        Err(e) => {
+            let identity = crate::auth::identity(&ctx).cloned();
+            let csrf = ctx_csrf(&ctx).map(str::to_string);
+            let error_msg = format!("Could not update: {e}");
+            let html = crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                resolved.as_ui_model(),
+                Some(&id),
+                identity.as_ref(),
+                csrf.as_deref(),
+                Some(&error_msg),
+            )
+            .await;
+            Ok(with_admin_headers(crate::http::html(html)))
+        }
+    }
+}
+
+async fn admin_model_delete_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let id = params.get("id").unwrap_or("").to_string();
+    if id.is_empty() {
+        return Err(Error::BadRequest("missing id".into()));
+    }
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    crate::admin::persistence::bulk_delete(
+        db,
+        resolved.as_ui_model().table_name(),
+        std::slice::from_ref(&id),
+    )
+    .await?;
+    Ok(with_admin_headers(redirect(&format!(
+        "/admin/{model_slug}"
+    ))))
 }
 
 async fn admin_model_index_post(
