@@ -102,13 +102,13 @@
   --rio-ink-800: #1A2027;
   --rio-ink-900: #0F141A;
 
-  /* Rust — single brand accent ------------------------------------- */
-  --rio-rust-50:  #FCE9E2;
-  --rio-rust-100: #F8D3C5;
-  --rio-rust-200: #F1A78B;
-  --rio-rust-500: #D2501E;
-  --rio-rust-600: #B84318;
-  --rio-rust-700: #8F3413;
+  /* Brand — single blue accent ------------------------------------- */
+  --rio-brand-50:  #EFF6FF;
+  --rio-brand-100: #DBEAFE;
+  --rio-brand-200: #BFDBFE;
+  --rio-brand-500: #3B82F6;
+  --rio-brand-600: #2563EB;
+  --rio-brand-700: #1D4ED8;
 
   /* Surfaces ------------------------------------------------------- */
   /* Body bg sits between ink-50 and ink-100 so white cards, the
@@ -130,11 +130,11 @@
   --rio-text-subtle: var(--rio-ink-600);
 
   /* Brand (overrideable via rustio.design.json) -------------------- */
-  --rio-primary: var(--rio-rust-600);
-  --rio-primary-hover: var(--rio-rust-700);
-  --rio-accent: var(--rio-rust-600);
-  --rio-accent-hover: var(--rio-rust-700);
-  --rio-accent-ring: rgba(184, 67, 24, 0.45);
+  --rio-primary: var(--rio-brand-600);
+  --rio-primary-hover: var(--rio-brand-700);
+  --rio-accent: var(--rio-brand-600);
+  --rio-accent-hover: var(--rio-brand-700);
+  --rio-accent-ring: rgba(37, 99, 235, 0.35);
 
   /* Semantic ------------------------------------------------------- */
   --rio-danger:        #B42318;
@@ -1225,7 +1225,7 @@ a:hover { color: var(--rio-primary-hover); text-decoration: underline; }
   transform: translateY(-50%);
   width: 18px;
   height: 18px;
-  color: var(--rio-rust-600);
+  color: var(--rio-brand-600);
   pointer-events: none;
 }
 .rio-search > label {

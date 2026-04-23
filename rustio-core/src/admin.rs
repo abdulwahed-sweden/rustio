@@ -662,6 +662,16 @@ impl Admin {
             let db = login_db.clone();
             async move { handle_login(req, &db).await }
         });
+        // Direct GET to /admin/login: bookmarks, browser history, dev
+        // probes, or any link that hits the login URL straight (instead
+        // of bouncing through the unauthenticated /admin redirect).
+        // Renders the same login form as the 401 fallback so the page
+        // never dead-ends with a 405. If the request is already
+        // authenticated, hand them the standard login page anyway —
+        // they can ignore it or sign out from there.
+        router = router.get("/admin/login", |_req, _params| async move {
+            Ok::<Response, Error>(login_page(200, None, None))
+        });
         let logout_db = db.clone();
         router = router.post("/admin/logout", move |req, _params| {
             let db = logout_db.clone();
