@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}403 Forbidden · {{ design.project_name | default('RustIO') }}{% endblock %}
+{% block body_class %}auth-shell bg-body-tertiary{% endblock %}
+
+{% block body %}
+<main class="auth-layout d-flex min-vh-100 align-items-center justify-content-center p-3">
+  <div class="card auth-card shadow-sm" style="max-width: 28rem; width: 100%;">
+    <div class="card-body p-4 text-center">
+      <div class="auth-card__logo mb-3 mx-auto">!</div>
+      <p class="text-muted small mb-1">403 Forbidden</p>
+      <h1 class="h5 mb-2">You're signed in, but you don't have admin access.</h1>
+      <p class="text-muted small mb-4">Ask an administrator to promote your account, or sign out and come back with different credentials.</p>
+      <form method="post" action="/admin/logout" class="d-inline">
+        {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+        <button type="submit" class="btn btn-outline-secondary">Sign out</button>
+      </form>
+    </div>
+  </div>
+</main>
+{% endblock %}

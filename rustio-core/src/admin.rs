@@ -5008,57 +5008,53 @@ fn login_page_fallback(project_name: &str, email: Option<&str>, error: Option<&s
     )
 }
 
+/// Render the 403 page. Rendered via `minijinja` against
+/// `auth/forbidden.html`; falls back to a minimal inline shell with
+/// the same sign-out form if the template render fails.
 fn forbidden_page(csrf: Option<&str>) -> Response {
     let design = design::Design::global();
-    let csrf_hidden = csrf_input(csrf);
-
-    let theme_style = format!(
-        "\n:root {{\n  --rio-primary: {p};\n}}\n",
-        p = escape_css_color(&design.primary_color),
-    );
-
-    let body = format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>403 Forbidden · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
-<link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
-<style>{theme}</style>
-</head>
-<body>
-<div class="rio-error-shell">
-<div class="rio-error-card">
-<div class="rio-error-icon">{icon}</div>
-<p class="rio-error-status">403 Forbidden</p>
-<h1 class="rio-error-title">You're signed in, but you don't have admin access.</h1>
-<p class="rio-error-body">Ask an administrator to promote your account, or sign out and come back with different credentials.</p>
-<div class="rio-error-actions">
-<form class="rio-inline-form" method="post" action="/admin/logout">
-{csrf}
-<button class="rio-btn" type="submit">{logout}<span>Sign out</span></button>
-</form>
-</div>
-</div>
-</div>
-</body>
-</html>"#,
-        project = escape_html(&design.project_name),
-        theme = theme_style,
-        icon = icon_shield_alert(),
-        csrf = csrf_hidden,
-        logout = icon_logout(),
-        css_ver = ADMIN_CSS_VER,
-    );
-
+    let env = crate::admin::templating::env();
+    let body = match env.get_template("auth/forbidden.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => minijinja::context! {
+                project_name => design.project_name.as_str(),
+                logo_initial => design.logo_initial.as_str(),
+            },
+            csrf_token => csrf.unwrap_or(""),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin forbidden template render failed: {err}");
+            forbidden_page_fallback(&design.project_name, csrf)
+        }
+    };
     let resp = hyper::Response::builder()
         .status(403)
         .header("content-type", "text/html; charset=utf-8")
         .body(Full::new(Bytes::from(body)))
         .expect("valid response");
     with_admin_headers(resp)
+}
+
+/// Emergency 403 shell used when `auth/forbidden.html` can't render.
+/// Self-contained — no CSS link, no includes, so a broken template
+/// still lets the operator sign out.
+fn forbidden_page_fallback(project_name: &str, csrf: Option<&str>) -> String {
+    let project = escape_html(project_name);
+    let csrf_input_html = match csrf {
+        Some(token) if !token.is_empty() => format!(
+            r#"<input type="hidden" name="_csrf" value="{}">"#,
+            escape_html(token)
+        ),
+        _ => String::new(),
+    };
+    format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>403 Forbidden · {project}</title></head><body style="font-family:system-ui;max-width:28rem;margin:4rem auto;padding:0 1rem;text-align:center">
+<p>403 Forbidden</p><h1>You're signed in, but you don't have admin access.</h1>
+<form method="post" action="/admin/logout">{csrf_input_html}<button type="submit">Sign out</button></form>
+</body></html>"#,
+    )
 }
 
 // ---------------------------------------------------------------------------
