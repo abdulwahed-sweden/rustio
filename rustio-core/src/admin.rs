@@ -42,6 +42,7 @@ pub mod entry_builder;
 pub mod form;
 pub mod intelligence;
 pub mod layout;
+pub mod persistence;
 pub mod relations;
 pub mod schema_cache;
 pub mod suggestions;
@@ -488,17 +489,74 @@ impl Admin {
 
         // Parallel new-layout scaffold. Mounted alongside /admin so the
         // two systems coexist while the new admin is being built out.
-        // GET renders the foundation page; POST runs the
-        // bind → validate → re-render submit pipeline against the
-        // urlencoded body. No persistence — values are never written
-        // anywhere; the success banner is purely a simulation.
-        router = router.get("/admin-new", |_req, _params| async move {
-            Ok::<Response, Error>(crate::http::html(layout::admin_index(None)))
+        // GET renders the foundation page; when `?id=N` is present in
+        // the query string the row is loaded from the demo table and
+        // injected into the form (edit mode). POST runs the
+        // bind → validate → persist → re-render submit pipeline.
+        // The CREATE / UPDATE branch is decided by the `id` field in
+        // the body (empty / missing → INSERT, non-empty → UPDATE).
+        let admin_new_get_db = db.clone();
+        router = router.get("/admin-new", move |req, _params| {
+            let db = admin_new_get_db.clone();
+            async move {
+                let q = req.query();
+                let id = q.get("id").filter(|s| !s.is_empty()).map(String::from);
+                let query = q
+                    .get("q")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let page = q
+                    .get("page")
+                    .and_then(|p| p.parse::<i64>().ok())
+                    .filter(|p| *p > 0)
+                    .unwrap_or(1);
+                let html = layout::admin_index_get(
+                    &db,
+                    id.as_deref(),
+                    query.as_deref(),
+                    page,
+                )
+                .await;
+                Ok::<Response, Error>(crate::http::html(html))
+            }
         });
-        router = router.post("/admin-new", |req, _params| async move {
-            let form_data = read_form(req).await?;
-            let params = form_data.into_map();
-            Ok::<Response, Error>(crate::http::html(layout::admin_index(Some(&params))))
+        let admin_new_post_db = db.clone();
+        router = router.post("/admin-new", move |req, _params| {
+            let db = admin_new_post_db.clone();
+            async move {
+                // Extract URL state from the request *before*
+                // consuming the body — `read_form` takes `req` by
+                // value. We need search query + page so the table
+                // re-renders with the same window the user was on
+                // before submitting.
+                let q = req.query();
+                let query = q
+                    .get("q")
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                let page = q
+                    .get("page")
+                    .and_then(|p| p.parse::<i64>().ok())
+                    .filter(|p| *p > 0)
+                    .unwrap_or(1);
+                let form_data = read_form(req).await?;
+                let params = form_data.into_map();
+                let editing_id = params
+                    .get("id")
+                    .map(String::as_str)
+                    .filter(|s| !s.is_empty());
+                let html = layout::admin_index_post(
+                    &db,
+                    &params,
+                    editing_id,
+                    query.as_deref(),
+                    page,
+                )
+                .await;
+                Ok::<Response, Error>(crate::http::html(html))
+            }
         });
 
         // Login + logout. Unauthenticated users *need* to reach
