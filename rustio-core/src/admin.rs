@@ -4942,73 +4942,33 @@ fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
 
 /// Render the login page. Status 401 on a pure auth-gate hit; 400 on
 /// missing fields; 403 on inactive account; 429 on rate-limit trip.
+///
+/// Rendered via `minijinja` against `auth/login.html` (bundled in
+/// `rustio-core/assets/templates/`; user projects can override by
+/// placing a same-named file under their own `templates/auth/`). If
+/// the template fails to render for any reason — parse error, missing
+/// include, IO error on an override — the renderer falls back to a
+/// minimal inline HTML shell that still serves the same form. The
+/// server never crashes on a bad template.
 fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response {
-    // Standalone page rendered with the v3 design system. Inline
-    // theme.css + components.css via the layout module so the login
-    // shares typography and palette with the rest of the admin —
-    // no `/admin/assets/admin.css` dependency.
-    const THEME_CSS: &str = include_str!("../assets/admin-new/theme.css");
-    const COMPONENTS_CSS: &str = include_str!("../assets/admin-new/components.css");
-
     let design = design::Design::global();
-    let project = escape_html(&design.project_name);
-
-    let error_html = match error {
-        Some(msg) => format!(
-            r#"<div class="form-banner form-banner-error" role="alert">{}</div>"#,
-            escape_html(msg),
-        ),
-        None => String::new(),
+    let env = crate::admin::templating::env();
+    let body = match env.get_template("auth/login.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => minijinja::context! {
+                project_name => design.project_name.as_str(),
+                logo_initial => design.logo_initial.as_str(),
+            },
+            email => email.unwrap_or(""),
+            error => error,
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin login template render failed: {err}");
+            login_page_fallback(&design.project_name, email, error)
+        }
     };
-    let email_value = email.map(escape_html).unwrap_or_default();
-    let footer_hint = if crate::auth::in_production() {
-        r#"<p class="page-subtitle" style="margin-top: var(--space-6); text-align: center;"><strong>production</strong> · only real user accounts sign in here.</p>"#.to_string()
-    } else {
-        r#"<p class="page-subtitle" style="margin-top: var(--space-6); text-align: center;">No admin user yet? Run <kbd>rustio user create</kbd> in your project.</p>"#.to_string()
-    };
-
-    let body = format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in · {project}</title>
-<style>{theme}{components}</style>
-</head>
-<body class="login-page">
-  <div class="login-card">
-    <div class="login-brand">
-      <span class="sidebar-brand-mark">R</span>
-      {project}
-    </div>
-    <h1 class="login-title">Sign in</h1>
-    <p class="login-subtitle">Enter your credentials to access the admin.</p>
-    {error}
-    <form method="post" action="/admin/login" autocomplete="on">
-      <div class="field">
-        <label class="field-label" for="login-email">Email</label>
-        <input id="login-email" type="email" name="email" value="{email}" autocomplete="username" autofocus required>
-      </div>
-      <div class="field">
-        <label class="field-label" for="login-password">Password</label>
-        <input id="login-password" type="password" name="password" autocomplete="current-password" required>
-      </div>
-      <div class="login-actions">
-        <button class="btn btn-primary btn-lg btn-block" type="submit">Sign in</button>
-      </div>
-    </form>
-    {footer}
-  </div>
-</body>
-</html>"#,
-        project = project,
-        theme = THEME_CSS,
-        components = COMPONENTS_CSS,
-        error = error_html,
-        email = email_value,
-        footer = footer_hint,
-    );
 
     let resp = hyper::Response::builder()
         .status(status)
@@ -5016,6 +4976,28 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
         .body(Full::new(Bytes::from(body)))
         .expect("valid response");
     with_admin_headers(resp)
+}
+
+/// Emergency login page used when the template engine can't render
+/// `auth/login.html`. Deliberately self-contained — no CSS links, no
+/// includes, no `env()` call — so a broken template environment still
+/// lets an operator sign in and fix it.
+fn login_page_fallback(project_name: &str, email: Option<&str>, error: Option<&str>) -> String {
+    let project = escape_html(project_name);
+    let email = email.map(escape_html).unwrap_or_default();
+    let error_block = match error {
+        Some(msg) => format!(r#"<p style="color:#b91c1c">{}</p>"#, escape_html(msg)),
+        None => String::new(),
+    };
+    format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign in · {project}</title></head><body style="font-family:system-ui;max-width:20rem;margin:4rem auto;padding:0 1rem">
+<h1>Sign in</h1><p>{project}</p>{error_block}
+<form method="post" action="/admin/login">
+<p><label>Email<br><input type="email" name="email" value="{email}" autofocus required></label></p>
+<p><label>Password<br><input type="password" name="password" required></label></p>
+<p><button type="submit">Sign in</button></p>
+</form></body></html>"#,
+    )
 }
 
 fn forbidden_page(csrf: Option<&str>) -> Response {

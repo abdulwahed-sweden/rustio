@@ -21,7 +21,7 @@
         {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
         <div class="mb-3">
           <label for="email" class="form-label">Email</label>
-          <input type="email" class="form-control" id="email" name="email" autocomplete="username" required autofocus>
+          <input type="email" class="form-control" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
         </div>
         <div class="mb-3">
           <label for="password" class="form-label">Password</label>
