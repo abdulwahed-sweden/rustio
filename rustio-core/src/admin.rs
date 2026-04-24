@@ -4780,38 +4780,42 @@ fn error_shell<'a>(
     }
 }
 
+/// 404 page rendered via `minijinja` against `auth/not_found.html`.
+/// Called by the admin error middleware when any `/admin/*` handler
+/// returns `Err(Error::NotFound)`. Unused callbacks (`entries`,
+/// `email`) are kept in the signature to match the existing call
+/// site — stage 5 cleanup retires the argument list.
 fn admin_not_found_response(
-    entries: &[AdminEntry],
-    email: Option<&str>,
+    _entries: &[AdminEntry],
+    _email: Option<&str>,
     csrf: Option<&str>,
 ) -> Response {
-    let shell = error_shell(entries, email, csrf);
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
-<h3>We couldn't find that page</h3>
-<p>The URL you requested doesn't match any admin route or record. It may have been moved, deleted, or you may have arrived via a stale link.</p>
-<div class="rio-error-actions">
-<a class="rio-btn" href="/admin">{back}<span>Back to dashboard</span></a>
-<a class="rio-btn" href="/admin/actions">View recent actions</a>
-</div>
-</div>
-</div>"#,
-        icon = icon_inbox(),
-        back = icon_arrow_left(),
-    );
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Not found", None)];
-    render_shell_page(
-        &shell,
-        404,
-        "404 Not Found",
-        "404 · Not found",
-        Some("We couldn't find that page or record."),
-        crumbs,
-        "",
-        &body,
-    )
+    let design = design::Design::global();
+    let env = crate::admin::templating::env();
+    let body = match env.get_template("auth/not_found.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => minijinja::context! {
+                project_name => design.project_name.as_str(),
+                logo_initial => design.logo_initial.as_str(),
+            },
+            csrf_token => csrf.unwrap_or(""),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin not-found template render failed: {err}");
+            format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>404 Not Found · {p}</title></head><body style=\"font-family:system-ui;max-width:28rem;margin:4rem auto;padding:0 1rem;text-align:center\"><p>404 Not Found</p><h1>We couldn't find that page.</h1><p><a href=\"/admin\">Back to dashboard</a></p></body></html>",
+                p = escape_html(&design.project_name),
+            )
+        }
+    };
+    let resp = hyper::Response::builder()
+        .status(404)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Full::new(Bytes::from(body)))
+        .expect("valid response");
+    with_admin_headers(resp)
 }
 
 fn admin_server_error_response(

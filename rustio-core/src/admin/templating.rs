@@ -186,6 +186,10 @@ const EMBEDDED: &[(&str, &str)] = &[
         "auth/forbidden.html",
         include_str!("../../assets/templates/auth/forbidden.html"),
     ),
+    (
+        "auth/not_found.html",
+        include_str!("../../assets/templates/auth/not_found.html"),
+    ),
 ];
 
 fn embedded(name: &str) -> Option<&'static str> {
