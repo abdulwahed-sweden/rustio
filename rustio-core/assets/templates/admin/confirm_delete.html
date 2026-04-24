@@ -1,0 +1,13 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<h1>Delete {{ singular_name }}</h1>
+
+<p>Are you sure you want to delete <strong>{{ object_label }}</strong>? This action cannot be undone.</p>
+
+<form method="post" class="confirm-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <button type="submit" class="btn btn-danger">Yes, delete</button>
+    <a href="/admin/{{ admin_name }}" class="btn btn-ghost">Cancel</a>
+</form>
+{% endblock %}

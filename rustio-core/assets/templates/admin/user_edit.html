@@ -1,0 +1,68 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Edit user</h1>
+    <a href="/admin/users" class="link-muted">Back to users</a>
+</div>
+
+{% if errors %}
+<div class="flash flash-error">
+    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" class="model-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="form-row">
+        <label>Email</label>
+        <input type="email" value="{{ email }}" disabled>
+        <small class="muted">Email changes aren't exposed here — they require a full user update.</small>
+    </div>
+
+    <div class="form-row">
+        <label for="field-role">Role</label>
+        <select id="field-role" name="role">
+            <option value="admin" {% if role == "admin" %}selected{% endif %}>Admin (superuser)</option>
+            <option value="staff" {% if role == "staff" %}selected{% endif %}>Staff (admin access, per-model permissions)</option>
+            <option value="user"  {% if role == "user"  %}selected{% endif %}>User (no admin access)</option>
+        </select>
+    </div>
+
+    <div class="form-row form-row-checkbox">
+        <label><input type="checkbox" name="is_active" {% if is_active %}checked{% endif %}> Active</label>
+        <small class="muted">Inactive users cannot sign in or hold sessions.</small>
+    </div>
+
+    <fieldset class="form-fieldset">
+        <legend>Groups</legend>
+        {% if all_groups %}
+        <div class="checkbox-list">
+            {% for g in all_groups %}
+            <label class="checkbox-item">
+                <input type="checkbox" name="group_{{ g.id }}"
+                    {% if g.id in user_groups %}checked{% endif %}>
+                <span><strong>{{ g.name }}</strong>{% if g.description %} — <span class="muted">{{ g.description }}</span>{% endif %}</span>
+            </label>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">No groups yet. Create one under Groups.</p>
+        {% endif %}
+    </fieldset>
+
+    <fieldset class="form-fieldset">
+        <legend>Reset password (optional)</legend>
+        <div class="form-row">
+            <label for="new-password">New password</label>
+            <input type="password" id="new-password" name="new_password" autocomplete="new-password">
+            <small class="muted">Leave blank to keep the current password unchanged.</small>
+        </div>
+    </fieldset>
+
+    <div class="form-actions">
+        <button type="submit" class="btn">Save</button>
+        <a href="/admin/users" class="btn btn-ghost">Cancel</a>
+    </div>
+</form>
+{% endblock %}

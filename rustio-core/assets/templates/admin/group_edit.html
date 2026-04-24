@@ -1,0 +1,49 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Edit group</h1>
+    <a href="/admin/groups" class="link-muted">Back to groups</a>
+</div>
+
+{% if errors %}
+<div class="flash flash-error">
+    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" class="model-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="form-row">
+        <label for="field-name">Name</label>
+        <input type="text" id="field-name" name="name" value="{{ name }}" required>
+    </div>
+
+    <div class="form-row">
+        <label for="field-desc">Description</label>
+        <textarea id="field-desc" name="description" rows="3">{{ description }}</textarea>
+    </div>
+
+    <fieldset class="form-fieldset">
+        <legend>Permissions</legend>
+        {% if all_permissions %}
+        <div class="checkbox-list permission-list">
+            {% for p in all_permissions %}
+            <label class="checkbox-item">
+                <input type="checkbox" name="perm_{{ p.id }}"
+                    {% if p.id in group_permissions %}checked{% endif %}>
+                <code>{{ p.name }}</code>
+            </label>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">No permissions registered. They appear after your first run (models emit their own permissions on startup).</p>
+        {% endif %}
+    </fieldset>
+
+    <div class="form-actions">
+        <button type="submit" class="btn">Save</button>
+        <a href="/admin/groups" class="btn btn-ghost">Cancel</a>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,34 @@
+//! RustIO — a production-grade, strict-by-construction web framework
+//! for Rust.
+//!
+//! Write a model struct, derive `RustioAdmin`, and the framework
+//! provides the admin UI, HTTP/2 server, Postgres ORM, migrations,
+//! full-text search (Meilisearch), sessions, and granular RBAC.
+
+pub mod admin;
+pub mod ai;
+pub mod auth;
+pub mod background;
+pub mod cache;
+pub mod error;
+pub mod http;
+pub mod middleware;
+pub mod migrations;
+pub mod orm;
+pub mod router;
+pub mod schema;
+pub mod search;
+pub mod server;
+pub mod templates;
+
+// Common vocabulary at the crate root.
+pub use crate::admin::{Admin, AdminField, AdminModel, FieldType};
+pub use crate::auth::{Identity, Role};
+pub use crate::error::{Error, Result};
+pub use crate::http::{FormData, Request, Response};
+pub use crate::orm::{Db, DbOptions, Model, Row, Value};
+pub use crate::router::{Next, Router};
+pub use crate::search::{Indexer, MeiliClient, Searchable};
+pub use crate::server::Server;
+
+pub use rustio_macros::RustioAdmin;

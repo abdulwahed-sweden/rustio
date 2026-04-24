@@ -1,0 +1,13 @@
+# Rust build output
+/target
+**/target
+
+# Editor / OS junk
+*.swp
+*.swo
+.DS_Store
+.idea/
+.vscode/
+
+# Local cookie / smoke-test scratch
+/tmp/rustio.jar

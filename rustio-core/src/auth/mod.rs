@@ -1,0 +1,41 @@
+//! Authentication & authorization.
+//!
+//! Three pieces:
+//! - `users.rs`       — user records, password hashing, login/logout
+//! - `sessions.rs`    — DB-backed sessions with expiry cleanup
+//! - `permissions.rs` — granular permissions + groups + the
+//!   `authorize!` check used throughout the admin
+//!
+//! A user belongs to zero or more groups. Permissions come from two
+//! sources: (a) direct assignments on the user, (b) inherited from
+//! the user's groups. The permission string is
+//! `"<app>.<action>_<model>"` — e.g. `"posts.change_post"`.
+
+mod permissions;
+mod sessions;
+mod users;
+
+pub use permissions::{
+    add_user_to_group, check_permission, create_group, grant_to_group, grant_to_user,
+    init_permission_tables, permissions_for_user, register_model_permissions,
+    remove_user_from_group, Permission, PermissionError, Superuser,
+};
+pub use sessions::{
+    create_session, delete_session, identity_from_session, init_session_tables,
+    purge_expired_sessions, session_token_from_cookie, SESSION_COOKIE,
+};
+pub use users::{
+    create_user, find_user_by_email, hash_password, init_user_tables, login, set_password,
+    update_user_role, verify_password, Identity, Role, StoredUser,
+};
+
+use crate::error::Result;
+use crate::orm::Db;
+
+/// Initialise every auth-related table. Safe to call on every boot.
+pub async fn init_tables(db: &Db) -> Result<()> {
+    init_user_tables(db).await?;
+    init_session_tables(db).await?;
+    init_permission_tables(db).await?;
+    Ok(())
+}

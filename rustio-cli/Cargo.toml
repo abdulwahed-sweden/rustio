@@ -1,0 +1,31 @@
+[package]
+name = "rustio-cli"
+description = "The `rustio` command-line tool: scaffold projects, run migrations, launch servers, manage users."
+readme = "README.md"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[[bin]]
+name = "rustio"
+path = "src/main.rs"
+
+[dependencies]
+rustio-core = { path = "../rustio-core", version = "1.0.0" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde_json = "1"
+env_logger = "0.11"
+log = "0.4"
+rpassword = "7"
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "postgres",
+    "macros",
+] }

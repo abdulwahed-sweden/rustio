@@ -1,0 +1,36 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ display_name }}</h1>
+    <a href="/admin/{{ admin_name }}/new" class="btn">+ Add {{ singular_name }}</a>
+</div>
+
+{% if rows %}
+<table class="data-table">
+    <thead>
+        <tr>
+            {% for col in columns %}
+            <th>{{ col }}</th>
+            {% endfor %}
+            <th class="actions-col">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            {% for cell in row.cells %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+            <td class="actions-col">
+                <a href="/admin/{{ admin_name }}/{{ row.id }}/edit">Edit</a>
+                <a href="/admin/{{ admin_name }}/{{ row.id }}/delete">Delete</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="muted">No {{ display_name|lower }} yet.</p>
+{% endif %}
+{% endblock %}

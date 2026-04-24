@@ -1,0 +1,66 @@
+[package]
+name = "rustio-core"
+description = "RustIO runtime library: HTTP, router, Postgres ORM, admin, RBAC, search, migrations, AI planner."
+readme = "README.md"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+rustio-macros = { path = "../rustio-macros", version = "1.0.0" }
+
+# runtime
+tokio = { version = "1", features = ["net", "rt-multi-thread", "macros", "sync", "signal", "time", "fs"] }
+hyper = { version = "1", features = ["http1", "http2", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+
+# data
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "postgres",
+    "chrono",
+    "uuid",
+    "json",
+    "macros",
+] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# templates + rendering
+minijinja = { version = "2", features = ["loader"] }
+
+# auth
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "rand"] }
+rand = "0.8"
+base64 = "0.22"
+subtle = "2"
+
+# search (Meilisearch REST client — lean, no full meilisearch-sdk dep)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# compression
+flate2 = "1"
+
+# caching
+dashmap = "6"
+lru = "0.12"
+
+# utils
+urlencoding = "2"
+thiserror = "1"
+log = "0.4"
+once_cell = "1"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }

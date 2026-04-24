@@ -1,0 +1,22 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<h1>Site administration</h1>
+
+{% if entries %}
+<div class="cards">
+    {% for entry in entries %}
+    <article class="card">
+        <h2>{{ entry.display_name }}</h2>
+        <p class="muted">{{ entry.field_count }} field{{ entry.field_count != 1 and "s" or "" }}</p>
+        <div class="card-actions">
+            <a href="/admin/{{ entry.admin_name }}" class="btn">Manage</a>
+            <a href="/admin/{{ entry.admin_name }}/new" class="btn btn-ghost">+ Add</a>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+{% else %}
+<p class="muted">No models are registered yet. Add one with <code>#[derive(RustioAdmin)]</code>.</p>
+{% endif %}
+{% endblock %}

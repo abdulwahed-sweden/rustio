@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ mode == "new" and "Add" or "Change" }} {{ singular_name }}</h1>
+    <a href="/admin/{{ admin_name }}" class="link-muted">Back to list</a>
+</div>
+
+{% if errors %}
+<div class="flash flash-error">
+    <ul>
+        {% for err in errors %}<li>{{ err }}</li>{% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<form method="post" class="model-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    {% for field in fields %}
+    <div class="form-row">
+        <label for="field-{{ field.name }}">{{ field.label }}</label>
+        {% if field.widget == "checkbox" %}
+            <input type="checkbox" id="field-{{ field.name }}" name="{{ field.name }}"
+                {% if field.value == "true" %}checked{% endif %}>
+        {% elif field.widget == "textarea" %}
+            <textarea id="field-{{ field.name }}" name="{{ field.name }}" rows="5">{{ field.value }}</textarea>
+        {% elif field.widget == "datetime" %}
+            <input type="datetime-local" id="field-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
+        {% elif field.widget == "number" %}
+            <input type="number" id="field-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
+        {% else %}
+            <input type="text" id="field-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
+        {% endif %}
+        {% if field.hint %}<small class="muted">{{ field.hint }}</small>{% endif %}
+    </div>
+    {% endfor %}
+
+    <div class="form-actions">
+        <button type="submit" class="btn">Save</button>
+        <a href="/admin/{{ admin_name }}" class="btn btn-ghost">Cancel</a>
+    </div>
+</form>
+{% endblock %}

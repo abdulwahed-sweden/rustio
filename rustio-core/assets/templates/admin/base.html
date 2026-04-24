@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} | RustIO admin{% endblock %}
+
+{% block body %}
+<header class="admin-header">
+    <div class="admin-header-inner">
+        <a class="admin-brand" href="/admin">RustIO admin</a>
+        {% if identity %}
+        <div class="admin-user">
+            <span>{{ identity.email }}</span>
+            <form method="post" action="/admin/logout" class="inline-form">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button type="submit" class="link-button">Sign out</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</header>
+
+<main class="admin-main">
+    <aside class="admin-sidebar">
+        <ul>
+            <li class="nav-item"><a href="/admin">Dashboard</a></li>
+            {% if entries %}
+            <li class="nav-section">Application models</li>
+            {% for entry in entries %}
+            <li class="nav-item"><a href="/admin/{{ entry.admin_name }}">{{ entry.display_name }}</a></li>
+            {% endfor %}
+            {% endif %}
+
+            {% if identity and identity.is_admin %}
+            <li class="nav-section">Auth &amp; users</li>
+            <li class="nav-item"><a href="/admin/users">Users</a></li>
+            <li class="nav-item"><a href="/admin/groups">Groups</a></li>
+            {% endif %}
+        </ul>
+    </aside>
+
+    <section class="admin-content">
+        {% if flash %}
+        <div class="flash flash-{{ flash.kind }}">{{ flash.message }}</div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </section>
+</main>
+{% endblock %}

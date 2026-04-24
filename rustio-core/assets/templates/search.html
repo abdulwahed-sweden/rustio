@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Search{% if view.q %} · {{ view.q }}{% endif %} | RustIO{% endblock %}
+
+{% block body %}
+<header class="admin-header">
+    <div class="admin-header-inner">
+        <a class="admin-brand" href="/admin">RustIO</a>
+        <div class="admin-user">
+            {% if identity %}
+            <span>{{ identity.email }}</span>
+            {% else %}
+            <a href="/admin/login">Sign in</a>
+            {% endif %}
+        </div>
+    </div>
+</header>
+
+<main class="search-page"
+      data-href-template="/admin/posts/{id}/edit"
+      data-initial="{{ initial_json }}">
+
+    <form class="search-bar" method="get" action="/search" role="search">
+        <input type="search" name="q" id="search-input" value="{{ view.q }}"
+               placeholder="Search posts…" autocomplete="off" autofocus>
+        <button type="button" class="search-clear" id="search-clear" aria-label="Clear">×</button>
+        {# preserve filters on non-JS submits #}
+        {% if view.filters.published is defined and view.filters.published is not none %}
+            <input type="hidden" name="published" value="{{ 'true' if view.filters.published else 'false' }}">
+        {% endif %}
+        {% if view.filters.author %}
+            <input type="hidden" name="author" value="{{ view.filters.author | join(',') }}">
+        {% endif %}
+        {% if view.filters.date_range %}
+            <input type="hidden" name="date_range" value="{{ view.filters.date_range }}">
+        {% endif %}
+        {% if view.sort != "relevance" %}
+            <input type="hidden" name="sort" value="{{ view.sort }}">
+        {% endif %}
+    </form>
+
+    <div class="search-chips" id="search-chips">
+        {% if view.filters.published is defined and view.filters.published is not none %}
+            <span class="chip" data-facet="published"
+                  data-value="{{ 'true' if view.filters.published else 'false' }}">
+                {{ 'Published' if view.filters.published else 'Draft' }}
+                <button type="button" aria-label="Remove">×</button>
+            </span>
+        {% endif %}
+        {% for a in view.filters.author %}
+            <span class="chip" data-facet="author" data-value="{{ a }}">
+                {{ a }}<button type="button" aria-label="Remove">×</button>
+            </span>
+        {% endfor %}
+        {% if view.filters.date_range %}
+            <span class="chip" data-facet="date_range" data-value="{{ view.filters.date_range }}">
+                Last {{ view.filters.date_range }}
+                <button type="button" aria-label="Remove">×</button>
+            </span>
+        {% endif %}
+    </div>
+
+    <div class="search-meta">
+        <span id="search-count">
+            {{ view.total }} result{{ 's' if view.total != 1 else '' }} in {{ view.ms }}ms
+        </span>
+        <label class="search-sort">
+            Sort:
+            <select id="search-sort" name="sort">
+                <option value="relevance" {% if view.sort == "relevance" %}selected{% endif %}>Relevance</option>
+                <option value="newest"    {% if view.sort == "newest"    %}selected{% endif %}>Newest first</option>
+                <option value="oldest"    {% if view.sort == "oldest"    %}selected{% endif %}>Oldest first</option>
+            </select>
+        </label>
+    </div>
+
+    <div class="search-layout">
+        <aside class="search-sidebar" id="search-sidebar">
+            {% if view.facets.published %}
+            <section class="facet-group">
+                <h3>Status</h3>
+                <label>
+                    <input type="checkbox" name="published" value="true"
+                           {% if view.filters.published == true %}checked{% endif %}>
+                    Published <span class="facet-count">{{ view.facets.published["true"] or 0 }}</span>
+                </label>
+                <label>
+                    <input type="checkbox" name="published" value="false"
+                           {% if view.filters.published == false %}checked{% endif %}>
+                    Draft <span class="facet-count">{{ view.facets.published["false"] or 0 }}</span>
+                </label>
+            </section>
+            {% endif %}
+
+            {% if view.facets.author %}
+            <section class="facet-group">
+                <h3>Author</h3>
+                {% for name, count in view.facets.author | items %}
+                <label>
+                    <input type="checkbox" name="author" value="{{ name }}"
+                           {% if name in view.filters.author %}checked{% endif %}>
+                    {{ name }} <span class="facet-count">{{ count }}</span>
+                </label>
+                {% endfor %}
+            </section>
+            {% endif %}
+
+            <section class="facet-group">
+                <h3>Date</h3>
+                <label>
+                    <input type="radio" name="date_range" value=""
+                           {% if not view.filters.date_range %}checked{% endif %}>
+                    Any time
+                </label>
+                <label>
+                    <input type="radio" name="date_range" value="week"
+                           {% if view.filters.date_range == "week" %}checked{% endif %}>
+                    Last week
+                </label>
+                <label>
+                    <input type="radio" name="date_range" value="month"
+                           {% if view.filters.date_range == "month" %}checked{% endif %}>
+                    Last month
+                </label>
+                <label>
+                    <input type="radio" name="date_range" value="year"
+                           {% if view.filters.date_range == "year" %}checked{% endif %}>
+                    Last year
+                </label>
+            </section>
+        </aside>
+
+        <section class="search-results" id="search-results" aria-live="polite">
+            {% if view.hits %}
+                {% for hit in view.hits %}
+                <article class="search-card" data-id="{{ hit.id }}" tabindex="0">
+                    <h2 class="search-card-title">{{ hit._formatted.title | safe }}</h2>
+                    <p class="search-card-body">{{ hit._formatted.body | safe }}</p>
+                    <div class="search-card-meta">
+                        {% if hit.published %}
+                        <span class="tag tag-published">Published</span>
+                        {% else %}
+                        <span class="tag tag-draft">Draft</span>
+                        {% endif %}
+                        <span class="search-card-author">{{ hit.author }}</span>
+                        <span class="search-card-dot">·</span>
+                        <span class="search-card-date" data-ts="{{ hit.created_at }}">
+                            {{ hit.created_at_display }}
+                        </span>
+                    </div>
+                </article>
+                {% endfor %}
+            {% else %}
+                <div class="search-empty" id="search-empty">
+                    {% if view.q %}
+                        <p>No results for <strong>{{ view.q }}</strong>.</p>
+                        <p>Try removing filters.</p>
+                    {% else %}
+                        <p>Start typing to search posts.</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </section>
+    </div>
+
+    {% if view.total_pages > 1 %}
+    <nav class="search-pagination">
+        {% if view.page > 1 %}<a href="#" data-page="{{ view.page - 1 }}">← Prev</a>{% endif %}
+        <span>Page {{ view.page }} of {{ view.total_pages }}</span>
+        {% if view.page < view.total_pages %}<a href="#" data-page="{{ view.page + 1 }}">Next →</a>{% endif %}
+    </nav>
+    {% endif %}
+
+    <footer class="search-hints">
+        <kbd>/</kbd> focus · <kbd>↑</kbd> <kbd>↓</kbd> navigate ·
+        <kbd>↵</kbd> open · <kbd>esc</kbd> clear
+    </footer>
+</main>
+
+<script src="/static/search.js" defer></script>
+{% endblock %}
