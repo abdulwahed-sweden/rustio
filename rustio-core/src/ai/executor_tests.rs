@@ -931,18 +931,18 @@ fn add_relation_generates_fk_column_with_references_clause() {
     );
     assert!(
         mig.new_contents.contains(
-            "ALTER TABLE applications ADD COLUMN applicant_id INTEGER REFERENCES applicants(id) ON DELETE RESTRICT;"
+            "ALTER TABLE applications ADD COLUMN applicant_id BIGINT REFERENCES applicants(id) ON DELETE RESTRICT;"
         ),
-        "migration SQL should include REFERENCES + ON DELETE:\n{}",
+        "migration SQL should include REFERENCES + ON DELETE (PG: BIGINT not INTEGER):\n{}",
         mig.new_contents,
     );
 }
 
 #[test]
-fn add_relation_emits_references_and_pragma() {
-    // 0.9.0 inverse of the 0.8.0 test: the migration MUST now include
-    // `REFERENCES` and a `PRAGMA foreign_keys = ON`. The summary names
-    // both the parent table and the on_delete policy.
+fn add_relation_emits_references_no_pragma() {
+    // Phase 2: PG enforces FKs by default — no PRAGMA. The migration
+    // MUST include `REFERENCES` and the configured ON DELETE policy.
+    // The summary names both the parent table and the policy.
     let schema = housing_schema();
     let project = project_with_housing("/p");
     let plan = add_relation_plan("Application", "Applicant", "applicant_id");
@@ -958,15 +958,15 @@ fn add_relation_emits_references_and_pragma() {
     let mig_sql = &preview.file_changes[1].new_contents;
     assert!(
         mig_sql.contains("REFERENCES applicants(id)"),
-        "0.9.0 must emit REFERENCES:\n{mig_sql}",
+        "must emit REFERENCES:\n{mig_sql}",
     );
     assert!(
         mig_sql.contains("ON DELETE RESTRICT"),
-        "0.9.0 default on_delete is restrict:\n{mig_sql}",
+        "default on_delete is restrict:\n{mig_sql}",
     );
     assert!(
-        mig_sql.contains("PRAGMA foreign_keys = ON"),
-        "migration should set the per-connection FK pragma:\n{mig_sql}",
+        !mig_sql.contains("PRAGMA"),
+        "Phase 2 (PG): no PRAGMA in the migration:\n{mig_sql}",
     );
     assert!(
         preview.summary.contains("belongs_to"),

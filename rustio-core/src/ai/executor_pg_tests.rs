@@ -466,6 +466,85 @@ async fn pg_change_field_nullability_relax_then_tighten() {
     drop_table(&pool, &table).await;
 }
 
+// ---------------------------------------------------------------------------
+// (e) apply_add_relation
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pg_add_relation_creates_fk_constraint() {
+    let pool = connect_pg().await;
+    let parent = fresh_table_name();
+    let child = fresh_table_name();
+
+    sqlx::query(&format!(
+        "CREATE TABLE {parent} (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL DEFAULT '')"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!("CREATE TABLE {child} (id BIGSERIAL PRIMARY KEY)"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Mirror what apply_add_relation emits — nullable FK with
+    // ON DELETE RESTRICT.
+    let sql = format!(
+        "-- header\n\
+         ALTER TABLE {child} ADD COLUMN parent_id BIGINT REFERENCES {parent}(id) ON DELETE RESTRICT;\n"
+    );
+    run_migration(&pool, &sql).await;
+
+    // Column exists, nullable, BIGINT.
+    let (ty, nullable): (String, String) = sqlx::query_as(
+        "SELECT data_type, is_nullable FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'parent_id'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ty, "bigint");
+    assert_eq!(nullable, "YES");
+
+    // FK constraint exists.
+    let (fk_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.table_constraints
+          WHERE table_name = $1 AND constraint_type = 'FOREIGN KEY'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(fk_count, 1, "FK constraint should be in place");
+
+    // ON DELETE RESTRICT enforces — try inserting a child + deleting parent.
+    sqlx::query(&format!("INSERT INTO {parent} (name) VALUES ('p1') RETURNING id"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (parent_id,): (i64,) = sqlx::query_as(&format!("SELECT id FROM {parent} LIMIT 1"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query(&format!("INSERT INTO {child} (parent_id) VALUES ($1)"))
+        .bind(parent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let delete_err = sqlx::query(&format!("DELETE FROM {parent} WHERE id = $1"))
+        .bind(parent_id)
+        .execute(&pool)
+        .await;
+    assert!(
+        delete_err.is_err(),
+        "ON DELETE RESTRICT should reject deleting a parent with children: {delete_err:?}"
+    );
+
+    drop_table(&pool, &child).await;
+    drop_table(&pool, &parent).await;
+}
+
 #[allow(dead_code)] // used by tests added in later commits
 fn add_relation(from: &str, to: &str, via: &str, required: bool, on_delete: OnDelete) -> Plan {
     Plan::new(vec![Primitive::AddRelation(AddRelation {
