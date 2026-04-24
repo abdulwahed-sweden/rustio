@@ -394,6 +394,78 @@ async fn pg_change_field_type_works_on_fk_bearing_table() {
     drop_table(&pool, &parent).await;
 }
 
+// ---------------------------------------------------------------------------
+// (d) apply_change_field_nullability
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pg_change_field_nullability_relax_then_tighten() {
+    let pool = connect_pg().await;
+    let table = fresh_table_name();
+
+    sqlx::query(&format!(
+        "CREATE TABLE {table} (id BIGSERIAL PRIMARY KEY, note TEXT NOT NULL DEFAULT '')"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!("INSERT INTO {table} (note) VALUES ('hello'), ('')"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // (1) Relax NOT NULL → nullable.
+    run_migration(
+        &pool,
+        &format!("ALTER TABLE {table} ALTER COLUMN note DROP NOT NULL;"),
+    )
+    .await;
+    let (nullable,): (String,) = sqlx::query_as(
+        "SELECT is_nullable FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'note'",
+    )
+    .bind(&table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(nullable, "YES", "DROP NOT NULL should flip nullability");
+
+    // Insert a NULL row to set up the backfill case.
+    sqlx::query(&format!("INSERT INTO {table} (note) VALUES (NULL)"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // (2) Tighten back: backfill NULLs, then SET NOT NULL.
+    run_migration(
+        &pool,
+        &format!(
+            "UPDATE {table} SET note = '' WHERE note IS NULL;\n\
+             ALTER TABLE {table} ALTER COLUMN note SET NOT NULL;"
+        ),
+    )
+    .await;
+    let (nullable,): (String,) = sqlx::query_as(
+        "SELECT is_nullable FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'note'",
+    )
+    .bind(&table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(nullable, "NO", "SET NOT NULL should re-tighten");
+
+    // The previously-NULL row now holds the empty-string default.
+    let (count,): (i64,) =
+        sqlx::query_as(&format!("SELECT COUNT(*) FROM {table} WHERE note = ''"))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 2, "the backfill should have replaced the NULL with ''");
+
+    drop_table(&pool, &table).await;
+}
+
 #[allow(dead_code)] // used by tests added in later commits
 fn add_relation(from: &str, to: &str, via: &str, required: bool, on_delete: OnDelete) -> Plan {
     Plan::new(vec![Primitive::AddRelation(AddRelation {

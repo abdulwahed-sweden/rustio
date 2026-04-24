@@ -368,18 +368,15 @@ fn nullability_required_to_nullable_is_safe() {
         models_src.contains("title: row.get_optional_string(\"title\")?,"),
         "from_row accessor should be get_optional_string:\n{models_src}",
     );
-    // Migration: straight copy (no COALESCE).
+    // Phase 2: PG just drops the NOT NULL constraint. No backfill,
+    // no recreate-table.
     let mig = &preview.file_changes[1].new_contents;
     assert!(
-        !mig.contains("COALESCE"),
-        "relaxing nullability needs no COALESCE:\n{mig}",
+        mig.contains("ALTER TABLE posts ALTER COLUMN title DROP NOT NULL;"),
+        "mig should DROP NOT NULL:\n{mig}",
     );
-    assert!(mig.contains("CREATE TABLE posts__new ("), "mig:\n{mig}");
-    // title in new table lacks NOT NULL.
-    assert!(
-        mig.contains("title TEXT\n") || mig.contains("title TEXT,"),
-        "mig:\n{mig}"
-    );
+    assert!(!mig.contains("COALESCE"), "no backfill needed:\n{mig}");
+    assert!(!mig.contains("CREATE TABLE"), "no recreate:\n{mig}");
 }
 
 #[test]
@@ -410,15 +407,19 @@ fn nullability_nullable_to_required_uses_coalesce() {
         models_src.contains("subtitle: row.get_string(\"subtitle\")?,"),
         "accessor should be get_string:\n{models_src}",
     );
-    // Migration: COALESCE(subtitle, '') in the INSERT SELECT.
+    // Phase 2: PG path is two statements — backfill then SET NOT NULL.
     let mig = &preview.file_changes[1].new_contents;
     assert!(
-        mig.contains("COALESCE(subtitle, '')"),
-        "COALESCE needed to replace NULLs:\n{mig}",
+        mig.contains("UPDATE posts SET subtitle = '' WHERE subtitle IS NULL;"),
+        "should backfill NULLs before tightening:\n{mig}",
     );
-    // The warn line flags the NULL-substitution explicitly.
     assert!(
-        preview.summary.contains("substitutes existing NULLs"),
+        mig.contains("ALTER TABLE posts ALTER COLUMN subtitle SET NOT NULL;"),
+        "should add NOT NULL after backfill:\n{mig}",
+    );
+    // The summary flags the NULL substitution explicitly.
+    assert!(
+        preview.summary.contains("Backfills existing NULLs"),
         "summary should surface the NULL substitution warning: {:?}",
         preview.summary,
     );
