@@ -1,4 +1,4 @@
-DB_URL ?= postgres://postgres:dev@localhost/blog
+DB_URL ?= postgres://postgres:dev@localhost/rustio_dev
 
 .PHONY: up down db-setup migrate run check clean
 
@@ -20,8 +20,8 @@ down:
 
 db-setup:
 	@docker compose exec -T postgres psql -U postgres -tAc \
-	    "SELECT 1 FROM pg_database WHERE datname='blog'" | grep -q 1 \
-	  || docker compose exec -T postgres psql -U postgres -c "CREATE DATABASE blog"
+	    "SELECT 1 FROM pg_database WHERE datname='rustio_dev'" | grep -q 1 \
+	  || docker compose exec -T postgres psql -U postgres -c "CREATE DATABASE rustio_dev"
 
 migrate:
 	cargo run -p rustio-cli -- migrate apply \

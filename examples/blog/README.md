@@ -15,7 +15,7 @@ From the repository root:
 
 ```sh
 make up         # start postgres + meilisearch, wait until healthy
-make migrate    # apply examples/blog/migrations to the blog database
+make migrate    # apply examples/blog/migrations to the rustio_dev database
 make run        # cargo run -p blog
 ```
 

@@ -10,8 +10,8 @@
 //! ```
 //!
 //! The connection URL is read from `RUSTIO_TEST_DATABASE_URL` and
-//! falls back to the docker-compose default the example blog uses
-//! (`postgres://postgres:dev@localhost:5432/blog`).
+//! falls back to the docker-compose default
+//! (`postgres://postgres:dev@localhost:5432/rustio_dev`).
 //!
 //! Why a test-only variable instead of the standard `DATABASE_URL`:
 //! a developer almost always has `DATABASE_URL` exported for an
@@ -40,10 +40,11 @@ use crate::ai::{
 };
 
 /// Default Postgres URL — matches the docker-compose service the
-/// blog example uses, so `RUSTIO_TEST_DB=1 cargo test -- --ignored`
-/// works out of the box on a host with the compose stack up.
+/// repo's `docker-compose.yml` brings up, so
+/// `RUSTIO_TEST_DB=1 cargo test -- --ignored` works out of the box
+/// on a host with the compose stack up.
 fn default_dev_url() -> String {
-    "postgres://postgres:dev@localhost:5432/blog".to_string()
+    "postgres://postgres:dev@localhost:5432/rustio_dev".to_string()
 }
 
 /// Connect to the test database. Reads `RUSTIO_TEST_DATABASE_URL`

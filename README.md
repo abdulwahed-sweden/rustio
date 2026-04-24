@@ -29,8 +29,8 @@ docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16
 docker run --rm -d -p 7700:7700 getmeili/meilisearch:v1.10
 
 # Set up
-createdb -h localhost -U postgres blog
-export DATABASE_URL=postgres://postgres:dev@localhost/blog
+createdb -h localhost -U postgres rustio_dev
+export DATABASE_URL=postgres://postgres:dev@localhost/rustio_dev
 export MEILI_URL=http://localhost:7700
 
 # Run the example

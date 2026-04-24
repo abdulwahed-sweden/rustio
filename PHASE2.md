@@ -52,7 +52,7 @@ RUSTIO_TEST_DB=1 cargo test ai::executor_pg_tests::pg_retrofit_adds_fk_constrain
 ```
 
 Connection URL is read from `RUSTIO_TEST_DATABASE_URL`; falls back to
-`postgres://postgres:dev@localhost:5432/blog`. The dedicated
+`postgres://postgres:dev@localhost:5432/rustio_dev`. The dedicated
 test-scoped variable means a developer's existing `DATABASE_URL`
 (usually pointed at an unrelated app DB) doesn't pollute the test
 fixture — no auth-fail surprises, no scratch tables in the wrong
@@ -126,7 +126,7 @@ In-sandbox (default suite, no DB):
 
 Against live Postgres (verified during the session before the Path B retrofit, commits `5a99806` → `150acfe`):
 
-- All 8 PG integration tests passed against `postgres://postgres:dev@localhost:5432/blog`
+- All 8 PG integration tests passed against `postgres://postgres:dev@localhost:5432/rustio_dev`
 - Blog example boots: `rustio listening on http://127.0.0.1:8000`, `/admin/login` returns 200 HTML, `/admin` returns 303
 
 To re-verify on the host:

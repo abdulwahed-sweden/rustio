@@ -8,8 +8,8 @@
 //!     docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16
 //!     docker run --rm -p 7700:7700 getmeili/meilisearch:v1.10
 //!
-//!     export DATABASE_URL=postgres://postgres:dev@localhost/blog
-//!     createdb blog
+//!     export DATABASE_URL=postgres://postgres:dev@localhost/rustio_dev
+//!     createdb rustio_dev
 //!     cargo run
 //!
 //! Then open http://127.0.0.1:8000/admin
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:dev@localhost/blog".into());
+        .unwrap_or_else(|_| "postgres://postgres:dev@localhost/rustio_dev".into());
     let meili_url = std::env::var("MEILI_URL")
         .unwrap_or_else(|_| "http://localhost:7700".into());
     let meili_key = std::env::var("MEILI_MASTER_KEY").ok();
