@@ -1,23 +1,25 @@
 services:
   postgres:
     image: postgres:16
+    container_name: rustio-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: dev
-      POSTGRES_DB: blog
+      POSTGRES_DB: rustio_dev
     ports:
       - "5432:5432"
     volumes:
-      - rustio_pg:/var/lib/postgresql/data
+      - rustio_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d blog"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rustio_dev"]
       interval: 2s
       timeout: 3s
       retries: 30
 
   meilisearch:
     image: getmeili/meilisearch:v1.10
+    container_name: rustio-meilisearch
     restart: unless-stopped
     environment:
       MEILI_ENV: development
@@ -25,7 +27,7 @@ services:
     ports:
       - "7700:7700"
     volumes:
-      - rustio_meili:/meili_data
+      - rustio_meili_data:/meili_data
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:7700/health"]
       interval: 2s
@@ -33,5 +35,5 @@ services:
       retries: 30
 
 volumes:
-  rustio_pg:
-  rustio_meili:
+  rustio_pg_data:
+  rustio_meili_data:
