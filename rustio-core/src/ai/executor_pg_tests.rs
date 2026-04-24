@@ -545,6 +545,77 @@ async fn pg_add_relation_creates_fk_constraint() {
     drop_table(&pool, &parent).await;
 }
 
+// ---------------------------------------------------------------------------
+// (f) apply_remove_relation — same SQL path as remove_field (DROP COLUMN
+// CASCADE), but verifies that dropping the FK column cleanly removes
+// the FK constraint as well.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pg_remove_relation_drops_fk_column_and_constraint() {
+    let pool = connect_pg().await;
+    let parent = fresh_table_name();
+    let child = fresh_table_name();
+
+    sqlx::query(&format!(
+        "CREATE TABLE {parent} (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL DEFAULT '')"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE TABLE {child} (\
+            id BIGSERIAL PRIMARY KEY, \
+            parent_id BIGINT REFERENCES {parent}(id) ON DELETE CASCADE\
+        )"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Pre-condition: FK is in place.
+    let (fk_count_before,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.table_constraints
+          WHERE table_name = $1 AND constraint_type = 'FOREIGN KEY'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(fk_count_before, 1);
+
+    // Same SQL the executor emits for remove_relation (= remove_field on the FK column).
+    run_migration(
+        &pool,
+        &format!("ALTER TABLE {child} DROP COLUMN parent_id CASCADE;"),
+    )
+    .await;
+
+    // FK gone, column gone.
+    let (fk_count_after,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.table_constraints
+          WHERE table_name = $1 AND constraint_type = 'FOREIGN KEY'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(fk_count_after, 0, "FK constraint should be CASCADEd out");
+
+    let (col_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'parent_id'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(col_count, 0, "FK column should be dropped");
+
+    drop_table(&pool, &child).await;
+    drop_table(&pool, &parent).await;
+}
+
 #[allow(dead_code)] // used by tests added in later commits
 fn add_relation(from: &str, to: &str, via: &str, required: bool, on_delete: OnDelete) -> Plan {
     Plan::new(vec![Primitive::AddRelation(AddRelation {
