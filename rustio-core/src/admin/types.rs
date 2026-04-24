@@ -518,3 +518,81 @@ impl AdminOps for CoreUserOps {
         Box::pin(async { Err(core_user_route_error()) })
     }
 }
+
+#[cfg(test)]
+impl AdminEntry {
+    /// Build an `AdminEntry` for test fixtures. Fills `ops` with a
+    /// `PanicOps` stub and `search_hook` with `None`. Any test that
+    /// ends up routing CRUD through the returned entry will panic
+    /// loudly at the trait method — the stub is there only to
+    /// satisfy the `pub(crate)` fields on `AdminEntry`, not to
+    /// stand in for a real model.
+    pub(crate) fn for_testing(
+        admin_name: &'static str,
+        display_name: &'static str,
+        singular_name: &'static str,
+        table: &'static str,
+        fields: &'static [AdminField],
+        core: bool,
+    ) -> Self {
+        Self {
+            admin_name,
+            display_name,
+            singular_name,
+            table,
+            fields,
+            core,
+            ops: Arc::new(PanicOps),
+            search_hook: None,
+        }
+    }
+}
+
+#[cfg(test)]
+struct PanicOps;
+
+#[cfg(test)]
+const PANIC_MSG: &str =
+    "PanicOps is test-only; if you hit this, a test is using AdminEntry for CRUD, which is wrong — use a real Model";
+
+#[cfg(test)]
+impl AdminOps for PanicOps {
+    fn list<'a>(
+        &'a self,
+        _db: &'a Db,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<ListRow>>> + Send + 'a>> {
+        Box::pin(async { unreachable!("{PANIC_MSG}") })
+    }
+
+    fn find_row<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<EditRow>>> + Send + 'a>> {
+        Box::pin(async { unreachable!("{PANIC_MSG}") })
+    }
+
+    fn create<'a>(&'a self, _db: &'a Db, _form: &'a FormData) -> CreateResult<'a> {
+        Box::pin(async { unreachable!("{PANIC_MSG}") })
+    }
+
+    fn update<'a>(&'a self, _db: &'a Db, _id: i64, _form: &'a FormData) -> UpdateResult<'a> {
+        Box::pin(async { unreachable!("{PANIC_MSG}") })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async { unreachable!("{PANIC_MSG}") })
+    }
+
+    fn object_label<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
+        Box::pin(async { unreachable!("{PANIC_MSG}") })
+    }
+}

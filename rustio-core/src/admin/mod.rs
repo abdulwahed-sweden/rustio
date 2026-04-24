@@ -14,6 +14,8 @@ mod types;
 mod admin_intelligence_tests;
 #[cfg(test)]
 mod relations_tests;
+#[cfg(test)]
+mod suggestions_tests;
 
 pub use intelligence::{
     classify_field, classify_search, classify_search_for_field, context_global,
