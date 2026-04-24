@@ -2796,6 +2796,69 @@ fn list_fallback(
     out
 }
 
+#[derive(serde::Serialize)]
+struct ProfileView {
+    email: String,
+    user_id: i64,
+    role: String,
+    is_active: bool,
+}
+
+/// 0.10+ renderer for `GET /admin/profile`. Builds the merged
+/// sidebar (same as dashboard / list) and renders
+/// `admin/profile.html`.
+pub async fn profile_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    user: Option<&crate::auth::User>,
+    csrf_token: Option<&str>,
+) -> String {
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
+
+    let profile = match user {
+        Some(u) => ProfileView {
+            email: u.email.clone(),
+            user_id: u.id,
+            role: u.role.clone(),
+            is_active: u.is_active,
+        },
+        None => ProfileView {
+            email: "unknown".into(),
+            user_id: 0,
+            role: "?".into(),
+            is_active: false,
+        },
+    };
+
+    let design = design_view();
+    let user_v = user_view(identity);
+
+    let env = crate::admin::templating::env();
+    match env.get_template("admin/profile.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => design,
+            current_user => user_v,
+            sidebar_entries => sidebar,
+            profile => profile,
+            page_title => "Your account",
+            csrf_token => csrf_token.unwrap_or(""),
+            rustio_version => env!("CARGO_PKG_VERSION"),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin profile template render failed: {err}");
+            format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Your account</title></head><body><h1>Your account</h1><p>Email: {}</p><p><a href=\"/admin\">Back</a></p></body></html>",
+                html_escape(&profile.email),
+            )
+        }
+    }
+}
+
 fn dashboard_fallback(entries: &[DashboardEntry]) -> String {
     let mut out = String::from(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Dashboard</title></head><body style=\"font-family:system-ui\"><h1>Dashboard</h1><ul>",

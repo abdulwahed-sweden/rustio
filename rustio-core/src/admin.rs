@@ -618,20 +618,31 @@ impl Admin {
         // Profile (self-service identity card).
         let profile_entries = entries.clone();
         let profile_db = db.clone();
+        let profile_registry = admin_new_registry.clone();
         router = router.get("/admin/profile", move |req, _params| {
-            let entries = profile_entries.clone();
+            let legacy_entries = profile_entries.clone();
             let db = profile_db.clone();
+            let registry = profile_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                let user_id = req.ctx().get::<crate::auth::Identity>().map(|i| i.user_id);
-                let user = match user_id {
-                    Some(id) => crate::auth::user::find_by_id(&db, id).await?,
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let user = match identity.as_ref() {
+                    Some(id) => crate::auth::user::find_by_id(&db, id.user_id).await?,
                     None => None,
                 };
-                Ok::<Response, Error>(profile_response(&shell, user.as_ref()))
+                let html = crate::admin::layout::profile_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    user.as_ref(),
+                    csrf.as_deref(),
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
 
@@ -5582,90 +5593,9 @@ All other sessions for your account have been signed out; this one was re-issued
 }
 
 // ---------------------------------------------------------------------------
-// Profile (self-service) — mirrors Django's "Welcome, name" header options
+// Profile: ported to `admin::layout::profile_render` in stage 4h.
+// The legacy string-concat renderer that lived here is gone.
 // ---------------------------------------------------------------------------
-
-/// Per-user profile page. Read-only view of the caller's own account,
-/// plus links to change their password or sign out.
-fn profile_response(shell: &Shell<'_>, user: Option<&crate::auth::User>) -> Response {
-    let (email, role, user_id, is_active) = match user {
-        Some(u) => (
-            u.email.clone(),
-            u.role.clone(),
-            u.id.to_string(),
-            u.is_active,
-        ),
-        None => (
-            "unknown".to_string(),
-            "?".to_string(),
-            "?".to_string(),
-            false,
-        ),
-    };
-    let role_pill = match role.as_str() {
-        "admin" => r#"<span class="rio-pill rio-pill-emerald">admin</span>"#,
-        "user" => r#"<span class="rio-pill rio-pill-slate">user</span>"#,
-        _ => r#"<span class="rio-pill rio-pill-slate">unknown</span>"#,
-    };
-    let status_pill = if is_active {
-        r#"<span class="rio-pill rio-pill-emerald">active</span>"#
-    } else {
-        r#"<span class="rio-pill rio-pill-rose">inactive</span>"#
-    };
-
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-header">
-<div>
-<h2 class="rio-card-title">Your account</h2>
-<p class="rio-card-subtitle">Identity, role, and account actions.</p>
-</div>
-</div>
-<div class="rio-meta" style="margin:0;border:0;border-radius:0">
-<div class="rio-meta-item">
-<span class="rio-meta-label">Email</span>
-<span class="rio-meta-value">{email}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">User ID</span>
-<span class="rio-meta-value">#{user_id}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Role</span>
-<span class="rio-meta-value">{role_pill}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Status</span>
-<span class="rio-meta-value">{status_pill}</span>
-</div>
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn" href="/admin">Back to admin</a>
-<div class="rio-footer-actions">
-<a class="rio-btn" href="/admin/logout">Sign out</a>
-<a class="rio-btn rio-btn-primary" href="/admin/password_change">Change password</a>
-</div>
-</div>
-</div>"#,
-        email = escape_html(&email),
-        user_id = escape_html(&user_id),
-        role_pill = role_pill,
-        status_pill = status_pill,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Profile", None)];
-
-    render_shell_page(
-        shell,
-        200,
-        "Profile",
-        "Your profile",
-        Some("Identity, role, and account actions."),
-        crumbs,
-        "",
-        &body,
-    )
-}
 
 // ---------------------------------------------------------------------------
 // Logout confirmation (GET /admin/logout) — Django parity
