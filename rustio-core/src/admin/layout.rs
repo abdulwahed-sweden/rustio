@@ -2971,6 +2971,113 @@ pub async fn actions_render(
     }
 }
 
+#[derive(serde::Serialize)]
+pub struct SuggestionReviewView {
+    pub model: String,
+    pub field: String,
+    pub industry: String,
+    pub confidence_label: String,
+    pub confidence_class: String,
+    pub apply_url: String,
+    pub can_apply: bool,
+    pub step_descriptions: Vec<String>,
+    pub schema_diff_html: String,
+    pub explanation: String,
+    pub risk_label: String,
+    pub risk_class: String,
+    pub adds_fields: u32,
+    pub destructive: bool,
+    pub validation_ok: bool,
+    pub validation_message: Option<String>,
+    pub warnings: Vec<String>,
+    pub error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub struct AppliedFileView {
+    pub kind: String,
+    pub path: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct SuggestionAppliedView {
+    pub change_lines: Vec<String>,
+    pub files: Vec<AppliedFileView>,
+}
+
+/// Render `admin/suggestion_review.html`. All AI-pipeline work
+/// (planner, reviewer, diff, confidence) happens in the caller;
+/// this function only lays out the values.
+pub async fn suggestion_review_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+    view: SuggestionReviewView,
+) -> String {
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
+    let design = design_view();
+    let user_v = user_view(identity);
+    let env = crate::admin::templating::env();
+    match env
+        .get_template("admin/suggestion_review.html")
+        .and_then(|tmpl| {
+            tmpl.render(minijinja::context! {
+                design => design,
+                current_user => user_v,
+                sidebar_entries => sidebar,
+                page_title => format!("Review: add {} to {}", view.field, view.model),
+                csrf_token => csrf_token.unwrap_or(""),
+                rustio_version => env!("CARGO_PKG_VERSION"),
+                view => view,
+            })
+        }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin suggestion_review template render failed: {err}");
+            "<!doctype html><html><body><h1>Review suggestion</h1><p>Template failed.</p></body></html>".into()
+        }
+    }
+}
+
+/// Render `admin/suggestion_applied.html` — success page after a
+/// suggestion is applied.
+pub async fn suggestion_applied_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+    applied: SuggestionAppliedView,
+) -> String {
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
+    let design = design_view();
+    let user_v = user_view(identity);
+    let env = crate::admin::templating::env();
+    match env
+        .get_template("admin/suggestion_applied.html")
+        .and_then(|tmpl| {
+            tmpl.render(minijinja::context! {
+                design => design,
+                current_user => user_v,
+                sidebar_entries => sidebar,
+                page_title => "Changes applied",
+                csrf_token => csrf_token.unwrap_or(""),
+                rustio_version => env!("CARGO_PKG_VERSION"),
+                applied => applied,
+            })
+        }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin suggestion_applied template render failed: {err}");
+            "<!doctype html><html><body><h1>Changes applied</h1><p>Template failed.</p></body></html>".into()
+        }
+    }
+}
+
 /// Render `admin/password_change.html`. `error` shows as an alert
 /// banner on top when the previous submit failed.
 pub async fn password_change_render(

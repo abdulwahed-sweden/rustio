@@ -722,27 +722,42 @@ impl Admin {
         // GET shows the proposed plan + review; POST (CSRF) commits
         // through the executor. No bypass of planner/review/executor.
         let sugg_get_entries = entries.clone();
+        let sugg_get_db = db.clone();
+        let sugg_get_registry = admin_new_registry.clone();
         router = router.get("/admin/suggestions/:admin/:field", move |req, params| {
-            let entries = sugg_get_entries.clone();
+            let legacy_entries = sugg_get_entries.clone();
+            let db = sugg_get_db.clone();
+            let registry = sugg_get_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
                 let admin_name = params.get("admin").unwrap_or("").to_string();
                 let field = params.get("field").unwrap_or("").to_string();
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(suggestion_review_response(
-                    &shell,
-                    &entries,
-                    &admin_name,
-                    &field,
-                    None,
-                ))
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                Ok::<Response, Error>(
+                    suggestion_review_response(
+                        &db,
+                        &registry,
+                        &legacy_entries,
+                        identity.as_ref(),
+                        csrf.as_deref(),
+                        &admin_name,
+                        &field,
+                        None,
+                    )
+                    .await,
+                )
             }
         });
         let sugg_post_entries = entries.clone();
+        let sugg_post_db = db.clone();
+        let sugg_post_registry = admin_new_registry.clone();
         router = router.post("/admin/suggestions/:admin/:field", move |req, params| {
-            let entries = sugg_post_entries.clone();
+            let legacy_entries = sugg_post_entries.clone();
+            let db = sugg_post_db.clone();
+            let registry = sugg_post_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
@@ -752,13 +767,20 @@ impl Admin {
                 let (_, body, ctx) = req.into_parts();
                 let form = read_form_from_parts(body).await?;
                 require_csrf(&ctx, &form)?;
-                let shell = Shell::from_ctx(&entries, None, &ctx);
-                Ok::<Response, Error>(suggestion_apply_response(
-                    &shell,
-                    &entries,
-                    &admin_name,
-                    &field,
-                ))
+                let identity = crate::auth::identity(&ctx).cloned();
+                let csrf = ctx_csrf(&ctx).map(str::to_string);
+                Ok::<Response, Error>(
+                    suggestion_apply_response(
+                        &db,
+                        &registry,
+                        &legacy_entries,
+                        identity.as_ref(),
+                        csrf.as_deref(),
+                        &admin_name,
+                        &field,
+                    )
+                    .await,
+                )
             }
         });
 
@@ -5715,32 +5737,45 @@ fn object_history_response<T: AdminModel>(
 /// `error` is populated on POST-flow re-renders (executor refusal,
 /// policy violation, etc.) so the operator sees the reason beside
 /// the plan rather than on a separate page.
-fn suggestion_review_response(
-    shell: &Shell<'_>,
-    entries: &[AdminEntry],
+/// 0.10+ template-based suggestion review renderer.
+///
+/// Runs the exact same planner / reviewer chain as the legacy
+/// version; differences are confined to the final HTML assembly,
+/// which now flows through `admin::layout::suggestion_review_render`
+/// + `admin/suggestion_review.html`.
+#[allow(clippy::too_many_arguments)]
+async fn suggestion_review_response(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf: Option<&str>,
     admin_name: &str,
     field: &str,
     error: Option<&str>,
 ) -> Response {
     let ctx = intelligence::context_global();
-    // 0.7.3: resolve the suggestion against the effective entries —
-    // when the schema cache is warm, that's the on-disk schema, so
-    // a field just applied + schema regenerated + cache reloaded
-    // correctly 404s here instead of re-offering the suggestion.
-    let effective = entry_builder::entries_effective(entries);
+    let effective = entry_builder::entries_effective(legacy_entries);
     let Some(suggestion) =
         suggestions::find_suggestion_from_entries(&effective, ctx, admin_name, field)
     else {
-        // Either the URL is crafted or the schema has changed since
-        // the dashboard rendered. Either way: 404 in-shell.
-        return admin_not_found_response(entries, shell.user_email, shell.csrf);
+        return admin_not_found_response(legacy_entries, None, csrf);
     };
 
-    // Run the planner + review chain. Any failure becomes an
-    // operator-visible block with a clear reason — no silent retry.
     let plan_result = match run_planner(&suggestion.prompt, ctx) {
         Ok(pr) => pr,
-        Err(msg) => return suggestion_error_response(shell, entries, &suggestion, &msg),
+        Err(msg) => {
+            return suggestion_error_response(
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
+                &suggestion,
+                &msg,
+            )
+            .await;
+        }
     };
     let review = match crate::ai::review_plan(
         plan_result.schema_ref(),
@@ -5750,194 +5785,137 @@ fn suggestion_review_response(
         Ok(r) => r,
         Err(e) => {
             return suggestion_error_response(
-                shell,
-                entries,
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
                 &suggestion,
                 &format!("review layer refused: {e}"),
-            );
+            )
+            .await;
         }
     };
 
     let can_apply = matches!(review.validation, crate::ai::ValidationOutcome::Valid)
         && review.risk != crate::ai::RiskLevel::Critical;
 
-    let csrf_hidden = csrf_input(shell.csrf);
-
-    let changes_html: String = plan_result
+    let step_descriptions: Vec<String> = plan_result
         .plan_result
         .plan
         .steps
         .iter()
         .map(|p| match p {
             crate::ai::Primitive::AddField(a) => format!(
-                "<li>+ Add field <code>{}</code> (<code>{}</code>{}) to <code>{}</code></li>",
+                "+ Add field <code>{}</code> (<code>{}</code>{}) to <code>{}</code>",
                 escape_html(&a.field.name),
                 escape_html(&a.field.ty),
                 if a.field.nullable { ", nullable" } else { "" },
                 escape_html(&a.model),
             ),
-            other => format!("<li>{}</li>", escape_html(&format!("{:?}", other)),),
+            other => escape_html(&format!("{other:?}")),
         })
         .collect();
 
-    // Visual before/after diff of the target model's fields.
     let schema_diff_html =
         render_schema_diff(plan_result.schema_ref(), &plan_result.plan_result.plan);
 
-    let warnings_html = if review.warnings.is_empty() {
-        r#"<p class="rio-field-hint">None</p>"#.to_string()
-    } else {
-        let items: String = review
-            .warnings
-            .iter()
-            .map(|w| format!("<li>{}</li>", escape_html(w)))
-            .collect();
-        format!("<ul>{items}</ul>")
+    let (risk_label, risk_class) = match review.risk {
+        crate::ai::RiskLevel::Low => ("Low", "success"),
+        crate::ai::RiskLevel::Medium => ("Medium", "warning"),
+        crate::ai::RiskLevel::High => ("High", "danger"),
+        crate::ai::RiskLevel::Critical => ("Critical", "danger"),
     };
 
-    let risk_tag = risk_badge_html(&review.risk);
-    let validation_msg = match &review.validation {
-        crate::ai::ValidationOutcome::Valid => {
-            r#"<p class="rio-field-hint">Plan passes validation against the current schema.</p>"#
-                .to_string()
-        }
-        crate::ai::ValidationOutcome::Invalid { step, reason } => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<div>Plan fails at step {step}: {reason}. Regenerate the schema or adjust the plan before applying.</div></div>"#,
-            icon = icon_triangle_alert(),
-            step = step,
-            reason = escape_html(&reason.to_string()),
+    let (validation_ok, validation_message) = match &review.validation {
+        crate::ai::ValidationOutcome::Valid => (true, None),
+        crate::ai::ValidationOutcome::Invalid { step, reason } => (
+            false,
+            Some(format!(
+                "Plan fails at step {step}: {reason}. Regenerate the schema or adjust the plan before applying."
+            )),
         ),
     };
 
-    let error_banner = match error {
-        Some(msg) => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<div>{msg}</div></div>"#,
-            icon = icon_triangle_alert(),
-            msg = escape_html(msg),
-        ),
-        None => String::new(),
+    let confidence_class = match suggestion.confidence.as_str() {
+        "High" => "success",
+        "Medium" => "warning",
+        _ => "secondary",
     };
 
-    let apply_button = if can_apply {
-        format!(
-            r#"<form method="post" action="{href}" style="margin:0;display:inline-block">{csrf}<button class="rio-btn rio-btn-primary" type="submit">Approve and apply</button></form>"#,
-            href = escape_html(&suggestion.url_path()),
-            csrf = csrf_hidden,
-        )
-    } else {
-        r#"<button class="rio-btn rio-btn-primary" type="button" disabled aria-disabled="true" title="Risk is Critical or plan is invalid — apply is blocked">Approve and apply</button>"#.to_string()
+    let view = crate::admin::layout::SuggestionReviewView {
+        model: suggestion.model_display.clone(),
+        field: suggestion.field.clone(),
+        industry: ctx
+            .and_then(|c| c.industry.as_deref())
+            .unwrap_or("")
+            .to_string(),
+        confidence_label: suggestion.confidence.as_str().to_string(),
+        confidence_class: confidence_class.to_string(),
+        apply_url: suggestion.url_path(),
+        can_apply,
+        step_descriptions,
+        schema_diff_html,
+        explanation: plan_result.plan_result.explanation.clone(),
+        risk_label: risk_label.to_string(),
+        risk_class: risk_class.to_string(),
+        adds_fields: review.impact.adds_fields as u32,
+        destructive: review.impact.destructive,
+        validation_ok,
+        validation_message,
+        warnings: review.warnings.clone(),
+        error: error.map(str::to_string),
     };
 
-    let confidence_badge = format!(
-        r#"<span class="{cls}" title="Confidence — explicit industry convention">{label} confidence</span>"#,
-        cls = suggestion.confidence.pill_class(),
-        label = suggestion.confidence.as_str(),
-    );
-
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-{error_banner}
-<p class="rio-form-section-hint">
-<strong>{model}</strong> is missing the <code>{field}</code> convention for
-<code>{industry}</code>. {confidence}. The planner proposes the following
-change — review before applying.
-</p>
-<div class="rio-plan-preview">
-<h3 style="margin:0 0 8px;font-size:14px;font-weight:500">Planned changes</h3>
-<ul style="margin:0;padding-left:22px">{changes}</ul>
-</div>
-{schema_diff}
-<p style="margin-top:16px"><strong>Explanation.</strong> {explanation}</p>
-<div class="rio-meta">
-<div class="rio-meta-item">
-<span class="rio-meta-label">Risk</span>
-<span class="rio-meta-value">{risk}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Impact</span>
-<span class="rio-meta-value">Add {adds} field{adds_s}{destructive}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Validation</span>
-<span class="rio-meta-value">{validation}</span>
-</div>
-</div>
-<p style="margin-top:14px;font-weight:500">Warnings</p>
-{warnings}
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn rio-btn-ghost" href="/admin">{back} Cancel</a>
-<div class="rio-footer-actions">{apply_button}</div>
-</div>
-</div>"#,
-        error_banner = error_banner,
-        model = escape_html(&suggestion.model_display),
-        field = escape_html(&suggestion.field),
-        industry = escape_html(ctx.and_then(|c| c.industry.as_deref()).unwrap_or("")),
-        confidence = confidence_badge,
-        changes = changes_html,
-        schema_diff = schema_diff_html,
-        explanation = escape_html(&plan_result.plan_result.explanation),
-        risk = risk_tag,
-        adds = review.impact.adds_fields,
-        adds_s = if review.impact.adds_fields == 1 {
-            ""
-        } else {
-            "s"
-        },
-        destructive = if review.impact.destructive {
-            "; includes a destructive step"
-        } else {
-            ""
-        },
-        validation = validation_msg,
-        warnings = warnings_html,
-        back = icon_arrow_left(),
-        apply_button = apply_button,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Suggestion review", None)];
-    render_shell_page(
-        shell,
-        200,
-        &format!("Review: add {}", suggestion.field),
-        &format!(
-            "Review: add `{}` to {}",
-            suggestion.field, suggestion.model_display
-        ),
-        Some("Every suggestion runs through plan → review → apply. You're looking at the review."),
-        crumbs,
-        "",
-        &body,
+    let html = crate::admin::layout::suggestion_review_render(
+        db,
+        registry,
+        legacy_entries,
+        identity,
+        csrf,
+        view,
     )
+    .await;
+    with_admin_headers(crate::http::html(html))
 }
 
 /// POST handler for `/admin/suggestions/<admin>/<field>`.
 ///
 /// Re-runs the planner, runs the review layer, runs the executor.
-/// Any refusal at any step renders the review page with an inline
-/// error banner — the executor never writes unless every gate
-/// returned `Ok`.
-fn suggestion_apply_response(
-    shell: &Shell<'_>,
-    entries: &[AdminEntry],
+/// Any refusal at any step re-renders the review page (template
+/// form) with an inline error banner — the executor never writes
+/// unless every gate returned `Ok`.
+#[allow(clippy::too_many_arguments)]
+async fn suggestion_apply_response(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf: Option<&str>,
     admin_name: &str,
     field: &str,
 ) -> Response {
     let ctx = intelligence::context_global();
-    let effective = entry_builder::entries_effective(entries);
+    let effective = entry_builder::entries_effective(legacy_entries);
     let Some(suggestion) =
         suggestions::find_suggestion_from_entries(&effective, ctx, admin_name, field)
     else {
-        return admin_not_found_response(entries, shell.user_email, shell.csrf);
+        return admin_not_found_response(legacy_entries, None, csrf);
     };
-    // Build a fresh plan document on every apply so the executor
-    // sees exactly what the reviewer saw a moment ago.
     let plan_result = match run_planner(&suggestion.prompt, ctx) {
         Ok(pr) => pr,
         Err(msg) => {
-            return suggestion_review_response(shell, entries, admin_name, field, Some(&msg));
+            return suggestion_review_response(
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
+                admin_name,
+                field,
+                Some(&msg),
+            )
+            .await;
         }
     };
     let doc = match crate::ai::build_plan_document(
@@ -5949,25 +5927,30 @@ fn suggestion_apply_response(
         Ok(d) => d,
         Err(e) => {
             return suggestion_review_response(
-                shell,
-                entries,
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
                 admin_name,
                 field,
                 Some(&format!("plan document rejected: {e}")),
-            );
+            )
+            .await;
         }
     };
-    // Critical-risk + developer-only gates are also inside the
-    // executor; surfacing them here lets the UI show the same
-    // message on the review page.
     if doc.risk == crate::ai::RiskLevel::Critical {
         return suggestion_review_response(
-            shell,
-            entries,
+            db,
+            registry,
+            legacy_entries,
+            identity,
+            csrf,
             admin_name,
             field,
             Some("Plan risk is Critical — the safe executor refuses to apply it."),
-        );
+        )
+        .await;
     }
     let options = crate::ai::ExecuteOptions::default();
     let result =
@@ -5975,33 +5958,24 @@ fn suggestion_apply_response(
             Ok(r) => r,
             Err(e) => {
                 return suggestion_review_response(
-                    shell,
-                    entries,
+                    db,
+                    registry,
+                    legacy_entries,
+                    identity,
+                    csrf,
                     admin_name,
                     field,
                     Some(&format!("executor refused: {e}")),
-                );
+                )
+                .await;
             }
         };
 
-    // Auto-reload the schema cache. A successful apply writes a new
-    // migration + models.rs but not `rustio.schema.json`; a best-
-    // effort refresh is still worthwhile because the project may
-    // have run `rustio schema` in the background, and the reload
-    // is cheap.
     schema_cache::refresh_best_effort();
 
-    // Per-step bullets extracted from the plan so the success page
-    // says exactly *what* happened ("Added field \"annual_income\"
-    // (i64) to Applicant"), not just "Applied 1 step".
-    let change_bullets: String = doc
-        .plan
-        .steps
-        .iter()
-        .map(|p| format!("<li>{}</li>", describe_applied_step(p)))
-        .collect();
+    let change_lines: Vec<String> = doc.plan.steps.iter().map(describe_applied_step).collect();
 
-    let files_html: String = result
+    let files: Vec<crate::admin::layout::AppliedFileView> = result
         .generated_files
         .iter()
         .map(|f| {
@@ -6012,66 +5986,85 @@ fn suggestion_apply_response(
             } else {
                 "Wrote"
             };
-            format!("<li>{kind} <code>{}</code></li>", escape_html(f))
+            crate::admin::layout::AppliedFileView {
+                kind: kind.to_string(),
+                path: f.clone(),
+            }
         })
         .collect();
 
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-<div class="rio-alert rio-alert-info">{ok}<div><strong>Changes applied.</strong> The planner wrote the files below atomically. The live admin continues serving the old compiled binary until you restart.</div></div>
-<p style="margin-top:16px"><strong>Summary</strong></p>
-<ul class="rio-apply-summary">{changes}</ul>
-<p style="margin-top:16px"><strong>Files written</strong></p>
-<ul class="rio-apply-summary">{files}</ul>
-<p style="margin-top:16px"><strong>Next</strong></p>
-<ol>
-<li>Stop this admin server.</li>
-<li>Run <code>rustio migrate apply</code> to apply the new migration to the database.</li>
-<li>Run <code>cargo build</code> (or <code>rustio run</code>) to recompile against the updated <code>models.rs</code>.</li>
-<li>Run <code>rustio schema</code> so <code>rustio.schema.json</code> reflects the new shape, then click <a href="/admin">Reload schema</a> on the dashboard.</li>
-</ol>
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn rio-btn-ghost" href="/admin">{back} Back to dashboard</a>
-<div class="rio-footer-actions">
-<a class="rio-btn" href="/admin/actions">View recent actions</a>
-</div>
-</div>
-</div>"#,
-        ok = icon_triangle_alert(),
-        changes = change_bullets,
-        files = files_html,
-        back = icon_arrow_left(),
-    );
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Suggestion applied", None)];
-    render_shell_page(
-        shell,
-        200,
-        "Suggestion applied",
-        &format!(
-            "Applied: add `{}` to {}",
-            suggestion.field, suggestion.model_display
-        ),
-        Some("Files were written atomically. Restart the server to pick them up."),
-        crumbs,
-        "",
-        &body,
+    let applied = crate::admin::layout::SuggestionAppliedView {
+        change_lines,
+        files,
+    };
+    let html = crate::admin::layout::suggestion_applied_render(
+        db,
+        registry,
+        legacy_entries,
+        identity,
+        csrf,
+        applied,
     )
+    .await;
+    with_admin_headers(crate::http::html(html))
 }
 
 /// Short-circuit renderer for the rare case where we can't even
-/// build a plan (e.g. schema fails to parse). Re-uses the review
-/// page with the error banner populated.
-fn suggestion_error_response(
-    shell: &Shell<'_>,
-    entries: &[AdminEntry],
+/// build a plan (planner or reviewer itself failed). Renders the
+/// review page with just the suggestion metadata + the error
+/// banner — no plan steps, no schema diff, no risk. Deliberately
+/// *doesn't* re-enter `suggestion_review_response` (that would
+/// create a recursive async call and also risk looping through the
+/// planner on every retry).
+#[allow(clippy::too_many_arguments)]
+async fn suggestion_error_response(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf: Option<&str>,
     suggestion: &suggestions::Suggestion,
     msg: &str,
 ) -> Response {
-    let admin_name = suggestion.admin_name.clone();
-    let field = suggestion.field.clone();
-    suggestion_review_response(shell, entries, &admin_name, &field, Some(msg))
+    let ctx = intelligence::context_global();
+    let confidence_class = match suggestion.confidence.as_str() {
+        "High" => "success",
+        "Medium" => "warning",
+        _ => "secondary",
+    };
+    let view = crate::admin::layout::SuggestionReviewView {
+        model: suggestion.model_display.clone(),
+        field: suggestion.field.clone(),
+        industry: ctx
+            .and_then(|c| c.industry.as_deref())
+            .unwrap_or("")
+            .to_string(),
+        confidence_label: suggestion.confidence.as_str().to_string(),
+        confidence_class: confidence_class.to_string(),
+        apply_url: suggestion.url_path(),
+        can_apply: false,
+        step_descriptions: Vec::new(),
+        schema_diff_html: String::new(),
+        explanation: String::new(),
+        risk_label: "?".into(),
+        risk_class: "secondary".into(),
+        adds_fields: 0,
+        destructive: false,
+        validation_ok: false,
+        validation_message: None,
+        warnings: Vec::new(),
+        error: Some(msg.to_string()),
+    };
+    let html = crate::admin::layout::suggestion_review_render(
+        db,
+        registry,
+        legacy_entries,
+        identity,
+        csrf,
+        view,
+    )
+    .await;
+    with_admin_headers(crate::http::html(html))
 }
 
 /// Coloured risk pill reusing the existing pill classes.
@@ -6173,16 +6166,6 @@ fn describe_applied_step(p: &crate::ai::Primitive) -> String {
         ),
         other => escape_html(&format!("{:?}", other)),
     }
-}
-
-fn risk_badge_html(risk: &crate::ai::RiskLevel) -> String {
-    let (cls, label) = match risk {
-        crate::ai::RiskLevel::Low => ("rio-pill rio-pill-emerald rio-risk-badge", "Low"),
-        crate::ai::RiskLevel::Medium => ("rio-pill rio-pill-amber rio-risk-badge", "Medium"),
-        crate::ai::RiskLevel::High => ("rio-pill rio-pill-rose rio-risk-badge", "High"),
-        crate::ai::RiskLevel::Critical => ("rio-pill rio-pill-rose rio-risk-badge", "Critical"),
-    };
-    format!(r#"<span class="{cls}">{label}</span>"#)
 }
 
 /// Wrap the planner call with the surrounding project I/O so the
