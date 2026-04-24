@@ -246,9 +246,10 @@ fn add_nullable_datetime_adds_chrono_import_and_uses_optional_accessor() {
         "from_row accessor should be optional:\n{new_src}",
     );
     // Migration for nullable DateTime uses plain ADD COLUMN (no DEFAULT).
+    // Phase 2: PG type is TIMESTAMPTZ, not SQLite's TEXT.
     let mig_src = &preview.file_changes[1].new_contents;
     assert!(
-        mig_src.contains("ALTER TABLE tasks ADD COLUMN completed_at TEXT;"),
+        mig_src.contains("ALTER TABLE tasks ADD COLUMN completed_at TIMESTAMPTZ;"),
         "nullable add SQL should not add NOT NULL DEFAULT:\n{mig_src}",
     );
 }
