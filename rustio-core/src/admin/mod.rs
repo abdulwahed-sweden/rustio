@@ -2,6 +2,7 @@
 
 mod builtin;
 mod handlers;
+mod intelligence;
 mod relations;
 mod render;
 mod routes;
@@ -10,6 +11,7 @@ mod types;
 #[cfg(test)]
 mod relations_tests;
 
+pub use intelligence::{FieldRole, FieldUI, FilterDef, FilterKind, SearchIntent};
 pub use relations::{
     InverseRelation, RegistryError, RelationRegistry, ResolvedRelation,
     RELATION_FILTER_DROPDOWN_CAP,
