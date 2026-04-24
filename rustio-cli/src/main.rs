@@ -2,11 +2,16 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use rustio_core::ai::{self, ApplyOptions};
+// 0.9.x AI surface: planner emits PlanResult (plan + explanation); review_plan
+// builds a structured PlanReview; execute_plan_document writes files atomically.
+use rustio_core::ai::{
+    execute_plan_document, generate_plan, load_plan, review_plan, ExecuteOptions, LoadedPlan,
+    PlanDocument, PlanRequest,
+};
 use rustio_core::auth::{self, Role};
 use rustio_core::migrations;
 use rustio_core::orm::Db;
-use rustio_core::schema::Schema;
+use rustio_core::schema::{Schema, SCHEMA_VERSION};
 
 #[derive(Parser)]
 #[command(name = "rustio", version, about = "The RustIO command-line tool")]
@@ -375,30 +380,65 @@ async fn perm_cmd(action: PermAction) -> Result<(), String> {
 
 // ---- ai ----------------------------------------------------------------
 
+// 0.9.x port: `ai_plan` now needs a schema to plan against. The CLI loads
+// the project's `rustio.schema.json` (or an empty schema if the file isn't
+// there yet) and feeds it to `generate_plan`. The output is the bare Plan
+// JSON — same on-disk shape the previous CLI emitted.
 fn ai_plan(prompt: &str) -> Result<(), String> {
-    let plan = ai::plan(prompt).map_err(|e| e.to_string())?;
-    let json = serde_json::to_string_pretty(&plan).map_err(|e| e.to_string())?;
+    let schema = load_schema(Path::new("rustio.schema.json"))?;
+    let result = generate_plan(&schema, None, PlanRequest::new(prompt))
+        .map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&result.plan).map_err(|e| e.to_string())?;
     println!("{json}");
     Ok(())
 }
 
 fn ai_review(plan_file: &Path, schema_file: &Path) -> Result<(), String> {
     let plan_text = std::fs::read_to_string(plan_file).map_err(|e| e.to_string())?;
-    let plan: ai::Plan = serde_json::from_str(&plan_text).map_err(|e| e.to_string())?;
+    // 0.9.x: `load_plan` accepts either a raw Plan JSON or a wrapped
+    // PlanDocument. The CLI doesn't care which — it just needs a `Plan`
+    // reference to feed `review_plan`.
+    let loaded = load_plan(&plan_text).map_err(|e| e.to_string())?;
+    let plan = match &loaded {
+        LoadedPlan::Document(doc) => doc.plan.clone(),
+        LoadedPlan::RawPlan(p) => p.clone(),
+    };
     let schema = load_schema(schema_file)?;
-    let review = ai::review(&plan, &schema);
-    let json = serde_json::to_string_pretty(&review).map_err(|e| e.to_string())?;
+    let review = review_plan(&schema, &plan, None).map_err(|e| e.to_string())?;
+    // PlanReview isn't directly Serialize; project the public fields the
+    // previous CLI surface advertised so external tooling stays parsing-
+    // compatible.
+    let json = serde_json::to_string_pretty(&serde_json::json!({
+        "risk": review.risk,
+        "impact": review.impact,
+        "warnings": review.warnings,
+    }))
+    .map_err(|e| e.to_string())?;
     println!("{json}");
     Ok(())
 }
 
 fn ai_apply(plan_file: &Path, dir: &Path, allow_destructive: bool) -> Result<(), String> {
     let plan_text = std::fs::read_to_string(plan_file).map_err(|e| e.to_string())?;
-    let plan: ai::Plan = serde_json::from_str(&plan_text).map_err(|e| e.to_string())?;
-    let opts = ApplyOptions { allow_destructive };
-    let outcome = ai::apply_plan(&plan, dir, &opts).map_err(|e| e.to_string())?;
-    for file in outcome.files_written {
-        println!("wrote {}", file.display());
+    // 0.9.x execute requires a saved PlanDocument (so the apply has the
+    // reviewer's risk/impact verdict alongside the plan). Refuse a raw
+    // Plan with a clear pointer rather than fabricating a doc on the fly.
+    let loaded = load_plan(&plan_text).map_err(|e| e.to_string())?;
+    let doc: PlanDocument = match loaded {
+        LoadedPlan::Document(d) => d,
+        LoadedPlan::RawPlan(_) => {
+            return Err(format!(
+                "`{}` is a raw plan. `ai apply` needs a saved PlanDocument — re-run `ai plan` with the new --save flag once it lands.",
+                plan_file.display(),
+            ));
+        }
+    };
+    let opts = ExecuteOptions { allow_destructive };
+    let outcome = execute_plan_document(dir, &doc, &opts, None).map_err(|e| e.to_string())?;
+    // 0.9.x renames `files_written` → `generated_files` and the items
+    // are project-relative `String`s, not full `PathBuf`s.
+    for file in outcome.generated_files {
+        println!("wrote {file}");
     }
     Ok(())
 }
@@ -412,7 +452,14 @@ fn print_schema(path: &Path) -> Result<(), String> {
 
 fn load_schema(path: &Path) -> Result<Schema, String> {
     if !path.exists() {
-        return Ok(Schema::new(env!("CARGO_PKG_VERSION")));
+        // Empty placeholder schema — same shape an empty `Admin::new()`
+        // would emit. Caller can populate it via `from_admin` after the
+        // project compiles.
+        return Ok(Schema {
+            version: SCHEMA_VERSION,
+            rustio_version: env!("CARGO_PKG_VERSION").into(),
+            models: Vec::new(),
+        });
     }
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&text).map_err(|e| e.to_string())
