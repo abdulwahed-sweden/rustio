@@ -2859,6 +2859,118 @@ pub async fn profile_render(
     }
 }
 
+#[derive(serde::Serialize)]
+struct ActionRowView {
+    timestamp: String,
+    user_email: Option<String>,
+    action_type: String,
+    model_name: String,
+    object_id: i64,
+    object_url: Option<String>,
+    summary: String,
+}
+
+#[derive(serde::Serialize)]
+struct OptionView {
+    value: String,
+    label: String,
+    selected: bool,
+}
+
+/// Render `admin/actions.html` — the project-wide audit timeline.
+#[allow(clippy::too_many_arguments)]
+pub async fn actions_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+    actions: &[crate::admin::audit::AdminAction],
+    model_filter: Option<&str>,
+    action_filter: Option<&str>,
+) -> String {
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
+    let design = design_view();
+    let user_v = user_view(identity);
+
+    let model_options: Vec<OptionView> = legacy_entries
+        .iter()
+        .filter(|e| !e.core)
+        .map(|e| OptionView {
+            value: e.admin_name.to_string(),
+            label: e.display_name.to_string(),
+            selected: model_filter == Some(e.admin_name),
+        })
+        .collect();
+
+    let action_options: Vec<OptionView> = [
+        ("", "All actions"),
+        ("create", "Created"),
+        ("update", "Updated"),
+        ("delete", "Deleted"),
+    ]
+    .into_iter()
+    .map(|(v, l)| OptionView {
+        value: v.to_string(),
+        label: l.to_string(),
+        selected: match v {
+            "" => action_filter.is_none(),
+            other => action_filter == Some(other),
+        },
+    })
+    .collect();
+
+    let action_rows: Vec<ActionRowView> = actions
+        .iter()
+        .map(|a| {
+            let object_url = legacy_entries
+                .iter()
+                .find(|e| e.singular_name == a.model_name || e.display_name == a.model_name)
+                .map(|e| format!("/admin/{}/{}/edit", e.admin_name, a.object_id));
+            ActionRowView {
+                timestamp: a.timestamp.format("%Y-%m-%d %H:%M UTC").to_string(),
+                user_email: a.user_email.clone(),
+                action_type: a.action_type.clone(),
+                model_name: a.model_name.clone(),
+                object_id: a.object_id,
+                object_url,
+                summary: a.summary.clone(),
+            }
+        })
+        .collect();
+
+    let count_label = if actions.len() == 1 {
+        "1 action".to_string()
+    } else {
+        format!("{} actions", actions.len())
+    };
+    let filters_active = model_filter.is_some() || action_filter.is_some();
+
+    let env = crate::admin::templating::env();
+    match env.get_template("admin/actions.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => design,
+            current_user => user_v,
+            sidebar_entries => sidebar,
+            page_title => "Recent actions",
+            csrf_token => csrf_token.unwrap_or(""),
+            rustio_version => env!("CARGO_PKG_VERSION"),
+            actions => action_rows,
+            model_options => model_options,
+            action_options => action_options,
+            filters_active => filters_active,
+            count_label => count_label,
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin actions template render failed: {err}");
+            "<!doctype html><html><body><h1>Recent actions</h1><p>Template failed.</p></body></html>".into()
+        }
+    }
+}
+
 /// Render `admin/password_change.html`. `error` shows as an alert
 /// banner on top when the previous submit failed.
 pub async fn password_change_render(

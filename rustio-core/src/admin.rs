@@ -678,9 +678,11 @@ impl Admin {
         // Recent actions (project-wide audit timeline).
         let actions_entries = entries.clone();
         let actions_db = db.clone();
+        let actions_registry = admin_new_registry.clone();
         router = router.get("/admin/actions", move |req, _params| {
-            let entries = actions_entries.clone();
+            let legacy_entries = actions_entries.clone();
             let db = actions_db.clone();
+            let registry = actions_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
@@ -699,13 +701,20 @@ impl Admin {
                 let actions =
                     audit::recent(&db, 200, model_filter.as_deref(), action_filter.as_deref())
                         .await?;
-                let shell = Shell::from_ctx(&entries, Some(NAV_ACTIONS), req.ctx());
-                Ok::<Response, Error>(recent_actions_response(
-                    &shell,
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let html = crate::admin::layout::actions_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    csrf.as_deref(),
                     &actions,
                     model_filter.as_deref(),
                     action_filter.as_deref(),
-                ))
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
 
@@ -6214,118 +6223,10 @@ fn run_planner(
     })
 }
 
-/// Project-wide audit timeline at `GET /admin/actions`. Mirrors
-/// Django's "Recent actions" sidebar block but as a dedicated page
-/// with filters by model and action type.
-fn recent_actions_response(
-    shell: &Shell<'_>,
-    actions: &[audit::AdminAction],
-    model_filter: Option<&str>,
-    action_filter: Option<&str>,
-) -> Response {
-    // Build a model-name dropdown from the registered user-facing
-    // entries so operators can pick anything they have admin for.
-    let model_options: String =
-        std::iter::once(r#"<option value="">All models</option>"#.to_string())
-            .chain(shell.entries.iter().filter(|e| !e.core).map(|e| {
-                let selected = if model_filter == Some(e.admin_name) {
-                    " selected"
-                } else {
-                    ""
-                };
-                format!(
-                    r#"<option value="{v}"{selected}>{label}</option>"#,
-                    v = escape_html(e.admin_name),
-                    label = escape_html(e.display_name),
-                )
-            }))
-            .collect();
-
-    let action_options: String = [
-        ("", "All actions"),
-        ("create", "Created"),
-        ("update", "Updated"),
-        ("delete", "Deleted"),
-    ]
-    .iter()
-    .map(|(value, label)| {
-        let is_selected = match value {
-            &"" => action_filter.is_none(),
-            v => action_filter == Some(*v),
-        };
-        let selected = if is_selected { " selected" } else { "" };
-        format!(
-            r#"<option value="{v}"{selected}>{label}</option>"#,
-            v = escape_html(value),
-            label = escape_html(label),
-        )
-    })
-    .collect();
-
-    let active = model_filter.is_some() || action_filter.is_some();
-    let reset = if active {
-        r#"<a class="rio-btn rio-btn-ghost" href="/admin/actions">Reset</a>"#.to_string()
-    } else {
-        String::new()
-    };
-
-    let count_label = if actions.len() == 1 {
-        "1 action".to_string()
-    } else {
-        format!("{} actions", actions.len())
-    };
-
-    let toolbar = format!(
-        r#"<form class="rio-table-toolbar" method="get" action="/admin/actions" aria-label="Filter actions">
-<select class="rio-select" name="model" aria-label="Filter by model">{model_options}</select>
-<select class="rio-select" name="action" aria-label="Filter by action type">{action_options}</select>
-<div class="rio-toolbar-actions">
-<button type="submit" class="rio-btn"><span>Apply</span></button>
-{reset}
-</div>
-<div class="rio-count">{count}</div>
-</form>"#,
-        count = escape_html(&count_label),
-    );
-
-    let body_inner = if actions.is_empty() {
-        format!(
-            r#"<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
-<h3>No actions match these filters</h3>
-<p>Once operators start creating, editing, or deleting records through the admin, their actions will show up here.</p>
-</div>"#,
-            icon = icon_inbox(),
-        )
-    } else {
-        render_actions_timeline(actions, /* show_object_link = */ true)
-    };
-
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-header">
-<div>
-<h2 class="rio-card-title">Recent actions</h2>
-<p class="rio-card-subtitle">Every create, update, and delete performed through the admin, newest first.</p>
-</div>
-</div>
-{toolbar}
-{body_inner}
-</div>"#,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Recent actions", None)];
-    render_shell_page(
-        shell,
-        200,
-        "Recent actions",
-        "Recent actions",
-        Some("Project-wide audit timeline across every model."),
-        crumbs,
-        "",
-        &body,
-    )
-}
+// `/admin/actions` audit timeline: ported to
+// `admin::layout::actions_render` in stage 4h-iii. The per-object
+// `render_actions_timeline` helper below is still used by the
+// per-object history page.
 
 /// Render a list of audit actions as a compact timeline. Used by both
 /// the per-object history page and the project-wide `/admin/actions`
