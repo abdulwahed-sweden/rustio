@@ -24,13 +24,12 @@ granular permissions — without writing the glue.
 Prereqs: PostgreSQL 14+, Meilisearch 1.10+.
 
 ```bash
-# Spin up the dev backends
-docker run --rm -d -p 5432:5432 -e POSTGRES_PASSWORD=dev postgres:16
-docker run --rm -d -p 7700:7700 getmeili/meilisearch:v1.10
+# Spin up the dev backends (postgres + meilisearch). Containers come
+# up as `rustio-postgres` and `rustio-meilisearch`; named volumes are
+# `rustio_pg_data` and `rustio_meili_data`.
+docker compose up -d
 
-# Set up
-createdb -h localhost -U postgres rustio_dev
-export DATABASE_URL=postgres://postgres:dev@localhost/rustio_dev
+export DATABASE_URL=postgres://postgres:dev@localhost:5432/rustio_dev
 export MEILI_URL=http://localhost:7700
 
 # Run the example
@@ -39,6 +38,20 @@ cargo run
 
 # Open http://127.0.0.1:8000/admin
 # Log in with admin@example.com / admin
+```
+
+## Running the test suite
+
+Two modes:
+
+```bash
+# Default: pure unit tests, no infrastructure needed
+cargo test --workspace
+
+# Integration suite — needs `docker compose up -d` (postgres on
+# rustio_dev). Override the URL via RUSTIO_TEST_DATABASE_URL if
+# your local Postgres lives somewhere else.
+RUSTIO_TEST_DB=1 cargo test --workspace -- --ignored
 ```
 
 ## A model end-to-end
