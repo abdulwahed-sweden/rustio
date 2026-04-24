@@ -581,37 +581,66 @@ impl Admin {
         // Password change (self-service). GET renders the form, POST
         // validates + rotates the hash + re-issues the session cookie.
         let pw_get_entries = entries.clone();
+        let pw_get_db = db.clone();
+        let pw_get_registry = admin_new_registry.clone();
         router = router.get("/admin/password_change", move |req, _params| {
-            let entries = pw_get_entries.clone();
+            let legacy_entries = pw_get_entries.clone();
+            let db = pw_get_db.clone();
+            let registry = pw_get_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(password_change_response(&shell, None))
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let html = crate::admin::layout::password_change_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    csrf.as_deref(),
+                    None,
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
         let pw_post_entries = entries.clone();
         let pw_post_db = db.clone();
+        let pw_post_registry = admin_new_registry.clone();
         router = router.post("/admin/password_change", move |req, _params| {
-            let entries = pw_post_entries.clone();
+            let legacy_entries = pw_post_entries.clone();
             let db = pw_post_db.clone();
+            let registry = pw_post_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                handle_password_change_post(req, &db, &entries).await
+                handle_password_change_post(req, &db, &registry, &legacy_entries).await
             }
         });
         let pw_done_entries = entries.clone();
+        let pw_done_db = db.clone();
+        let pw_done_registry = admin_new_registry.clone();
         router = router.get("/admin/password_change/done", move |req, _params| {
-            let entries = pw_done_entries.clone();
+            let legacy_entries = pw_done_entries.clone();
+            let db = pw_done_db.clone();
+            let registry = pw_done_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(password_change_done_response(&shell))
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let html = crate::admin::layout::password_change_done_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    csrf.as_deref(),
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
 
@@ -5494,103 +5523,8 @@ fn forbidden_page_fallback(project_name: &str, csrf: Option<&str>) -> String {
 // Password change (self-service) — Django parity
 // ---------------------------------------------------------------------------
 
-/// Render the `/admin/password_change` form. `error` is rendered in
-/// an inline alert when the previous submission failed; the email-like
-/// prefill behaviour of the login form doesn't apply because passwords
-/// are never preserved across renders.
-fn password_change_response(shell: &Shell<'_>, error: Option<&str>) -> Response {
-    let csrf = csrf_input(shell.csrf);
-    let error_html = match error {
-        Some(msg) => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<span>{msg}</span></div>"#,
-            icon = icon_triangle_alert(),
-            msg = escape_html(msg),
-        ),
-        None => String::new(),
-    };
-
-    let body = format!(
-        r#"<form class="rio-card rio-form" method="post" action="/admin/password_change" autocomplete="off">
-{csrf}
-<div class="rio-form-section">
-<p class="rio-form-section-hint">For security, enter your current password first. Then choose a new password and enter it twice to confirm.</p>
-{error_html}
-<div class="rio-field">
-<label for="_old_password">Current password</label>
-<input class="rio-input" id="_old_password" type="password" name="old_password" autocomplete="current-password" autofocus required>
-</div>
-<div class="rio-field">
-<label for="_new_password1">New password</label>
-<input class="rio-input" id="_new_password1" type="password" name="new_password1" autocomplete="new-password" minlength="8" required>
-<p class="rio-field-hint">At least 8 characters. All other active sessions on your account will be signed out.</p>
-</div>
-<div class="rio-field">
-<label for="_new_password2">New password confirmation</label>
-<input class="rio-input" id="_new_password2" type="password" name="new_password2" autocomplete="new-password" minlength="8" required>
-</div>
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn" href="/admin/profile">Cancel</a>
-<div class="rio-footer-actions">
-<button class="rio-btn rio-btn-primary" type="submit">Change password</button>
-</div>
-</div>
-</form>"#,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[
-        ("Admin", Some("/admin")),
-        ("Profile", Some("/admin/profile")),
-        ("Change password", None),
-    ];
-
-    render_shell_page(
-        shell,
-        200,
-        "Change password",
-        "Change password",
-        Some("Pick a new password for your account."),
-        crumbs,
-        "",
-        &body,
-    )
-}
-
-/// Success confirmation shown after a password change. Mirrors
-/// Django's `password_change_done.html`.
-fn password_change_done_response(shell: &Shell<'_>) -> Response {
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-<div class="rio-alert rio-alert-info">
-{icon}
-<div><strong>Your password was changed.</strong>
-All other sessions for your account have been signed out; this one was re-issued so you stay logged in here.</div>
-</div>
-<p style="margin: 16px 0 0"><a class="rio-btn rio-btn-primary" href="/admin">Return to the admin</a></p>
-</div>
-</div>"#,
-        icon = icon_triangle_alert(),
-    );
-
-    let crumbs: &[Crumb<'_>] = &[
-        ("Admin", Some("/admin")),
-        ("Profile", Some("/admin/profile")),
-        ("Change password", Some("/admin/password_change")),
-        ("Done", None),
-    ];
-
-    render_shell_page(
-        shell,
-        200,
-        "Password change done",
-        "Password changed",
-        None,
-        crumbs,
-        "",
-        &body,
-    )
-}
+// Password-change pages: ported to `admin::layout::password_change_render`
+// and `admin::layout::password_change_done_render` in stage 4h-ii.
 
 // ---------------------------------------------------------------------------
 // Profile: ported to `admin::layout::profile_render` in stage 4h.
@@ -6583,7 +6517,8 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
 async fn handle_password_change_post(
     req: Request,
     db: &crate::orm::Db,
-    entries: &[AdminEntry],
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
 ) -> Result<Response, Error> {
     use crate::auth;
 
@@ -6597,30 +6532,66 @@ async fn handle_password_change_post(
         Some(i) => i.user_id,
         None => return Ok(login_page(401, None, None)),
     };
-    let shell = Shell::from_ctx(entries, None, &ctx);
+    let identity = crate::auth::identity(&ctx).cloned();
+    let csrf = ctx_csrf(&ctx).map(str::to_string);
 
     let old = form.get("old_password").unwrap_or("").to_string();
     let new1 = form.get("new_password1").unwrap_or("").to_string();
     let new2 = form.get("new_password2").unwrap_or("").to_string();
 
     // Validation. All re-renders return the form with an inline alert.
+    async fn render_err(
+        db: &crate::orm::Db,
+        registry: &crate::admin::admin_form_bridge::AdminRegistry,
+        legacy_entries: &[AdminEntry],
+        identity: Option<&crate::auth::Identity>,
+        csrf: Option<&str>,
+        msg: &str,
+    ) -> Response {
+        let html = crate::admin::layout::password_change_render(
+            db,
+            registry,
+            legacy_entries,
+            identity,
+            csrf,
+            Some(msg),
+        )
+        .await;
+        with_admin_headers(crate::http::html(html))
+    }
+
     if old.is_empty() || new1.is_empty() || new2.is_empty() {
-        return Ok(password_change_response(
-            &shell,
-            Some("All three fields are required."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "All three fields are required.",
+        )
+        .await);
     }
     if new1 != new2 {
-        return Ok(password_change_response(
-            &shell,
-            Some("The two new password fields did not match. Try again."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "The two new password fields did not match. Try again.",
+        )
+        .await);
     }
     if new1.len() < 8 {
-        return Ok(password_change_response(
-            &shell,
-            Some("Your new password must be at least 8 characters."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "Your new password must be at least 8 characters.",
+        )
+        .await);
     }
 
     // Verify old password against the current hash. Fetch fresh
@@ -6630,10 +6601,15 @@ async fn handle_password_change_post(
         None => return Ok(login_page(401, None, None)),
     };
     if !auth::password::verify(&old, &user.password_hash) {
-        return Ok(password_change_response(
-            &shell,
-            Some("Your old password was entered incorrectly. Please try again."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "Your old password was entered incorrectly. Please try again.",
+        )
+        .await);
     }
 
     // Rotate the hash + wipe every session for this user. Then

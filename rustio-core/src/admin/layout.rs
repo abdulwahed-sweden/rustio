@@ -2859,6 +2859,75 @@ pub async fn profile_render(
     }
 }
 
+/// Render `admin/password_change.html`. `error` shows as an alert
+/// banner on top when the previous submit failed.
+pub async fn password_change_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+    error: Option<&str>,
+) -> String {
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
+    let design = design_view();
+    let user_v = user_view(identity);
+    let env = crate::admin::templating::env();
+    match env
+        .get_template("admin/password_change.html")
+        .and_then(|tmpl| {
+            tmpl.render(minijinja::context! {
+                design => design,
+                current_user => user_v,
+                sidebar_entries => sidebar,
+                page_title => "Change password",
+                csrf_token => csrf_token.unwrap_or(""),
+                error => error,
+                rustio_version => env!("CARGO_PKG_VERSION"),
+            })
+        }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin password_change template render failed: {err}");
+            "<!doctype html><html><body><h1>Change password</h1><p>Template failed.</p></body></html>".into()
+        }
+    }
+}
+
+/// Render `admin/password_change_done.html`.
+pub async fn password_change_done_render(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+) -> String {
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
+    let design = design_view();
+    let user_v = user_view(identity);
+    let env = crate::admin::templating::env();
+    match env
+        .get_template("admin/password_change_done.html")
+        .and_then(|tmpl| {
+            tmpl.render(minijinja::context! {
+                design => design,
+                current_user => user_v,
+                sidebar_entries => sidebar,
+                page_title => "Password changed",
+                csrf_token => csrf_token.unwrap_or(""),
+                rustio_version => env!("CARGO_PKG_VERSION"),
+            })
+        }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin password_change_done template render failed: {err}");
+            "<!doctype html><html><body><h1>Password changed</h1><p><a href=\"/admin\">Back</a></p></body></html>".into()
+        }
+    }
+}
+
 fn dashboard_fallback(entries: &[DashboardEntry]) -> String {
     let mut out = String::from(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Dashboard</title></head><body style=\"font-family:system-ui\"><h1>Dashboard</h1><ul>",
