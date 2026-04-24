@@ -19,13 +19,35 @@ Total: **8 `apply_*` functions touched**, 4 of them dramatically simplified (the
 
 ## Test counts
 
-| | Tests passing | Ignored |
+| | Tests passing in sandbox | Ignored |
 |---|---:|---:|
-| Phase 1 baseline (commit `13f1d58`) | 209 | 4 |
+| Phase 1 baseline (commit `13f1d58`) | 209 | 4 (FieldType + core User gaps) |
 | End of Phase 2a (unignore) | 213 | 0 |
-| End of Phase 2b (a)–(g) rewrites | 221 | 0 |
+| End of Phase 2b (a)–(g) rewrites, all PG tests un-ignored | 221 | 0 |
+| **After Path B retrofit** (PG tests gated) | **213** | **8** (PG integration suite) |
 
-Of the 221 → **8 are new live-Postgres integration tests** in `rustio-core/src/ai/executor_pg_tests.rs`:
+The 213 are the pure unit tests — including every "the SQL string is exactly X" assertion for each `apply_*` rewrite. The 8 ignored are the live-Postgres integration tests in `rustio-core/src/ai/executor_pg_tests.rs`. They were verified passing against live PG during the session (commits `5a99806` through `150acfe`); the gate keeps the default suite runnable in any sandbox without a DB.
+
+### Running the PG integration tests
+
+On a host with the docker-compose stack up:
+
+```bash
+docker compose -f ~/Documents/rustio/docker-compose.yml up -d
+RUSTIO_TEST_DB=1 cargo test --workspace -- --ignored
+```
+
+Or one test at a time, runnable standalone:
+
+```bash
+RUSTIO_TEST_DB=1 cargo test pg_retrofit_adds_fk_constraint_in_place -- --ignored --exact
+```
+
+Connection URL is read from `DATABASE_URL`; falls back to
+`postgres://postgres:dev@localhost:5432/blog`. The `RUSTIO_TEST_DB=1`
+flag is operator-facing only — `--ignored` is what actually opts in.
+
+### The 8 PG integration tests (each runnable standalone)
 
 | # | Test | Verifies |
 |---|---|---|
@@ -38,7 +60,7 @@ Of the 221 → **8 are new live-Postgres integration tests** in `rustio-core/src
 | 7 | `pg_remove_relation_drops_fk_column_and_constraint` | `DROP COLUMN CASCADE` on the FK column also removes the FK constraint |
 | 8 | `pg_retrofit_adds_fk_constraint_in_place` | The boss fight: retrofit adds an `ALTER TABLE ADD CONSTRAINT FOREIGN KEY` on an existing column, the constraint is enforced (RESTRICT blocks parent delete), and the planner's emitted SQL contains no recreate-table |
 
-All eight run as part of `cargo test --workspace` against the docker-compose Postgres at `postgres://postgres:dev@localhost/blog` (overridable via `RUSTIO_TEST_DB`).
+Each test creates uniquely-named scratch tables (`pg_t_<pid>_<seq>`), runs its SQL, asserts against `information_schema`, then drops its tables. No shared state, no test ordering required. Run individually with `cargo test <name> -- --ignored --exact`.
 
 ## Every PRAGMA / AUTOINCREMENT removal
 
@@ -77,8 +99,25 @@ Net diff for the rewrite: **+200 LOC of new code (mostly test plumbing) and –2
 
 ## Verified
 
+In-sandbox (default suite, no DB):
+
 - `cargo check --workspace --all-targets` — clean
 - `cargo clippy --workspace --all-targets -- -D warnings` — clean
-- `cargo test --workspace` — **221 passed, 0 failed, 0 ignored**
-- Live Postgres: 8 integration tests run against `postgres://postgres:dev@localhost/blog`
+- `cargo test --workspace` — **213 passed, 0 failed, 8 ignored**
+
+Against live Postgres (verified during the session before the Path B retrofit, commits `5a99806` → `150acfe`):
+
+- All 8 PG integration tests passed against `postgres://postgres:dev@localhost:5432/blog`
 - Blog example boots: `rustio listening on http://127.0.0.1:8000`, `/admin/login` returns 200 HTML, `/admin` returns 303
+
+To re-verify on the host:
+
+```bash
+RUSTIO_TEST_DB=1 cargo test --workspace -- --ignored 2>&1 | grep "^test result"
+```
+
+Expected output (8 PG tests):
+
+```
+test result: ok. 8 passed; 0 failed; 0 ignored; …
+```
