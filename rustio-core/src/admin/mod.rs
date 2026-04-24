@@ -1,11 +1,13 @@
 //! The auto-generated admin UI.
 
 mod builtin;
+mod entry_builder;
 mod handlers;
 mod intelligence;
 mod relations;
 mod render;
 mod routes;
+mod suggestions;
 mod types;
 
 #[cfg(test)]
@@ -24,4 +26,8 @@ pub use relations::{
     RELATION_FILTER_DROPDOWN_CAP,
 };
 pub use routes::register_admin_routes;
+pub use suggestions::{
+    derive_relation_suggestions, derive_suggestions, derive_suggestions_from_entries,
+    find_relation_suggestion, find_suggestion, find_suggestion_from_entries, Confidence, Suggestion,
+};
 pub use types::{Admin, AdminEntry, AdminField, AdminModel, AdminRelation, FieldType};
