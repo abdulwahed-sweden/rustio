@@ -5022,6 +5022,7 @@ async fn admin_model_form_get(
                 registry,
                 legacy_entries,
                 &**model,
+                None,
                 editing_id,
                 identity.as_ref(),
                 csrf.as_deref(),
@@ -5030,11 +5031,13 @@ async fn admin_model_form_get(
             .await
         }
         ResolvedModel::Legacy(model) => {
+            let source = model.source_entry().clone();
             crate::admin::layout::form_render(
                 db,
                 registry,
                 legacy_entries,
                 model,
+                Some(&source),
                 editing_id,
                 identity.as_ref(),
                 csrf.as_deref(),
@@ -5084,6 +5087,17 @@ impl FormResolvedModel {
         match self {
             FormResolvedModel::New(m) => &**m,
             FormResolvedModel::Legacy(m) => m,
+        }
+    }
+
+    /// `Some(entry)` when the model came from a legacy registration,
+    /// so the form layer can populate FK `<select>` options from the
+    /// entry's relation metadata. `None` for new-engine models —
+    /// they pre-populate `AdminUiField.options` at registration time.
+    fn legacy_source(&self) -> Option<&AdminEntry> {
+        match self {
+            FormResolvedModel::New(_) => None,
+            FormResolvedModel::Legacy(m) => Some(m.source_entry()),
         }
     }
 }
@@ -5136,11 +5150,13 @@ async fn admin_model_create_post(
             let identity = crate::auth::identity(&ctx).cloned();
             let csrf = ctx_csrf(&ctx).map(str::to_string);
             let error_msg = format!("Could not create: {e}");
+            let source = resolved.legacy_source().cloned();
             let html = crate::admin::layout::form_render(
                 db,
                 registry,
                 legacy_entries,
                 resolved.as_ui_model(),
+                source.as_ref(),
                 None,
                 identity.as_ref(),
                 csrf.as_deref(),
@@ -5189,11 +5205,13 @@ async fn admin_model_update_post(
             let identity = crate::auth::identity(&ctx).cloned();
             let csrf = ctx_csrf(&ctx).map(str::to_string);
             let error_msg = format!("Could not update: {e}");
+            let source = resolved.legacy_source().cloned();
             let html = crate::admin::layout::form_render(
                 db,
                 registry,
                 legacy_entries,
                 resolved.as_ui_model(),
+                source.as_ref(),
                 Some(&id),
                 identity.as_ref(),
                 csrf.as_deref(),

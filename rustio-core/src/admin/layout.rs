@@ -1914,6 +1914,111 @@ impl LegacyEntryModel {
             entry: entry.clone(),
         }
     }
+
+    /// The underlying `AdminEntry`. Exposed so the form / list
+    /// enrichment helpers can read the original `AdminField.relation`
+    /// info (which `AdminUiField` doesn't currently carry).
+    pub fn source_entry(&self) -> &crate::admin::AdminEntry {
+        &self.entry
+    }
+}
+
+/// Fetch `(id, display)` pairs from the table pointed at by an
+/// `AdminRelation`. Used to populate a FK field's `<select>`.
+///
+/// The chosen display column is, in priority order:
+/// 1. `relation.display_field` if set,
+/// 2. otherwise the first non-id `FieldType::String` column on the
+///    target entry,
+/// 3. otherwise the id itself ("#123").
+///
+/// Cap is 500 rows — matches `RELATION_FILTER_DROPDOWN_CAP` so a
+/// project with a huge target table doesn't render a form that
+/// takes minutes to parse. Larger tables should move to a typeahead
+/// control, which is a separate stage.
+async fn fk_options(
+    db: &Db,
+    relation: crate::admin::AdminRelation,
+    legacy_entries: &[crate::admin::AdminEntry],
+) -> Vec<(String, String)> {
+    use sqlx::Row as _;
+
+    let Some(target_entry) = legacy_entries
+        .iter()
+        .find(|e| e.singular_name == relation.model)
+    else {
+        return Vec::new();
+    };
+    let display_col = relation
+        .display_field
+        .or_else(|| {
+            target_entry
+                .fields
+                .iter()
+                .filter(|f| f.name != "id" && matches!(f.ty, crate::admin::FieldType::String))
+                .map(|f| f.name)
+                .next()
+        })
+        .unwrap_or("id");
+
+    let sql = format!(
+        r#"SELECT "id", "{display}" FROM "{table}" ORDER BY "{display}" LIMIT 500"#,
+        display = display_col.replace('"', "\"\""),
+        table = target_entry.table.replace('"', "\"\""),
+    );
+    let Ok(rows) = sqlx::query(&sql).fetch_all(db.pool()).await else {
+        return Vec::new();
+    };
+    rows.into_iter()
+        .filter_map(|row| {
+            let id: Option<i64> = row.try_get(0).ok();
+            // Display column may be integer (when we fell back to
+            // "id") or string. Try string first, then stringify the
+            // integer.
+            let display: Option<String> = row
+                .try_get::<Option<String>, _>(1)
+                .ok()
+                .flatten()
+                .or_else(|| {
+                    row.try_get::<Option<i64>, _>(1)
+                        .ok()
+                        .flatten()
+                        .map(|n| n.to_string())
+                });
+            match (id, display) {
+                (Some(i), Some(d)) => Some((i.to_string(), d)),
+                (Some(i), None) => Some((i.to_string(), format!("#{i}"))),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Produce `model.fields()` with FK options populated when the
+/// source is a legacy `AdminEntry`. For new-engine models the
+/// registration code is responsible for its own options — we pass
+/// those through unchanged.
+pub async fn enrich_fields_for_form(
+    db: &Db,
+    model: &dyn AdminUiModel,
+    legacy_source: Option<&crate::admin::AdminEntry>,
+    legacy_entries: &[crate::admin::AdminEntry],
+) -> Vec<AdminUiField> {
+    let mut fields = model.fields();
+    let Some(source) = legacy_source else {
+        return fields;
+    };
+    for field in fields.iter_mut() {
+        let Some(source_field) = source.fields.iter().find(|f| f.name == field.name) else {
+            continue;
+        };
+        let Some(relation) = source_field.relation else {
+            continue;
+        };
+        field.is_relation = true;
+        field.options = fk_options(db, relation, legacy_entries).await;
+    }
+    fields
 }
 
 fn admin_field_to_ui_field(field: &crate::admin::AdminField) -> AdminUiField {
@@ -1993,6 +2098,33 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
         ""
     };
 
+    // FK fields render as a `<select>` regardless of the underlying
+    // data_type (FKs stored in `i64` columns would otherwise fall
+    // into the Integer branch and show a raw number input).
+    if field.is_relation && !field.options.is_empty() {
+        let mut options = String::from(r#"<option value="">— choose —</option>"#);
+        for (ov, ol) in &field.options {
+            let sel = if ov == value { " selected" } else { "" };
+            options.push_str(&format!(
+                r#"<option value="{v}"{sel}>{l}</option>"#,
+                v = html_escape(ov),
+                l = html_escape(ol),
+            ));
+        }
+        return format!(
+            r#"<select class="form-select" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
+        );
+    }
+    if field.is_relation {
+        // FK without options (target table missing, query failed,
+        // or 0 rows) — fall back to a plain number input so the
+        // form still submits. This matches the 0.9 relation-layer
+        // rule: "never guess, never hide".
+        return format!(
+            r#"<input type="number" step="1" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required} placeholder="id">"#,
+        );
+    }
+
     match field.data_type {
         AdminDataType::Text => format!(
             r#"<textarea class="form-control" id="{id}" name="{name}"{readonly}{required} rows="4">{val}</textarea>"#,
@@ -2022,38 +2154,28 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
         AdminDataType::DateTime => format!(
             r#"<input type="datetime-local" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
-        AdminDataType::String => {
-            if field.is_relation && !field.options.is_empty() {
-                let mut options = String::from(r#"<option value="">— choose —</option>"#);
-                for (ov, ol) in &field.options {
-                    let sel = if ov == value { " selected" } else { "" };
-                    options.push_str(&format!(
-                        r#"<option value="{v}"{sel}>{l}</option>"#,
-                        v = html_escape(ov),
-                        l = html_escape(ol),
-                    ));
-                }
-                format!(
-                    r#"<select class="form-select" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
-                )
-            } else {
-                format!(
-                    r#"<input type="text" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
-                )
-            }
-        }
+        AdminDataType::String => format!(
+            r#"<input type="text" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+        ),
     }
 }
 
 /// Render the form page for `GET /admin/:model/new` (when
 /// `editing_id = None`) or `GET /admin/:model/:id/edit` (when
-/// `editing_id = Some(id)`). No mutation — stage 4f-b wires POST.
+/// `editing_id = Some(id)`).
+///
+/// `legacy_source` is `Some(&entry)` when the model came from the
+/// legacy `AdminEntry` path — this unlocks FK options enrichment
+/// (the legacy field type doesn't carry pre-populated
+/// `AdminUiField.options`). For new-engine models this is `None`
+/// and their own registration code is responsible for options.
 #[allow(clippy::too_many_arguments)]
 pub async fn form_render(
     db: &Db,
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
     legacy_entries: &[crate::admin::AdminEntry],
     model: &dyn AdminUiModel,
+    legacy_source: Option<&crate::admin::AdminEntry>,
     editing_id: Option<&str>,
     identity: Option<&crate::auth::Identity>,
     csrf_token: Option<&str>,
@@ -2077,8 +2199,8 @@ pub async fn form_render(
 
     let pk = model.primary_key();
     let slug = model.slug();
-    let fields: Vec<FormFieldView> = model
-        .fields()
+    let enriched = enrich_fields_for_form(db, model, legacy_source, legacy_entries).await;
+    let fields: Vec<FormFieldView> = enriched
         .into_iter()
         .filter(|f| {
             // Create form skips the PK (DB auto-assigns). Edit form
