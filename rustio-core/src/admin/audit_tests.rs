@@ -23,6 +23,8 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use tokio::sync::OnceCell;
+
 use super::audit::{ensure_table, for_object, record, recent, ActionType, LogEntry};
 use crate::auth::{create_user, init_user_tables, Role};
 use crate::error::Error;
@@ -51,13 +53,26 @@ async fn connect_db() -> Db {
         .unwrap_or_else(|e| panic!("could not connect to {url}: {e}"))
 }
 
+/// Postgres' `CREATE TABLE IF NOT EXISTS` is NOT race-safe: two
+/// concurrent DDL calls can both pass the existence check, and the
+/// loser gets `"relation already exists"`. Cargo's test harness runs
+/// tests in parallel on a thread pool, so the 8 audit tests all hit
+/// `init_user_tables` + `ensure_table` simultaneously. This gate
+/// runs the DDL exactly once per process; subsequent callers await
+/// the completion and then skip.
+static TABLES_READY: OnceCell<()> = OnceCell::const_new();
+
 /// Open a PG connection, apply both required `CREATE TABLE`s, and
 /// return a (db, tag) pair where `tag` is the per-test unique suffix
 /// the caller uses to scope its rows.
 async fn setup() -> (Db, String) {
     let db = connect_db().await;
-    init_user_tables(&db).await.unwrap();
-    ensure_table(&db).await.unwrap();
+    TABLES_READY
+        .get_or_init(|| async {
+            init_user_tables(&db).await.unwrap();
+            ensure_table(&db).await.unwrap();
+        })
+        .await;
     let tag = fresh_tag();
     (db, tag)
 }
