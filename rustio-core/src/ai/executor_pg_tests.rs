@@ -280,6 +280,120 @@ async fn pg_remove_field_drops_column_and_dependent_constraints() {
     drop_table(&pool, &parent).await;
 }
 
+// ---------------------------------------------------------------------------
+// (c) apply_change_field_type
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pg_change_field_type_rewrites_column_in_place() {
+    let pool = connect_pg().await;
+    let table = fresh_table_name();
+
+    sqlx::query(&format!(
+        "CREATE TABLE {table} (id BIGSERIAL PRIMARY KEY, score INTEGER NOT NULL DEFAULT 0)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!("INSERT INTO {table} (score) VALUES (42), (7), (0)"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Mirror what the executor would emit for ChangeFieldType i32 → String.
+    let sql = format!(
+        "-- header\n\
+         ALTER TABLE {table} ALTER COLUMN score TYPE TEXT USING (score::TEXT);\n"
+    );
+    run_migration(&pool, &sql).await;
+
+    // Type changed.
+    let (ty,): (String,) = sqlx::query_as(
+        "SELECT data_type FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'score'",
+    )
+    .bind(&table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ty, "text", "i32 → String should land as PG `text`");
+
+    // Data is preserved + cast to text representation.
+    let mut rows: Vec<(String,)> =
+        sqlx::query_as(&format!("SELECT score FROM {table} ORDER BY id"))
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    rows.sort();
+    assert_eq!(
+        rows,
+        vec![("0".to_string(),), ("42".to_string(),), ("7".to_string(),)],
+        "every row's i32 should round-trip as its text representation"
+    );
+
+    drop_table(&pool, &table).await;
+}
+
+#[tokio::test]
+async fn pg_change_field_type_works_on_fk_bearing_table() {
+    // The SQLite recreate-table pattern broke FKs, so the executor
+    // refused this case. PG handles it natively — the dependent FK
+    // remains intact through the type change.
+    let pool = connect_pg().await;
+    let parent = fresh_table_name();
+    let child = fresh_table_name();
+
+    sqlx::query(&format!(
+        "CREATE TABLE {parent} (id BIGSERIAL PRIMARY KEY, label TEXT NOT NULL DEFAULT '')"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE TABLE {child} (\
+            id BIGSERIAL PRIMARY KEY, \
+            parent_id BIGINT NOT NULL REFERENCES {parent}(id) ON DELETE RESTRICT, \
+            quantity INTEGER NOT NULL DEFAULT 0\
+        )"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Change quantity i32 → BIGINT — same rewrite shape.
+    run_migration(
+        &pool,
+        &format!(
+            "ALTER TABLE {child} ALTER COLUMN quantity TYPE BIGINT USING (quantity::BIGINT);"
+        ),
+    )
+    .await;
+
+    let (ty,): (String,) = sqlx::query_as(
+        "SELECT data_type FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'quantity'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ty, "bigint");
+
+    // FK still in place.
+    let (fk_count,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.table_constraints
+          WHERE table_name = $1 AND constraint_type = 'FOREIGN KEY'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(fk_count, 1, "FK constraint must survive the column type change");
+
+    drop_table(&pool, &child).await;
+    drop_table(&pool, &parent).await;
+}
+
 #[allow(dead_code)] // used by tests added in later commits
 fn add_relation(from: &str, to: &str, via: &str, required: bool, on_delete: OnDelete) -> Plan {
     Plan::new(vec![Primitive::AddRelation(AddRelation {

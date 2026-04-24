@@ -202,7 +202,7 @@ fn change_type_i32_to_string_uses_cast_and_rewrites_models() {
         None,
     ));
 
-    // The summary carries the `~` glyph and the table-rewrite warning.
+    // The summary carries the `~` glyph and the in-place rewrite warning.
     assert!(
         preview
             .summary
@@ -213,12 +213,12 @@ fn change_type_i32_to_string_uses_cast_and_rewrites_models() {
     assert!(
         preview
             .summary
-            .contains("⚠ This rewrites the entire `posts` table"),
+            .contains("Rewrites every row of `posts.score` in place"),
         "missing rewrite warning: {:?}",
         preview.summary,
     );
 
-    // Two file changes: models.rs + recreate migration.
+    // Two file changes: models.rs + ALTER TABLE migration.
     assert_eq!(preview.file_changes.len(), 2);
     let models_src = &preview.file_changes[0].new_contents;
     assert!(
@@ -234,26 +234,15 @@ fn change_type_i32_to_string_uses_cast_and_rewrites_models() {
         "insert_values should now .clone() on String:\n{models_src}",
     );
 
-    // Migration uses the recreate-table pattern with CAST on `score`.
+    // Phase 2: migration is a single PG ALTER TABLE statement, no
+    // recreate-table dance. The cast goes inside USING (…).
     let mig = &preview.file_changes[1].new_contents;
-    assert!(mig.contains("CREATE TABLE posts__new ("), "mig:\n{mig}");
     assert!(
-        mig.contains("id INTEGER PRIMARY KEY AUTOINCREMENT"),
-        "mig should preserve PK AUTOINCREMENT:\n{mig}",
+        mig.contains("ALTER TABLE posts ALTER COLUMN score TYPE TEXT USING (score::TEXT);"),
+        "mig should be a native PG ALTER TABLE … USING:\n{mig}",
     );
-    assert!(
-        mig.contains("CAST(score AS TEXT)"),
-        "mig should CAST score to TEXT:\n{mig}",
-    );
-    assert!(
-        mig.contains("INSERT INTO posts__new (id, title, score, subtitle)"),
-        "mig should INSERT every column:\n{mig}",
-    );
-    assert!(mig.contains("DROP TABLE posts;"), "mig:\n{mig}");
-    assert!(
-        mig.contains("ALTER TABLE posts__new RENAME TO posts;"),
-        "mig:\n{mig}",
-    );
+    assert!(!mig.contains("CREATE TABLE"), "no recreate-table:\n{mig}");
+    assert!(!mig.contains("DROP TABLE"), "no recreate-table:\n{mig}");
 }
 
 #[test]
@@ -314,14 +303,16 @@ fn change_type_idempotent_same_type_is_refused() {
 }
 
 #[test]
-fn change_type_refuses_on_foreign_key_tables() {
+fn change_type_accepts_foreign_key_tables() {
+    // Phase 2: SQLite needed the recreate-table dance, which broke FKs,
+    // so the executor refused this case outright. PostgreSQL has native
+    // ALTER COLUMN TYPE that re-validates dependent FKs as part of the
+    // statement — no upfront refusal needed.
     let schema = post_schema();
     let mut project = project_with_post("/p");
-    // Simulate a foreign-key constraint landing on `posts` from
-    // another table's migration.
     project.migration_sources.insert(
         "0002_create_comments.sql".into(),
-        "CREATE TABLE comments (id INTEGER, post_id INTEGER, FOREIGN KEY (post_id) REFERENCES posts(id));"
+        "CREATE TABLE comments (id BIGINT, post_id BIGINT, FOREIGN KEY (post_id) REFERENCES posts(id));"
             .into(),
     );
     let plan = Plan::new(vec![Primitive::ChangeFieldType(ChangeFieldType {
@@ -330,15 +321,18 @@ fn change_type_refuses_on_foreign_key_tables() {
         new_type: "String".into(),
     })]);
     let doc = doc_for(&schema, "change score to String", plan);
-    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
-        .expect_err("FK-participating table must be refused");
-    match err {
-        ExecutionError::UnsupportedPrimitive { op, reason } => {
-            assert_eq!(op, "change_field_type");
-            assert!(reason.contains("foreign"));
-        }
-        other => panic!("expected UnsupportedPrimitive, got {other:?}"),
-    }
+    let preview = unwrap_preview(plan_execution(
+        &schema,
+        &project,
+        &doc,
+        &ExecuteOptions::default(),
+        None,
+    ));
+    let mig = &preview.file_changes[1].new_contents;
+    assert!(
+        mig.contains("ALTER TABLE posts ALTER COLUMN score TYPE TEXT USING (score::TEXT);"),
+        "FK-bearing tables should produce the same ALTER TABLE migration:\n{mig}",
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -597,7 +591,10 @@ mod rename_model_integration {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn recreate_table_migration_is_deterministic() {
+fn alter_table_migration_is_deterministic() {
+    // Phase 2: the migration is now a single `ALTER TABLE … ALTER
+    // COLUMN … TYPE … USING (…)` statement. Determinism still matters
+    // — same plan + same schema must produce byte-identical output.
     let schema = post_schema();
     let project = project_with_post("/p");
     let plan = Plan::new(vec![Primitive::ChangeFieldType(ChangeFieldType {
@@ -621,11 +618,11 @@ fn recreate_table_migration_is_deterministic() {
         None,
     ));
     assert_eq!(a, b);
-    // Regression canary: the preview's migration file always uses the
-    // `<table>__new` temporary name — if that ever changes we want
-    // a loud signal.
     let mig = &a.file_changes[1].new_contents;
-    assert!(mig.contains("CREATE TABLE posts__new"), "mig:\n{mig}");
+    assert!(
+        mig.contains("ALTER TABLE posts ALTER COLUMN score TYPE TEXT USING (score::TEXT);"),
+        "mig:\n{mig}",
+    );
 }
 
 #[test]
@@ -751,23 +748,22 @@ fn large_schema_simulation_holds_determinism() {
         None,
     ));
     let mig = &preview.file_changes[1].new_contents;
-    // Every column shows up in the INSERT column list, and only
-    // field_05 is wrapped in CAST.
-    for f in &fields {
-        assert!(
-            mig.contains(&format!(", {}", f.name))
-                || mig.contains(&format!("({}, ", f.name))
-                || mig.contains(&format!("({}", f.name)),
-            "column `{}` missing from INSERT:\n{mig}",
-            f.name,
-        );
-    }
+    // Phase 2: PG ALTER TABLE only mentions the field being changed.
+    // No other columns appear in the migration because the rewrite is
+    // in-place — that's the whole point versus the SQLite recreate.
     assert!(
-        mig.contains("CAST(field_05 AS TEXT)"),
-        "only field_05 should be cast:\n{mig}",
+        mig.contains("ALTER TABLE wides ALTER COLUMN field_05 TYPE TEXT USING (field_05::TEXT);"),
+        "mig should ALTER only field_05:\n{mig}",
     );
-    let cast_count = mig.matches("CAST(").count();
-    assert_eq!(cast_count, 1, "exactly one CAST expected, got {cast_count}");
+    for f in &fields {
+        if f.name != "field_05" {
+            assert!(
+                !mig.contains(&format!(" {} ", f.name)),
+                "column `{}` should not appear in the ALTER migration:\n{mig}",
+                f.name,
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
