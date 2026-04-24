@@ -1994,6 +1994,127 @@ async fn fk_options(
         .collect()
 }
 
+/// Resolve `(id → label)` for one FK column across every row
+/// currently on the page. One SQL `SELECT id, <display> FROM <target>
+/// WHERE id IN (?, ?, …)` — so a list with 20 rows and 3 FK columns
+/// costs 3 queries, not 60.
+async fn fk_lookup_batch(
+    db: &Db,
+    target_entry: &crate::admin::AdminEntry,
+    display_field: Option<&'static str>,
+    ids: &[String],
+) -> std::collections::HashMap<String, String> {
+    use sqlx::Row as _;
+
+    let mut out = std::collections::HashMap::new();
+    if ids.is_empty() {
+        return out;
+    }
+    let display_col = display_field
+        .or_else(|| {
+            target_entry
+                .fields
+                .iter()
+                .filter(|f| f.name != "id" && matches!(f.ty, crate::admin::FieldType::String))
+                .map(|f| f.name)
+                .next()
+        })
+        .unwrap_or("id");
+
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let sql = format!(
+        r#"SELECT "id", "{display}" FROM "{table}" WHERE "id" IN ({placeholders})"#,
+        display = display_col.replace('"', "\"\""),
+        table = target_entry.table.replace('"', "\"\""),
+    );
+    let mut q = sqlx::query(&sql);
+    for id in ids {
+        q = q.bind(id);
+    }
+    let Ok(rows) = q.fetch_all(db.pool()).await else {
+        return out;
+    };
+    for row in rows {
+        let Ok(id) = row.try_get::<i64, _>(0) else {
+            continue;
+        };
+        let label: Option<String> =
+            row.try_get::<Option<String>, _>(1)
+                .ok()
+                .flatten()
+                .or_else(|| {
+                    row.try_get::<Option<i64>, _>(1)
+                        .ok()
+                        .flatten()
+                        .map(|n| n.to_string())
+                });
+        if let Some(l) = label {
+            out.insert(id.to_string(), l);
+        }
+    }
+    out
+}
+
+/// Per-column FK resolution data used to rewrite list cells.
+struct FkColumnInfo {
+    column_index: usize,
+    target_admin_name: String,
+    id_to_label: std::collections::HashMap<String, String>,
+}
+
+/// For each visible column on the list page that points at another
+/// model, batch-resolve the FK values displayed in the current page
+/// of rows. One SQL query per FK column; callers render
+/// `<a href="/admin/<target>/<id>">label</a>` in each matching cell.
+async fn build_fk_lookups(
+    db: &Db,
+    source_entry: Option<&crate::admin::AdminEntry>,
+    columns: &[ColumnView],
+    rows_raw: &[HashMap<String, String>],
+    legacy_entries: &[crate::admin::AdminEntry],
+) -> Vec<FkColumnInfo> {
+    let mut out = Vec::new();
+    let Some(source) = source_entry else {
+        return out;
+    };
+    for (idx, col) in columns.iter().enumerate() {
+        let Some(source_field) = source.fields.iter().find(|f| f.name == col.name) else {
+            continue;
+        };
+        let Some(relation) = source_field.relation else {
+            continue;
+        };
+        let Some(target_entry) = legacy_entries
+            .iter()
+            .find(|e| e.singular_name == relation.model)
+        else {
+            continue;
+        };
+        let ids: Vec<String> = {
+            let mut seen = std::collections::HashSet::new();
+            let mut v = Vec::new();
+            for row in rows_raw {
+                if let Some(id) = row.get(&col.name) {
+                    if !id.is_empty() && seen.insert(id.clone()) {
+                        v.push(id.clone());
+                    }
+                }
+            }
+            v
+        };
+        if ids.is_empty() {
+            continue;
+        }
+        let id_to_label = fk_lookup_batch(db, target_entry, relation.display_field, &ids).await;
+        out.push(FkColumnInfo {
+            column_index: idx,
+            target_admin_name: target_entry.admin_name.to_string(),
+            id_to_label,
+        });
+    }
+    out
+}
+
 /// Produce `model.fields()` with FK options populated when the
 /// source is a legacy `AdminEntry`. For new-engine models the
 /// registration code is responsible for its own options — we pass
@@ -2435,6 +2556,7 @@ pub async fn list_render(
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
     legacy_entries: &[crate::admin::AdminEntry],
     model: &dyn AdminUiModel,
+    legacy_source: Option<&crate::admin::AdminEntry>,
     query: Option<&str>,
     page: i64,
     filters: &HashMap<String, String>,
@@ -2464,6 +2586,13 @@ pub async fn list_render(
         })
         .collect();
 
+    // One batch `SELECT … WHERE id IN (…)` per FK column visible on
+    // this page of rows. Cells for matching FK values are rewritten
+    // into `<a href="/admin/<target>/<id>">display</a>`. Unresolved
+    // ids (stale, deleted, target wiped) render as `#<id>` — never
+    // the raw integer with no context.
+    let fk_lookups = build_fk_lookups(db, legacy_source, &columns, &rows_raw, legacy_entries).await;
+
     let pk = model.primary_key();
     let slug = model.slug();
     let rows: Vec<RowView> = rows_raw
@@ -2472,7 +2601,26 @@ pub async fn list_render(
             let id = row.get(pk).cloned().unwrap_or_default();
             let cells = columns
                 .iter()
-                .map(|col| row.get(&col.name).cloned().unwrap_or_default())
+                .enumerate()
+                .map(|(col_idx, col)| {
+                    let raw = row.get(&col.name).cloned().unwrap_or_default();
+                    if let Some(fk) = fk_lookups.iter().find(|f| f.column_index == col_idx) {
+                        if raw.is_empty() {
+                            return String::new();
+                        }
+                        match fk.id_to_label.get(&raw) {
+                            Some(label) => format!(
+                                r#"<a href="/admin/{slug}/{id}">{label}</a>"#,
+                                slug = html_escape(&fk.target_admin_name),
+                                id = html_escape(&raw),
+                                label = html_escape(label),
+                            ),
+                            None => format!("#{}", html_escape(&raw)),
+                        }
+                    } else {
+                        html_escape(&raw)
+                    }
+                })
                 .collect();
             RowView {
                 id: id.clone(),

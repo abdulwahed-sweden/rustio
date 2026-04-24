@@ -4950,6 +4950,7 @@ async fn admin_model_index_get(
                 registry,
                 legacy_entries,
                 &**model,
+                None,
                 query.as_deref(),
                 page,
                 &filters,
@@ -4961,11 +4962,13 @@ async fn admin_model_index_get(
             .await
         }
         ResolvedModel::Legacy(model) => {
+            let source = model.source_entry().clone();
             crate::admin::layout::list_render(
                 db,
                 registry,
                 legacy_entries,
                 model,
+                Some(&source),
                 query.as_deref(),
                 page,
                 &filters,
