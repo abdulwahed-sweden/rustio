@@ -37,15 +37,34 @@ docker compose -f ~/Documents/rustio/docker-compose.yml up -d
 RUSTIO_TEST_DB=1 cargo test --workspace -- --ignored
 ```
 
-Or one test at a time, runnable standalone:
+One test at a time (substring filter — works with the bare name):
 
 ```bash
-RUSTIO_TEST_DB=1 cargo test pg_retrofit_adds_fk_constraint_in_place -- --ignored --exact
+RUSTIO_TEST_DB=1 cargo test pg_retrofit_adds_fk_constraint_in_place \
+  -- --ignored --nocapture
 ```
 
-Connection URL is read from `DATABASE_URL`; falls back to
-`postgres://postgres:dev@localhost:5432/blog`. The `RUSTIO_TEST_DB=1`
-flag is operator-facing only — `--ignored` is what actually opts in.
+Or with `--exact` (requires the full module path):
+
+```bash
+RUSTIO_TEST_DB=1 cargo test ai::executor_pg_tests::pg_retrofit_adds_fk_constraint_in_place \
+  -- --ignored --exact --nocapture
+```
+
+Connection URL is read from `RUSTIO_TEST_DATABASE_URL`; falls back to
+`postgres://postgres:dev@localhost:5432/blog`. The dedicated
+test-scoped variable means a developer's existing `DATABASE_URL`
+(usually pointed at an unrelated app DB) doesn't pollute the test
+fixture — no auth-fail surprises, no scratch tables in the wrong
+schema. The `RUSTIO_TEST_DB=1` flag is operator-facing only —
+`--ignored` is what actually opts in.
+
+Override per-invocation if your default isn't right:
+
+```bash
+RUSTIO_TEST_DATABASE_URL=postgres://you@otherhost/scratch \
+RUSTIO_TEST_DB=1 cargo test --workspace -- --ignored
+```
 
 ### The 8 PG integration tests (each runnable standalone)
 

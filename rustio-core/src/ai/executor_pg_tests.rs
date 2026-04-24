@@ -9,19 +9,26 @@
 //! RUSTIO_TEST_DB=1 cargo test --workspace -- --ignored
 //! ```
 //!
-//! The connection URL is read from `DATABASE_URL` and falls back to
-//! the docker-compose default the example blog uses
-//! (`postgres://postgres:dev@localhost:5432/blog`). The
-//! `RUSTIO_TEST_DB=1` flag is operator-facing only — `--ignored`
-//! is what actually opts in. The flag exists so a mistakenly-run
-//! `cargo test -- --ignored` without PG running surfaces a clear
-//! "DB not reachable" error rather than silently passing nothing.
+//! The connection URL is read from `RUSTIO_TEST_DATABASE_URL` and
+//! falls back to the docker-compose default the example blog uses
+//! (`postgres://postgres:dev@localhost:5432/blog`).
+//!
+//! Why a test-only variable instead of the standard `DATABASE_URL`:
+//! a developer almost always has `DATABASE_URL` exported for an
+//! unrelated production / app database. Reading that here would
+//! either pollute the unrelated DB with scratch tables or fail
+//! noisily on auth — neither is acceptable. The dedicated env var
+//! keeps the test fixture isolated.
+//!
+//! The `RUSTIO_TEST_DB=1` flag is operator-facing only — `--ignored`
+//! is what actually opts in.
 //!
 //! Each test creates a uniquely-named scratch table (or table pair
 //! for FK cases), runs the SQL the executor produced, queries
 //! `information_schema` to assert post-state, then drops its tables.
 //! No shared state — every test is runnable standalone via
-//! `cargo test <name> -- --ignored --exact`.
+//! `cargo test <name> -- --ignored --exact` (where `<name>` is the
+//! full path, e.g. `ai::executor_pg_tests::pg_add_field_…`).
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -32,19 +39,20 @@ use crate::ai::{
     AddRelation, FieldSpec, OnDelete, Plan, Primitive, RemoveField, RemoveRelation,
 };
 
-/// Default Postgres URL: matches the docker-compose service the blog
-/// example uses, so `RUSTIO_TEST_DB=1 cargo test -- --ignored` works
-/// out of the box on a developer's host.
+/// Default Postgres URL — matches the docker-compose service the
+/// blog example uses, so `RUSTIO_TEST_DB=1 cargo test -- --ignored`
+/// works out of the box on a host with the compose stack up.
 fn default_dev_url() -> String {
     "postgres://postgres:dev@localhost:5432/blog".to_string()
 }
 
-/// Connect to the test database. Reads `DATABASE_URL` (preferred —
-/// matches what the blog example reads) and falls back to the
-/// docker-compose default. Per the spec, the `RUSTIO_TEST_DB`
-/// gate isn't read here — the `#[ignore]` attribute does the gating.
+/// Connect to the test database. Reads `RUSTIO_TEST_DATABASE_URL`
+/// (test-scoped — won't collide with a developer's `DATABASE_URL`
+/// pointing at an unrelated app DB) and falls back to the
+/// docker-compose default.
 async fn connect_pg() -> PgPool {
-    let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| default_dev_url());
+    let url =
+        std::env::var("RUSTIO_TEST_DATABASE_URL").unwrap_or_else(|_| default_dev_url());
     PgPoolOptions::new()
         .max_connections(2)
         .connect(&url)
@@ -89,7 +97,7 @@ async fn run_migration(pool: &PgPool, sql: &str) {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_add_field_appends_column_with_pg_type() {
     use super::executor::sql_for_add_field;
     let pool = connect_pg().await;
@@ -210,7 +218,7 @@ async fn pg_add_field_appends_column_with_pg_type() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_remove_field_drops_column_and_dependent_constraints() {
     let pool = connect_pg().await;
     let table = fresh_table_name();
@@ -303,7 +311,7 @@ async fn pg_remove_field_drops_column_and_dependent_constraints() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_change_field_type_rewrites_column_in_place() {
     let pool = connect_pg().await;
     let table = fresh_table_name();
@@ -354,7 +362,7 @@ async fn pg_change_field_type_rewrites_column_in_place() {
 }
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_change_field_type_works_on_fk_bearing_table() {
     // The SQLite recreate-table pattern broke FKs, so the executor
     // refused this case. PG handles it natively — the dependent FK
@@ -419,7 +427,7 @@ async fn pg_change_field_type_works_on_fk_bearing_table() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_change_field_nullability_relax_then_tighten() {
     let pool = connect_pg().await;
     let table = fresh_table_name();
@@ -492,7 +500,7 @@ async fn pg_change_field_nullability_relax_then_tighten() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_add_relation_creates_fk_constraint() {
     let pool = connect_pg().await;
     let parent = fresh_table_name();
@@ -574,7 +582,7 @@ async fn pg_add_relation_creates_fk_constraint() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_remove_relation_drops_fk_column_and_constraint() {
     let pool = connect_pg().await;
     let parent = fresh_table_name();
@@ -644,7 +652,7 @@ async fn pg_remove_relation_drops_fk_column_and_constraint() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-#[ignore = "needs RUSTIO_TEST_DB=1 and a running postgres"]
+#[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
 async fn pg_retrofit_adds_fk_constraint_in_place() {
     use crate::ai::plan_retrofit_foreign_keys;
     use crate::schema::{Relation, RelationKind, Schema, SchemaField, SchemaModel, SCHEMA_VERSION};
