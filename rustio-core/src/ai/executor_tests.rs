@@ -516,17 +516,19 @@ fn remove_field_with_allow_destructive_drops_column_and_writes_migration() {
         models.new_contents,
     );
 
-    // Migration — recreate-table SQL with the column omitted.
+    // Phase 2: PG uses native `ALTER TABLE … DROP COLUMN … CASCADE`
+    // instead of the SQLite recreate-table dance.
     let mig = &preview.file_changes[1];
     assert_eq!(mig.kind, FileChangeKind::Create);
     assert!(
-        mig.new_contents.contains("CREATE TABLE tasks__new"),
-        "migration uses the recreate-table pattern:\n{}",
+        mig.new_contents
+            .contains("ALTER TABLE tasks DROP COLUMN title CASCADE;"),
+        "migration should use native PG DROP COLUMN:\n{}",
         mig.new_contents,
     );
     assert!(
-        !mig.new_contents.contains(" title "),
-        "the `title` column must not be in the new table definition:\n{}",
+        !mig.new_contents.contains("CREATE TABLE"),
+        "no recreate-table SQL should remain:\n{}",
         mig.new_contents,
     );
     assert!(
@@ -1204,8 +1206,9 @@ fn remove_relation_primitive_is_refused_with_clear_reason() {
     );
     let mig = &preview.file_changes[1];
     assert!(
-        mig.new_contents.contains("CREATE TABLE applications__new"),
-        "migration uses recreate-table:\n{}",
+        mig.new_contents
+            .contains("ALTER TABLE applications DROP COLUMN applicant_id CASCADE;"),
+        "migration should use native PG DROP COLUMN:\n{}",
         mig.new_contents,
     );
     assert!(

@@ -188,6 +188,98 @@ async fn pg_add_field_appends_column_with_pg_type() {
 // against the in-memory ProjectView, then run the emitted migration on PG.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// (b) apply_remove_field
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pg_remove_field_drops_column_and_dependent_constraints() {
+    let pool = connect_pg().await;
+    let table = fresh_table_name();
+
+    // Seed: a parent table + a child table with a NOT NULL FK +
+    // an index on that FK. The CASCADE in DROP COLUMN must take both
+    // the FK and the index out cleanly.
+    let parent = format!("{table}_parent");
+    sqlx::query(&format!(
+        "CREATE TABLE {parent} (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL DEFAULT '')"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE TABLE {table} (\
+            id BIGSERIAL PRIMARY KEY, \
+            parent_id BIGINT NOT NULL REFERENCES {parent}(id) ON DELETE RESTRICT, \
+            note TEXT NOT NULL DEFAULT ''\
+        )"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE INDEX {table}_parent_idx ON {table} (parent_id)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // The remove_field SQL the executor emits.
+    let sql = format!(
+        "-- header\n\
+         ALTER TABLE {table} DROP COLUMN parent_id CASCADE;\n"
+    );
+    run_migration(&pool, &sql).await;
+
+    // Assert: column is gone
+    let col_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'parent_id'",
+    )
+    .bind(&table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(col_count.0, 0, "parent_id should be dropped");
+
+    // Assert: dependent FK constraint is gone
+    let fk_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.table_constraints
+          WHERE table_name = $1 AND constraint_type = 'FOREIGN KEY'",
+    )
+    .bind(&table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(fk_count.0, 0, "the dependent FK should be CASCADEd");
+
+    // Assert: dependent index is gone
+    let idx_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM pg_indexes
+          WHERE tablename = $1 AND indexname = $2",
+    )
+    .bind(&table)
+    .bind(format!("{table}_parent_idx"))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(idx_count.0, 0, "the dependent index should be CASCADEd");
+
+    // Other columns still there
+    let other: (String,) = sqlx::query_as(
+        "SELECT column_name FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'note'",
+    )
+    .bind(&table)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(other.0, "note");
+
+    drop_table(&pool, &table).await;
+    drop_table(&pool, &parent).await;
+}
+
 #[allow(dead_code)] // used by tests added in later commits
 fn add_relation(from: &str, to: &str, via: &str, required: bool, on_delete: OnDelete) -> Plan {
     Plan::new(vec![Primitive::AddRelation(AddRelation {
