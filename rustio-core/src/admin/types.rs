@@ -25,20 +25,27 @@ pub enum FieldType {
     DateTime,
     OptionalI64,
     OptionalString,
+    /// Phase 2: a nullable timestamp. Required so the schema exporter can
+    /// faithfully describe fields like `published_at: Option<DateTime<Utc>>`
+    /// that OLD's API expressed as `(DateTime, nullable=true)`.
+    OptionalDateTime,
 }
 
 impl FieldType {
     pub fn widget(&self) -> &'static str {
         match self {
             FieldType::Bool => "checkbox",
-            FieldType::DateTime => "datetime",
+            FieldType::DateTime | FieldType::OptionalDateTime => "datetime",
             FieldType::I32 | FieldType::I64 | FieldType::OptionalI64 => "number",
             FieldType::String | FieldType::OptionalString => "text",
         }
     }
 
     pub fn nullable(&self) -> bool {
-        matches!(self, FieldType::OptionalI64 | FieldType::OptionalString)
+        matches!(
+            self,
+            FieldType::OptionalI64 | FieldType::OptionalString | FieldType::OptionalDateTime
+        )
     }
 }
 
@@ -86,7 +93,14 @@ pub struct AdminEntry {
     pub admin_name: &'static str,
     pub display_name: &'static str,
     pub singular_name: &'static str,
+    /// SQL table name. For user-registered models this is `<M as Model>::TABLE`;
+    /// for the synthetic core User entry it's `"rustio_users"`.
+    pub table: &'static str,
     pub fields: &'static [AdminField],
+    /// `true` only for framework-owned entries (currently just `User`).
+    /// External tools key off this to refuse destructive plans against
+    /// framework infrastructure.
+    pub core: bool,
     pub(crate) ops: Arc<dyn AdminOps>,
     pub(crate) search_hook: Option<Arc<dyn SearchHook>>,
 }
@@ -166,8 +180,15 @@ impl Default for Admin {
 }
 
 impl Admin {
+    /// Constructs a new `Admin` with the framework's core entries
+    /// pre-seeded. As of Phase 2 the only core entry is `User`, which
+    /// the schema exporter must always describe so external tooling
+    /// can reason about authentication tables. Project models are
+    /// added on top via [`Self::model`] / [`Self::model_with_search`].
     pub fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: vec![core_user_entry()],
+        }
     }
 
     pub fn model<M>(mut self) -> Self
@@ -179,7 +200,9 @@ impl Admin {
             admin_name: M::ADMIN_NAME,
             display_name: M::DISPLAY_NAME,
             singular_name: M::SINGULAR_NAME,
+            table: <M as crate::orm::Model>::TABLE,
             fields: M::FIELDS,
+            core: false,
             ops,
             search_hook: None,
         });
@@ -200,7 +223,9 @@ impl Admin {
             admin_name: M::ADMIN_NAME,
             display_name: M::DISPLAY_NAME,
             singular_name: M::SINGULAR_NAME,
+            table: <M as crate::orm::Model>::TABLE,
             fields: M::FIELDS,
+            core: false,
             ops,
             search_hook: Some(hook),
         });
@@ -364,5 +389,132 @@ where
             index: M::INDEX_NAME.to_string(),
             id: id.to_string(),
         });
+    }
+}
+
+// -------------------------------------------------------------------------
+// Core User entry — synthetic, schema-only
+// -------------------------------------------------------------------------
+//
+// Every project's exported schema must describe the auth tables so
+// external tooling (planner, dashboards) can reason about them. The
+// `User` entry is built directly here rather than implementing
+// `AdminModel` on a placeholder struct: the auth subsystem already
+// owns the live `/admin/users` page with its own logic, so we don't
+// want a second route to spawn.
+//
+// Field order in `CORE_USER_FIELDS` matches the `rustio_users`
+// migration (id, email, password_hash, role, is_active, created_at).
+// `Schema::from_admin` re-sorts alphabetically before exporting.
+
+const CORE_USER_FIELDS: &[AdminField] = &[
+    AdminField {
+        name: "id",
+        label: "id",
+        field_type: FieldType::I64,
+        editable: false,
+        relation: None,
+    },
+    AdminField {
+        name: "email",
+        label: "email",
+        field_type: FieldType::String,
+        editable: true,
+        relation: None,
+    },
+    AdminField {
+        name: "password_hash",
+        label: "password_hash",
+        field_type: FieldType::String,
+        editable: false,
+        relation: None,
+    },
+    AdminField {
+        name: "role",
+        label: "role",
+        field_type: FieldType::String,
+        editable: true,
+        relation: None,
+    },
+    AdminField {
+        name: "is_active",
+        label: "is_active",
+        field_type: FieldType::Bool,
+        editable: true,
+        relation: None,
+    },
+    AdminField {
+        name: "created_at",
+        label: "created_at",
+        field_type: FieldType::DateTime,
+        editable: false,
+        relation: None,
+    },
+];
+
+fn core_user_entry() -> AdminEntry {
+    AdminEntry {
+        admin_name: "users",
+        display_name: "Users",
+        singular_name: "User",
+        table: "rustio_users",
+        fields: CORE_USER_FIELDS,
+        core: true,
+        ops: Arc::new(CoreUserOps),
+        search_hook: None,
+    }
+}
+
+/// Schema-only ops stub for the synthetic User entry. The live
+/// `/admin/users` page is wired separately by `admin::builtin`, so
+/// every method here returns a dedicated error rather than silently
+/// half-working. If the generic admin ever routes to this, the error
+/// makes the misuse obvious.
+struct CoreUserOps;
+
+fn core_user_route_error() -> crate::error::Error {
+    crate::error::Error::Internal(
+        "the core User entry is schema-only — use the dedicated /admin/users page".into(),
+    )
+}
+
+impl AdminOps for CoreUserOps {
+    fn list<'a>(
+        &'a self,
+        _db: &'a Db,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<ListRow>>> + Send + 'a>> {
+        Box::pin(async { Err(core_user_route_error()) })
+    }
+
+    fn find_row<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<EditRow>>> + Send + 'a>> {
+        Box::pin(async { Err(core_user_route_error()) })
+    }
+
+    fn create<'a>(&'a self, _db: &'a Db, _form: &'a FormData) -> CreateResult<'a> {
+        Box::pin(async { Err(core_user_route_error()) })
+    }
+
+    fn update<'a>(&'a self, _db: &'a Db, _id: i64, _form: &'a FormData) -> UpdateResult<'a> {
+        Box::pin(async { Err(core_user_route_error()) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async { Err(core_user_route_error()) })
+    }
+
+    fn object_label<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
+        Box::pin(async { Err(core_user_route_error()) })
     }
 }

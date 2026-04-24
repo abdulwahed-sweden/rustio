@@ -436,20 +436,13 @@ impl SchemaModel {
         fields.sort_by(|a, b| a.name.cmp(&b.name));
         Self {
             name: entry.singular_name.to_string(),
-            // NEW's AdminEntry doesn't carry `table` separately — admin_name
-            // is the snake-plural form the scaffolder uses for both the
-            // admin slug and the SQL table. Phase 2 will plumb Model::TABLE
-            // through if the two ever need to diverge.
-            table: entry.admin_name.to_string(),
+            table: entry.table.to_string(),
             admin_name: entry.admin_name.to_string(),
             display_name: entry.display_name.to_string(),
             singular_name: entry.singular_name.to_string(),
             fields,
             relations: Vec::new(),
-            // NEW has no `core models` concept yet. Default to false; the
-            // review layer's "touches_core_models" gate stays inert until
-            // the concept lands.
-            core: false,
+            core: entry.core,
         }
     }
 }
@@ -504,7 +497,7 @@ pub(crate) fn field_type_name(ty: FieldType) -> &'static str {
         FieldType::I64 => "i64",
         FieldType::String => "String",
         FieldType::Bool => "bool",
-        FieldType::DateTime => "DateTime",
+        FieldType::DateTime | FieldType::OptionalDateTime => "DateTime",
         FieldType::OptionalI64 => "i64",
         FieldType::OptionalString => "String",
     }
@@ -537,16 +530,10 @@ mod tests {
 
     // Adapted to NEW's AdminModel surface: SINGULAR_NAME is a const,
     // not a method; AdminField has `field_type` (no separate `nullable`
-    // — encoded in OptionalI64 / OptionalString variants); `from_form`
-    // takes one arg and returns Vec<String>; `display_values`,
-    // `object_label`, `id`, `values_to_update` are mandatory methods.
-    //
-    // NOTE: NEW's FieldType has no `OptionalDateTime` variant. The
-    // `published_at` field below was nullable in OLD; under NEW's enum
-    // it round-trips as a non-nullable DateTime. The
-    // `schema_reflects_admin_registry` test that asserts
-    // `published_at.nullable == true` will FAIL until NEW adds the
-    // variant (out of scope for Phase 1).
+    // — encoded in OptionalI64 / OptionalString / OptionalDateTime
+    // variants); `from_form` takes one arg and returns Vec<String>;
+    // `display_values`, `object_label`, `id`, `values_to_update` are
+    // mandatory methods.
     impl AdminModel for Post {
         const ADMIN_NAME: &'static str = "posts";
         const DISPLAY_NAME: &'static str = "Posts";
@@ -569,7 +556,7 @@ mod tests {
             AdminField {
                 name: "published_at",
                 label: "published_at",
-                field_type: FieldType::DateTime,
+                field_type: FieldType::OptionalDateTime,
                 editable: true,
                 relation: None,
             },
@@ -660,7 +647,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 2: NEW's Admin::new() doesn't seed a core User model — extension to admin/types.rs needed"]
     fn schema_reflects_admin_registry() {
         let admin = Admin::new().model::<Post>();
         let schema = Schema::from_admin(&admin);
@@ -690,7 +676,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 2: NEW's Admin::new() doesn't seed a core User model — extension to admin/types.rs needed"]
     fn core_user_model_is_always_present() {
         // The spec requires User in every project's schema. This is the
         // test that fails if someone accidentally removes the seeding
@@ -727,7 +712,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Phase 2: NEW's Admin::new() doesn't seed a core User model — extension to admin/types.rs needed"]
     fn schema_models_are_sorted_by_name() {
         // Register Post + Book (not User — that name collides with the
         // core model). Expect alphabetical output: Book, Post, User.
@@ -773,7 +757,6 @@ mod tests {
     /// [`SCHEMA_VERSION`] and update both the expected string and every
     /// consumer in the same PR.
     #[test]
-    #[ignore = "Phase 2: golden depends on Admin::new() seeding User AND on FieldType::OptionalDateTime (NEW has neither)"]
     fn schema_snapshot_is_byte_for_byte_stable() {
         // Register only `Post`; the core `User` is seeded automatically
         // by `Admin::new()`. The expected JSON below is the *complete*
