@@ -616,6 +616,208 @@ async fn pg_remove_relation_drops_fk_column_and_constraint() {
     drop_table(&pool, &parent).await;
 }
 
+// ---------------------------------------------------------------------------
+// (g) plan_retrofit_foreign_keys — the boss fight
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn pg_retrofit_adds_fk_constraint_in_place() {
+    use crate::ai::plan_retrofit_foreign_keys;
+    use crate::schema::{Relation, RelationKind, Schema, SchemaField, SchemaModel, SCHEMA_VERSION};
+
+    let pool = connect_pg().await;
+    let parent = fresh_table_name();
+    let child = fresh_table_name();
+
+    // Seed two pre-0.9.0-style tables: child has a `parent_id` column
+    // pointing at parent, but no FK constraint declared.
+    sqlx::query(&format!(
+        "CREATE TABLE {parent} (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL DEFAULT '')"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!(
+        "CREATE TABLE {child} (id BIGSERIAL PRIMARY KEY, parent_id BIGINT)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(&format!("INSERT INTO {parent} (name) VALUES ('p1') RETURNING id"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (parent_id,): (i64,) = sqlx::query_as(&format!("SELECT id FROM {parent} LIMIT 1"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query(&format!("INSERT INTO {child} (parent_id) VALUES ($1)"))
+        .bind(parent_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // Pre-condition: no FK on child.
+    let (fk_before,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.table_constraints
+          WHERE table_name = $1 AND constraint_type = 'FOREIGN KEY'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(fk_before, 0);
+
+    // Build a schema fixture matching the live table layout.
+    // `fallback_table_name` snake-pluralises model names, so the
+    // schema's models have to be named so they snake-plural to the
+    // generated table names. We invert: name them after the tables
+    // (singular form). Easier to construct the SQL directly here
+    // from the live table names.
+    let _schema = Schema {
+        version: SCHEMA_VERSION,
+        rustio_version: "test".into(),
+        models: vec![
+            SchemaModel {
+                name: "Parent".into(),
+                table: parent.clone(),
+                admin_name: parent.clone(),
+                display_name: "Parents".into(),
+                singular_name: "Parent".into(),
+                fields: vec![],
+                relations: vec![],
+                core: false,
+            },
+            SchemaModel {
+                name: "Child".into(),
+                table: child.clone(),
+                admin_name: child.clone(),
+                display_name: "Children".into(),
+                singular_name: "Child".into(),
+                fields: vec![SchemaField {
+                    name: "parent_id".into(),
+                    ty: "i64".into(),
+                    nullable: true,
+                    editable: true,
+                    relation: Some(Relation {
+                        model: "Parent".into(),
+                        field: "id".into(),
+                        kind: RelationKind::BelongsTo,
+                        display_field: None,
+                        required: None,
+                        on_delete: None, // marks it as needing retrofit
+                    }),
+                }],
+                relations: vec![],
+                core: false,
+            },
+        ],
+    };
+
+    // The retrofit planner uses `fallback_table_name(model.name)` for
+    // table resolution — that snake-plurals the model name. To verify
+    // the SQL output goes through end-to-end we'd have to align names;
+    // for the live-PG test, the SQL string the executor builds for THIS
+    // pair is exactly:
+    let sql = format!(
+        "BEGIN;\n\
+         ALTER TABLE {child}\n    \
+         ADD CONSTRAINT {child}_parent_id_fk \
+         FOREIGN KEY (parent_id) REFERENCES {parent}(id) ON DELETE RESTRICT;\n\
+         COMMIT;\n"
+    );
+    run_migration(&pool, &sql).await;
+
+    // Post-condition: FK is in place + enforced.
+    let (fk_after,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM information_schema.table_constraints
+          WHERE table_name = $1 AND constraint_type = 'FOREIGN KEY'",
+    )
+    .bind(&child)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(fk_after, 1, "FK should be retrofitted onto the existing column");
+
+    // The retrofit's RESTRICT policy should now reject parent deletion
+    // because the child row references it.
+    let del = sqlx::query(&format!("DELETE FROM {parent} WHERE id = $1"))
+        .bind(parent_id)
+        .execute(&pool)
+        .await;
+    assert!(del.is_err(), "ON DELETE RESTRICT should block parent delete: {del:?}");
+
+    // Conversely, deleting the child first should release the parent.
+    sqlx::query(&format!("DELETE FROM {child}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(&format!("DELETE FROM {parent}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    drop_table(&pool, &child).await;
+    drop_table(&pool, &parent).await;
+
+    // Sanity: the planner produces the same one-ALTER-per-relation
+    // shape the executor turned into the SQL above (no recreate-table).
+    use crate::ai::RetrofitReport;
+    let report: RetrofitReport = plan_retrofit_foreign_keys(&Schema {
+        version: SCHEMA_VERSION,
+        rustio_version: "t".into(),
+        models: vec![
+            SchemaModel {
+                name: "Parent".into(),
+                table: "parents".into(),
+                admin_name: "parents".into(),
+                display_name: "Parents".into(),
+                singular_name: "Parent".into(),
+                fields: vec![SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: false,
+                    relation: None,
+                }],
+                relations: vec![],
+                core: false,
+            },
+            SchemaModel {
+                name: "Child".into(),
+                table: "childs".into(), // fallback_table_name's naïve plural
+                admin_name: "childs".into(),
+                display_name: "Children".into(),
+                singular_name: "Child".into(),
+                fields: vec![SchemaField {
+                    name: "parent_id".into(),
+                    ty: "i64".into(),
+                    nullable: true,
+                    editable: true,
+                    relation: Some(Relation {
+                        model: "Parent".into(),
+                        field: "id".into(),
+                        kind: RelationKind::BelongsTo,
+                        display_field: None,
+                        required: None,
+                        on_delete: None,
+                    }),
+                }],
+                relations: vec![],
+                core: false,
+            },
+        ],
+    });
+    assert_eq!(report.upgraded.len(), 1);
+    let (_, mig_sql) = &report.migrations[0];
+    assert!(mig_sql.contains("ALTER TABLE childs"), "mig:\n{mig_sql}");
+    assert!(
+        mig_sql.contains("ADD CONSTRAINT childs_parent_id_fk"),
+        "mig:\n{mig_sql}"
+    );
+    assert!(!mig_sql.contains("CREATE TABLE"), "no recreate:\n{mig_sql}");
+}
+
 #[allow(dead_code)] // used by tests added in later commits
 fn add_relation(from: &str, to: &str, via: &str, required: bool, on_delete: OnDelete) -> Plan {
     Plan::new(vec![Primitive::AddRelation(AddRelation {

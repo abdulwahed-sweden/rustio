@@ -1428,22 +1428,22 @@ mod integration {
             sql.contains("ON DELETE RESTRICT"),
             "retrofit default on_delete is restrict:\n{sql}"
         );
+        // Phase 2: PG retrofit uses ALTER TABLE ADD CONSTRAINT, not
+        // the SQLite recreate-table dance. Constraint name follows
+        // the `<table>_<via>_fk` convention.
         assert!(
-            sql.contains("CREATE TABLE applications__new"),
-            "retrofit uses the recreate-table pattern:\n{sql}"
+            sql.contains(
+                "ALTER TABLE applications\n    \
+                 ADD CONSTRAINT applications_applicant_id_fk \
+                 FOREIGN KEY (applicant_id) REFERENCES applicants(id) ON DELETE RESTRICT;"
+            ),
+            "retrofit should emit ALTER TABLE ADD CONSTRAINT:\n{sql}"
         );
-        assert!(
-            sql.contains("DROP TABLE applications"),
-            "retrofit drops the old table:\n{sql}"
-        );
-        assert!(
-            sql.contains("ALTER TABLE applications__new RENAME TO applications"),
-            "retrofit renames the new table:\n{sql}"
-        );
-        assert!(
-            sql.contains("PRAGMA foreign_keys = OFF;"),
-            "retrofit toggles PRAGMA around the recreate:\n{sql}"
-        );
+        assert!(sql.contains("BEGIN;"), "should be wrapped in a transaction:\n{sql}");
+        assert!(sql.contains("COMMIT;"), "should be wrapped in a transaction:\n{sql}");
+        assert!(!sql.contains("CREATE TABLE"), "no recreate-table:\n{sql}");
+        assert!(!sql.contains("DROP TABLE"), "no recreate-table:\n{sql}");
+        assert!(!sql.contains("PRAGMA"), "PG enforces FKs by default — no PRAGMA:\n{sql}");
     }
 
     #[test]
