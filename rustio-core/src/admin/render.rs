@@ -13,7 +13,7 @@
 use serde::Serialize;
 
 use super::audit::AdminAction;
-use super::types::{AdminEntry, EditRow, ListRow};
+use super::types::{Admin, AdminEntry, EditRow, ListRow};
 use crate::auth::Identity;
 
 #[derive(Serialize)]
@@ -35,17 +35,26 @@ impl From<&Identity> for IdentityCtx {
 pub(crate) struct BaseContext {
     pub identity: Option<IdentityCtx>,
     pub csrf_token: String,
-    pub site_title: &'static str,
-    pub site_header: &'static str,
+    pub site_title: String,
+    pub site_header: String,
+    pub index_title: String,
+    pub footer_copyright: String,
 }
 
 impl BaseContext {
-    pub fn new(identity: Option<&Identity>, csrf_token: String) -> Self {
+    /// Build the shared base context every page extends. Reads the
+    /// active branding from `&Admin` so projects can override defaults
+    /// via `Admin::site_branding(...)`. Future Phase 8/9 may pull more
+    /// from `Admin` (locale, theme) without re-touching every handler.
+    pub fn new(identity: Option<&Identity>, csrf_token: String, admin: &Admin) -> Self {
+        let b = admin.branding();
         Self {
             identity: identity.map(IdentityCtx::from),
             csrf_token,
-            site_title: "RustIO administration",
-            site_header: "RustIO administration",
+            site_title: b.site_title.clone(),
+            site_header: b.site_header.clone(),
+            index_title: b.index_title.clone(),
+            footer_copyright: b.footer_copyright.clone(),
         }
     }
 }
@@ -88,7 +97,6 @@ pub(crate) struct LoginCtx {
 pub(crate) struct DashboardCtx {
     #[serde(flatten)]
     pub base: BaseContext,
-    pub page_title: &'static str,
     pub apps: Vec<DashboardApp>,
     pub recent_actions: Vec<RecentActionCtx>,
     pub flash: Option<FlashCtx>,
@@ -171,7 +179,7 @@ fn capitalise(s: &str) -> String {
 
 pub(crate) fn dashboard_ctx(
     identity: &Identity,
-    entries: &[AdminEntry],
+    admin: &Admin,
     recent_actions: Vec<AdminAction>,
     csrf_token: String,
 ) -> DashboardCtx {
@@ -190,9 +198,8 @@ pub(crate) fn dashboard_ctx(
         .collect();
 
     DashboardCtx {
-        base: BaseContext::new(Some(identity), csrf_token),
-        page_title: "Site administration",
-        apps: group_entries_by_app(entries),
+        base: BaseContext::new(Some(identity), csrf_token, admin),
+        apps: group_entries_by_app(admin.entries()),
         recent_actions: recent,
         flash: None,
     }
@@ -285,7 +292,7 @@ pub(crate) struct FilterOptionCtx {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn list_ctx(
     identity: &Identity,
-    all_entries: &[AdminEntry],
+    admin: &Admin,
     entry: &AdminEntry,
     rows: Vec<ListRow>,
     search_query: String,
@@ -297,9 +304,9 @@ pub(crate) fn list_ctx(
 ) -> ListCtx {
     let total_pages = total_rows.div_ceil(per_page.max(1)).max(1);
     ListCtx {
-        base: BaseContext::new(Some(identity), csrf_token),
+        base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: entry.display_name.to_string(),
-        entries: all_entries.iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
         admin_name: entry.admin_name,
         display_name: entry.display_name,
         singular_name: entry.singular_name,
@@ -356,7 +363,7 @@ pub(crate) struct FormField {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn form_ctx(
     identity: &Identity,
-    all_entries: &[AdminEntry],
+    admin: &Admin,
     entry: &AdminEntry,
     mode: &'static str,
     object_id: Option<i64>,
@@ -393,12 +400,12 @@ pub(crate) fn form_ctx(
         .collect();
 
     FormCtx {
-        base: BaseContext::new(Some(identity), csrf_token),
+        base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: match mode {
             "new" => format!("Add {}", entry.singular_name),
             _ => format!("Change {}", entry.singular_name),
         },
-        entries: all_entries.iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
         admin_name: entry.admin_name,
         display_name: entry.display_name,
         singular_name: entry.singular_name,
@@ -452,7 +459,7 @@ pub(crate) struct CascadeItem {
 
 pub(crate) fn confirm_delete_ctx(
     identity: &Identity,
-    all_entries: &[AdminEntry],
+    admin: &Admin,
     entry: &AdminEntry,
     object_id: i64,
     object_label: String,
@@ -460,9 +467,9 @@ pub(crate) fn confirm_delete_ctx(
     csrf_token: String,
 ) -> ConfirmDeleteCtx {
     ConfirmDeleteCtx {
-        base: BaseContext::new(Some(identity), csrf_token),
+        base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: format!("Delete {}", entry.singular_name),
-        entries: all_entries.iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
         admin_name: entry.admin_name,
         singular_name: entry.singular_name,
         object_id,

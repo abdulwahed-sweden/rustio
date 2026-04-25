@@ -77,7 +77,7 @@ pub(crate) async fn list_users(
         .collect::<Result<Vec<_>>>()?;
 
     let view = UsersListCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Users",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         users,
@@ -152,7 +152,7 @@ pub(crate) async fn show_user_edit(
     .await?;
 
     let view = UserEditCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         user_id,
@@ -234,7 +234,7 @@ pub(crate) async fn list_groups(
     csrf: String,
 ) -> Result<Response> {
     let view = GroupsListCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Groups",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         groups: load_groups(&ctx.db).await?,
@@ -301,7 +301,7 @@ pub(crate) async fn show_group_edit(
     .await?;
 
     let view = GroupEditCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit group #{group_id}"),
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         group_id,
@@ -381,7 +381,7 @@ pub(crate) async fn show_new_user(
     csrf: String,
 ) -> Result<Response> {
     let view = UserNewCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         email: String::new(),
@@ -470,7 +470,7 @@ pub(crate) async fn do_new_user(
         .map(|g| g.token.clone())
         .unwrap_or_default();
     let view = UserNewCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         email,
@@ -501,7 +501,7 @@ pub(crate) async fn show_new_group(
     csrf: String,
 ) -> Result<Response> {
     let view = GroupNewCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         name: String::new(),
@@ -559,7 +559,7 @@ pub(crate) async fn do_new_group(
         .map(|g| g.token.clone())
         .unwrap_or_default();
     let view = GroupNewCtx {
-        base: BaseContext::new(Some(&identity), csrf),
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         name,

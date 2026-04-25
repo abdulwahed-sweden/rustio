@@ -72,7 +72,7 @@ pub(crate) async fn show_login(ctx: &AdminCtx, req: Request) -> Result<Response>
     let body = ctx.templates.render(
         "admin/login.html",
         &render::LoginCtx {
-            base: BaseContext::new(None, csrf_token(&req)),
+            base: BaseContext::new(None, csrf_token(&req), &ctx.admin),
             error: None,
         },
     )?;
@@ -96,7 +96,7 @@ pub(crate) async fn do_login(ctx: &AdminCtx, req: Request) -> Result<Response> {
             let body = ctx.templates.render(
                 "admin/login.html",
                 &render::LoginCtx {
-                    base: BaseContext::new(None, csrf_token(&req)),
+                    base: BaseContext::new(None, csrf_token(&req), &ctx.admin),
                     error: Some("Invalid email or password.".into()),
                 },
             )?;
@@ -123,7 +123,7 @@ pub(crate) async fn dashboard(ctx: &AdminCtx, identity: Identity, req: &Request)
     let recent_actions = audit::recent(&ctx.db, 10, None, None)
         .await
         .unwrap_or_default();
-    let dash = render::dashboard_ctx(&identity, ctx.admin.entries(), recent_actions, csrf_token(req));
+    let dash = render::dashboard_ctx(&identity, &ctx.admin, recent_actions, csrf_token(req));
     let body = ctx.templates.render("admin/index.html", &dash)?;
     Ok(Response::html(body))
 }
@@ -207,7 +207,7 @@ pub(crate) async fn list_model(
 
     let list = render::list_ctx(
         &identity,
-        ctx.admin.entries(),
+        &ctx.admin,
         entry,
         page_rows,
         search,
@@ -230,7 +230,7 @@ pub(crate) async fn show_new_form(
     req: &Request,
 ) -> Result<Response> {
     let entry = find_project_entry(&ctx.admin, admin_name)?;
-    let form = render::form_ctx(&identity, ctx.admin.entries(), entry, "new", None, None, vec![], csrf_token(req));
+    let form = render::form_ctx(&identity, &ctx.admin, entry, "new", None, None, vec![], csrf_token(req));
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
 }
@@ -253,7 +253,7 @@ pub(crate) async fn do_create(
         }
         Err(errors) => {
             let token = csrf_token(&req);
-            let ctx_view = render::form_ctx(&identity, ctx.admin.entries(), entry, "new", None, None, errors, token);
+            let ctx_view = render::form_ctx(&identity, &ctx.admin, entry, "new", None, None, errors, token);
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
         }
@@ -306,7 +306,7 @@ pub(crate) async fn show_edit_form(
         .ok_or_else(|| Error::NotFound(format!("{admin_name}/{id}")))?;
     let form = render::form_ctx(
         &identity,
-        ctx.admin.entries(),
+        &ctx.admin,
         entry,
         "edit",
         Some(id),
@@ -340,7 +340,7 @@ pub(crate) async fn do_update(
             let token = csrf_token(&req);
             let ctx_view = render::form_ctx(
                 &identity,
-                ctx.admin.entries(),
+                &ctx.admin,
                 entry,
                 "edit",
                 Some(id),
@@ -387,7 +387,7 @@ pub(crate) async fn show_delete_confirm(
 
     let view = render::confirm_delete_ctx(
         &identity,
-        ctx.admin.entries(),
+        &ctx.admin,
         entry,
         id,
         label,
@@ -434,7 +434,7 @@ pub(crate) async fn show_object_history(
         .unwrap_or_default();
 
     let view = render::ObjectHistoryCtx {
-        base: BaseContext::new(Some(&identity), csrf_token(req)),
+        base: BaseContext::new(Some(&identity), csrf_token(req), &ctx.admin),
         page_title: format!("History: {} — {}", entry.singular_name, label),
         admin_name: admin_name.to_string(),
         display_name: entry.display_name.to_string(),
@@ -462,7 +462,7 @@ pub(crate) async fn show_password_change(
     req: &Request,
 ) -> Result<Response> {
     let view = render::PasswordChangeCtx {
-        base: BaseContext::new(Some(&identity), csrf_token(req)),
+        base: BaseContext::new(Some(&identity), csrf_token(req), &ctx.admin),
         page_title: "Change password",
         errors: Vec::new(),
         success: false,
@@ -506,7 +506,7 @@ pub(crate) async fn do_password_change(
     if errors.is_empty() {
         auth::set_password(&ctx.db, user.id, new1).await?;
         let view = render::PasswordChangeCtx {
-            base: BaseContext::new(Some(&identity), csrf_token(&req)),
+            base: BaseContext::new(Some(&identity), csrf_token(&req), &ctx.admin),
             page_title: "Password changed",
             errors: Vec::new(),
             success: true,
@@ -516,7 +516,7 @@ pub(crate) async fn do_password_change(
     }
 
     let view = render::PasswordChangeCtx {
-        base: BaseContext::new(Some(&identity), csrf_token(&req)),
+        base: BaseContext::new(Some(&identity), csrf_token(&req), &ctx.admin),
         page_title: "Change password",
         errors,
         success: false,
@@ -535,7 +535,7 @@ pub(crate) async fn show_log_entries(
         .await
         .unwrap_or_default();
     let view = render::LogEntriesCtx {
-        base: BaseContext::new(Some(&identity), csrf_token(req)),
+        base: BaseContext::new(Some(&identity), csrf_token(req), &ctx.admin),
         page_title: "Recent admin actions",
         entries: render::map_audit_actions(actions),
         flash: None,
