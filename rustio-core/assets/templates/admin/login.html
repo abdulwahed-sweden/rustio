@@ -12,7 +12,7 @@
 {% block content %}
 <div id="login-form">
     <div class="module">
-        <h2>RustIO administration</h2>
+        <h2>{{ site_header }}</h2>
         <form method="post" action="/admin/login">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             {% if error %}
