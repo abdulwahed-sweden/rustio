@@ -530,6 +530,19 @@ pub(crate) fn map_audit_actions(actions: Vec<super::audit::AdminAction>) -> Vec<
 }
 
 // ---------------------------------------------------------------------------
+// Password change (self-service — Phase 6b/5).
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub(crate) struct PasswordChangeCtx {
+    #[serde(flatten)]
+    pub base: BaseContext,
+    pub page_title: &'static str,
+    pub errors: Vec<String>,
+    pub success: bool,
+}
+
+// ---------------------------------------------------------------------------
 // Error page (orphan render — no live caller in NEW; Phase 9 may add a 5xx
 // handler that renders this. Kept Django-shape for design consistency.)
 // ---------------------------------------------------------------------------

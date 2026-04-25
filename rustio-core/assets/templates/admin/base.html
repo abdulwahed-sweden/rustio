@@ -16,6 +16,7 @@
         {% if identity %}
         <div id="user-tools">
             Welcome, <strong>{{ identity.email }}</strong>.
+            <a href="/admin/password_change">Change password</a>
             {% if identity.is_admin %}<a href="/admin/users">Users</a>{% endif %}
             <form method="post" action="/admin/logout" class="inline-form">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">

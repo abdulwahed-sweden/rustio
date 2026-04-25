@@ -670,6 +670,29 @@ fieldset.module h2 {
     border-radius: 3px;
 }
 
+.messagelist {
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    border-radius: 3px;
+    font-size: 13px;
+    border: 1px solid transparent;
+}
+.message-success {
+    background: var(--message-success-bg);
+    color: var(--message-success-fg);
+    border-color: var(--message-success-fg);
+}
+.message-warning {
+    background: var(--message-warning-bg);
+    color: var(--message-warning-fg);
+    border-color: var(--message-warning-fg);
+}
+.message-error {
+    background: var(--error-bg);
+    color: var(--error-fg);
+    border-color: var(--error-border);
+}
+
 .help { color: var(--body-quiet); font-size: 12px; }
 .empty-list { color: var(--body-quiet); padding: 14px; text-align: center; }
 

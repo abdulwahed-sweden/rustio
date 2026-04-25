@@ -192,6 +192,29 @@ pub fn register_admin_routes(
         }
     });
 
+    // Phase 6b/5 — self-service password change. Any logged-in user
+    // (including non-admin staff) can change their own.
+    let c = ctx.clone();
+    let router = router.get("/admin/password_change", move |req| {
+        let c = c.clone();
+        async move {
+            match login_guard(&c, &req).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => handlers::show_password_change(&c, ident, &req).await,
+            }
+        }
+    });
+    let c = ctx.clone();
+    let router = router.post("/admin/password_change", move |req| {
+        let c = c.clone();
+        async move {
+            match login_guard(&c, &req).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => handlers::do_password_change(&c, ident, req).await,
+            }
+        }
+    });
+
     // --- Built-in users admin (admin-only) ---
     let c = ctx.clone();
     let ac = auth_ctx.clone();

@@ -460,6 +460,83 @@ pub(crate) async fn show_object_history(
     Ok(Response::html(body))
 }
 
+// ---- Password change (self-service — Phase 6b/5) ------------------------
+
+/// Minimum acceptable password length for the self-service change page.
+/// Phase 6b uses a single conservative rule rather than scoring; argon2
+/// accepts arbitrary input, so this is policy not crypto. Centralised
+/// so a future Phase can tighten without hunting call sites.
+const MIN_PASSWORD_LEN: usize = 8;
+
+pub(crate) async fn show_password_change(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: &Request,
+) -> Result<Response> {
+    let view = render::PasswordChangeCtx {
+        base: BaseContext::new(Some(&identity), csrf_token(req)),
+        page_title: "Change password",
+        errors: Vec::new(),
+        success: false,
+    };
+    let body = ctx.templates.render("admin/password_change.html", &view)?;
+    Ok(Response::html(body))
+}
+
+pub(crate) async fn do_password_change(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: Request,
+) -> Result<Response> {
+    let form = req.form()?;
+    let old = form.get("old_password").unwrap_or("");
+    let new1 = form.get("new_password1").unwrap_or("");
+    let new2 = form.get("new_password2").unwrap_or("");
+
+    let user = auth::find_user_by_email(&ctx.db, &identity.email)
+        .await?
+        .ok_or_else(|| {
+            Error::Internal(format!(
+                "session identity {} has no matching user row",
+                identity.email
+            ))
+        })?;
+
+    let mut errors: Vec<String> = Vec::new();
+    if !auth::verify_password(old, &user.password_hash) {
+        errors.push("Your old password was entered incorrectly. Please enter it again.".into());
+    }
+    if new1 != new2 {
+        errors.push("The two password fields didn't match.".into());
+    }
+    if new1.len() < MIN_PASSWORD_LEN {
+        errors.push(format!(
+            "This password is too short. It must contain at least {MIN_PASSWORD_LEN} characters."
+        ));
+    }
+
+    if errors.is_empty() {
+        auth::set_password(&ctx.db, user.id, new1).await?;
+        let view = render::PasswordChangeCtx {
+            base: BaseContext::new(Some(&identity), csrf_token(&req)),
+            page_title: "Password changed",
+            errors: Vec::new(),
+            success: true,
+        };
+        let body = ctx.templates.render("admin/password_change.html", &view)?;
+        return Ok(Response::html(body));
+    }
+
+    let view = render::PasswordChangeCtx {
+        base: BaseContext::new(Some(&identity), csrf_token(&req)),
+        page_title: "Change password",
+        errors,
+        success: false,
+    };
+    let body = ctx.templates.render("admin/password_change.html", &view)?;
+    Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
+}
+
 pub(crate) async fn show_log_entries(
     ctx: &AdminCtx,
     identity: Identity,
