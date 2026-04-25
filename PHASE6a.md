@@ -239,3 +239,84 @@ To disable overrides entirely (embedded only), call `Templates::new(None)` direc
 - **Single theme.** No dark mode.
 - **CSRF preserved.** Every form contains `<input type="hidden" name="_csrf" value="{{ csrf_token }}">`.
 - **Sandbox suite**: 289 passed, 21 ignored (13 from prior phases + 8 audit), 0 failed. Clippy `-D warnings` clean.
+
+---
+
+## Post-merge fixes
+
+Browser testing of the merged Phase 6a uncovered two issues. Fixes landed as separate commits on top of the original phase commits.
+
+```
+756c773  phase 6a fix/2: hide bulk-action UI until handler exists
+e74d601  phase 6a fix/1: router normalizes trailing slashes (+2 tests)
+```
+
+### Fix 1 — Router trailing-slash normalisation
+
+**Symptom**: `/admin/posts/` returned 404 while `/admin/posts` worked. Phase 6a/3's dashboard linked to the trailing-slash form (`/admin/{{ model.admin_name }}/`); clicking from the dashboard 404'd.
+
+**Cause**: `Router::find` split the path on `/` and required `route.len() == path.len()`. `/admin/posts/` produced 3 segments (`["admin", "posts", ""]`) while the registered route `/admin/:admin_name` parsed to 2. No match.
+
+**Fix** (`router.rs:118-128`): drop a trailing empty segment before matching, except when the only segment is empty (preserves the root path).
+
+```rust
+let mut path_segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+if path_segs.len() > 1 && path_segs.last() == Some(&"") {
+    path_segs.pop();
+}
+```
+
+**Two tests added**:
+
+- `trailing_slash_is_normalised_for_static_and_param_routes` — both `/admin/posts` and `/admin/posts/` resolve to the same handler with `name = "posts"`. Same for `/admin/posts/1/edit` vs `/admin/posts/1/edit/`.
+- `root_path_still_matches_after_trailing_slash_normalisation` — regression check: `GET /` continues to match a `Router::new().get("/", …)` route.
+
+### Fix 2 — Hide unfinished bulk-action UI
+
+**Symptom**: Phase 6a/4 rendered an action bar (`<form action="/admin/<model>/_action">`) and per-row checkboxes, but the POST endpoint was never registered. Submitting "Go" would 405.
+
+**Fix**: gate the action bar + checkboxes on `bulk_actions_enabled: bool` in `ListCtx`. Always `false` in Phase 6a. Templates wrap the `<form>`, the toggle column, and the per-row checkbox column in `{% if bulk_actions_enabled %}` so unfinished UI doesn't render at all. Phase 6b/7 sets the flag to `true` once the handler lands.
+
+| Site | Phase 6a behavior |
+|---|---|
+| `ListCtx.bulk_actions_enabled` (`render.rs`) | hard-coded `false` in `list_ctx` |
+| `list.html` `.actions` block | inside `{% if bulk_actions_enabled %}` |
+| `list.html` `<th class="action-checkbox">` | inside `{% if bulk_actions_enabled %}` |
+| `list.html` per-row `<td class="action-checkbox">` | inside `{% if bulk_actions_enabled %}` |
+
+The select-all `<script>` left in place — it returns early if `#action-toggle` is absent (`if (!toggle) return;`), so it's a no-op when the action bar is hidden.
+
+### Empirical evidence (curl against running blog)
+
+Before the fix, `/admin/posts/` returned **404**. After:
+
+```
+$ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/admin/posts/
+303
+$ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/admin/posts
+303
+$ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/admin/posts/1/edit/
+303
+$ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/admin/posts/1/edit
+303
+$ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/
+303
+```
+
+`303` is the login-redirect from the auth guard — both the bare and trailing-slash forms reach the same route, which is exactly the diagnostic for a successful match. The 404 is gone.
+
+```
+$ curl -sI http://localhost:8000/admin/posts/    → 405 Method Not Allowed
+$ curl -sI http://localhost:8000/admin/posts     → 405 Method Not Allowed
+```
+
+Both forms reach the same registered route — both return `405` for HEAD (only GET registered) instead of one returning 404 and the other 405. Symmetric behavior across slash variants.
+
+### Test count after the fixes
+
+| | Tests passing (sandbox) | Ignored | Delta |
+|---|---:|---:|---|
+| Phase 6a (`5ebc6ed`) | 289 | 21 | — |
+| **Phase 6a + fixes** | **291** | **21** | **+2** router tests |
+
+`cargo clippy --workspace --all-targets -- -D warnings` clean.
