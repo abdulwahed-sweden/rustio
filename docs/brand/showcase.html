@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustIO · Brand showcase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ============================================
+     RustIO — Approved Brand Palette
+     ============================================ */
+  :root {
+    /* Brand */
+    --rust:        #aa4422;
+    --rust-hover:  #88331b;
+    --rust-glow:   #d46644;
+
+    /* Backgrounds */
+    --bg-page:     #f9f8f6;   /* Warm paper white */
+    --bg-card:     #ffffff;
+    --bg-dark:     #181a1f;   /* Dark metal */
+    --bg-surface:  #22252b;   /* Card on dark */
+
+    /* Text */
+    --text-main:   #2c303a;   /* Metal black */
+    --text-light:  #e2e8f0;   /* On dark */
+    --text-muted:  #8b949e;
+
+    /* Borders */
+    --border:      #e2e8f0;
+
+    /* Accent */
+    --teal:        #338899;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg-page);
+    color: var(--text-main);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "tnum";
+  }
+
+  ::selection { background: var(--rust); color: #fff; }
+  *:focus { outline: none; }
+
+  /* ============================================
+     Top dark bar — uses Dark Metal + light text
+     ============================================ */
+  .topbar {
+    background: var(--bg-surface);
+    color: var(--text-light);
+    padding: 14px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid #2d3138;
+  }
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+  }
+  .topbar-mark {
+    width: 28px; height: 28px;
+    background: var(--rust);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 13px;
+    box-shadow: 0 1px 3px rgba(170,68,34,0.4);
+  }
+  .topbar-nav {
+    display: flex; gap: 24px;
+    font-size: 13.5px; font-weight: 500;
+  }
+  .topbar-nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .topbar-nav a:hover { color: var(--text-light); }
+  .topbar-nav a.active { color: var(--rust-glow); }
+
+  /* ============================================
+     Container
+     ============================================ */
+  .container {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 64px 40px 96px;
+  }
+
+  /* ============================================
+     Hero
+     ============================================ */
+  .hero { margin-bottom: 56px; }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600;
+    color: var(--rust);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin-bottom: 18px;
+  }
+  .hero-eyebrow::before {
+    content: "";
+    width: 22px; height: 2px;
+    background: var(--rust);
+  }
+  .hero h1 {
+    font-size: 48px; font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.08;
+    margin-bottom: 14px;
+    color: var(--text-main);
+  }
+  .hero h1 .highlight { color: var(--rust); }
+  .hero p {
+    font-size: 17px;
+    color: var(--text-muted);
+    max-width: 540px;
+    margin-bottom: 28px;
+    line-height: 1.6;
+  }
+  .hero-cta { display: flex; gap: 10px; }
+
+  /* ============================================
+     Buttons
+     ============================================ */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 20px;
+    border-radius: 8px;
+    font-size: 14.5px; font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    text-decoration: none;
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: var(--rust);
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(170,68,34,0.3);
+  }
+  .btn-primary:hover {
+    background: var(--rust-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(170,68,34,0.25);
+  }
+  .btn-ghost {
+    background: var(--bg-card);
+    color: var(--text-main);
+    border-color: var(--border);
+  }
+  .btn-ghost:hover {
+    border-color: var(--text-muted);
+  }
+
+  /* ============================================
+     Section label
+     ============================================ */
+  .section { margin-bottom: 56px; }
+  .section-label {
+    font-size: 11.5px; font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 22px;
+  }
+
+  /* ============================================
+     Stats grid
+     ============================================ */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+  .stat-label {
+    font-size: 11.5px; font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-size: 28px; font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-trend {
+    font-size: 12.5px; font-weight: 500;
+  }
+  .stat-trend.up { color: var(--rust); }
+  .stat-trend.muted { color: var(--text-muted); }
+
+  /* ============================================
+     Cards row
+     ============================================ */
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: all 0.15s;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.04);
+    border-color: var(--text-muted);
+  }
+  .card-eyebrow {
+    font-size: 11px; font-weight: 600;
+    color: var(--rust);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 10px;
+  }
+  .card-title {
+    font-size: 18px; font-weight: 700;
+    letter-spacing: -0.015em;
+    margin-bottom: 6px;
+  }
+  .card-desc {
+    font-size: 14px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  /* ============================================
+     Form
+     ============================================ */
+  .form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+  }
+  .form-row { margin-bottom: 18px; }
+  .form-label {
+    display: block;
+    font-size: 13px; font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 6px;
+  }
+  .form-input {
+    width: 100%;
+    padding: 11px 13px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14.5px;
+    color: var(--text-main);
+    font-family: inherit;
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  .form-input:focus {
+    border-color: var(--rust);
+    box-shadow: 0 0 0 3px rgba(170,68,34,0.1);
+  }
+  .form-input::placeholder { color: var(--text-muted); }
+  .form-help {
+    font-size: 12.5px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  .form-row-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* ============================================
+     Badges (using teal accent)
+     ============================================ */
+  .badges-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    border-radius: 14px;
+    font-size: 12px; font-weight: 600;
+    border: 1px solid;
+  }
+  .badge::before {
+    content: "";
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .badge-rust {
+    background: rgba(170,68,34,0.08);
+    color: var(--rust);
+    border-color: rgba(170,68,34,0.2);
+  }
+  .badge-teal {
+    background: rgba(51,136,153,0.08);
+    color: var(--teal);
+    border-color: rgba(51,136,153,0.2);
+  }
+  .badge-muted {
+    background: var(--bg-page);
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+
+  /* ============================================
+     Code block (showcasing dark surface)
+     ============================================ */
+  .code-block {
+    background: var(--bg-dark);
+    color: var(--text-light);
+    border-radius: 10px;
+    padding: 20px 22px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+    line-height: 1.65;
+    overflow-x: auto;
+  }
+  .code-block .comment { color: var(--text-muted); }
+  .code-block .keyword { color: var(--rust-glow); }
+  .code-block .string  { color: var(--teal); }
+  .code-block .ident   { color: var(--text-light); }
+
+  /* ============================================
+     Color swatches at the end
+     ============================================ */
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .swatch {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .swatch-color {
+    height: 64px;
+  }
+  .swatch-info {
+    padding: 10px 12px;
+  }
+  .swatch-name {
+    font-size: 12px; font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 2px;
+  }
+  .swatch-hex {
+    font-family: ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================
+     TOP BAR — Dark Metal showcasing the dark surface
+     ============================================ -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <div class="topbar-mark">R</div>
+    <span>RustIO</span>
+  </div>
+  <nav class="topbar-nav">
+    <a href="#" class="active">Overview</a>
+    <a href="#">Components</a>
+    <a href="#">Documentation</a>
+    <a href="#">Pricing</a>
+  </nav>
+</header>
+
+<div class="container">
+
+  <!-- ============================================
+       HERO
+       ============================================ -->
+  <section class="hero">
+    <div class="hero-eyebrow">Brand showcase</div>
+    <h1>Industrial-grade tools for <span class="highlight">serious systems.</span></h1>
+    <p>Built with the speed of Rust and the polish of a modern admin platform. Every component is opinionated, accessible, and ready for production.</p>
+    <div class="hero-cta">
+      <a href="#" class="btn btn-primary">Get started</a>
+      <a href="#" class="btn btn-ghost">View documentation</a>
+    </div>
+  </section>
+
+  <!-- ============================================
+       STATS
+       ============================================ -->
+  <section class="section">
+    <div class="section-label">Performance</div>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Throughput</div>
+        <div class="stat-value">142k req/s</div>
+        <div class="stat-trend up">↑ 38% vs last quarter</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">P99 latency</div>
+        <div class="stat-value">8ms</div>
+        <div class="stat-trend up">↓ 12ms improvement</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Active deployments</div>
+        <div class="stat-value">2,481</div>
+        <div class="stat-trend muted">Across 18 regions</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       CARDS
+       ============================================ -->
+  <section class="section">
+    <div class="section-label">Modules</div>
+    <div class="cards">
+      <div class="card">
+        <div class="card-eyebrow">Free · MIT</div>
+        <h3 class="card-title">RustIO Admin</h3>
+        <p class="card-desc">Drop-in admin panel for any Rust backend. Schema-aware CRUD, search, filters, and bulk actions out of the box.</p>
+      </div>
+      <div class="card">
+        <div class="card-eyebrow">Enterprise</div>
+        <h3 class="card-title">RustIO System</h3>
+        <p class="card-desc">Full system generator with PostgreSQL, RBAC, and signed audit proofs. Designed for compliance-heavy domains.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       BADGES showcase
+       ============================================ -->
+  <section class="section">
+    <div class="section-label">Tags & status</div>
+    <div class="badges-row">
+      <span class="badge badge-rust">Active</span>
+      <span class="badge badge-teal">Verified</span>
+      <span class="badge badge-muted">Archived</span>
+      <span class="badge badge-rust">In review</span>
+      <span class="badge badge-teal">Synced</span>
+    </div>
+  </section>
+
+  <!-- ============================================
+       FORM
+       ============================================ -->
+  <section class="section">
+    <div class="section-label">Sign-up form</div>
+    <div class="form-card">
+      <div class="form-row-grid">
+        <div class="form-row">
+          <label class="form-label">Full name</label>
+          <input type="text" class="form-input" placeholder="e.g. Linus Bergström">
+        </div>
+        <div class="form-row">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-input" placeholder="name@company.com">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Workspace name</label>
+        <input type="text" class="form-input" placeholder="acme-corp">
+        <div class="form-help">Used in URLs and team invites — letters, numbers, hyphens only.</div>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 8px;">
+        <button class="btn btn-primary">Create workspace</button>
+        <button class="btn btn-ghost">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================
+       CODE BLOCK — dark surface
+       ============================================ -->
+  <section class="section">
+    <div class="section-label">Quick start</div>
+    <div class="code-block">
+<span class="comment">// Add to Cargo.toml</span>
+<span class="keyword">use</span> <span class="ident">rustio</span>::<span class="ident">Admin</span>;
+
+<span class="keyword">async fn</span> <span class="ident">main</span>() {
+    <span class="keyword">let</span> <span class="ident">admin</span> = <span class="ident">Admin</span>::<span class="ident">new</span>()
+        .<span class="ident">model</span>::&lt;<span class="ident">User</span>&gt;()
+        .<span class="ident">model</span>::&lt;<span class="ident">Project</span>&gt;()
+        .<span class="ident">serve</span>(<span class="string">"0.0.0.0:8080"</span>)
+        .<span class="keyword">await</span>;
+}
+    </div>
+  </section>
+
+  <!-- ============================================
+       PALETTE summary
+       ============================================ -->
+  <section class="section">
+    <div class="section-label">Brand palette</div>
+    <div class="palette">
+      <div class="swatch">
+        <div class="swatch-color" style="background: #aa4422;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Primary Rust</div>
+          <div class="swatch-hex">#aa4422</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #88331b;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Rust Hover</div>
+          <div class="swatch-hex">#88331b</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #d46644;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Rust Glow</div>
+          <div class="swatch-hex">#d46644</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #338899;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Steel Teal</div>
+          <div class="swatch-hex">#338899</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #181a1f;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Dark Metal</div>
+          <div class="swatch-hex">#181a1f</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #22252b;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Surface Dark</div>
+          <div class="swatch-hex">#22252b</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #f9f8f6; border-bottom: 1px solid #e2e8f0;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Paper White</div>
+          <div class="swatch-hex">#f9f8f6</div>
+        </div>
+      </div>
+      <div class="swatch">
+        <div class="swatch-color" style="background: #2c303a;"></div>
+        <div class="swatch-info">
+          <div class="swatch-name">Metal Black</div>
+          <div class="swatch-hex">#2c303a</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+</body>
+</html>
