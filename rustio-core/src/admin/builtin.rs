@@ -361,6 +361,127 @@ pub(crate) async fn do_group_edit(
     Ok(Response::redirect("/admin/groups"))
 }
 
+// ---------- New user ----------
+
+#[derive(Serialize)]
+struct UserNewCtx {
+    #[serde(flatten)]
+    base: BaseContext,
+    page_title: &'static str,
+    entries: Vec<SidebarEntry>,
+    email: String,
+    is_staff: bool,
+    is_superuser: bool,
+    errors: Vec<String>,
+}
+
+pub(crate) async fn show_new_user(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    csrf: String,
+) -> Result<Response> {
+    let view = UserNewCtx {
+        base: BaseContext::new(Some(&identity), csrf),
+        page_title: "Add user",
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        email: String::new(),
+        is_staff: false,
+        is_superuser: false,
+        errors: Vec::new(),
+    };
+    let body = ctx.templates.render("admin/user_new.html", &view)?;
+    Ok(Response::html(body))
+}
+
+/// Same minimum length used by the self-service password change page.
+const MIN_NEW_USER_PASSWORD_LEN: usize = 8;
+
+/// Cheap email-shape check — `<x>@<y>.<z>` with non-empty parts.
+/// Matches what most folks expect from a "looks like an email"
+/// validation; the canonical RFC check happens at deliverability time
+/// elsewhere.
+fn looks_like_email(s: &str) -> bool {
+    let s = s.trim();
+    let Some((local, domain)) = s.split_once('@') else {
+        return false;
+    };
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    let Some((host, tld)) = domain.rsplit_once('.') else {
+        return false;
+    };
+    !host.is_empty() && !tld.is_empty()
+}
+
+pub(crate) async fn do_new_user(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    req: Request,
+) -> Result<Response> {
+    let form = req.form()?;
+    let email = form.get("email").unwrap_or("").trim().to_string();
+    let password = form.get("password").unwrap_or("");
+    let is_staff = form.bool_flag("is_staff");
+    let is_superuser = form.bool_flag("is_superuser");
+
+    // Map two checkboxes onto NEW's single Role enum.
+    // is_superuser=true wins, regardless of is_staff. Both off = plain User.
+    let role = if is_superuser {
+        Role::Admin
+    } else if is_staff {
+        Role::Staff
+    } else {
+        Role::User
+    };
+
+    let mut errors: Vec<String> = Vec::new();
+
+    if email.is_empty() {
+        errors.push("Email is required.".into());
+    } else if !looks_like_email(&email) {
+        errors.push("Enter a valid email address.".into());
+    } else {
+        // Pre-check uniqueness for a clean message — the unique
+        // constraint would otherwise surface as a Postgres error.
+        let existing = auth::find_user_by_email(&ctx.db, &email).await?;
+        if existing.is_some() {
+            errors.push(format!("A user with email \"{email}\" already exists."));
+        }
+    }
+
+    if password.len() < MIN_NEW_USER_PASSWORD_LEN {
+        errors.push(format!(
+            "This password is too short. It must contain at least {MIN_NEW_USER_PASSWORD_LEN} characters."
+        ));
+    }
+
+    if errors.is_empty() {
+        let new_id = auth::create_user(&ctx.db, &email, password, role).await?;
+        return Ok(Response::redirect(format!("/admin/users/{new_id}/edit")));
+    }
+
+    // Re-render with errors. Password is intentionally NOT echoed back —
+    // the user retypes. Email and the two checkbox states ARE preserved
+    // so the user doesn't have to re-tick everything.
+    let csrf = req
+        .ctx()
+        .get::<crate::middleware::CsrfGuard>()
+        .map(|g| g.token.clone())
+        .unwrap_or_default();
+    let view = UserNewCtx {
+        base: BaseContext::new(Some(&identity), csrf),
+        page_title: "Add user",
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        email,
+        is_staff,
+        is_superuser,
+        errors,
+    };
+    let body = ctx.templates.render("admin/user_new.html", &view)?;
+    Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
+}
+
 // ---------- New group ----------
 
 #[derive(Serialize)]

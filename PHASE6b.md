@@ -218,3 +218,78 @@ Each page: view source → `<link rel="stylesheet" href="/static/admin.css">` pr
 - **Every page** extends `admin/base.html` and overrides blocks. No template duplicates the shell.
 - **Sandbox suite**: 291 passing, 21 ignored, 0 failed. Clippy `-D warnings` clean.
 - **No CSS file added.** All new styles extended `admin.css`. Total file growth this phase: +83 LOC (664 → 747).
+
+---
+
+## Post-merge addition: self-service group + user creation
+
+Browser testing of Phase 6b surfaced two flows that were marked deferred but turned out to be load-bearing for daily use. Both are admin-only, both follow the same shape, both land via separate commits on top of the original phase.
+
+```
+TBD-this   phase 6b/6: user creation form (email + password + flags) — completes admin self-service flows
+8006b0e    phase 6b fix: add group creation via UI (Add button + form + duplicate-name handling)
+c71fabe    phase 6b fix: add Authentication and authorization section to dashboard (admin-only)
+ebf2987    phase 6b fix: hide core User entry from dashboard + 404 on generic CRUD routes for it
+```
+
+### Group creation (`8006b0e`)
+
+- New `show_new_group` + `do_new_group` in `builtin.rs`.
+- New routes `GET /admin/groups/new` + `POST /admin/groups/new`, registered before the generic `/admin/:admin_name/new` catch-all so route specificity wins.
+- New template `admin/group_new.html` (50 LOC) — single fieldset (name + description). After save, redirects to `/admin/groups/<id>/edit` so the operator can pick permissions.
+- Validation: required name, max length 150, duplicate-name detection via DB constraint with a clean error ("A group named X already exists.") — pre-check would race; we let Postgres tell us.
+- `groups_list.html` swapped its CLI hint for a real **+ Add group** button. Dashboard's Auth row got Add | Change.
+
+### User creation (`TBD-this commit`)
+
+- New `show_new_user` + `do_new_user` in `builtin.rs`.
+- New routes `GET /admin/users/new` + `POST /admin/users/new`, registered before the generic catch-all.
+- New template `admin/user_new.html` (60 LOC) — two fieldsets:
+  - **Identity**: email + password.
+  - **Permissions**: `is_staff` + `is_superuser` checkboxes.
+- After save, redirects to `/admin/users/<id>/edit` so the operator can pick group memberships.
+- Validation cascade (re-renders form with `<ul class="errorlist">` on any failure):
+  - Email: required, must look like `<x>@<y>.<z>` via local `looks_like_email` helper, must not collide with an existing row (pre-checked via `auth::find_user_by_email`).
+  - Password: minimum 8 characters (same `MIN_*_PASSWORD_LEN` policy as the self-service password change page).
+- Uses `auth::create_user(db, email, password, role)` — argon2 hashing happens inside auth, never inlined here.
+- **Role mapping** from two checkboxes to NEW's single `Role` enum:
+  - `is_superuser=true` → `Role::Admin` (regardless of is_staff)
+  - `is_superuser=false` + `is_staff=true` → `Role::Staff`
+  - both off → `Role::User`
+- **Password is never echoed back** on validation failure. Email + checkbox states are preserved to save retyping. (See "Sharp edges" below.)
+- `users_list.html` swapped its CLI hint for a real **+ Add user** button. Dashboard's Auth row got Add | Change.
+
+### Defense-in-depth (`ebf2987`)
+
+After hiding core entries (`User`) from the dashboard's app list, also added `find_project_entry` in `handlers.rs` so a typed URL like `/admin/users/new` going through the **generic** `/admin/:admin_name/new` route returns a clean **404** instead of a confusing 500. The two layers are independent: the dashboard fix removed the broken UI affordance, the route guard catches deep links and bots.
+
+### Verified live against running blog
+
+After fresh login as `admin@example.com / admin`:
+
+```
+GET /admin/users/new                                       → 200  (form renders, 4 fields)
+POST /admin/users/new email=t@x.co password=changeme1 is_staff=on
+                                                           → 303  → /admin/users/<new_id>/edit
+                                                           DB row: role=staff
+POST /admin/users/new (same email)                         → 400  "A user with email \"…\" already exists."
+POST /admin/users/new password=short                       → 400  "Password is too short. … at least 8 characters."
+POST /admin/users/new email=not-an-email                   → 400  "Enter a valid email address."
+
+GET /admin/users/new            (builtin route)            → 200
+GET /admin/users/13/edit        (builtin route)            → 200
+GET /admin/posts/users          (generic /admin/:name/:id) → 404  (no posts row with id="users")
+```
+
+```
+$ cargo test --workspace 2>&1 | grep "^test result"
+test result: ok. 291 passed; 0 failed; 21 ignored
+
+$ cargo clippy --workspace --all-targets -- -D warnings   → clean
+```
+
+### Sharp edges (Phase 7+ work)
+
+- **Last-superuser demotion.** An admin can clear their own `is_superuser` flag via the user_edit form (or create a non-superuser user as the only admin). No "can't remove the last superuser" guard. Documented; not blocking for current scope. Phase 7 should add the check before this footgun ships outside dev.
+- **Per-user direct permissions.** The user_edit form assigns groups; granting an individual permission directly to a user still needs the CLI (`rustio perm grant-user`). Phase 7 should add a permissions multi-select on user_edit.
+- **Email change.** The user_edit form keeps email read-only ("requires a full user update"). Phase 7 may make it editable with the same uniqueness pre-check used here.

@@ -1,0 +1,65 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}change-form user-new{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a>
+    &rsaquo; <a href="/admin/users">Users</a>
+    &rsaquo; Add user
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Add user</h1>
+
+{% if errors %}
+{% include "admin/includes/_field_errors.html" %}
+{% endif %}
+
+<form method="post" action="/admin/users/new" novalidate>
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+
+    <fieldset class="module aligned">
+        <h2>Identity</h2>
+        <div class="form-row">
+            <label for="id_email">Email:</label>
+            <div class="field-input">
+                <input type="email" id="id_email" name="email" value="{{ email }}" required autocomplete="off" autofocus>
+                <p class="help">Must be unique across all users.</p>
+            </div>
+        </div>
+        <div class="form-row">
+            <label for="id_password">Password:</label>
+            <div class="field-input">
+                <input type="password" id="id_password" name="password" required autocomplete="new-password">
+                <p class="help">At least 8 characters. The user can change it later via <em>Change password</em>.</p>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset class="module aligned">
+        <h2>Permissions</h2>
+        <div class="form-row">
+            <label for="id_is_staff">Staff status:</label>
+            <div class="field-input">
+                <input type="checkbox" id="id_is_staff" name="is_staff"{% if is_staff %} checked{% endif %}>
+                <p class="help">Can sign in to the admin and access pages they have permissions for.</p>
+            </div>
+        </div>
+        <div class="form-row">
+            <label for="id_is_superuser">Superuser status:</label>
+            <div class="field-input">
+                <input type="checkbox" id="id_is_superuser" name="is_superuser"{% if is_superuser %} checked{% endif %}>
+                <p class="help">Bypasses all permission checks. Implies staff status.</p>
+            </div>
+        </div>
+    </fieldset>
+
+    <p class="help">After saving you'll be sent to the user's edit page where you can pick group memberships.</p>
+
+    <div class="submit-row">
+        <input type="submit" name="_save" value="Add user" class="default">
+    </div>
+</form>
+{% endblock %}

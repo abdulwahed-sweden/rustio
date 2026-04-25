@@ -231,6 +231,32 @@ pub fn register_admin_routes(
 
     let c = ctx.clone();
     let ac = auth_ctx.clone();
+    let router = router.get("/admin/users/new", move |req| {
+        let c = c.clone();
+        let ac = ac.clone();
+        async move {
+            match admin_only_guard(&c, &req).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => super::builtin::show_new_user(&ac, ident, handlers::csrf_token(&req)).await,
+            }
+        }
+    });
+
+    let c = ctx.clone();
+    let ac = auth_ctx.clone();
+    let router = router.post("/admin/users/new", move |req| {
+        let c = c.clone();
+        let ac = ac.clone();
+        async move {
+            match admin_only_guard(&c, &req).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => super::builtin::do_new_user(&ac, ident, req).await,
+            }
+        }
+    });
+
+    let c = ctx.clone();
+    let ac = auth_ctx.clone();
     let router = router.get("/admin/users/:id/edit", move |req| {
         let c = c.clone();
         let ac = ac.clone();
