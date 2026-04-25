@@ -185,15 +185,22 @@ pub async fn permissions_for_user(db: &Db, user_id: i64) -> Result<Arc<HashSet<S
     Ok(arc)
 }
 
-/// Ask "does this identity have permission X?". Administrator and
-/// Developer short-circuit (their role bypasses every group check);
-/// every other tier consults the M2M tables.
+/// Ask "does this identity have permission X?".
+///
+/// Order of checks (load-bearing — see Phase 7a/0.5/sec2):
+/// 1. **`is_active`** — an inactive user is denied even if their role
+///    would bypass group checks. Defense-in-depth: `login_guard` already
+///    rejects inactive sessions at the panel boundary, but if a future
+///    code path calls `check_permission` without the guard, the inactive
+///    check here is the second line.
+/// 2. **`bypasses_group_checks`** — Administrator and Developer skip the
+///    M2M lookup; every other tier consults the tables.
 pub async fn check_permission(db: &Db, identity: &Identity, permission: &str) -> Result<bool> {
-    if identity.role.bypasses_group_checks() {
-        return Ok(true);
-    }
     if !identity.is_active {
         return Ok(false);
+    }
+    if identity.role.bypasses_group_checks() {
+        return Ok(true);
     }
     let perms = permissions_for_user(db, identity.user_id).await?;
     Ok(perms.contains(permission))
@@ -339,5 +346,48 @@ mod tests {
     #[test]
     fn cache_ttl_is_one_minute() {
         assert_eq!(PERM_CACHE_TTL.as_secs(), 60);
+    }
+
+    /// Phase 7a/0.5/sec2 regression: the order of checks in
+    /// `check_permission` must reject inactive users **before** the
+    /// `bypasses_group_checks` short-circuit. Otherwise an inactive
+    /// Administrator/Developer who somehow holds a session passes
+    /// every permission check.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn inactive_administrator_is_denied_before_bypass() {
+        let url = std::env::var("RUSTIO_TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:dev@localhost:5432/rustio_dev".into());
+        let opts = crate::orm::DbOptions {
+            max_connections: 2,
+            ..crate::orm::DbOptions::default()
+        };
+        let db = crate::orm::Db::connect_with(&url, opts).await.unwrap();
+
+        let id = Identity {
+            user_id: -1, // ghost id; the inactive short-circuit fires first, so this never gets queried
+            email: "ghost@example.com".into(),
+            role: Role::Administrator,
+            is_active: false,
+            is_demo: false,
+            demo_label: None,
+        };
+        let result = check_permission(&db, &id, "any.permission").await.unwrap();
+        assert!(
+            !result,
+            "inactive Administrator must be denied; bypass must NOT fire before is_active check"
+        );
+
+        // Sanity check: same identity with is_active=true would bypass.
+        let id_active = Identity {
+            is_active: true,
+            ..id
+        };
+        assert!(
+            check_permission(&db, &id_active, "any.permission")
+                .await
+                .unwrap(),
+            "active Administrator should bypass and return true"
+        );
     }
 }
