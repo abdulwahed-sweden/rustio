@@ -39,6 +39,14 @@ pub(crate) struct BaseContext {
     pub site_header: String,
     pub index_title: String,
     pub footer_copyright: String,
+    /// Phase 7a/0.5/d — `true` when the active session belongs to a
+    /// demo user (`is_demo` column on `rustio_users`). Templates use
+    /// this to render the red banner above the page content.
+    pub is_demo_session: bool,
+    /// Optional human-readable label for the demo user
+    /// ("Demo Staff", "Demo Administrator"). Rendered in parens after
+    /// the banner's "DEMO USER" text when present.
+    pub demo_label: Option<String>,
 }
 
 impl BaseContext {
@@ -48,6 +56,10 @@ impl BaseContext {
     /// from `Admin` (locale, theme) without re-touching every handler.
     pub fn new(identity: Option<&Identity>, csrf_token: String, admin: &Admin) -> Self {
         let b = admin.branding();
+        let (is_demo_session, demo_label) = match identity {
+            Some(i) => (i.is_demo, i.demo_label.clone()),
+            None => (false, None),
+        };
         Self {
             identity: identity.map(IdentityCtx::from),
             csrf_token,
@@ -55,6 +67,8 @@ impl BaseContext {
             site_header: b.site_header.clone(),
             index_title: b.index_title.clone(),
             footer_copyright: b.footer_copyright.clone(),
+            is_demo_session,
+            demo_label,
         }
     }
 }
@@ -656,6 +670,111 @@ mod tests {
         // Identity-bearing surfaces still render: the user-tools welcome
         // line should include the test email.
         assert!(body.contains("test@example.com"), "user-tools email missing");
+    }
+
+    #[test]
+    fn user_new_form_has_five_role_options() {
+        // Render `admin/user_new.html` directly with a hand-built
+        // context — the actual `UserNewCtx` struct is private to
+        // `builtin.rs`. Asserts the 5-option select replaces the
+        // pre-7a/0.5/d 2-checkbox UI.
+        let templates = Templates::new(None).expect("embedded templates");
+        let ctx = serde_json::json!({
+            "site_title": "RustIO administration",
+            "site_header": "RustIO administration",
+            "index_title": "Site administration",
+            "footer_copyright": "RustIO test",
+            "csrf_token": "fake",
+            "is_demo_session": false,
+            "demo_label": null,
+            "page_title": "Add user",
+            "entries": [],
+            "email": "",
+            "role": "staff",
+            "errors": [],
+            "identity": { "email": "admin@example.com", "is_admin": true },
+        });
+        let body = templates
+            .render("admin/user_new.html", &ctx)
+            .expect("user_new renders");
+
+        for value in ["user", "staff", "supervisor", "administrator", "developer"] {
+            assert!(
+                body.contains(&format!("value=\"{value}\"")),
+                "role option {value:?} missing"
+            );
+        }
+        // The default `role: "staff"` should make Staff the selected
+        // option. Look for `value="staff"` followed by whitespace then
+        // `selected` (template's inline `{% if role == "staff" %}` may
+        // emit variable spacing — be tolerant).
+        let staff_idx = body.find("value=\"staff\"").expect("staff option");
+        let after_staff = &body[staff_idx..staff_idx.saturating_add(80)];
+        assert!(
+            after_staff.contains("selected"),
+            "Staff option should be selected; got: {after_staff:?}"
+        );
+        // The pre-7a/0.5/d checkbox names must NOT appear.
+        assert!(
+            !body.contains("name=\"is_staff\""),
+            "old is_staff checkbox should be gone"
+        );
+        assert!(
+            !body.contains("name=\"is_superuser\""),
+            "old is_superuser checkbox should be gone"
+        );
+    }
+
+    #[test]
+    fn render_base_with_demo_banner() {
+        let admin = Admin::new();
+        let templates = Templates::new(None).expect("embedded templates");
+        let demo_ident = Identity {
+            user_id: 1,
+            email: "staff@rustio.local".into(),
+            role: Role::Staff,
+            is_active: true,
+            is_demo: true,
+            demo_label: Some("Demo Staff".into()),
+        };
+
+        // Render the dashboard page (any page that extends base.html
+        // works) and assert the banner is present with the label.
+        let dash = dashboard_ctx(&demo_ident, &admin, vec![], "fake-csrf".into());
+        let body = templates.render("admin/index.html", &dash).expect("dashboard renders");
+
+        assert!(body.contains("DEMO USER"), "demo banner text missing");
+        assert!(body.contains("Demo Staff"), "demo_label not in banner");
+        assert!(
+            body.contains("RUSTIO_DEMO_MODE"),
+            "banner should reference the env flag"
+        );
+    }
+
+    #[test]
+    fn render_base_without_demo_banner_for_real_user() {
+        let admin = Admin::new();
+        let templates = Templates::new(None).expect("embedded templates");
+        let real_ident = Identity {
+            user_id: 1,
+            email: "admin@example.com".into(),
+            role: Role::Administrator,
+            is_active: true,
+            is_demo: false,
+            demo_label: None,
+        };
+
+        let dash = dashboard_ctx(&real_ident, &admin, vec![], "fake-csrf".into());
+        let body = templates.render("admin/index.html", &dash).expect("dashboard renders");
+
+        assert!(
+            !body.contains("DEMO USER"),
+            "demo banner must NOT render for is_demo=false"
+        );
+        assert!(
+            !body.contains("RUSTIO_DEMO_MODE"),
+            "banner copy must be absent for real users"
+        );
     }
 
     #[test]

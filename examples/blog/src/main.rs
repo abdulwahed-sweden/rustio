@@ -91,13 +91,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .model_with_search::<apps::posts::Post>(indexer.clone());
     admin.seed_permissions(&db).await?;
 
-    // Phase 7a/0.5/c — when RUSTIO_DEMO_MODE=1 is set, seed the six
-    // default groups and lazy-attach permissions. Both calls are
-    // no-ops without the env flag, so production deploys are
-    // unaffected. `.ok()` swallows errors so a transient bootstrap
-    // failure never blocks server startup.
+    // Phase 7a/0.5/c+d — when RUSTIO_DEMO_MODE=1 is set, seed the six
+    // default groups, lazy-attach their permissions, and create the
+    // five demo users. All three calls are no-ops without the env
+    // flag, so production deploys are unaffected. `.ok()` swallows
+    // errors so a transient bootstrap failure never blocks server
+    // startup; the dashboard's "Recent actions" sidebar already
+    // silently degrades when the audit table is missing — the same
+    // discipline applies here.
     auth::bootstrap_default_groups(&db).await.ok();
     auth::lazy_attach_permissions(&db, admin.entries()).await.ok();
+    auth::bootstrap_demo_users(&db, admin.branding()).await.ok();
 
     // Create an "editors" group as a convenience on first boot.
     seed_editors_group(&db).await?;

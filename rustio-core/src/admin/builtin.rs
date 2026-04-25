@@ -469,8 +469,9 @@ struct UserNewCtx {
     page_title: &'static str,
     entries: Vec<SidebarEntry>,
     email: String,
-    is_staff: bool,
-    is_superuser: bool,
+    /// Selected role string for re-rendering on validation failure.
+    /// Defaults to `"staff"` on a fresh form (Phase 7a/0.5/d).
+    role: String,
     errors: Vec<String>,
 }
 
@@ -484,8 +485,7 @@ pub(crate) async fn show_new_user(
         page_title: "Add user",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         email: String::new(),
-        is_staff: false,
-        is_superuser: false,
+        role: "staff".into(),
         errors: Vec::new(),
     };
     let body = ctx.templates.render("admin/user_new.html", &view)?;
@@ -521,23 +521,16 @@ pub(crate) async fn do_new_user(
     let form = req.form()?;
     let email = form.get("email").unwrap_or("").trim().to_string();
     let password = form.get("password").unwrap_or("");
-    let is_staff = form.bool_flag("is_staff");
-    let is_superuser = form.bool_flag("is_superuser");
-
-    // Phase 6b 2-checkbox UI mapped onto NEW's Role enum. After the
-    // 5-tier role hierarchy lands in 7a/0.5/a, is_superuser still wins
-    // and creates `Administrator` (not `Developer` — the dev tier is
-    // CLI-only or future UI). The full 5-option select replaces this
-    // block in commit /d.
-    let role = if is_superuser {
-        Role::Administrator
-    } else if is_staff {
-        Role::Staff
-    } else {
-        Role::User
-    };
+    let role_str = form.get("role").unwrap_or("staff").to_string();
 
     let mut errors: Vec<String> = Vec::new();
+
+    // Parse role first so we can preserve the user's selection on
+    // re-render even if other fields fail.
+    let role_parsed = Role::parse(&role_str).ok();
+    if role_parsed.is_none() {
+        errors.push(format!("Unknown role: \"{role_str}\"."));
+    }
 
     if email.is_empty() {
         errors.push("Email is required.".into());
@@ -559,13 +552,13 @@ pub(crate) async fn do_new_user(
     }
 
     if errors.is_empty() {
+        let role = role_parsed.expect("role parsed when errors empty");
         let new_id = auth::create_user(&ctx.db, &email, password, role).await?;
         return Ok(Response::redirect(format!("/admin/users/{new_id}/edit")));
     }
 
     // Re-render with errors. Password is intentionally NOT echoed back —
-    // the user retypes. Email and the two checkbox states ARE preserved
-    // so the user doesn't have to re-tick everything.
+    // the user retypes. Email and role selection ARE preserved.
     let csrf = req
         .ctx()
         .get::<crate::middleware::CsrfGuard>()
@@ -576,8 +569,7 @@ pub(crate) async fn do_new_user(
         page_title: "Add user",
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         email,
-        is_staff,
-        is_superuser,
+        role: role_str,
         errors,
     };
     let body = ctx.templates.render("admin/user_new.html", &view)?;

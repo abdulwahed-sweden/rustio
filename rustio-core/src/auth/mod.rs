@@ -28,12 +28,22 @@ pub use sessions::{
     purge_expired_sessions, session_token_from_cookie, SESSION_COOKIE,
 };
 pub use users::{
-    create_user, find_user_by_email, hash_password, init_user_tables, login, migrate_user_schema,
-    set_password, update_user_role, verify_password, Identity, StoredUser,
+    bootstrap_demo_users, create_user, find_user_by_email, hash_password, init_user_tables, login,
+    migrate_user_schema, set_password, update_user_role, verify_password, Identity, StoredUser,
 };
 
 use crate::error::Result;
 use crate::orm::Db;
+
+/// Shared serialization lock for tests that toggle `RUSTIO_DEMO_MODE`
+/// (or any other process env var). `tokio::test`s run on a thread
+/// pool and `std::env::set_var` mutates process state — without a
+/// process-wide lock, parallel tests stomp each other's env state.
+/// Using `tokio::sync::Mutex` so it can be held across `.await` (the
+/// `await_holding_lock` clippy lint forbids `std::sync::Mutex`).
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: tokio::sync::Mutex<()> =
+    tokio::sync::Mutex::const_new(());
 
 /// Initialise every auth-related table. Safe to call on every boot.
 pub async fn init_tables(db: &Db) -> Result<()> {

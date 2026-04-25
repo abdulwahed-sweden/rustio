@@ -459,7 +459,7 @@ pub async fn lazy_attach_permissions(
     Ok(())
 }
 
-async fn find_group_id_by_name(db: &Db, name: &str) -> Result<Option<i64>> {
+pub(crate) async fn find_group_id_by_name(db: &Db, name: &str) -> Result<Option<i64>> {
     let row = sqlx::query("SELECT id FROM rustio_groups WHERE name = $1")
         .bind(name)
         .fetch_optional(db.pool())
@@ -686,13 +686,7 @@ mod tests {
         crate::orm::Db::connect_with(&pg_url(), opts).await.unwrap()
     }
 
-    /// `tokio::test`s run on a thread pool, and `std::env::set_var`
-    /// mutates **process** state. Tests that toggle `RUSTIO_DEMO_MODE`
-    /// must serialize on this lock to avoid stomping each other's env
-    /// state mid-flight. The lock is held across the whole test body
-    /// — including `.await` points — so it must be `tokio::sync::Mutex`
-    /// (clippy's `await_holding_lock` rejects `std::sync::Mutex` here).
-    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    use crate::auth::TEST_ENV_LOCK as ENV_LOCK;
 
     /// Reset every default group on the test DB so each test starts
     /// from a clean slate. Cascades through user/perm M2M.

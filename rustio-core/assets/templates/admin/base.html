@@ -26,6 +26,13 @@
         {% endif %}
     </div>
 
+    {% if is_demo_session %}
+    <div class="demo-banner" role="alert">
+        <strong>⚠ DEMO USER</strong>{% if demo_label %} ({{ demo_label }}){% endif %}
+        — passwords are public. Disable <code>RUSTIO_DEMO_MODE</code> in production.
+    </div>
+    {% endif %}
+
     {% block breadcrumbs %}
     {% if identity %}
     <div class="breadcrumbs">

@@ -39,19 +39,18 @@
     </fieldset>
 
     <fieldset class="module aligned">
-        <h2>Permissions</h2>
+        <h2>Role</h2>
         <div class="form-row">
-            <label for="id_is_staff">Staff status:</label>
+            <label for="id_role">Role:</label>
             <div class="field-input">
-                <input type="checkbox" id="id_is_staff" name="is_staff"{% if is_staff %} checked{% endif %}>
-                <p class="help">Can sign in to the admin and access pages they have permissions for.</p>
-            </div>
-        </div>
-        <div class="form-row">
-            <label for="id_is_superuser">Superuser status:</label>
-            <div class="field-input">
-                <input type="checkbox" id="id_is_superuser" name="is_superuser"{% if is_superuser %} checked{% endif %}>
-                <p class="help">Bypasses all permission checks. Implies staff status.</p>
+                <select id="id_role" name="role" required>
+                    <option value="user"          {% if role == "user"          %}selected{% endif %}>User (no admin access)</option>
+                    <option value="staff"         {% if role == "staff"         %}selected{% endif %}>Staff (admin access; per-model group permissions)</option>
+                    <option value="supervisor"    {% if role == "supervisor"    %}selected{% endif %}>Supervisor (view + edit; no destructive ops)</option>
+                    <option value="administrator" {% if role == "administrator" %}selected{% endif %}>Administrator (full coverage; bypasses group checks)</option>
+                    <option value="developer"     {% if role == "developer"     %}selected{% endif %}>Developer (schema browser + execution logs + SQL console)</option>
+                </select>
+                <p class="help">Higher roles include all lower-role capabilities. Group memberships are assigned on the next page after save.</p>
             </div>
         </div>
     </fieldset>

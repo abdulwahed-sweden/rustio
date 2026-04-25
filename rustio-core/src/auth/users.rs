@@ -179,6 +179,118 @@ pub async fn create_user(db: &Db, email: &str, password: &str, role: Role) -> Re
     Ok(id)
 }
 
+/// Phase 7a/0.5/d — INSERT-with-conflict-skip variant of `create_user`
+/// for the demo bootstrap flow. Sets `is_demo = TRUE` and writes an
+/// optional human-readable `demo_label`. Returns `Some(id)` on insert,
+/// `None` if the email is already taken (a real user holds it). The
+/// public `create_user` API is intentionally untouched.
+async fn create_demo_user(
+    db: &Db,
+    email: &str,
+    password: &str,
+    role: Role,
+    demo_label: Option<&str>,
+) -> Result<Option<i64>> {
+    let hash = hash_password(password)?;
+    let row = sqlx::query(
+        "INSERT INTO rustio_users (email, password_hash, role, is_demo, demo_label)
+         VALUES ($1, $2, $3, TRUE, $4)
+         ON CONFLICT (email) DO NOTHING
+         RETURNING id",
+    )
+    .bind(email)
+    .bind(&hash)
+    .bind(role.as_str())
+    .bind(demo_label)
+    .fetch_optional(db.pool())
+    .await?;
+    match row {
+        Some(r) => {
+            let id: i64 = r
+                .try_get("id")
+                .map_err(|e| Error::Internal(format!("returning id: {e}")))?;
+            Ok(Some(id))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Phase 7a/0.5/d — gated by `RUSTIO_DEMO_MODE=1`. Inserts the five
+/// demo users keyed off `branding.domain` (e.g. `staff@rustio.local`)
+/// and attaches each to the matching default groups (which must
+/// already exist; call `bootstrap_default_groups` + `lazy_attach_*`
+/// first). Idempotent via the demo-count gate: re-running on a DB
+/// that already has demo users is a no-op. Real users coexist —
+/// the gate counts only `is_demo = TRUE` rows.
+pub async fn bootstrap_demo_users(
+    db: &Db,
+    branding: &crate::admin::SiteBranding,
+) -> Result<()> {
+    if std::env::var("RUSTIO_DEMO_MODE").as_deref() != Ok("1") {
+        return Ok(());
+    }
+    let demo_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustio_users WHERE is_demo = TRUE")
+        .fetch_one(db.pool())
+        .await?;
+    if demo_count > 0 {
+        return Ok(());
+    }
+
+    type DemoSpec = (&'static str, Role, &'static [&'static str]);
+    let demo_specs: [DemoSpec; 5] = [
+        ("user", Role::User, &[]),
+        ("staff", Role::Staff, &["Auditors"]),
+        ("supervisor", Role::Supervisor, &["System Operators"]),
+        (
+            "administrator",
+            Role::Administrator,
+            &[
+                "Auditors",
+                "Content Editors",
+                "HR Managers",
+                "Finance",
+                "Project Coordinators",
+                "System Operators",
+            ],
+        ),
+        (
+            "developer",
+            Role::Developer,
+            &[
+                "Auditors",
+                "Content Editors",
+                "HR Managers",
+                "Finance",
+                "Project Coordinators",
+                "System Operators",
+            ],
+        ),
+    ];
+
+    let mut created = 0usize;
+    for (slug, role, group_names) in demo_specs {
+        let email = format!("{slug}@{}", branding.domain);
+        let label = format!("Demo {}", role.label());
+        match create_demo_user(db, &email, slug, role, Some(&label)).await? {
+            Some(user_id) => {
+                created += 1;
+                for group_name in group_names {
+                    if let Some(group_id) =
+                        crate::auth::permissions::find_group_id_by_name(db, group_name).await?
+                    {
+                        crate::auth::add_user_to_group(db, user_id, group_id).await?;
+                    }
+                }
+            }
+            None => {
+                log::warn!("RUSTIO_DEMO_MODE: skipping demo user {email} — email already taken");
+            }
+        }
+    }
+    log::info!("RUSTIO_DEMO_MODE: created {created} demo users (passwords match role slugs)");
+    Ok(())
+}
+
 pub async fn find_user_by_email(db: &Db, email: &str) -> Result<Option<StoredUser>> {
     let row = sqlx::query(
         "SELECT id, email, password_hash, role, is_active, is_demo, demo_label
@@ -319,6 +431,256 @@ mod tests {
         // Cleanup.
         let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
             .bind(first_id)
+            .execute(db.pool())
+            .await;
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 7a/0.5/d — bootstrap_demo_users
+    // ------------------------------------------------------------------
+
+    use crate::auth::TEST_ENV_LOCK as ENV_LOCK;
+
+    async fn pg_db() -> crate::orm::Db {
+        let url = std::env::var("RUSTIO_TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:dev@localhost:5432/rustio_dev".into());
+        let opts = crate::orm::DbOptions {
+            max_connections: 2,
+            ..crate::orm::DbOptions::default()
+        };
+        crate::orm::Db::connect_with(&url, opts).await.unwrap()
+    }
+
+    /// Wipe every demo user + every default group on the test DB so
+    /// each test starts from a clean slate. Cascades through the M2M.
+    async fn reset_demo_state(db: &crate::orm::Db) {
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE is_demo = TRUE")
+            .execute(db.pool())
+            .await;
+        // Match the 6 default group names from permissions.rs.
+        for name in [
+            "Auditors",
+            "Content Editors",
+            "HR Managers",
+            "Finance",
+            "Project Coordinators",
+            "System Operators",
+        ] {
+            let _ = sqlx::query("DELETE FROM rustio_groups WHERE name = $1")
+                .bind(name)
+                .execute(db.pool())
+                .await;
+        }
+    }
+
+    fn test_branding() -> crate::admin::SiteBranding {
+        crate::admin::SiteBranding {
+            domain: "rustio.local".into(),
+            ..crate::admin::SiteBranding::default()
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn bootstrap_creates_five_demo_users() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+        crate::auth::init_permission_tables(&db).await.unwrap();
+        reset_demo_state(&db).await;
+
+        std::env::set_var("RUSTIO_DEMO_MODE", "1");
+        crate::auth::bootstrap_default_groups(&db).await.unwrap();
+        bootstrap_demo_users(&db, &test_branding()).await.unwrap();
+
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_users WHERE is_demo = TRUE \
+             AND email LIKE '%@rustio.local'",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(count, 5, "expected 5 demo users, got {count}");
+
+        std::env::remove_var("RUSTIO_DEMO_MODE");
+        reset_demo_state(&db).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn bootstrap_skips_when_demo_users_already_exist() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+        crate::auth::init_permission_tables(&db).await.unwrap();
+        reset_demo_state(&db).await;
+
+        std::env::set_var("RUSTIO_DEMO_MODE", "1");
+        crate::auth::bootstrap_default_groups(&db).await.unwrap();
+        bootstrap_demo_users(&db, &test_branding()).await.unwrap();
+        let first: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_users WHERE is_demo = TRUE",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(first, 5);
+
+        // Re-run — gate must short-circuit and add nothing.
+        bootstrap_demo_users(&db, &test_branding()).await.unwrap();
+        let second: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_users WHERE is_demo = TRUE",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(first, second, "second bootstrap must NOT add rows");
+
+        std::env::remove_var("RUSTIO_DEMO_MODE");
+        reset_demo_state(&db).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn bootstrap_assigns_groups_correctly() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+        crate::auth::init_permission_tables(&db).await.unwrap();
+        reset_demo_state(&db).await;
+
+        std::env::set_var("RUSTIO_DEMO_MODE", "1");
+        crate::auth::bootstrap_default_groups(&db).await.unwrap();
+        bootstrap_demo_users(&db, &test_branding()).await.unwrap();
+
+        // staff → 1 group (Auditors)
+        let staff_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_user_groups ug \
+             JOIN rustio_users u ON u.id = ug.user_id \
+             WHERE u.email = $1",
+        )
+        .bind("staff@rustio.local")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(staff_count, 1, "staff should belong to 1 group");
+
+        // administrator → 6 groups (every default)
+        let admin_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_user_groups ug \
+             JOIN rustio_users u ON u.id = ug.user_id \
+             WHERE u.email = $1",
+        )
+        .bind("administrator@rustio.local")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(admin_count, 6, "administrator should belong to all 6");
+
+        // user → 0 groups
+        let user_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_user_groups ug \
+             JOIN rustio_users u ON u.id = ug.user_id \
+             WHERE u.email = $1",
+        )
+        .bind("user@rustio.local")
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(user_count, 0, "user has no group memberships");
+
+        std::env::remove_var("RUSTIO_DEMO_MODE");
+        reset_demo_state(&db).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn demo_user_emails_use_branding_domain() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+        crate::auth::init_permission_tables(&db).await.unwrap();
+        reset_demo_state(&db).await;
+
+        std::env::set_var("RUSTIO_DEMO_MODE", "1");
+        crate::auth::bootstrap_default_groups(&db).await.unwrap();
+
+        // Use a non-default domain to prove branding flows through.
+        let branding = crate::admin::SiteBranding {
+            domain: "tolkhuset.test".into(),
+            ..crate::admin::SiteBranding::default()
+        };
+        bootstrap_demo_users(&db, &branding).await.unwrap();
+
+        let emails: Vec<String> = sqlx::query_scalar(
+            "SELECT email FROM rustio_users WHERE is_demo = TRUE ORDER BY email",
+        )
+        .fetch_all(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(emails.len(), 5);
+        for e in &emails {
+            assert!(
+                e.ends_with("@tolkhuset.test"),
+                "demo email should use branding domain, got: {e}"
+            );
+        }
+
+        std::env::remove_var("RUSTIO_DEMO_MODE");
+        reset_demo_state(&db).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn real_user_unaffected_by_demo_bootstrap() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+        crate::auth::init_permission_tables(&db).await.unwrap();
+        reset_demo_state(&db).await;
+
+        // Seed a real user. Must NOT be flagged is_demo afterward.
+        let real_email = format!(
+            "real_{}_{}@example.test",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let real_id = create_user(&db, &real_email, "secret-pw-123", Role::User)
+            .await
+            .unwrap();
+
+        std::env::set_var("RUSTIO_DEMO_MODE", "1");
+        crate::auth::bootstrap_default_groups(&db).await.unwrap();
+        bootstrap_demo_users(&db, &test_branding()).await.unwrap();
+
+        // The real user's row is unchanged.
+        let row = find_user_by_email(&db, &real_email).await.unwrap().unwrap();
+        assert!(!row.is_demo, "real user must NOT be flagged is_demo");
+        assert_eq!(row.demo_label, None, "real user must NOT have a demo_label");
+        assert_eq!(row.role, Role::User, "real user's role must be unchanged");
+
+        // Demo users coexist with the real user.
+        let demo_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_users WHERE is_demo = TRUE",
+        )
+        .fetch_one(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(demo_count, 5);
+
+        std::env::remove_var("RUSTIO_DEMO_MODE");
+        reset_demo_state(&db).await;
+        // Cleanup the real user.
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+            .bind(real_id)
             .execute(db.pool())
             .await;
     }
