@@ -1,36 +1,130 @@
 {% extends "admin/base.html" %}
 
+{% block bodyclass %}change-list{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a> &rsaquo; {{ display_name }}
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="page-header">
-    <h1>{{ display_name }}</h1>
-    <a href="/admin/{{ admin_name }}/new" class="btn">+ Add {{ singular_name }}</a>
+<div class="object-tools">
+    <h1>Select {{ singular_name|lower }} to change</h1>
+    <ul class="object-tools-actions">
+        <li><a href="/admin/{{ admin_name }}/new" class="addlink">Add {{ singular_name|lower }}</a></li>
+    </ul>
 </div>
 
-{% if rows %}
-<table class="data-table">
-    <thead>
-        <tr>
-            {% for col in columns %}
-            <th>{{ col }}</th>
+<div id="changelist">
+    <div id="changelist-main">
+        <div id="toolbar">
+            <form method="get" class="search">
+                <input type="search" name="q" value="{{ search_query }}" placeholder="Search {{ display_name|lower }}">
+                <button type="submit">Search</button>
+            </form>
+        </div>
+
+        <form method="post" action="/admin/{{ admin_name }}/_action">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <div class="actions">
+                <label>Action:
+                    <select name="action">
+                        <option value="">---------</option>
+                        <option value="delete_selected">Delete selected {{ display_name|lower }}</option>
+                    </select>
+                </label>
+                <button type="submit">Go</button>
+                <span class="action-counter">{{ rows|length }} of {{ total_rows }} selected</span>
+            </div>
+
+            {% if rows %}
+            <table class="results">
+                <thead>
+                    <tr>
+                        <th class="action-checkbox"><input type="checkbox" id="action-toggle"></th>
+                        {% for col in columns %}
+                        <th scope="col">{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td class="action-checkbox"><input type="checkbox" name="_selected_action" value="{{ row.id }}"></td>
+                        {% for cell in row.cells %}
+                        <td>
+                            {% if loop.index0 == 0 %}
+                            <a href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ cell }}</a>
+                            {% else %}
+                            {{ cell }}
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-list">No {{ display_name|lower }} match the current filter.</p>
+            {% endif %}
+        </form>
+
+        {% if total_pages > 1 %}
+        <p class="paginator">
+            {% for n in range(1, total_pages + 1) %}
+                {% if n == page %}
+                <span class="this-page">{{ n }}</span>
+                {% else %}
+                <a href="?p={{ n }}{% if search_query %}&q={{ search_query }}{% endif %}">{{ n }}</a>
+                {% endif %}
             {% endfor %}
-            <th class="actions-col">Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for row in rows %}
-        <tr>
-            {% for cell in row.cells %}
-            <td>{{ cell }}</td>
+            <span>{{ total_rows }} {{ display_name|lower }}</span>
+        </p>
+        {% endif %}
+    </div>
+
+    <div id="changelist-filter">
+        <h2>Filter</h2>
+        {% if filters %}
+            {% for group in filters %}
+            <h3>By {{ group.label|lower }}</h3>
+            <ul>
+                <li{% if not group.current %} class="selected"{% endif %}>
+                    <a href="?">All</a>
+                </li>
+                {% for opt in group.options %}
+                <li{% if opt.selected %} class="selected"{% endif %}>
+                    <a href="?{{ group.field }}={{ opt.value }}">{{ opt.label }}</a>
+                </li>
+                {% endfor %}
+            </ul>
             {% endfor %}
-            <td class="actions-col">
-                <a href="/admin/{{ admin_name }}/{{ row.id }}/edit">Edit</a>
-                <a href="/admin/{{ admin_name }}/{{ row.id }}/delete">Delete</a>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p class="muted">No {{ display_name|lower }} yet.</p>
-{% endif %}
+        {% else %}
+        <p class="help" style="padding: 12px;">No filters available.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Select-all checkbox toggles every row checkbox.
+    document.addEventListener("DOMContentLoaded", function () {
+        var toggle = document.getElementById("action-toggle");
+        if (!toggle) return;
+        toggle.addEventListener("change", function () {
+            document.querySelectorAll("input[name=_selected_action]")
+                .forEach(function (b) { b.checked = toggle.checked; });
+        });
+
+        // "/" focuses the search box (Django convention).
+        document.addEventListener("keydown", function (e) {
+            if (e.key === "/" && document.activeElement.tagName !== "INPUT") {
+                var s = document.querySelector("input[name=q]");
+                if (s) { s.focus(); e.preventDefault(); }
+            }
+        });
+    });
+</script>
 {% endblock %}
