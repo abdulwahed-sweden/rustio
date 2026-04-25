@@ -17,9 +17,9 @@ mod sessions;
 mod users;
 
 pub use permissions::{
-    add_user_to_group, check_permission, create_group, grant_to_group, grant_to_user,
-    init_permission_tables, permissions_for_user, register_model_permissions,
-    remove_user_from_group, Permission, PermissionError, Superuser,
+    add_user_to_group, bootstrap_default_groups, check_permission, create_group, grant_to_group,
+    grant_to_user, init_permission_tables, lazy_attach_permissions, permissions_for_user,
+    register_model_permissions, remove_user_from_group, Permission, PermissionError, Superuser,
 };
 pub(crate) use permissions::invalidate_user_cache;
 pub use role::Role;

@@ -174,12 +174,17 @@ pub struct EditRow {
 /// - `site_header` — header bar text (and the login card's brand).
 /// - `index_title` — dashboard h1.
 /// - `footer_copyright` — single line at the bottom of every page.
+/// - `domain` — DNS-shape string used to mint demo email addresses
+///   (`<role>@<domain>`). Phase 7a/0.5/c. Not surfaced in any
+///   template — it's strictly a backend identifier for the demo
+///   bootstrap flow.
 #[derive(Clone, Debug)]
 pub struct SiteBranding {
     pub site_title: String,
     pub site_header: String,
     pub index_title: String,
     pub footer_copyright: String,
+    pub domain: String,
 }
 
 impl Default for SiteBranding {
@@ -189,6 +194,7 @@ impl Default for SiteBranding {
             site_header: "RustIO administration".into(),
             index_title: "Site administration".into(),
             footer_copyright: format!("RustIO {}", env!("CARGO_PKG_VERSION")),
+            domain: "rustio.local".into(),
         }
     }
 }
