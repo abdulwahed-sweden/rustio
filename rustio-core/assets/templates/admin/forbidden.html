@@ -1,0 +1,32 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}forbidden{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a> &rsaquo; Permission denied
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="forbidden-page">
+    <h1>Permission denied</h1>
+    <p>You don't have permission to access this page.</p>
+
+    {% if required_role %}
+    <p class="forbidden-detail">
+        This page requires <strong>{{ required_role }}</strong> access.
+    </p>
+    {% endif %}
+
+    {% if attempted %}
+    <p class="forbidden-detail">
+        You tried to reach: <code>{{ attempted }}</code>
+    </p>
+    {% endif %}
+
+    <p class="forbidden-actions">
+        <a href="/admin" class="forbidden-home">Return to dashboard</a>
+    </p>
+</div>
+{% endblock %}

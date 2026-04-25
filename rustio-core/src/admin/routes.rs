@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::auth::{self, Identity};
+use crate::auth::{self, Identity, Role};
 use crate::error::{Error, Result};
 use crate::http::{Request, Response};
 use crate::orm::Db;
@@ -23,6 +23,7 @@ use crate::router::Router;
 use crate::templates::Templates;
 
 use super::handlers::{self, AdminCtx};
+use super::render;
 use super::types::Admin;
 
 /// Either an identity + a permission check passed, a redirect to
@@ -65,6 +66,94 @@ async fn permission_guard(ctx: &AdminCtx, req: &Request, permission: &str) -> Re
             Ok(Guard::Allow(ident))
         }
     }
+}
+
+/// Phase 7a/0.5/b — minimum-role guard.
+///
+/// Runs `login_guard` first (which already enforces `is_active` +
+/// `can_access_panel` via `Identity::can_access_admin`), then checks
+/// that the identity's role rank is at least `min`. On failure renders
+/// the `admin/forbidden.html` page with a 403 status. The forbidden
+/// response is carried via `Guard::Redirect(_)` — the variant name
+/// is informational; functionally it carries any non-Allow response
+/// the route closure should return as-is.
+#[allow(dead_code)] // wired into existing handlers in /e
+async fn role_guard(ctx: &AdminCtx, req: &Request, min: Role) -> Result<Guard> {
+    match login_guard(ctx, req).await? {
+        Guard::Redirect(r) => Ok(Guard::Redirect(r)),
+        Guard::Allow(ident) => {
+            if ident.role.includes(min) {
+                Ok(Guard::Allow(ident))
+            } else {
+                let body = render::render_forbidden_body(
+                    &ctx.admin,
+                    &ctx.templates,
+                    &ident,
+                    handlers::csrf_token(req),
+                    None,
+                    Some(min.label()),
+                )?;
+                Ok(Guard::Redirect(
+                    Response::html(body).with_status(hyper::StatusCode::FORBIDDEN),
+                ))
+            }
+        }
+    }
+}
+
+/// Phase 7a/0.5/b — per-model permission guard.
+///
+/// Floors at `Role::Staff` (the panel-access tier). Administrator and
+/// Developer **bypass** the permission lookup via
+/// `Role::bypasses_group_checks` (post-sec2 the `is_active` check runs
+/// first inside `check_permission`, so an inactive Administrator/Dev
+/// is denied). Other tiers consult the M2M permission tables.
+#[allow(dead_code)] // wired into existing handlers in /e
+async fn perm_guard(ctx: &AdminCtx, req: &Request, perm: &str) -> Result<Guard> {
+    match role_guard(ctx, req, Role::Staff).await? {
+        Guard::Redirect(r) => Ok(Guard::Redirect(r)),
+        Guard::Allow(ident) => {
+            if ident.role.bypasses_group_checks() {
+                return Ok(Guard::Allow(ident));
+            }
+            if auth::check_permission(&ctx.db, &ident, perm).await? {
+                Ok(Guard::Allow(ident))
+            } else {
+                let body = render::render_forbidden_body(
+                    &ctx.admin,
+                    &ctx.templates,
+                    &ident,
+                    handlers::csrf_token(req),
+                    Some(perm.to_string()),
+                    None,
+                )?;
+                Ok(Guard::Redirect(
+                    Response::html(body).with_status(hyper::StatusCode::FORBIDDEN),
+                ))
+            }
+        }
+    }
+}
+
+/// Pure decision logic for `perm_guard`, factored out so it can be
+/// unit-tested without a `Db`. The DB-touching halves (login_guard,
+/// `check_permission`'s M2M lookup) are exercised by the PG-gated
+/// integration tests from sec2/sec3.
+///
+/// Returns `true` if the identity should be granted access:
+/// - Inactive identities are denied (defense-in-depth — login_guard
+///   already blocks them at the panel boundary).
+/// - Administrator + Developer bypass the per-model check.
+/// - Everyone else needs `perm_held == true`.
+#[allow(dead_code)] // exercised by tests + perm_guard once /e wires it
+fn perm_guard_verdict(ident: &Identity, perm_held: bool) -> bool {
+    if !ident.is_active {
+        return false;
+    }
+    if ident.role.bypasses_group_checks() {
+        return true;
+    }
+    perm_held
 }
 
 /// Only admins may pass. Used for user/group management.
@@ -513,4 +602,97 @@ pub fn register_admin_routes(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_identity(role: Role, is_active: bool) -> Identity {
+        Identity {
+            user_id: 42,
+            email: "test@example.com".into(),
+            role,
+            is_active,
+            is_demo: false,
+            demo_label: None,
+        }
+    }
+
+    // ---- role_guard's decision is `Role::includes(min)` -----------------
+    // The 25-case matrix lives in `auth::role::tests::includes_matrix_…`;
+    // the cases below pin the four most operator-relevant pairings as
+    // documentation that the guard reuses that ladder.
+
+    #[test]
+    fn role_guard_decision_admin_meets_staff_floor() {
+        let id = make_identity(Role::Administrator, true);
+        assert!(id.role.includes(Role::Staff));
+    }
+
+    #[test]
+    fn role_guard_decision_user_does_not_meet_staff() {
+        let id = make_identity(Role::User, true);
+        assert!(!id.role.includes(Role::Staff));
+    }
+
+    #[test]
+    fn role_guard_decision_administrator_does_not_meet_developer() {
+        let id = make_identity(Role::Administrator, true);
+        assert!(!id.role.includes(Role::Developer));
+    }
+
+    #[test]
+    fn role_guard_decision_developer_meets_everything() {
+        let id = make_identity(Role::Developer, true);
+        for &min in &[
+            Role::User,
+            Role::Staff,
+            Role::Supervisor,
+            Role::Administrator,
+            Role::Developer,
+        ] {
+            assert!(id.role.includes(min), "Developer should meet {min:?}");
+        }
+    }
+
+    // ---- perm_guard_verdict matrix --------------------------------------
+
+    #[test]
+    fn perm_guard_admin_short_circuits_without_perm() {
+        let id = make_identity(Role::Administrator, true);
+        assert!(perm_guard_verdict(&id, false));
+    }
+
+    #[test]
+    fn perm_guard_developer_short_circuits_without_perm() {
+        let id = make_identity(Role::Developer, true);
+        assert!(perm_guard_verdict(&id, false));
+    }
+
+    #[test]
+    fn perm_guard_staff_with_perm_passes() {
+        let id = make_identity(Role::Staff, true);
+        assert!(perm_guard_verdict(&id, true));
+    }
+
+    #[test]
+    fn perm_guard_staff_without_perm_denies() {
+        let id = make_identity(Role::Staff, true);
+        assert!(!perm_guard_verdict(&id, false));
+    }
+
+    #[test]
+    fn perm_guard_inactive_admin_denies_even_with_bypass() {
+        // Phase 7a/0.5/sec2 invariant — defense-in-depth.
+        let id = make_identity(Role::Administrator, false);
+        assert!(!perm_guard_verdict(&id, true));
+    }
+
+    #[test]
+    fn perm_guard_supervisor_without_perm_denies() {
+        // Supervisor doesn't bypass; needs the per-model perm.
+        let id = make_identity(Role::Supervisor, true);
+        assert!(!perm_guard_verdict(&id, false));
+    }
 }

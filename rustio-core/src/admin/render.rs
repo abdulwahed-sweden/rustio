@@ -545,6 +545,45 @@ pub(crate) fn map_audit_actions(actions: Vec<super::audit::AdminAction>) -> Vec<
 }
 
 // ---------------------------------------------------------------------------
+// 403 Forbidden page (Phase 7a/0.5/b).
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub(crate) struct ForbiddenCtx {
+    #[serde(flatten)]
+    pub base: BaseContext,
+    pub page_title: &'static str,
+    /// The permission codename or URL the user tried to reach. Shown
+    /// in the body when present so the operator can audit how the
+    /// guard fired without trawling logs.
+    pub attempted: Option<String>,
+    /// The minimum role required by the page that rejected them.
+    /// `None` for permission failures, `Some(label)` for role-tier
+    /// failures.
+    pub required_role: Option<&'static str>,
+}
+
+/// Build the 403 response body. Free function (not on `AdminCtx`)
+/// so the unit tests can render the page with just `Templates` +
+/// `Admin` — no `Db` required.
+pub(crate) fn render_forbidden_body(
+    admin: &Admin,
+    templates: &crate::templates::Templates,
+    identity: &Identity,
+    csrf_token: String,
+    attempted: Option<String>,
+    required_role: Option<&'static str>,
+) -> crate::error::Result<String> {
+    let view = ForbiddenCtx {
+        base: BaseContext::new(Some(identity), csrf_token, admin),
+        page_title: "Permission denied",
+        attempted,
+        required_role,
+    };
+    templates.render("admin/forbidden.html", &view)
+}
+
+// ---------------------------------------------------------------------------
 // Password change (self-service — Phase 6b/5).
 // ---------------------------------------------------------------------------
 
@@ -570,4 +609,79 @@ pub(crate) struct ErrorCtx {
     pub status_code: u16,
     pub status_message: String,
     pub details: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::Role;
+    use crate::templates::Templates;
+
+    fn fake_identity(role: Role) -> Identity {
+        Identity {
+            user_id: 1,
+            email: "test@example.com".into(),
+            role,
+            is_active: true,
+            is_demo: false,
+            demo_label: None,
+        }
+    }
+
+    #[test]
+    fn render_forbidden_body_with_required_role() {
+        let admin = Admin::new();
+        let templates = Templates::new(None).expect("embedded templates");
+        let ident = fake_identity(Role::Staff);
+
+        let body = render_forbidden_body(
+            &admin,
+            &templates,
+            &ident,
+            "fake-csrf".into(),
+            None,
+            Some("Administrator"),
+        )
+        .expect("forbidden page renders");
+
+        assert!(body.contains("Permission denied"), "page h1 missing");
+        assert!(
+            body.contains("Administrator"),
+            "required_role hint should be in body"
+        );
+        assert!(
+            body.contains("Return to dashboard"),
+            "back link missing"
+        );
+        // Identity-bearing surfaces still render: the user-tools welcome
+        // line should include the test email.
+        assert!(body.contains("test@example.com"), "user-tools email missing");
+    }
+
+    #[test]
+    fn render_forbidden_body_with_attempted_perm() {
+        let admin = Admin::new();
+        let templates = Templates::new(None).expect("embedded templates");
+        let ident = fake_identity(Role::Staff);
+
+        let body = render_forbidden_body(
+            &admin,
+            &templates,
+            &ident,
+            "fake-csrf".into(),
+            Some("posts.delete_post".into()),
+            None,
+        )
+        .expect("forbidden page renders");
+
+        assert!(
+            body.contains("posts.delete_post"),
+            "attempted permission should appear in body"
+        );
+        // When `required_role` is None the section is hidden.
+        assert!(
+            !body.contains("This page requires"),
+            "required_role section must be hidden when None"
+        );
+    }
 }

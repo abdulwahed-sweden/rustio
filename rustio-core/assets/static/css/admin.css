@@ -782,3 +782,59 @@ fieldset.module h2 {
 .danger-zone h2 {
     background: var(--delete-button-bg);
 }
+
+/* --- 403 forbidden page (Phase 7a/0.5/b) ----------------------------- */
+
+.forbidden-page {
+    max-width: 480px;
+    margin: 60px auto;
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 32px 36px 28px;
+    text-align: center;
+}
+.forbidden-page h1 {
+    color: var(--body-loud);
+    font-size: 22px;
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+}
+.forbidden-page p {
+    color: var(--body-fg);
+    margin: 0 0 8px;
+}
+.forbidden-page .forbidden-detail {
+    color: var(--body-quiet);
+    font-size: 13px;
+    margin-top: 4px;
+}
+.forbidden-page code {
+    background: var(--darkened-bg);
+    padding: 1px 6px;
+    border-radius: 2px;
+    font-size: 12px;
+}
+.forbidden-page .forbidden-actions {
+    margin: 22px 0 0;
+}
+.forbidden-page .forbidden-home {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-decoration: none;
+}
+.forbidden-page .forbidden-home:hover {
+    background: var(--accent-hover);
+    text-decoration: none;
+    color: #fff;
+}
+
+body.forbidden #content { background: var(--darkened-bg); }
