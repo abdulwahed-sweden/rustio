@@ -221,12 +221,13 @@ pub(crate) async fn do_create(
         .find(admin_name)
         .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
     let form = req.form()?;
+    let intent = submit_intent(&form);
     match entry.ops.create(&ctx.db, &form).await? {
         Ok(id) => {
             if let Some(hook) = &entry.search_hook {
                 hook.on_upsert(&ctx.db, id).await;
             }
-            Ok(Response::redirect(format!("/admin/{}", admin_name)))
+            Ok(Response::redirect(redirect_after_save(intent, admin_name, id)))
         }
         Err(errors) => {
             let token = csrf_token(&req);
@@ -234,6 +235,35 @@ pub(crate) async fn do_create(
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
         }
+    }
+}
+
+/// Which `Save*` button the form submitted with. The change form has
+/// three submit buttons (`_save`, `_continue`, `_addanother`) per the
+/// Phase 6a design spec; this picks the redirect target after a
+/// successful create / update.
+#[derive(Debug, Clone, Copy)]
+enum SubmitIntent {
+    Save,
+    Continue,
+    AddAnother,
+}
+
+fn submit_intent(form: &crate::http::FormData) -> SubmitIntent {
+    if form.get("_continue").is_some() {
+        SubmitIntent::Continue
+    } else if form.get("_addanother").is_some() {
+        SubmitIntent::AddAnother
+    } else {
+        SubmitIntent::Save
+    }
+}
+
+fn redirect_after_save(intent: SubmitIntent, admin_name: &str, id: i64) -> String {
+    match intent {
+        SubmitIntent::Save => format!("/admin/{admin_name}"),
+        SubmitIntent::Continue => format!("/admin/{admin_name}/{id}/edit"),
+        SubmitIntent::AddAnother => format!("/admin/{admin_name}/new"),
     }
 }
 
@@ -281,12 +311,13 @@ pub(crate) async fn do_update(
         .find(admin_name)
         .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
     let form = req.form()?;
+    let intent = submit_intent(&form);
     match entry.ops.update(&ctx.db, id, &form).await? {
         Ok(()) => {
             if let Some(hook) = &entry.search_hook {
                 hook.on_upsert(&ctx.db, id).await;
             }
-            Ok(Response::redirect(format!("/admin/{admin_name}")))
+            Ok(Response::redirect(redirect_after_save(intent, admin_name, id)))
         }
         Err(errors) => {
             let existing = entry.ops.find_row(&ctx.db, id).await?;

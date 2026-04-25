@@ -1,43 +1,57 @@
 {% extends "admin/base.html" %}
 
-{% block content %}
-<div class="page-header">
-    <h1>{{ mode == "new" and "Add" or "Change" }} {{ singular_name }}</h1>
-    <a href="/admin/{{ admin_name }}" class="link-muted">Back to list</a>
+{% block bodyclass %}change-form{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a>
+    &rsaquo; <a href="/admin/{{ admin_name }}/">{{ display_name }}</a>
+    &rsaquo; {{ mode == "new" and "Add" or "Change" }}
 </div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ mode == "new" and "Add" or "Change" }} {{ singular_name|lower }}</h1>
 
 {% if errors %}
-<div class="flash flash-error">
-    <ul>
-        {% for err in errors %}<li>{{ err }}</li>{% endfor %}
-    </ul>
-</div>
+{% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
-<form method="post" class="model-form">
+<form method="post" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    {% for field in fields %}
-    <div class="form-row">
-        <label for="field-{{ field.name }}">{{ field.label }}</label>
-        {% if field.widget == "checkbox" %}
-            <input type="checkbox" id="field-{{ field.name }}" name="{{ field.name }}"
-                {% if field.value == "true" %}checked{% endif %}>
-        {% elif field.widget == "textarea" %}
-            <textarea id="field-{{ field.name }}" name="{{ field.name }}" rows="5">{{ field.value }}</textarea>
-        {% elif field.widget == "datetime" %}
-            <input type="datetime-local" id="field-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
-        {% elif field.widget == "number" %}
-            <input type="number" id="field-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
-        {% else %}
-            <input type="text" id="field-{{ field.name }}" name="{{ field.name }}" value="{{ field.value }}">
-        {% endif %}
-        {% if field.hint %}<small class="muted">{{ field.hint }}</small>{% endif %}
-    </div>
-    {% endfor %}
 
-    <div class="form-actions">
-        <button type="submit" class="btn">Save</button>
-        <a href="/admin/{{ admin_name }}" class="btn btn-ghost">Cancel</a>
+    <fieldset class="module aligned">
+        <h2>General</h2>
+        {% for field in fields %}
+        <div class="form-row field-{{ field.name }}">
+            <label for="id_{{ field.name }}">{{ field.label }}{% if field.input_type != "checkbox" %}:{% endif %}</label>
+            <div class="field-input">
+                {% if field.widget == "checkbox" %}
+                    <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
+                        value="true"{% if field.value == "true" %} checked{% endif %}>
+                {% elif field.widget == "textarea" %}
+                    <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
+                        {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
+                {% else %}
+                    <input type="{{ field.input_type }}" id="id_{{ field.name }}" name="{{ field.name }}"
+                        value="{{ field.value }}"
+                        {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+                {% endif %}
+                {% if field.hint %}<p class="help">{{ field.hint }}</p>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </fieldset>
+
+    <div class="submit-row">
+        {% if mode == "edit" and object_id %}
+        <span class="deletelink-box">
+            <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="deletelink">Delete</a>
+        </span>
+        {% endif %}
+        <input type="submit" name="_addanother" value="Save and add another">
+        <input type="submit" name="_continue" value="Save and continue editing">
+        <input type="submit" name="_save" value="Save" class="default">
     </div>
 </form>
 {% endblock %}
