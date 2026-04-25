@@ -202,6 +202,14 @@ pub(crate) async fn do_user_edit(
         .bind(user_id)
         .execute(ctx.db.pool())
         .await?;
+    // Phase 7a/0.5/sec3 — the wholesale DELETE bypasses
+    // `remove_user_from_group`'s built-in cache invalidation. Without
+    // this explicit call, a user demoted to zero groups keeps every
+    // permission for up to 60 seconds (PERM_CACHE_TTL). When the
+    // checkbox loop below adds at least one group back, that path's
+    // own invalidation covers us — but the all-unchecked case lands
+    // here.
+    auth::invalidate_user_cache(user_id);
     for gid in wanted {
         auth::add_user_to_group(&ctx.db, user_id, gid).await?;
     }

@@ -348,6 +348,82 @@ mod tests {
         assert_eq!(PERM_CACHE_TTL.as_secs(), 60);
     }
 
+    /// Phase 7a/0.5/sec3: invalidating the perm cache makes a fresh
+    /// `permissions_for_user` call read live tables. Without sec3's
+    /// fix, `do_user_edit`'s wholesale `DELETE FROM rustio_user_groups`
+    /// would leave the user passing every cached perm for up to 60s.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn invalidate_user_cache_drops_stale_perms() {
+        use crate::auth::create_user;
+        use crate::auth::Role as RoleAlias;
+
+        let url = std::env::var("RUSTIO_TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:dev@localhost:5432/rustio_dev".into());
+        let opts = crate::orm::DbOptions {
+            max_connections: 2,
+            ..crate::orm::DbOptions::default()
+        };
+        let db = crate::orm::Db::connect_with(&url, opts).await.unwrap();
+
+        // Seed: one Staff user, one group with `posts.view_post`,
+        // user attached to group. Clean per-test by using a unique tag.
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+        crate::auth::init_permission_tables(&db).await.unwrap();
+
+        let tag = format!("invtest_{}_{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let email = format!("{tag}@example.test");
+        let user_id = create_user(&db, &email, "secret-pw-123", RoleAlias::Staff).await.unwrap();
+        let group_id = create_group(&db, &tag, "tmp").await.unwrap();
+        grant_to_group(&db, group_id, "posts.view_post").await.unwrap();
+        add_user_to_group(&db, user_id, group_id).await.unwrap();
+
+        let identity = Identity {
+            user_id,
+            email: email.clone(),
+            role: RoleAlias::Staff,
+            is_active: true,
+            is_demo: false,
+            demo_label: None,
+        };
+
+        // Sanity: user has the perm via group.
+        assert!(
+            check_permission(&db, &identity, "posts.view_post").await.unwrap(),
+            "user should have view_post via group"
+        );
+
+        // Simulate `do_user_edit`'s wholesale DELETE without going
+        // through `remove_user_from_group` (which would invalidate the
+        // cache for us). This is the exact pattern that bites in
+        // production.
+        sqlx::query("DELETE FROM rustio_user_groups WHERE user_id = $1")
+            .bind(user_id)
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        // sec3's fix: explicit invalidate after the wholesale delete.
+        invalidate_user_cache(user_id);
+
+        assert!(
+            !check_permission(&db, &identity, "posts.view_post").await.unwrap(),
+            "after wholesale DELETE + invalidate, user must NOT have view_post"
+        );
+
+        // Cleanup.
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+            .bind(user_id)
+            .execute(db.pool())
+            .await;
+        let _ = sqlx::query("DELETE FROM rustio_groups WHERE id = $1")
+            .bind(group_id)
+            .execute(db.pool())
+            .await;
+    }
+
     /// Phase 7a/0.5/sec2 regression: the order of checks in
     /// `check_permission` must reject inactive users **before** the
     /// `bypasses_group_checks` short-circuit. Otherwise an inactive
