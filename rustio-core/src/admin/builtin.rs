@@ -360,3 +360,91 @@ pub(crate) async fn do_group_edit(
 
     Ok(Response::redirect("/admin/groups"))
 }
+
+// ---------- New group ----------
+
+#[derive(Serialize)]
+struct GroupNewCtx {
+    #[serde(flatten)]
+    base: BaseContext,
+    page_title: &'static str,
+    entries: Vec<SidebarEntry>,
+    name: String,
+    description: String,
+    errors: Vec<String>,
+}
+
+pub(crate) async fn show_new_group(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    csrf: String,
+) -> Result<Response> {
+    let view = GroupNewCtx {
+        base: BaseContext::new(Some(&identity), csrf),
+        page_title: "Add group",
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        name: String::new(),
+        description: String::new(),
+        errors: Vec::new(),
+    };
+    let body = ctx.templates.render("admin/group_new.html", &view)?;
+    Ok(Response::html(body))
+}
+
+pub(crate) async fn do_new_group(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    req: Request,
+) -> Result<Response> {
+    let form = req.form()?;
+    let name = form.get("name").unwrap_or("").trim().to_string();
+    let description = form.get("description").unwrap_or("").to_string();
+
+    let mut errors: Vec<String> = Vec::new();
+    if name.is_empty() {
+        errors.push("Name is required.".into());
+    } else if name.len() > 150 {
+        errors.push("Name must be 150 characters or fewer.".into());
+    }
+
+    if errors.is_empty() {
+        // INSERT — `ON CONFLICT (name) DO NOTHING` would mask the
+        // duplicate-name error; let the unique-constraint violation
+        // bubble up so the user sees a real error.
+        let result = sqlx::query(
+            "INSERT INTO rustio_groups (name, description) VALUES ($1, $2) RETURNING id",
+        )
+        .bind(&name)
+        .bind(&description)
+        .fetch_one(ctx.db.pool())
+        .await;
+
+        match result {
+            Ok(row) => {
+                let r = Row::from_pg(&row);
+                let new_id: i64 = r.get_i64("id")?;
+                return Ok(Response::redirect(format!("/admin/groups/{new_id}/edit")));
+            }
+            Err(sqlx::Error::Database(db_err)) if db_err.constraint().is_some() => {
+                errors.push(format!("A group named \"{name}\" already exists."));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    let csrf = req
+        .ctx()
+        .get::<crate::middleware::CsrfGuard>()
+        .map(|g| g.token.clone())
+        .unwrap_or_default();
+    let view = GroupNewCtx {
+        base: BaseContext::new(Some(&identity), csrf),
+        page_title: "Add group",
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        name,
+        description,
+        errors,
+    };
+    let body = ctx.templates.render("admin/group_new.html", &view)?;
+    Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
+}
