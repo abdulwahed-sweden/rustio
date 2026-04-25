@@ -159,7 +159,20 @@ pub async fn create_user(db: &Db, email: &str, password: &str, role: Role) -> Re
     .bind(role.as_str())
     .fetch_one(db.pool())
     .await
-    .map_err(|e| Error::BadRequest(format!("could not create user: {e}")))?;
+    .map_err(|e| {
+        // Phase 7a/0.5/sec4: keep Postgres internals out of the
+        // client response. The full error stays in the operator's
+        // log; the user sees a clean, generic message — except the
+        // unique-email collision, which is worth surfacing because
+        // it's actionable.
+        log::warn!("create_user failed for {email}: {e}");
+        let detail = e.to_string();
+        if detail.contains("rustio_users_email_key") {
+            Error::BadRequest("An account with this email already exists.".into())
+        } else {
+            Error::BadRequest("Could not create user. Please check your input.".into())
+        }
+    })?;
     let id: i64 = row
         .try_get("id")
         .map_err(|e| Error::Internal(format!("returning id: {e}")))?;
@@ -246,4 +259,67 @@ mod tests {
 
     // `Role` parsing + ladder semantics moved to `auth/role.rs`
     // (25-case `includes` matrix + parse round-trip).
+
+    /// Phase 7a/0.5/sec4 regression: duplicate-email creation must
+    /// surface a clean, actionable message — never the raw Postgres
+    /// constraint name, never an SQLSTATE code.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn duplicate_email_is_clean_error_message() {
+        let url = std::env::var("RUSTIO_TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:dev@localhost:5432/rustio_dev".into());
+        let opts = crate::orm::DbOptions {
+            max_connections: 2,
+            ..crate::orm::DbOptions::default()
+        };
+        let db = crate::orm::Db::connect_with(&url, opts).await.unwrap();
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+
+        let tag = format!(
+            "dup_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let email = format!("{tag}@example.test");
+
+        // First insert succeeds.
+        let first_id = create_user(&db, &email, "secret-pw-123", Role::User)
+            .await
+            .unwrap();
+
+        // Second insert fails — assert the response message is clean
+        // and contains no Postgres-internal detail.
+        let err = create_user(&db, &email, "secret-pw-123", Role::User)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("already exists"),
+            "expected actionable duplicate-email message, got: {msg}"
+        );
+        for leaked in [
+            "rustio_users_email_key",
+            "duplicate key value",
+            "constraint",
+            "SQLSTATE",
+            "23505",
+            "Postgres",
+            "pg::",
+        ] {
+            assert!(
+                !msg.contains(leaked),
+                "client message must NOT contain {leaked:?}, got: {msg}"
+            );
+        }
+
+        // Cleanup.
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+            .bind(first_id)
+            .execute(db.pool())
+            .await;
+    }
 }
