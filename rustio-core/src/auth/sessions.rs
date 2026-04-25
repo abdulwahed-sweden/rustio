@@ -7,7 +7,8 @@ use rand::RngCore;
 use crate::error::Result;
 use crate::orm::{Db, Row};
 
-use super::users::{Identity, Role};
+use super::role::Role;
+use super::users::Identity;
 
 /// The cookie name we look for and set. Constant so middleware and
 /// handlers stay in sync.
@@ -67,7 +68,7 @@ pub async fn delete_session(db: &Db, token: &str) -> Result<()> {
 
 pub async fn identity_from_session(db: &Db, token: &str) -> Result<Option<Identity>> {
     let row = sqlx::query(
-        "SELECT u.id, u.email, u.role, u.is_active, s.expires_at
+        "SELECT u.id, u.email, u.role, u.is_active, u.is_demo, u.demo_label, s.expires_at
            FROM rustio_sessions s
            JOIN rustio_users u ON u.id = s.user_id
           WHERE s.token = $1",
@@ -103,6 +104,8 @@ pub async fn identity_from_session(db: &Db, token: &str) -> Result<Option<Identi
         email: r.get_string("email")?,
         role: Role::parse(&r.get_string("role")?)?,
         is_active: r.get_bool("is_active")?,
+        is_demo: r.get_bool("is_demo")?,
+        demo_label: r.get_optional_string("demo_label")?,
     }))
 }
 

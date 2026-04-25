@@ -8,38 +8,8 @@ use sqlx::Row as SqlxRow;
 use crate::error::{Error, Result};
 use crate::orm::{Db, Row};
 
+use super::role::Role;
 use super::sessions::create_session;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Role {
-    Admin,
-    Staff,
-    User,
-}
-
-impl Role {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Role::Admin => "admin",
-            Role::Staff => "staff",
-            Role::User => "user",
-        }
-    }
-
-    pub fn parse(s: &str) -> Result<Self> {
-        match s {
-            "admin" => Ok(Role::Admin),
-            "staff" => Ok(Role::Staff),
-            "user" => Ok(Role::User),
-            other => Err(Error::BadRequest(format!("unknown role: {other}"))),
-        }
-    }
-
-    /// Admin bypasses permission checks. Staff still gets checked.
-    pub fn is_superuser(&self) -> bool {
-        matches!(self, Role::Admin)
-    }
-}
 
 /// The identity attached to a request by the auth middleware. Kept
 /// cheap to clone because we pass it into handler bodies.
@@ -49,15 +19,22 @@ pub struct Identity {
     pub email: String,
     pub role: Role,
     pub is_active: bool,
+    /// Phase 7a/0.5: whether this user was seeded by the demo
+    /// bootstrap (`RUSTIO_DEMO_MODE=1`). Drives the red banner.
+    pub is_demo: bool,
+    pub demo_label: Option<String>,
 }
 
 impl Identity {
+    /// Administrator-or-higher (Administrator, Developer). Phase 6a/6b
+    /// callers used this to gate the user/group management pages.
     pub fn is_admin(&self) -> bool {
-        self.is_active && matches!(self.role, Role::Admin)
+        self.is_active && self.role.includes(Role::Administrator)
     }
 
+    /// Anyone allowed into the admin panel (Staff and above).
     pub fn can_access_admin(&self) -> bool {
-        self.is_active && matches!(self.role, Role::Admin | Role::Staff)
+        self.is_active && self.role.can_access_panel()
     }
 }
 
@@ -67,6 +44,8 @@ pub struct StoredUser {
     pub password_hash: String,
     pub role: Role,
     pub is_active: bool,
+    pub is_demo: bool,
+    pub demo_label: Option<String>,
 }
 
 pub async fn init_user_tables(db: &Db) -> Result<()> {
@@ -87,6 +66,66 @@ pub async fn init_user_tables(db: &Db) -> Result<()> {
     sqlx::query("CREATE INDEX IF NOT EXISTS rustio_users_email_idx ON rustio_users (email)")
         .execute(db.pool())
         .await?;
+
+    Ok(())
+}
+
+/// Idempotent schema upgrade for the 5-tier role hierarchy + demo flag.
+///
+/// Phase 7a/0.5/a — runs after `init_user_tables` on every boot. Safe to
+/// call repeatedly; safe to run on a fresh DB and on a Phase 6b DB.
+///
+/// Order is load-bearing:
+/// 1. Rename existing `'admin'` rows to `'administrator'` BEFORE the CHECK
+///    constraint exists, otherwise the constraint would reject the row.
+/// 2. Add the two demo columns idempotently.
+/// 3. Add the CHECK constraint conditionally (PG has no `IF NOT EXISTS`
+///    for CHECK constraints, so we guard via `pg_constraint`).
+/// 4. Add the indexes (`CREATE INDEX IF NOT EXISTS` is native).
+pub async fn migrate_user_schema(db: &Db) -> Result<()> {
+    // 1. Rename 'admin' → 'administrator' on existing rows.
+    sqlx::query("UPDATE rustio_users SET role = 'administrator' WHERE role = 'admin'")
+        .execute(db.pool())
+        .await?;
+
+    // 2. Add demo columns.
+    sqlx::query(
+        "ALTER TABLE rustio_users \
+         ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE",
+    )
+    .execute(db.pool())
+    .await?;
+    sqlx::query("ALTER TABLE rustio_users ADD COLUMN IF NOT EXISTS demo_label TEXT")
+        .execute(db.pool())
+        .await?;
+
+    // 3. CHECK constraint — guarded by pg_constraint lookup. The DO block
+    //    runs as one statement; sqlx happily executes PL/pgSQL strings.
+    sqlx::query(
+        "DO $$
+         BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'rustio_users_role_check'
+            ) THEN
+                ALTER TABLE rustio_users
+                ADD CONSTRAINT rustio_users_role_check
+                CHECK (role IN ('user','staff','supervisor','administrator','developer'));
+            END IF;
+         END $$",
+    )
+    .execute(db.pool())
+    .await?;
+
+    // 4. Indexes.
+    sqlx::query("CREATE INDEX IF NOT EXISTS rustio_users_role_idx ON rustio_users(role)")
+        .execute(db.pool())
+        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS rustio_users_is_demo_idx \
+         ON rustio_users(is_demo) WHERE is_demo = TRUE",
+    )
+    .execute(db.pool())
+    .await?;
 
     Ok(())
 }
@@ -129,7 +168,7 @@ pub async fn create_user(db: &Db, email: &str, password: &str, role: Role) -> Re
 
 pub async fn find_user_by_email(db: &Db, email: &str) -> Result<Option<StoredUser>> {
     let row = sqlx::query(
-        "SELECT id, email, password_hash, role, is_active
+        "SELECT id, email, password_hash, role, is_active, is_demo, demo_label
            FROM rustio_users
           WHERE email = $1",
     )
@@ -145,6 +184,8 @@ pub async fn find_user_by_email(db: &Db, email: &str) -> Result<Option<StoredUse
                 password_hash: r.get_string("password_hash")?,
                 role: Role::parse(&r.get_string("role")?)?,
                 is_active: r.get_bool("is_active")?,
+                is_demo: r.get_bool("is_demo")?,
+                demo_label: r.get_optional_string("demo_label")?,
             }))
         }
         None => Ok(None),
@@ -203,18 +244,6 @@ mod tests {
         assert!(!verify_password("wrong", &h));
     }
 
-    #[test]
-    fn role_parsing() {
-        assert_eq!(Role::parse("admin").unwrap(), Role::Admin);
-        assert_eq!(Role::parse("staff").unwrap(), Role::Staff);
-        assert_eq!(Role::parse("user").unwrap(), Role::User);
-        assert!(Role::parse("root").is_err());
-    }
-
-    #[test]
-    fn admin_is_superuser_staff_is_not() {
-        assert!(Role::Admin.is_superuser());
-        assert!(!Role::Staff.is_superuser());
-        assert!(!Role::User.is_superuser());
-    }
+    // `Role` parsing + ladder semantics moved to `auth/role.rs`
+    // (25-case `includes` matrix + parse round-trip).
 }

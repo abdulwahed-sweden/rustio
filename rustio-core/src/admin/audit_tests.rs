@@ -83,7 +83,7 @@ async fn setup() -> (Db, String) {
 /// every action the user produced in one shot.
 async fn seed_user(db: &Db, tag: &str) -> i64 {
     let email = format!("audit_{tag}@rustio.test");
-    create_user(db, &email, "pw-for-test", Role::Admin).await.unwrap()
+    create_user(db, &email, "pw-for-test", Role::Administrator).await.unwrap()
 }
 
 async fn cleanup(db: &Db, uid: i64) {

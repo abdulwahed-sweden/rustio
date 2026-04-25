@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn seed_initial_admin(db: &Db) -> Result<(), Box<dyn std::error::Error>> {
     if auth::find_user_by_email(db, "admin@example.com").await?.is_none() {
-        auth::create_user(db, "admin@example.com", "admin", Role::Admin).await?;
+        auth::create_user(db, "admin@example.com", "admin", Role::Administrator).await?;
         log::info!("seeded default admin: admin@example.com / admin");
     }
     Ok(())

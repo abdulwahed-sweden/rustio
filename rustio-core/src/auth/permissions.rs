@@ -32,7 +32,7 @@ use crate::orm::Db;
 use super::users::Identity;
 
 #[cfg(test)]
-use super::users::Role;
+use super::role::Role;
 
 /// Marker type used by the authorize! macro for fast-paths on admins.
 pub struct Superuser;
@@ -185,9 +185,11 @@ pub async fn permissions_for_user(db: &Db, user_id: i64) -> Result<Arc<HashSet<S
     Ok(arc)
 }
 
-/// Ask "does this identity have permission X?". Admin short-circuits.
+/// Ask "does this identity have permission X?". Administrator and
+/// Developer short-circuit (their role bypasses every group check);
+/// every other tier consults the M2M tables.
 pub async fn check_permission(db: &Db, identity: &Identity, permission: &str) -> Result<bool> {
-    if identity.role.is_superuser() {
+    if identity.role.bypasses_group_checks() {
         return Ok(true);
     }
     if !identity.is_active {
@@ -309,18 +311,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn admin_short_circuits() {
-        // Can't actually hit the DB in a unit test, but we can verify
-        // the short-circuit branch doesn't need one.
-        let id = Identity {
-            user_id: 1,
-            email: "a@b.com".into(),
-            role: Role::Admin,
-            is_active: true,
-        };
-        // We can't call check_permission without a Db, so just confirm
-        // is_superuser returns true on admin.
-        assert!(id.role.is_superuser());
+    fn administrator_and_developer_bypass_group_checks() {
+        // The two top tiers skip the M2M lookup. Lower tiers don't.
+        for &(role, expected) in &[
+            (Role::User, false),
+            (Role::Staff, false),
+            (Role::Supervisor, false),
+            (Role::Administrator, true),
+            (Role::Developer, true),
+        ] {
+            let id = Identity {
+                user_id: 1,
+                email: "a@b.com".into(),
+                role,
+                is_active: true,
+                is_demo: false,
+                demo_label: None,
+            };
+            assert_eq!(
+                id.role.bypasses_group_checks(),
+                expected,
+                "{role:?} should be {expected}"
+            );
+        }
     }
 
     #[test]

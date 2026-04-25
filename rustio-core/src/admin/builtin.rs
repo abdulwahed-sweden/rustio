@@ -425,10 +425,13 @@ pub(crate) async fn do_new_user(
     let is_staff = form.bool_flag("is_staff");
     let is_superuser = form.bool_flag("is_superuser");
 
-    // Map two checkboxes onto NEW's single Role enum.
-    // is_superuser=true wins, regardless of is_staff. Both off = plain User.
+    // Phase 6b 2-checkbox UI mapped onto NEW's Role enum. After the
+    // 5-tier role hierarchy lands in 7a/0.5/a, is_superuser still wins
+    // and creates `Administrator` (not `Developer` — the dev tier is
+    // CLI-only or future UI). The full 5-option select replaces this
+    // block in commit /d.
     let role = if is_superuser {
-        Role::Admin
+        Role::Administrator
     } else if is_staff {
         Role::Staff
     } else {

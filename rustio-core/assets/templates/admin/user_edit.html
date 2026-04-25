@@ -33,9 +33,11 @@
             <label for="id_role">Role:</label>
             <div class="field-input">
                 <select id="id_role" name="role">
-                    <option value="admin" {% if role == "admin" %}selected{% endif %}>Admin (superuser)</option>
-                    <option value="staff" {% if role == "staff" %}selected{% endif %}>Staff (admin access, per-model permissions)</option>
-                    <option value="user"  {% if role == "user"  %}selected{% endif %}>User (no admin access)</option>
+                    <option value="developer"     {% if role == "developer"     %}selected{% endif %}>Developer (schema browser + execution logs + SQL console)</option>
+                    <option value="administrator" {% if role == "administrator" %}selected{% endif %}>Administrator (full coverage; bypasses group checks)</option>
+                    <option value="supervisor"    {% if role == "supervisor"    %}selected{% endif %}>Supervisor (view + edit; no destructive ops)</option>
+                    <option value="staff"         {% if role == "staff"         %}selected{% endif %}>Staff (admin access; per-model group permissions)</option>
+                    <option value="user"          {% if role == "user"          %}selected{% endif %}>User (no admin access)</option>
                 </select>
             </div>
         </div>
