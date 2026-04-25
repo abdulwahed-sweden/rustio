@@ -35,6 +35,18 @@ async fn ensure_audit_ready(db: &Db) {
         .await;
 }
 
+/// Look up an admin entry by `admin_name`, treating core entries
+/// (currently just the synthetic User) as not-found. Core entries
+/// have bespoke admin pages — the generic `/admin/<model>/new` family
+/// of routes routes through `CoreUserOps`, which is schema-only and
+/// 500s on every CRUD call. Refusing here gives a clean 404 instead.
+fn find_project_entry<'a>(admin: &'a Admin, admin_name: &str) -> Result<&'a super::types::AdminEntry> {
+    admin
+        .find(admin_name)
+        .filter(|e| !e.core)
+        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))
+}
+
 pub(crate) struct AdminCtx {
     pub admin: Arc<Admin>,
     pub db: Db,
@@ -124,10 +136,7 @@ pub(crate) async fn list_model(
     admin_name: &str,
     req: &Request,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     let mut rows = entry.ops.list(&ctx.db).await?;
 
     // Phase 6a: in-memory search/filter/pagination. Pushdown to AdminOps
@@ -220,10 +229,7 @@ pub(crate) async fn show_new_form(
     admin_name: &str,
     req: &Request,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     let form = render::form_ctx(&identity, ctx.admin.entries(), entry, "new", None, None, vec![], csrf_token(req));
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
@@ -235,10 +241,7 @@ pub(crate) async fn do_create(
     admin_name: &str,
     req: Request,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     let form = req.form()?;
     let intent = submit_intent(&form);
     match entry.ops.create(&ctx.db, &form).await? {
@@ -295,10 +298,7 @@ pub(crate) async fn show_edit_form(
     id: i64,
     req: &Request,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     let row = entry
         .ops
         .find_row(&ctx.db, id)
@@ -325,10 +325,7 @@ pub(crate) async fn do_update(
     id: i64,
     req: Request,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     let form = req.form()?;
     let intent = submit_intent(&form);
     match entry.ops.update(&ctx.db, id, &form).await? {
@@ -366,10 +363,7 @@ pub(crate) async fn show_delete_confirm(
     id: i64,
     req: &Request,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     let label = entry
         .ops
         .object_label(&ctx.db, id)
@@ -410,10 +404,7 @@ pub(crate) async fn do_delete(
     admin_name: &str,
     id: i64,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     entry.ops.delete(&ctx.db, id).await?;
     if let Some(hook) = &entry.search_hook {
         hook.on_delete(id);
@@ -430,10 +421,7 @@ pub(crate) async fn show_object_history(
     id: i64,
     req: &Request,
 ) -> Result<Response> {
-    let entry = ctx
-        .admin
-        .find(admin_name)
-        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let entry = find_project_entry(&ctx.admin, admin_name)?;
     let label = entry
         .ops
         .object_label(&ctx.db, id)

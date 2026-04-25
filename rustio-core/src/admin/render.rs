@@ -128,6 +128,14 @@ pub(crate) struct RecentActionCtx {
 pub(crate) fn group_entries_by_app(entries: &[AdminEntry]) -> Vec<DashboardApp> {
     let mut apps: Vec<DashboardApp> = Vec::new();
     for entry in entries {
+        // Core entries (currently just the synthetic User) have a
+        // bespoke admin page reachable via the header's Users link.
+        // Listing them here would offer "Add"/"Change" actions that
+        // route through CoreUserOps, which is schema-only — hitting
+        // either button 500s. Skip them entirely.
+        if entry.core {
+            continue;
+        }
         let label = app_label_for(entry.admin_name);
         let app = match apps.iter_mut().find(|a| a.label == label) {
             Some(a) => a,
