@@ -1,49 +1,65 @@
 {% extends "admin/base.html" %}
 
-{% block content %}
-<div class="page-header">
-    <h1>Edit group</h1>
-    <a href="/admin/groups" class="link-muted">Back to groups</a>
+{% block bodyclass %}change-form group-edit{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a>
+    &rsaquo; <a href="/admin/groups">Groups</a>
+    &rsaquo; {{ name }}
 </div>
+{% endblock %}
+
+{% block content %}
+<h1>Change group</h1>
 
 {% if errors %}
-<div class="flash flash-error">
-    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
-</div>
+{% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
-<form method="post" class="model-form">
+<form method="post" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <div class="form-row">
-        <label for="field-name">Name</label>
-        <input type="text" id="field-name" name="name" value="{{ name }}" required>
-    </div>
 
-    <div class="form-row">
-        <label for="field-desc">Description</label>
-        <textarea id="field-desc" name="description" rows="3">{{ description }}</textarea>
-    </div>
+    <fieldset class="module aligned">
+        <h2>General</h2>
+        <div class="form-row">
+            <label for="id_name">Name:</label>
+            <div class="field-input">
+                <input type="text" id="id_name" name="name" value="{{ name }}" required>
+            </div>
+        </div>
+        <div class="form-row">
+            <label for="id_description">Description:</label>
+            <div class="field-input">
+                <textarea id="id_description" name="description" rows="3">{{ description }}</textarea>
+            </div>
+        </div>
+    </fieldset>
 
-    <fieldset class="form-fieldset">
-        <legend>Permissions</legend>
+    <fieldset class="module aligned">
+        <h2>Permissions</h2>
         {% if all_permissions %}
-        <div class="checkbox-list permission-list">
-            {% for p in all_permissions %}
-            <label class="checkbox-item">
-                <input type="checkbox" name="perm_{{ p.id }}"
-                    {% if p.id in group_permissions %}checked{% endif %}>
-                <code>{{ p.name }}</code>
-            </label>
-            {% endfor %}
+        <div class="form-row">
+            <label>Granted:</label>
+            <div class="field-input checkbox-list permission-list">
+                {% for p in all_permissions %}
+                <label class="checkbox-item">
+                    <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %}>
+                    <code>{{ p.name }}</code>
+                </label>
+                {% endfor %}
+            </div>
         </div>
         {% else %}
-        <p class="muted">No permissions registered. They appear after your first run (models emit their own permissions on startup).</p>
+        <div class="form-row">
+            <label>&nbsp;</label>
+            <div class="field-input"><p class="help">No permissions registered yet. They appear after a model with <code>#[derive(RustioAdmin)]</code> boots and emits its own.</p></div>
+        </div>
         {% endif %}
     </fieldset>
 
-    <div class="form-actions">
-        <button type="submit" class="btn">Save</button>
-        <a href="/admin/groups" class="btn btn-ghost">Cancel</a>
+    <div class="submit-row">
+        <input type="submit" name="_save" value="Save" class="default">
     </div>
 </form>
 {% endblock %}

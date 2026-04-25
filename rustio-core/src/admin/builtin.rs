@@ -16,7 +16,7 @@ use crate::http::{Request, Response};
 use crate::orm::{Db, Row};
 use crate::templates::Templates;
 
-use super::render::{BaseContext, FlashCtx, IdentityCtx, SidebarEntry};
+use super::render::{BaseContext, FlashCtx, SidebarEntry};
 use super::types::Admin;
 
 pub(crate) struct AuthAdminCtx {
@@ -220,12 +220,12 @@ pub(crate) async fn do_user_edit(
 
 #[derive(Serialize)]
 struct GroupsListCtx {
+    #[serde(flatten)]
+    base: BaseContext,
     page_title: &'static str,
-    identity: IdentityCtx,
     entries: Vec<SidebarEntry>,
     groups: Vec<GroupRow>,
     flash: Option<FlashCtx>,
-    csrf_token: String,
 }
 
 pub(crate) async fn list_groups(
@@ -234,12 +234,11 @@ pub(crate) async fn list_groups(
     csrf: String,
 ) -> Result<Response> {
     let view = GroupsListCtx {
+        base: BaseContext::new(Some(&identity), csrf),
         page_title: "Groups",
-        identity: (&identity).into(),
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         groups: load_groups(&ctx.db).await?,
         flash: None,
-        csrf_token: csrf,
     };
     let body = ctx.templates.render("admin/groups_list.html", &view)?;
     Ok(Response::html(body))
@@ -247,8 +246,9 @@ pub(crate) async fn list_groups(
 
 #[derive(Serialize)]
 struct GroupEditCtx {
+    #[serde(flatten)]
+    base: BaseContext,
     page_title: String,
-    identity: IdentityCtx,
     entries: Vec<SidebarEntry>,
     group_id: i64,
     name: String,
@@ -257,7 +257,6 @@ struct GroupEditCtx {
     group_permissions: Vec<i64>,
     errors: Vec<String>,
     flash: Option<FlashCtx>,
-    csrf_token: String,
 }
 
 #[derive(Serialize)]
@@ -302,8 +301,8 @@ pub(crate) async fn show_group_edit(
     .await?;
 
     let view = GroupEditCtx {
+        base: BaseContext::new(Some(&identity), csrf),
         page_title: format!("Edit group #{group_id}"),
-        identity: (&identity).into(),
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         group_id,
         name: r.get_string("name")?,
@@ -312,7 +311,6 @@ pub(crate) async fn show_group_edit(
         group_permissions: current,
         errors: vec![],
         flash: None,
-        csrf_token: csrf,
     };
     let body = ctx.templates.render("admin/group_edit.html", &view)?;
     Ok(Response::html(body))
