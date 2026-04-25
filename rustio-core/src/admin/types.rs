@@ -167,10 +167,37 @@ pub struct EditRow {
     pub values: Vec<(String, String)>,
 }
 
+/// Per-project admin branding. Defaults are RustIO-flavoured;
+/// projects override via [`Admin::site_branding`].
+///
+/// - `site_title` — used in `<title>` tags.
+/// - `site_header` — header bar text (and the login card's brand).
+/// - `index_title` — dashboard h1.
+/// - `footer_copyright` — single line at the bottom of every page.
+#[derive(Clone, Debug)]
+pub struct SiteBranding {
+    pub site_title: String,
+    pub site_header: String,
+    pub index_title: String,
+    pub footer_copyright: String,
+}
+
+impl Default for SiteBranding {
+    fn default() -> Self {
+        Self {
+            site_title: "RustIO administration".into(),
+            site_header: "RustIO administration".into(),
+            index_title: "Site administration".into(),
+            footer_copyright: format!("RustIO {}", env!("CARGO_PKG_VERSION")),
+        }
+    }
+}
+
 /// Builder for the admin. Register models with `.model::<M>()`, then
 /// hand it to the router via `register_admin_routes`.
 pub struct Admin {
     pub(crate) entries: Vec<AdminEntry>,
+    pub(crate) site_branding: SiteBranding,
 }
 
 impl Default for Admin {
@@ -188,7 +215,22 @@ impl Admin {
     pub fn new() -> Self {
         Self {
             entries: vec![core_user_entry()],
+            site_branding: SiteBranding::default(),
         }
+    }
+
+    /// Override the default RustIO branding. Project-facing API; the
+    /// builder pattern matches `.model()` / `.model_with_search()` so
+    /// chains read naturally.
+    pub fn site_branding(mut self, branding: SiteBranding) -> Self {
+        self.site_branding = branding;
+        self
+    }
+
+    /// Read-only access to the active branding — handlers and context
+    /// builders use this to thread brand strings into templates.
+    pub fn branding(&self) -> &SiteBranding {
+        &self.site_branding
     }
 
     pub fn model<M>(mut self) -> Self

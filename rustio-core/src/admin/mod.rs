@@ -36,4 +36,4 @@ pub use suggestions::{
     derive_relation_suggestions, derive_suggestions, derive_suggestions_from_entries,
     find_relation_suggestion, find_suggestion, find_suggestion_from_entries, Confidence, Suggestion,
 };
-pub use types::{Admin, AdminEntry, AdminField, AdminModel, AdminRelation, FieldType};
+pub use types::{Admin, AdminEntry, AdminField, AdminModel, AdminRelation, FieldType, SiteBranding};
