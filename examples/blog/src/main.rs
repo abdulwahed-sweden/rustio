@@ -19,7 +19,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rustio_core::admin::{register_admin_routes, Admin};
+use rustio_core::admin::{register_admin_routes, Admin, SiteBranding};
 use rustio_core::auth::{self, Role};
 use rustio_core::middleware::{self, RateLimiter};
 use rustio_core::migrations;
@@ -82,7 +82,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let templates = Templates::new(Some(template_dir.into()))?;
 
     // Admin — register models with search wired in, then materialise their permissions.
-    let admin = Admin::new().model_with_search::<apps::posts::Post>(indexer.clone());
+    // `.site_branding(SiteBranding::default())` is explicit-but-redundant
+    // here — the blog example IS the framework demo, so default RustIO
+    // branding is exactly what we want. Future projects (tolkhuset etc.)
+    // copy this line and pass their own values instead.
+    let admin = Admin::new()
+        .site_branding(SiteBranding::default())
+        .model_with_search::<apps::posts::Post>(indexer.clone());
     admin.seed_permissions(&db).await?;
 
     // Create an "editors" group as a convenience on first boot.
