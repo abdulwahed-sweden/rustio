@@ -103,6 +103,10 @@ struct UserEditCtx {
     user_groups: Vec<i64>,
     errors: Vec<String>,
     flash: Option<FlashCtx>,
+    /// Phase 7a/0.5/f — set when this user is the sole active
+    /// developer. The template renders a yellow banner so admins know
+    /// a role change here will be rejected by `do_user_edit`.
+    is_last_developer: bool,
 }
 
 #[derive(Serialize)]
@@ -151,6 +155,9 @@ pub(crate) async fn show_user_edit(
     .fetch_all(ctx.db.pool())
     .await?;
 
+    let is_last_developer =
+        auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
+
     let view = UserEditCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
@@ -163,6 +170,7 @@ pub(crate) async fn show_user_edit(
         user_groups: group_ids,
         errors: vec![],
         flash: None,
+        is_last_developer,
     };
     let body = ctx.templates.render("admin/user_edit.html", &view)?;
     Ok(Response::html(body))
@@ -170,7 +178,7 @@ pub(crate) async fn show_user_edit(
 
 pub(crate) async fn do_user_edit(
     ctx: &AuthAdminCtx,
-    _identity: Identity,
+    identity: Identity,
     user_id: i64,
     req: Request,
 ) -> Result<Response> {
@@ -178,16 +186,9 @@ pub(crate) async fn do_user_edit(
     let role = Role::parse(form.required("role")?)?;
     let is_active = form.bool_flag("is_active");
 
-    sqlx::query(
-        "UPDATE rustio_users SET role = $1, is_active = $2, updated_at = NOW() WHERE id = $3",
-    )
-    .bind(role.as_str())
-    .bind(is_active)
-    .bind(user_id)
-    .execute(ctx.db.pool())
-    .await?;
-
-    // Reset group membership to whatever the form ticked.
+    // Collect the ticked group ids upfront — used either to apply
+    // below, or to preserve the user's selection on a re-render with
+    // errors.
     let mut wanted: Vec<i64> = Vec::new();
     for (k, v) in form.as_map() {
         if let Some(id_str) = k.strip_prefix("group_") {
@@ -198,6 +199,50 @@ pub(crate) async fn do_user_edit(
             }
         }
     }
+    let new_password = form
+        .get("new_password")
+        .map(|s| s.to_string())
+        .unwrap_or_default();
+
+    // Phase 7a/0.5/f — last-developer guard. Block any change that
+    // would leave the system with zero active developers. The helper
+    // is role-based; a deactivation (is_active=false) is equivalent
+    // to removing this user from the active-developer pool, so we
+    // pass a non-Developer sentinel role in that case so the helper
+    // catches it.
+    let effective_role = if is_active { role } else { Role::User };
+    if auth::would_orphan_developers(&ctx.db, user_id, Some(effective_role)).await? {
+        let csrf = req
+            .ctx()
+            .get::<crate::middleware::CsrfGuard>()
+            .map(|g| g.token.clone())
+            .unwrap_or_default();
+        return render_user_edit_with_errors(
+            ctx,
+            &identity,
+            user_id,
+            role,
+            is_active,
+            wanted,
+            csrf,
+            vec![
+                "Cannot demote or deactivate the last active developer. \
+                 Use rustio-cli to promote a backup developer first."
+                    .into(),
+            ],
+        )
+        .await;
+    }
+
+    sqlx::query(
+        "UPDATE rustio_users SET role = $1, is_active = $2, updated_at = NOW() WHERE id = $3",
+    )
+    .bind(role.as_str())
+    .bind(is_active)
+    .bind(user_id)
+    .execute(ctx.db.pool())
+    .await?;
+
     sqlx::query("DELETE FROM rustio_user_groups WHERE user_id = $1")
         .bind(user_id)
         .execute(ctx.db.pool())
@@ -214,12 +259,173 @@ pub(crate) async fn do_user_edit(
         auth::add_user_to_group(&ctx.db, user_id, gid).await?;
     }
 
-    // Optional password reset.
-    if let Some(new_password) = form.get("new_password") {
-        if !new_password.is_empty() {
-            auth::set_password(&ctx.db, user_id, new_password).await?;
-        }
+    if !new_password.is_empty() {
+        auth::set_password(&ctx.db, user_id, &new_password).await?;
     }
+
+    Ok(Response::redirect("/admin/users"))
+}
+
+/// Re-render the user edit form with validation errors displayed
+/// inline. Used by `do_user_edit` when the orphan guard rejects a
+/// change. Returns 400 Bad Request so callers (and tests) can
+/// distinguish a rejected save from a successful redirect.
+#[allow(clippy::too_many_arguments)]
+async fn render_user_edit_with_errors(
+    ctx: &AuthAdminCtx,
+    identity: &Identity,
+    user_id: i64,
+    role: Role,
+    is_active: bool,
+    user_groups: Vec<i64>,
+    csrf: String,
+    errors: Vec<String>,
+) -> Result<Response> {
+    let row = sqlx::query("SELECT email FROM rustio_users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(ctx.db.pool())
+        .await?;
+    let row = row.ok_or_else(|| Error::NotFound(format!("user #{user_id}")))?;
+    let r = Row::from_pg(&row);
+
+    let is_last_developer =
+        auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
+
+    let view = UserEditCtx {
+        base: BaseContext::new(Some(identity), csrf, &ctx.admin),
+        page_title: format!("Edit user #{user_id}"),
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        user_id,
+        email: r.get_string("email")?,
+        role: role.as_str().into(),
+        is_active,
+        all_groups: load_groups(&ctx.db).await?,
+        user_groups,
+        errors,
+        flash: None,
+        is_last_developer,
+    };
+    let body = ctx.templates.render("admin/user_edit.html", &view)?;
+    Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
+}
+
+// ---------- User delete (Phase 7a/0.5/f) ----------
+
+#[derive(Serialize)]
+struct UserDeleteCtx {
+    #[serde(flatten)]
+    base: BaseContext,
+    page_title: String,
+    entries: Vec<SidebarEntry>,
+    user_id: i64,
+    email: String,
+    role: String,
+    /// Memberships dropped on cascade.
+    group_count: i64,
+    /// Active sessions terminated on cascade.
+    session_count: i64,
+    /// Direct permission grants dropped on cascade.
+    direct_perm_count: i64,
+    /// Set when the target is the currently logged-in user. The
+    /// confirm form hides the submit button in this case.
+    is_self: bool,
+    /// Set when removing this user would leave zero active developers.
+    /// Like `is_self`, this disables the submit button.
+    is_last_developer: bool,
+}
+
+pub(crate) async fn show_user_delete(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    user_id: i64,
+    csrf: String,
+) -> Result<Response> {
+    let row = sqlx::query("SELECT id, email, role FROM rustio_users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(ctx.db.pool())
+        .await?;
+    let row = row.ok_or_else(|| Error::NotFound(format!("user #{user_id}")))?;
+    let r = Row::from_pg(&row);
+
+    let group_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rustio_user_groups WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(ctx.db.pool())
+            .await?;
+    let session_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM rustio_sessions WHERE user_id = $1 AND expires_at > NOW()",
+    )
+    .bind(user_id)
+    .fetch_one(ctx.db.pool())
+    .await?;
+    let direct_perm_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rustio_user_permissions WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(ctx.db.pool())
+            .await?;
+
+    let is_self = identity.user_id == user_id;
+    // Pretend the user is being demoted to nothing — that's what a
+    // delete effectively is. `would_orphan_developers` returns true if
+    // the target is the sole active developer.
+    let is_last_developer =
+        auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
+
+    let email = r.get_string("email")?;
+    let view = UserDeleteCtx {
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
+        page_title: format!("Delete user: {email}"),
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        user_id,
+        email,
+        role: r.get_string("role")?,
+        group_count,
+        session_count,
+        direct_perm_count,
+        is_self,
+        is_last_developer,
+    };
+    let body = ctx.templates.render("admin/user_confirm_delete.html", &view)?;
+    Ok(Response::html(body))
+}
+
+pub(crate) async fn do_user_delete(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    user_id: i64,
+    _req: Request,
+) -> Result<Response> {
+    // Self-delete guard: an admin cannot delete their own logged-in
+    // account. Without this, a successful POST would invalidate the
+    // current session via cascade and leave the system in an odd state
+    // (and the admin would need to re-login just to undo a typo).
+    if identity.user_id == user_id {
+        return Err(Error::BadRequest(
+            "You cannot delete your own account while signed in.".into(),
+        ));
+    }
+
+    // Last-developer guard. A delete is the strongest form of demotion;
+    // reuse the helper by passing a non-Developer role.
+    if auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await? {
+        return Err(Error::BadRequest(
+            "Cannot delete the last active developer. \
+             Use rustio-cli to promote a backup developer first."
+                .into(),
+        ));
+    }
+
+    sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+        .bind(user_id)
+        .execute(ctx.db.pool())
+        .await?;
+
+    // Cascade through user_groups, user_permissions, and sessions
+    // happens at the FK level. The permission cache is keyed on
+    // user_id — drop the entry so a re-created user with the same id
+    // (vanishingly unlikely with BIGSERIAL but cheap insurance) starts
+    // clean.
+    auth::invalidate_user_cache(user_id);
 
     Ok(Response::redirect("/admin/users"))
 }

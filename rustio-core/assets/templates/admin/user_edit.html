@@ -17,6 +17,13 @@
 {% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
+{% if is_last_developer %}
+<div class="warningnote last-developer-banner">
+    <strong>Heads up:</strong> {{ email }} is the last active developer. Demoting their role or unchecking <em>Active</em> will be refused. To swap who holds the developer role, promote a backup first via
+    <code>rustio user role set --email someone@example.com --role developer</code>.
+</div>
+{% endif %}
+
 <form method="post" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
@@ -87,4 +94,17 @@
         <input type="submit" name="_save" value="Save" class="default">
     </div>
 </form>
+
+<fieldset class="module aligned danger-zone">
+    <h2>Danger zone</h2>
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <div class="field-input">
+            <p>
+                <a href="/admin/users/{{ user_id }}/delete" class="deletelink-inline">Delete this user</a>
+            </p>
+            <p class="help">Group memberships, direct permission grants, and active sessions all cascade away.</p>
+        </div>
+    </div>
+</fieldset>
 {% endblock %}

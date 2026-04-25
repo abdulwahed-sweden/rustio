@@ -117,6 +117,37 @@ enum UserAction {
         #[arg(long, env = "DATABASE_URL")]
         db: String,
     },
+    /// Read or change a user's role.
+    Role {
+        #[command(subcommand)]
+        action: RoleAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum RoleAction {
+    /// Print the current role for the given email.
+    Get {
+        #[arg(long)]
+        email: String,
+        #[arg(long, env = "DATABASE_URL")]
+        db: String,
+    },
+    /// Set a new role. If the change would leave zero active
+    /// developers, requires `--yes` or an interactive confirmation.
+    Set {
+        #[arg(long)]
+        email: String,
+        #[arg(long)]
+        role: String,
+        /// Skip the interactive confirmation when demoting the last
+        /// active developer. Without this flag the command refuses
+        /// non-interactive demotions to avoid accidental lockouts.
+        #[arg(long)]
+        yes: bool,
+        #[arg(long, env = "DATABASE_URL")]
+        db: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -291,7 +322,90 @@ async fn user_cmd(action: UserAction) -> Result<(), String> {
             println!("added {email} to group {group}");
             Ok(())
         }
+        UserAction::Role { action } => role_cmd(action).await,
     }
+}
+
+// Phase 7a/0.5/f — `user role get|set`. The CLI is the escape hatch
+// when the UI guard refuses a developer demotion: an admin who's
+// painted themselves into a corner runs `rustio user role set` to
+// promote a backup developer first, then can demote the original
+// from the UI.
+async fn role_cmd(action: RoleAction) -> Result<(), String> {
+    match action {
+        RoleAction::Get { email, db } => {
+            let db = Db::connect(&db).await.map_err(|e| e.to_string())?;
+            let user = auth::find_user_by_email(&db, &email)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("no user with email {email}"))?;
+            println!("{}", user.role.as_str());
+            Ok(())
+        }
+        RoleAction::Set { email, role, yes, db } => {
+            let db = Db::connect(&db).await.map_err(|e| e.to_string())?;
+            auth::init_tables(&db).await.map_err(|e| e.to_string())?;
+            let new_role = Role::parse(&role).map_err(|e| e.to_string())?;
+            let user = auth::find_user_by_email(&db, &email)
+                .await
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| format!("no user with email {email}"))?;
+
+            if user.role == new_role {
+                println!("{email} is already {}", new_role.as_str());
+                return Ok(());
+            }
+
+            // Mirror the UI guard. The CLI bypass is intentional —
+            // an operator must be able to demote the sole developer
+            // (e.g. after promoting a replacement) — but only with
+            // explicit confirmation so it can't happen by accident
+            // through scripting.
+            let would_orphan = auth::would_orphan_developers(&db, user.id, Some(new_role))
+                .await
+                .map_err(|e| e.to_string())?;
+            if would_orphan {
+                if !yes && !confirm_orphan(&email)? {
+                    return Err("aborted".into());
+                }
+                eprintln!(
+                    "warning: demoting the last active developer ({email}). \
+                     Make sure another developer exists or you may lose access \
+                     to the schema browser, execution logs, and SQL console."
+                );
+            }
+
+            auth::update_user_role(&db, user.id, new_role)
+                .await
+                .map_err(|e| e.to_string())?;
+            println!(
+                "set role of {email} from {} to {}",
+                user.role.as_str(),
+                new_role.as_str(),
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Interactive last-developer confirmation. Returns true if the user
+/// types exactly `I UNDERSTAND` (case-sensitive) — anything else
+/// aborts. We use a long phrase rather than y/N because demoting the
+/// last developer is a one-way action that's easy to fat-finger.
+fn confirm_orphan(email: &str) -> Result<bool, String> {
+    use std::io::{self, Write};
+    eprintln!(
+        "WARNING: {email} is the last active developer. Demoting will \
+         leave the system with zero developers (no schema browser, no \
+         execution logs, no SQL console)."
+    );
+    eprint!("Type 'I UNDERSTAND' to continue, anything else to abort: ");
+    io::stderr().flush().map_err(|e| e.to_string())?;
+    let mut line = String::new();
+    io::stdin()
+        .read_line(&mut line)
+        .map_err(|e| e.to_string())?;
+    Ok(line.trim() == "I UNDERSTAND")
 }
 
 fn resolve_password(provided: Option<String>) -> Result<String, String> {

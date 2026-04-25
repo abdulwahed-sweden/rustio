@@ -670,6 +670,24 @@ fieldset.module h2 {
     border-radius: 3px;
 }
 
+/* Phase 7a/0.5/f — heads-up banner for last-developer state on the
+   user edit page. Looks like an .errornote but uses a softer amber
+   palette so it reads as advisory rather than blocking. */
+.warningnote {
+    background: #fff8e1;
+    color: #6b4f0c;
+    border: 1px solid #f0c36d;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    border-radius: 3px;
+}
+.warningnote code {
+    background: #fdecc8;
+    padding: 1px 4px;
+    border-radius: 2px;
+}
+
 .messagelist {
     padding: 10px 14px;
     margin-bottom: 14px;

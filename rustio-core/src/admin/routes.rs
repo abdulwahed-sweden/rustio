@@ -389,6 +389,39 @@ pub fn register_admin_routes(
         }
     });
 
+    // Phase 7a/0.5/f — user delete.
+    let c = ctx.clone();
+    let ac = auth_ctx.clone();
+    let router = router.get("/admin/users/:id/delete", move |req| {
+        let c = c.clone();
+        let ac = ac.clone();
+        async move {
+            match role_guard(&c, &req, Role::Administrator).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => {
+                    let id = parse_id(req.param("id"))?;
+                    super::builtin::show_user_delete(&ac, ident, id, handlers::csrf_token(&req)).await
+                }
+            }
+        }
+    });
+
+    let c = ctx.clone();
+    let ac = auth_ctx.clone();
+    let router = router.post("/admin/users/:id/delete", move |req| {
+        let c = c.clone();
+        let ac = ac.clone();
+        async move {
+            match role_guard(&c, &req, Role::Administrator).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => {
+                    let id = parse_id(req.param("id"))?;
+                    super::builtin::do_user_delete(&ac, ident, id, req).await
+                }
+            }
+        }
+    });
+
     // --- Built-in groups admin (admin-only) ---
     let c = ctx.clone();
     let ac = auth_ctx.clone();

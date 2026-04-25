@@ -29,7 +29,8 @@ pub use sessions::{
 };
 pub use users::{
     bootstrap_demo_users, create_user, find_user_by_email, hash_password, init_user_tables, login,
-    migrate_user_schema, set_password, update_user_role, verify_password, Identity, StoredUser,
+    migrate_user_schema, set_password, update_user_role, verify_password, would_orphan_developers,
+    Identity, StoredUser,
 };
 
 use crate::error::Result;

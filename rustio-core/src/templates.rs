@@ -138,6 +138,7 @@ const EMBEDDED_TEMPLATES: &[(&str, &str)] = &[
     ("admin/users_list.html", include_str!("../assets/templates/admin/users_list.html")),
     ("admin/user_edit.html", include_str!("../assets/templates/admin/user_edit.html")),
     ("admin/user_new.html", include_str!("../assets/templates/admin/user_new.html")),
+    ("admin/user_confirm_delete.html", include_str!("../assets/templates/admin/user_confirm_delete.html")),
     ("admin/groups_list.html", include_str!("../assets/templates/admin/groups_list.html")),
     ("admin/group_edit.html", include_str!("../assets/templates/admin/group_edit.html")),
     ("admin/group_new.html", include_str!("../assets/templates/admin/group_new.html")),
@@ -223,6 +224,95 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Phase 7a/0.5/f-fix regression: the embedded loader must know
+    /// about `admin/user_confirm_delete.html`. The browser smoke run
+    /// of /f hit a 500 because the template existed on disk but the
+    /// EMBEDDED_TEMPLATES const didn't list it. This test renders the
+    /// template with two distinct contexts and asserts the
+    /// last-developer banner + the submit-button disabled/enabled
+    /// invariant — so any future delete-handler refactor that adds a
+    /// new template can't ship the same gap unnoticed.
+    #[test]
+    fn user_confirm_delete_renders_with_last_developer_banner() {
+        let t = Templates::new(None).unwrap();
+
+        // Last-developer case → blocking banner + disabled submit.
+        let ctx = serde_json::json!({
+            "user_id": 122,
+            "email": "backup@example.com",
+            "role": "developer",
+            "group_count": 0,
+            "session_count": 1,
+            "direct_perm_count": 0,
+            "is_self": false,
+            "is_last_developer": true,
+            "csrf_token": "test-csrf",
+        });
+        let body = t.render("admin/user_confirm_delete.html", &ctx).unwrap();
+        assert!(
+            body.contains("is the last active developer"),
+            "last-dev banner must mention the orphan condition"
+        );
+        assert!(
+            body.contains("rustio-cli user role set"),
+            "last-dev banner must point operators at the CLI escape hatch"
+        );
+        assert!(
+            body.contains(r#"<button type="submit" class="deletelink-button" disabled>"#),
+            "submit must be disabled when target is the last active developer"
+        );
+
+        // Self-delete case → different errornote, also disabled.
+        let ctx_self = serde_json::json!({
+            "user_id": 7,
+            "email": "me@rustio.local",
+            "role": "administrator",
+            "group_count": 2,
+            "session_count": 1,
+            "direct_perm_count": 0,
+            "is_self": true,
+            "is_last_developer": false,
+            "csrf_token": "test-csrf",
+        });
+        let body = t.render("admin/user_confirm_delete.html", &ctx_self).unwrap();
+        assert!(
+            body.contains("your own account"),
+            "self-delete banner must call out the self-action"
+        );
+        assert!(
+            body.contains(r#"<button type="submit" class="deletelink-button" disabled>"#),
+            "submit must be disabled on self-delete"
+        );
+    }
+
+    /// Companion to `…with_last_developer_banner`: when neither guard
+    /// fires, the submit button MUST be enabled (no `disabled`
+    /// attribute). Lock that invariant in too — a stray `{% if %}`
+    /// edit could otherwise quietly disable every confirm button.
+    #[test]
+    fn user_confirm_delete_submit_enabled_for_normal_user() {
+        let t = Templates::new(None).unwrap();
+        let ctx = serde_json::json!({
+            "user_id": 99,
+            "email": "throwaway@example.com",
+            "role": "staff",
+            "group_count": 0,
+            "session_count": 0,
+            "direct_perm_count": 0,
+            "is_self": false,
+            "is_last_developer": false,
+            "csrf_token": "test-csrf",
+        });
+        let body = t.render("admin/user_confirm_delete.html", &ctx).unwrap();
+        assert!(
+            body.contains(r#"<button type="submit" class="deletelink-button">Yes, I'm sure</button>"#),
+            "submit button must render WITHOUT `disabled` for a normal user"
+        );
+        // And the warning banners must NOT appear.
+        assert!(!body.contains("is the last active developer"));
+        assert!(!body.contains("your own account"));
     }
 
     fn tempdir() -> PathBuf {

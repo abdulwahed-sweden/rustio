@@ -342,6 +342,58 @@ pub async fn update_user_role(db: &Db, user_id: i64, role: Role) -> Result<()> {
     Ok(())
 }
 
+/// Phase 7a/0.5/f — would the proposed change leave the system with
+/// zero active Developers?
+///
+/// `new_role`:
+/// - `None` → user is being deleted entirely.
+/// - `Some(role)` → user's role is being changed to `role`.
+///
+/// Returns `true` only when:
+/// - exactly one active Developer exists, AND
+/// - the target user IS that Developer, AND
+/// - the action would remove their Developer status (deletion or
+///   demotion to anything other than Developer).
+///
+/// Used as a server-side guard in `do_user_edit` and `do_user_delete`,
+/// and as a CLI warning before destructive role changes.
+pub async fn would_orphan_developers(
+    db: &Db,
+    user_id: i64,
+    new_role: Option<Role>,
+) -> Result<bool> {
+    // Cheap-out: if the change KEEPS the user as a Developer, no orphan risk.
+    if matches!(new_role, Some(Role::Developer)) {
+        return Ok(false);
+    }
+
+    let active_dev_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM rustio_users \
+         WHERE role = 'developer' AND is_active = TRUE",
+    )
+    .fetch_one(db.pool())
+    .await?;
+
+    // No-developers → not orphaning anyone (a fresh DB pre-bootstrap
+    // is allowed, by design).
+    if active_dev_count == 0 {
+        return Ok(false);
+    }
+    // 2+ developers → demoting/deleting one always leaves ≥1 left.
+    if active_dev_count > 1 {
+        return Ok(false);
+    }
+
+    // Exactly one. Is it `user_id`?
+    let target_role: Option<String> = sqlx::query_scalar(
+        "SELECT role FROM rustio_users WHERE id = $1 AND is_active = TRUE",
+    )
+    .bind(user_id)
+    .fetch_optional(db.pool())
+    .await?;
+    Ok(target_role.as_deref() == Some("developer"))
+}
+
 /// Verify credentials and create a session. Returns the session token
 /// to set in the cookie. A deliberately vague error on failure — we
 /// don't want to leak whether the email was valid.
@@ -683,5 +735,238 @@ mod tests {
             .bind(real_id)
             .execute(db.pool())
             .await;
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 7a/0.5/f — would_orphan_developers
+    //
+    // The helper is the single source of truth for "is this change
+    // about to leave the system without a developer?". The UI guard
+    // (`do_user_edit`, `do_user_delete`) and the CLI confirmation
+    // (`user role set`) all delegate to it, so the contract MUST hold:
+    // - sole active dev demoted/deleted → true
+    // - two active devs, one demoted    → false
+    // - inactive devs don't count toward the active pool
+    // - non-dev targets never trigger
+    // - "zero devs" pre-bootstrap is allowed
+    // ------------------------------------------------------------------
+
+    /// Insert a unique-emailed user for orphan-guard tests. Returns
+    /// the new id; caller cleans up via `delete_user(...)` to keep the
+    /// DB tidy (these rows are NOT flagged `is_demo` so
+    /// `reset_demo_state` won't catch them).
+    async fn make_user(db: &crate::orm::Db, role: Role, is_active: bool) -> i64 {
+        let email = format!(
+            "orphan_{}_{}_{}@example.test",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            // tie-break in case two calls land on the same nanosecond.
+            rand::random::<u32>(),
+        );
+        let id = create_user(db, &email, "secret-pw-123", role).await.unwrap();
+        if !is_active {
+            sqlx::query("UPDATE rustio_users SET is_active = FALSE WHERE id = $1")
+                .bind(id)
+                .execute(db.pool())
+                .await
+                .unwrap();
+        }
+        id
+    }
+
+    async fn delete_user(db: &crate::orm::Db, id: i64) {
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+            .bind(id)
+            .execute(db.pool())
+            .await;
+    }
+
+    /// Snapshot of pre-existing developer ids so we can restore the DB
+    /// to its starting state. Tests run against a shared dev DB and
+    /// must not leak rows or flip seeded users' active flags.
+    async fn snapshot_active_devs(db: &crate::orm::Db) -> Vec<i64> {
+        sqlx::query_scalar(
+            "SELECT id FROM rustio_users \
+             WHERE role = 'developer' AND is_active = TRUE",
+        )
+        .fetch_all(db.pool())
+        .await
+        .unwrap()
+    }
+
+    /// Move every active developer NOT in `keep` to `is_active = FALSE`
+    /// for the duration of a test. We restore them in
+    /// `restore_active_devs`. We deactivate (rather than delete) so
+    /// FK references (sessions, group memberships) survive.
+    async fn isolate_developers(db: &crate::orm::Db, keep: &[i64]) -> Vec<i64> {
+        let snapshot = snapshot_active_devs(db).await;
+        for id in &snapshot {
+            if !keep.contains(id) {
+                sqlx::query("UPDATE rustio_users SET is_active = FALSE WHERE id = $1")
+                    .bind(id)
+                    .execute(db.pool())
+                    .await
+                    .unwrap();
+            }
+        }
+        snapshot
+    }
+
+    async fn restore_active_devs(db: &crate::orm::Db, ids: &[i64]) {
+        for id in ids {
+            let _ = sqlx::query("UPDATE rustio_users SET is_active = TRUE WHERE id = $1")
+                .bind(id)
+                .execute(db.pool())
+                .await;
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn orphan_when_sole_active_dev_demoted_to_user() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+
+        let dev = make_user(&db, Role::Developer, true).await;
+        let restore = isolate_developers(&db, &[dev]).await;
+
+        let orphan = would_orphan_developers(&db, dev, Some(Role::User))
+            .await
+            .unwrap();
+        assert!(orphan, "demoting the sole active developer must orphan");
+
+        restore_active_devs(&db, &restore).await;
+        delete_user(&db, dev).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn no_orphan_when_sole_dev_kept_as_dev() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+
+        let dev = make_user(&db, Role::Developer, true).await;
+        let restore = isolate_developers(&db, &[dev]).await;
+
+        // Identity update — the cheap-out path returns false without
+        // even querying the DB.
+        let orphan = would_orphan_developers(&db, dev, Some(Role::Developer))
+            .await
+            .unwrap();
+        assert!(!orphan, "Developer → Developer is a no-op, never orphans");
+
+        restore_active_devs(&db, &restore).await;
+        delete_user(&db, dev).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn no_orphan_when_two_active_devs() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+
+        let dev_a = make_user(&db, Role::Developer, true).await;
+        let dev_b = make_user(&db, Role::Developer, true).await;
+        let restore = isolate_developers(&db, &[dev_a, dev_b]).await;
+
+        // Demoting either still leaves the other.
+        let orphan_a = would_orphan_developers(&db, dev_a, Some(Role::User))
+            .await
+            .unwrap();
+        let orphan_b = would_orphan_developers(&db, dev_b, Some(Role::Administrator))
+            .await
+            .unwrap();
+        assert!(!orphan_a, "two devs → demoting A leaves B");
+        assert!(!orphan_b, "two devs → demoting B leaves A");
+
+        restore_active_devs(&db, &restore).await;
+        delete_user(&db, dev_a).await;
+        delete_user(&db, dev_b).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn inactive_devs_do_not_count() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+
+        let active_dev = make_user(&db, Role::Developer, true).await;
+        let inactive_dev = make_user(&db, Role::Developer, false).await;
+        let restore = isolate_developers(&db, &[active_dev]).await;
+
+        // Even though there's an "inactive developer" in the table,
+        // they don't count toward the active pool — demoting the only
+        // active one still orphans the system.
+        let orphan = would_orphan_developers(&db, active_dev, Some(Role::User))
+            .await
+            .unwrap();
+        assert!(
+            orphan,
+            "inactive developers must not satisfy the active-dev requirement"
+        );
+
+        restore_active_devs(&db, &restore).await;
+        delete_user(&db, active_dev).await;
+        delete_user(&db, inactive_dev).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn non_developer_target_never_orphans() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+
+        let dev = make_user(&db, Role::Developer, true).await;
+        let staff = make_user(&db, Role::Staff, true).await;
+        let restore = isolate_developers(&db, &[dev]).await;
+
+        // Demoting / deactivating a non-developer never orphans the
+        // developer pool, regardless of how many devs exist.
+        let orphan = would_orphan_developers(&db, staff, Some(Role::User))
+            .await
+            .unwrap();
+        assert!(!orphan, "demoting a non-developer can't orphan developers");
+
+        restore_active_devs(&db, &restore).await;
+        delete_user(&db, dev).await;
+        delete_user(&db, staff).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn zero_developers_is_not_an_orphan_state() {
+        let _env = ENV_LOCK.lock().await;
+        let db = pg_db().await;
+        crate::auth::init_user_tables(&db).await.unwrap();
+        crate::auth::migrate_user_schema(&db).await.unwrap();
+
+        // Park every active dev as inactive — pre-bootstrap fresh-DB
+        // simulation — and demote a random non-dev. Must NOT orphan.
+        let restore = isolate_developers(&db, &[]).await;
+        let staff = make_user(&db, Role::Staff, true).await;
+
+        let orphan = would_orphan_developers(&db, staff, Some(Role::User))
+            .await
+            .unwrap();
+        assert!(
+            !orphan,
+            "a zero-developer DB is allowed; the guard only kicks in once at least one dev exists"
+        );
+
+        restore_active_devs(&db, &restore).await;
+        delete_user(&db, staff).await;
     }
 }
