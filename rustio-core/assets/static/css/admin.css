@@ -766,6 +766,21 @@ fieldset.module h2 {
     cursor: pointer;
 }
 .deletelink-button:hover { background: var(--delete-button-hover-bg); }
+/* Phase 7a/0.5/f-fix2 — without this rule a disabled delete button
+   looks identical to an enabled one. The HTML `disabled` attribute
+   is present (browsers refuse the click), but visual confirmation is
+   what the operator actually checks. Mute the colour and disable the
+   pointer so "blocked" reads at a glance. */
+.deletelink-button:disabled,
+.deletelink-button[disabled] {
+    background: var(--default-button-bg);
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+.deletelink-button:disabled:hover,
+.deletelink-button[disabled]:hover {
+    background: var(--default-button-bg);
+}
 
 .cancel-link {
     background: var(--default-button-bg);
