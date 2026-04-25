@@ -356,7 +356,31 @@ pub(crate) async fn show_delete_confirm(
         .object_label(&ctx.db, id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("{admin_name}/{id}")))?;
-    let view = render::confirm_delete_ctx(&identity, ctx.admin.entries(), entry, label, csrf_token(req));
+
+    // Build a fresh registry from the current admin to identify which
+    // models point at this one via a BelongsTo FK. Cheap — runs once
+    // per delete-confirm GET, and the schema is small.
+    let schema = crate::schema::Schema::from_admin(&ctx.admin);
+    let registry = super::relations::RelationRegistry::from_schema(&schema);
+    let cascading: Vec<render::CascadeItem> = registry
+        .has_many(entry.singular_name)
+        .iter()
+        .map(|inv| render::CascadeItem {
+            source_display_name: inv.source_display_name.clone(),
+            source_admin_name: inv.source_admin_name.clone(),
+            source_field: inv.source_field.clone(),
+        })
+        .collect();
+
+    let view = render::confirm_delete_ctx(
+        &identity,
+        ctx.admin.entries(),
+        entry,
+        id,
+        label,
+        cascading,
+        csrf_token(req),
+    );
     let body = ctx.templates.render("admin/confirm_delete.html", &view)?;
     Ok(Response::html(body))
 }

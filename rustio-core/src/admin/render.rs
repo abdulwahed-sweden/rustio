@@ -424,15 +424,31 @@ pub(crate) struct ConfirmDeleteCtx {
     pub entries: Vec<SidebarEntry>,
     pub admin_name: &'static str,
     pub singular_name: &'static str,
+    pub object_id: i64,
     pub object_label: String,
+    /// Models that point at this one via a `BelongsTo` FK. Each entry
+    /// lists what *could* cascade if the DB has `ON DELETE CASCADE`
+    /// on the FK constraint. Phase 6b doesn't query row counts —
+    /// listing the affected model names is the operator-facing
+    /// "are you sure" signal.
+    pub cascading: Vec<CascadeItem>,
     pub flash: Option<FlashCtx>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct CascadeItem {
+    pub source_display_name: String,
+    pub source_admin_name: String,
+    pub source_field: String,
 }
 
 pub(crate) fn confirm_delete_ctx(
     identity: &Identity,
     all_entries: &[AdminEntry],
     entry: &AdminEntry,
+    object_id: i64,
     object_label: String,
+    cascading: Vec<CascadeItem>,
     csrf_token: String,
 ) -> ConfirmDeleteCtx {
     ConfirmDeleteCtx {
@@ -441,7 +457,9 @@ pub(crate) fn confirm_delete_ctx(
         entries: all_entries.iter().map(SidebarEntry::from).collect(),
         admin_name: entry.admin_name,
         singular_name: entry.singular_name,
+        object_id,
         object_label,
+        cascading,
         flash: None,
     }
 }

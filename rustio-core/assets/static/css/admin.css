@@ -662,3 +662,49 @@ fieldset.module h2 {
 
 .help { color: var(--body-quiet); font-size: 12px; }
 .empty-list { color: var(--body-quiet); padding: 14px; text-align: center; }
+
+/* --- Delete confirmation (Phase 6b/1) ----------------------------- */
+
+.cascade-list {
+    background: var(--darkened-bg);
+    border: 1px solid var(--hairline-color);
+    border-radius: 3px;
+    padding: 10px 18px 10px 32px;
+    margin: 14px 0;
+    font-size: 13px;
+}
+.cascade-list li { margin: 4px 0; }
+
+.deletelink-button {
+    background: var(--delete-button-bg);
+    color: #fff;
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+}
+.deletelink-button:hover { background: var(--delete-button-hover-bg); }
+
+.cancel-link {
+    background: var(--default-button-bg);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-decoration: none;
+    margin-left: 8px;
+}
+.cancel-link:hover {
+    background: var(--default-button-hover-bg);
+    color: #fff;
+    text-decoration: none;
+}
+
+.confirm-form .submit-row { justify-content: flex-start; }
