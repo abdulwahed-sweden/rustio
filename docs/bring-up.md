@@ -1,4 +1,15 @@
-# PROGRESS
+# Bring-up log — initial port (Phases 1–5)
+
+> **Historical document.** Captures the build-readiness checklist
+> from the early days of the port: `compile → clippy → tests →
+> end-to-end → smoke`. The numbering here ("Phase 1 — compile",
+> "Phase 2 — clippy", …) is **not** the same as the chronological
+> port phases in `docs/phases/PHASE*.md` — this is a parallel
+> build-pipeline taxonomy from before the phase reports started.
+>
+> Kept for context on how the workspace first became green. For
+> current architecture and behaviour, see `docs/architecture.md`
+> and `CHANGELOG.md`.
 
 ## Files modified
 

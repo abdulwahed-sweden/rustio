@@ -1,4 +1,14 @@
-# STATUS
+# Migration notes — OLD → NEW snapshot (2026-04-24)
+
+> **Historical document.** Captured on 2026-04-24, the day the
+> port from `~/Documents/GitHub/rustio` to `~/Documents/rustio`
+> began. Numbers, file lists, and test counts here describe the
+> NEW repo's state **before** Phase 1 — not the current codebase.
+> For current state, see `docs/phases/PHASE7a-0_5.md` (the latest
+> phase report) and `CHANGELOG.md`.
+>
+> Kept for cross-referencing: when a phase report says "the OLD
+> codebase had X", this is the table to look in.
 
 Side-by-side snapshot of both projects. Read-only — collected `2026-04-24`.
 

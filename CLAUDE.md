@@ -23,7 +23,8 @@ rustio-core/            ~10k LOC — the framework (lib)
 rustio-macros/          ~400 LOC — #[derive(RustioAdmin)]
 rustio-cli/             ~600 LOC — `rustio` CLI (binary)
 examples/blog/          ~150 LOC — reference consumer
-PHASE{N}.md             one report per major phase
+docs/architecture.md    how the modules fit together
+docs/phases/            one PHASE{N}.md per major phase + index
 ```
 
 ---
@@ -342,6 +343,61 @@ Three durable feedback files live there as of Phase 7a/0.5:
 Read these before assuming you've seen all the project's
 conventions. New rules learned during a session should be saved
 there immediately.
+
+---
+
+## Hard stops — actions that require explicit user approval
+
+Some actions are not reversible by `git reset` and have blast radius
+beyond the local clone. They are **hard stops**: never run them on
+your own initiative, even when a previous instruction in the same
+spec implies they're expected. Approval given for one such action in
+one conversation does **not** carry over.
+
+### Repo operations
+
+- Creating a new GitHub repo (`gh repo create`).
+- Renaming or deleting a remote repo (`gh repo rename`, `gh repo
+  delete`).
+- Pushing a new branch to origin (`git push -u origin <branch>`),
+  including the first push of `main` to a fresh remote.
+- Force-pushing anywhere (`git push --force`, `git push +<ref>`).
+- Adding, removing, or changing a git remote
+  (`git remote add/remove/set-url`).
+- Visibility changes (public ↔ private).
+
+Each requires the user to confirm in the current conversation.
+"User has a public repo with this name on their account" is not
+sufficient context — ask.
+
+### Documentation operations
+
+- Moving phase reports between directories (e.g.
+  `docs/phases/` ↔ root).
+- Renaming `STATUS.md` / `PROGRESS.md` / `PHASE*.md`.
+- Rewriting `docs/architecture.md`, `CLAUDE.md`, `CHANGELOG.md`,
+  `README.md` for content (typo fixes are fine).
+- Deleting any historical doc, even if it looks superseded.
+- Adding new top-level docs at the repo root.
+
+The phase-report files in particular are deliverables; treat them
+like code, not like notes.
+
+### Database operations
+
+- `DROP TABLE`, `DROP DATABASE`, `TRUNCATE`.
+- `DELETE FROM rustio_users` without a `WHERE` clause, or with a
+  `WHERE` that covers more than the test fixtures the user
+  acknowledged.
+- Restoring or rolling back the dev DB (e.g. dropping and
+  re-bootstrapping).
+- Migrations against a non-test DB.
+- Anything that would invalidate the user's open sessions
+  (`DELETE FROM rustio_sessions`).
+
+The dev DB (`rustio_dev` on local Postgres) is the user's working
+state; don't reset it without explicit go-ahead even when "starting
+fresh" looks like the obvious move.
 
 ---
 
