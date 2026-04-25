@@ -10,7 +10,9 @@ use crate::http::{Request, Response};
 use crate::orm::Db;
 use crate::templates::Templates;
 
+use super::audit;
 use super::render;
+use super::render::BaseContext;
 use super::types::Admin;
 
 pub(crate) struct AdminCtx {
@@ -38,8 +40,8 @@ pub(crate) async fn show_login(ctx: &AdminCtx, req: Request) -> Result<Response>
     let body = ctx.templates.render(
         "admin/login.html",
         &render::LoginCtx {
+            base: BaseContext::new(None, csrf_token(&req)),
             error: None,
-            csrf_token: csrf_token(&req),
         },
     )?;
     Ok(Response::html(body))
@@ -62,8 +64,8 @@ pub(crate) async fn do_login(ctx: &AdminCtx, req: Request) -> Result<Response> {
             let body = ctx.templates.render(
                 "admin/login.html",
                 &render::LoginCtx {
+                    base: BaseContext::new(None, csrf_token(&req)),
                     error: Some("Invalid email or password.".into()),
-                    csrf_token: csrf_token(&req),
                 },
             )?;
             Ok(Response::html(body).with_status(hyper::StatusCode::UNAUTHORIZED))
@@ -84,7 +86,13 @@ pub(crate) async fn do_logout(ctx: &AdminCtx, req: Request) -> Result<Response> 
 // ---- Dashboard -----------------------------------------------------------
 
 pub(crate) async fn dashboard(ctx: &AdminCtx, identity: Identity, req: &Request) -> Result<Response> {
-    let dash = render::dashboard_ctx(&identity, ctx.admin.entries(), csrf_token(req));
+    // The audit table may not exist yet (no Phase 6a wiring point calls
+    // ensure_table). Degrade silently to "no recent activity" if the
+    // query fails.
+    let recent_actions = audit::recent(&ctx.db, 10, None, None)
+        .await
+        .unwrap_or_default();
+    let dash = render::dashboard_ctx(&identity, ctx.admin.entries(), recent_actions, csrf_token(req));
     let body = ctx.templates.render("admin/index.html", &dash)?;
     Ok(Response::html(body))
 }
@@ -101,8 +109,86 @@ pub(crate) async fn list_model(
         .admin
         .find(admin_name)
         .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
-    let rows = entry.ops.list(&ctx.db).await?;
-    let list = render::list_ctx(&identity, ctx.admin.entries(), entry, rows, csrf_token(req));
+    let mut rows = entry.ops.list(&ctx.db).await?;
+
+    // Phase 6a: in-memory search/filter/pagination. Pushdown to AdminOps
+    // would mean touching types.rs (out of scope for 6a). Acceptable for
+    // small model lists; revisit when a project hits >10k rows.
+    let qs = req.query();
+    let search = qs.get("q").unwrap_or_default().to_string();
+    if !search.is_empty() {
+        let needle = search.to_ascii_lowercase();
+        rows.retain(|r| {
+            r.cells
+                .iter()
+                .any(|c| c.to_ascii_lowercase().contains(&needle))
+        });
+    }
+
+    // Build filter groups from the classifier. Selected values come from
+    // the request's query string; rows that don't match are filtered out.
+    let mut filter_groups: Vec<render::FilterGroupCtx> = Vec::new();
+    for f in super::intelligence::infer_filters(entry.fields, None) {
+        let current = qs.get(&f.field).map(str::to_string);
+        if let Some(val) = &current {
+            if !val.is_empty() {
+                let col_idx = entry.fields.iter().position(|af| af.name == f.field);
+                if let Some(idx) = col_idx {
+                    rows.retain(|r| r.cells.get(idx).map(String::as_str) == Some(val.as_str()));
+                }
+            }
+        }
+        let options = match f.kind {
+            super::intelligence::FilterKind::BoolYesNo => vec![
+                render::FilterOptionCtx {
+                    value: "true".into(),
+                    label: "Yes".into(),
+                    selected: current.as_deref() == Some("true"),
+                },
+                render::FilterOptionCtx {
+                    value: "false".into(),
+                    label: "No".into(),
+                    selected: current.as_deref() == Some("false"),
+                },
+            ],
+            // Phase 6a renders only Bool filters interactively. Other
+            // kinds (DateRange, Dropdown, NumericExact, ExactMatch,
+            // RelationDropdown) need either input widgets or relation
+            // plumbing — Phase 7+.
+            _ => Vec::new(),
+        };
+        if !options.is_empty() {
+            filter_groups.push(render::FilterGroupCtx {
+                field: f.field,
+                label: f.label,
+                options,
+                current,
+            });
+        }
+    }
+
+    let total_rows = rows.len();
+    let per_page = 100usize;
+    let page: usize = qs
+        .get("p")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1)
+        .max(1);
+    let start = (page - 1) * per_page;
+    let page_rows: Vec<_> = rows.into_iter().skip(start).take(per_page).collect();
+
+    let list = render::list_ctx(
+        &identity,
+        ctx.admin.entries(),
+        entry,
+        page_rows,
+        search,
+        filter_groups,
+        page,
+        per_page,
+        total_rows,
+        csrf_token(req),
+    );
     let body = ctx.templates.render("admin/list.html", &list)?;
     Ok(Response::html(body))
 }
@@ -119,7 +205,7 @@ pub(crate) async fn show_new_form(
         .admin
         .find(admin_name)
         .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
-    let form = render::form_ctx(&identity, ctx.admin.entries(), entry, "new", None, vec![], csrf_token(req));
+    let form = render::form_ctx(&identity, ctx.admin.entries(), entry, "new", None, None, vec![], csrf_token(req));
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
 }
@@ -144,7 +230,7 @@ pub(crate) async fn do_create(
         }
         Err(errors) => {
             let token = csrf_token(&req);
-            let ctx_view = render::form_ctx(&identity, ctx.admin.entries(), entry, "new", None, errors, token);
+            let ctx_view = render::form_ctx(&identity, ctx.admin.entries(), entry, "new", None, None, errors, token);
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
         }
@@ -174,6 +260,7 @@ pub(crate) async fn show_edit_form(
         ctx.admin.entries(),
         entry,
         "edit",
+        Some(id),
         Some(&row),
         vec![],
         csrf_token(req),
@@ -209,6 +296,7 @@ pub(crate) async fn do_update(
                 ctx.admin.entries(),
                 entry,
                 "edit",
+                Some(id),
                 existing.as_ref(),
                 errors,
                 token,

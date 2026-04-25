@@ -1,0 +1,664 @@
+/* RustIO admin — Django classic layout, RustIO brand colors, system fonts.
+ *
+ * Design contract:
+ *  - Plain CSS only. No Tailwind, no Bootstrap, no JS-driven styles.
+ *  - System font stack — no @font-face, no Google Fonts.
+ *  - Class names match Django admin (#header, #branding, .module,
+ *    .breadcrumbs, .results, .form-row, .submit-row, .object-tools)
+ *    so a developer who's seen Django can navigate this stylesheet
+ *    in seconds.
+ *  - Sharp corners (≤3px radius). Flat (no shadows, no gradients).
+ *  - Single theme. No dark-mode toggle.
+ *
+ * Phase 6a covers: login, dashboard (admin/index), changelist
+ * (admin/list), change form (admin/form). Phase 6b will rewrite
+ * confirm_delete, error, users_list, user_edit, groups_list,
+ * group_edit — until then those pages render with browser defaults.
+ */
+
+:root {
+    /* Brand */
+    --primary: #1A202C;
+    --primary-fg: #fff;
+    --secondary: #4A5568;
+    --secondary-fg: #fff;
+    --accent: #C55A3A;
+    --accent-hover: #A84A2F;
+    --accent-subtle: #FDF4F0;
+
+    /* Body */
+    --body-fg: #0F1114;
+    --body-bg: #fff;
+    --body-quiet: #5F6B7A;
+    --body-loud: #1A202C;
+
+    /* Header */
+    --header-color: #fff;
+    --header-branding-color: var(--accent);
+    --header-bg: var(--primary);
+    --header-link-color: #fff;
+
+    /* Breadcrumbs */
+    --breadcrumbs-fg: rgba(255, 255, 255, 0.92);
+    --breadcrumbs-link-fg: #fff;
+    --breadcrumbs-bg: var(--secondary);
+
+    /* Links */
+    --link-fg: var(--accent);
+    --link-hover-color: var(--accent-hover);
+    --link-selected-fg: var(--accent-hover);
+
+    /* Borders */
+    --hairline-color: #E5E7EB;
+    --border-color: #D0D4DA;
+    --border-strong: #C1C7CE;
+
+    /* Messages */
+    --error-fg: #B91C1C;
+    --error-bg: #FEF2F2;
+    --error-border: #FCA5A5;
+    --message-success-bg: #F0FDF4;
+    --message-success-fg: #15803D;
+    --message-warning-bg: #FFFBEB;
+    --message-warning-fg: #A16207;
+
+    /* Backgrounds */
+    --darkened-bg: #F8F9FB;
+    --selected-bg: var(--accent-subtle);
+    --selected-row: var(--accent-subtle);
+
+    /* Buttons */
+    --button-fg: #fff;
+    --button-bg: var(--accent);
+    --button-hover-bg: var(--accent-hover);
+    --default-button-bg: var(--secondary);
+    --default-button-hover-bg: #2D3748;
+    --close-button-bg: #888;
+    --close-button-hover-bg: #6B7280;
+    --delete-button-bg: #B91C1C;
+    --delete-button-hover-bg: #991B1B;
+    --add-button-bg: #15803D;
+
+    --font-family-primary:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif;
+}
+
+/* --- Reset & base ----------------------------------------------------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--body-bg);
+    color: var(--body-fg);
+    font-family: var(--font-family-primary);
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+a {
+    color: var(--link-fg);
+    text-decoration: none;
+}
+
+a:hover { color: var(--link-hover-color); text-decoration: underline; }
+a:focus { outline: 2px solid var(--accent-subtle); outline-offset: 2px; }
+
+h1, h2, h3, h4 {
+    color: var(--body-loud);
+    margin: 0;
+    font-weight: 500;
+}
+
+h1 { font-size: 20px; font-weight: 300; letter-spacing: -0.01em; }
+h2 { font-size: 16px; font-weight: 500; }
+h3 { font-size: 14px; font-weight: 500; }
+
+p { margin: 0 0 12px; }
+
+/* --- Layout shell ---------------------------------------------------- */
+
+#container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--darkened-bg);
+}
+
+#header {
+    background: var(--header-bg);
+    color: var(--header-color);
+    padding: 12px 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#branding h1 {
+    margin: 0;
+    color: var(--header-branding-color);
+    font-size: 18px;
+    font-weight: 300;
+    letter-spacing: 0.01em;
+}
+
+#branding h1 a, #branding h1 a:hover {
+    color: var(--header-branding-color);
+    text-decoration: none;
+}
+
+#user-tools {
+    color: var(--header-color);
+    font-size: 12px;
+}
+
+#user-tools a, #user-tools .link-button {
+    color: var(--header-link-color);
+    text-decoration: underline;
+    margin-left: 12px;
+    background: none;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+}
+
+#user-tools .inline-form { display: inline; }
+
+.breadcrumbs {
+    background: var(--breadcrumbs-bg);
+    color: var(--breadcrumbs-fg);
+    padding: 7px 22px;
+    font-size: 12px;
+}
+
+.breadcrumbs a { color: var(--breadcrumbs-link-fg); }
+
+#content {
+    padding: 18px 22px;
+    flex: 1;
+    background: var(--body-bg);
+}
+
+#content.colMS {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 18px;
+}
+
+#content-main { min-width: 0; }
+
+#content-related {
+    background: var(--darkened-bg);
+}
+
+footer {
+    padding: 14px 22px;
+    color: var(--body-quiet);
+    font-size: 12px;
+    background: var(--darkened-bg);
+    border-top: 1px solid var(--hairline-color);
+}
+
+/* --- Module box (Django classic) ------------------------------------- */
+
+.module {
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+    margin-bottom: 18px;
+}
+
+.module h2, .module caption {
+    background: var(--secondary);
+    color: var(--secondary-fg);
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+.module table { width: 100%; border-collapse: collapse; }
+.module td, .module th {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--hairline-color);
+    text-align: left;
+}
+.module tr:last-child td { border-bottom: 0; }
+
+/* Add (+) link — green text on dashboard rows + .object-tools */
+.addlink, a.addlink {
+    color: var(--add-button-bg);
+    font-weight: 500;
+}
+.addlink::before { content: "+ "; }
+
+.changelink, a.changelink {
+    color: var(--accent);
+}
+
+/* --- Login page ------------------------------------------------------ */
+
+body.login {
+    background: var(--darkened-bg);
+}
+
+#login-form {
+    width: 340px;
+    margin: 80px auto;
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+}
+
+#login-form .module h2 {
+    background: var(--primary);
+    color: var(--accent);
+    text-transform: none;
+    font-size: 16px;
+    letter-spacing: 0;
+    padding: 14px 18px;
+    font-weight: 300;
+}
+
+#login-form form { padding: 18px; }
+
+#login-form .form-row { display: block; padding: 0 0 12px; }
+#login-form label { display: block; margin-bottom: 4px; font-weight: 500; }
+#login-form input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+#login-form input:focus {
+    outline: 2px solid var(--accent-subtle);
+    outline-offset: 0;
+    border-color: var(--accent);
+}
+
+#login-form .submit-row {
+    padding: 0;
+    margin: 8px 0 0;
+    text-align: left;
+}
+
+#login-form button {
+    width: 100%;
+    background: var(--button-bg);
+    color: var(--button-fg);
+    border: 0;
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+#login-form button:hover { background: var(--button-hover-bg); }
+
+/* --- Dashboard ------------------------------------------------------- */
+
+.dashboard #content { background: var(--darkened-bg); }
+
+.dashboard .module table th { color: var(--body-loud); }
+.dashboard .module td a { font-weight: 500; }
+
+.app-list .model-row td:last-child {
+    text-align: right;
+    white-space: nowrap;
+    width: 1%;
+}
+.app-list .model-row td:last-child a { margin-left: 12px; font-size: 12px; }
+
+/* Recent actions sidebar */
+#recent-actions h2 { font-size: 11px; }
+#recent-actions ul { list-style: none; margin: 0; padding: 0; }
+#recent-actions li {
+    border-bottom: 1px solid var(--hairline-color);
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+#recent-actions li:last-child { border-bottom: 0; }
+#recent-actions .when { color: var(--body-quiet); font-size: 11px; }
+#recent-actions .empty { padding: 12px; color: var(--body-quiet); font-size: 13px; }
+
+.rio-pill {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 3px;
+    margin-right: 6px;
+}
+.rio-pill-emerald { background: #DCFCE7; color: #15803D; }
+.rio-pill-indigo  { background: #E0E7FF; color: #3730A3; }
+.rio-pill-rose    { background: #FFE4E6; color: #9F1239; }
+
+/* --- Changelist ------------------------------------------------------ */
+
+.object-tools {
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.object-tools h1 { margin: 0; }
+
+.object-tools .object-tools-actions {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    gap: 12px;
+}
+
+.object-tools-actions a {
+    color: var(--add-button-bg);
+    font-weight: 500;
+    font-size: 12px;
+}
+
+#changelist {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 18px;
+    margin-top: 4px;
+}
+
+#changelist-main { min-width: 0; }
+
+#toolbar { margin-bottom: 12px; }
+#toolbar .search {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+#toolbar .search input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: inherit;
+}
+#toolbar .search input:focus {
+    outline: 2px solid var(--accent-subtle);
+    border-color: var(--accent);
+}
+#toolbar .search button {
+    background: var(--default-button-bg);
+    color: var(--button-fg);
+    border: 0;
+    padding: 6px 12px;
+    border-radius: 3px;
+    font-size: 12px;
+    cursor: pointer;
+}
+#toolbar .search button:hover { background: var(--default-button-hover-bg); }
+
+.actions {
+    background: var(--darkened-bg);
+    border: 1px solid var(--hairline-color);
+    padding: 8px 12px;
+    margin-bottom: 0;
+    font-size: 12px;
+    color: var(--body-quiet);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.actions select { font: inherit; padding: 3px 6px; }
+.actions .action-counter { margin-left: auto; }
+
+.results {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+}
+.results th, .results td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--hairline-color);
+}
+.results th {
+    background: var(--darkened-bg);
+    font-weight: 500;
+    color: var(--body-loud);
+    font-size: 12px;
+}
+.results tr:hover td { background: var(--selected-row); }
+.results .action-checkbox { width: 24px; padding-right: 0; }
+
+.paginator {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--body-quiet);
+}
+.paginator .this-page {
+    background: var(--accent);
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 500;
+}
+.paginator a {
+    margin: 0 4px;
+    padding: 2px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    color: var(--link-fg);
+}
+
+/* Filter sidebar */
+#changelist-filter {
+    background: var(--body-bg);
+    border: 1px solid var(--border-color);
+    padding: 0;
+    font-size: 12px;
+}
+#changelist-filter h2 {
+    background: var(--secondary);
+    color: var(--secondary-fg);
+    margin: 0;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+#changelist-filter h3 {
+    margin: 12px 12px 4px;
+    color: var(--body-loud);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+}
+#changelist-filter ul { list-style: none; margin: 0 0 12px; padding: 0 12px; }
+#changelist-filter li { padding: 2px 0; }
+#changelist-filter li.selected a { color: var(--link-selected-fg); font-weight: 500; }
+
+/* --- Change form ----------------------------------------------------- */
+
+.fieldset, fieldset.module {
+    border: 1px solid var(--border-color);
+    background: var(--body-bg);
+    margin-bottom: 18px;
+    padding: 0;
+}
+
+fieldset.module h2 {
+    margin: 0;
+    background: var(--secondary);
+    color: var(--secondary-fg);
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.form-row {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--hairline-color);
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+.form-row:last-child { border-bottom: 0; }
+
+.form-row > label {
+    text-align: right;
+    font-weight: 500;
+    color: var(--body-loud);
+    padding-top: 6px;
+    font-size: 13px;
+}
+
+.form-row .field-input { min-width: 0; }
+.form-row input[type="text"],
+.form-row input[type="email"],
+.form-row input[type="password"],
+.form-row input[type="number"],
+.form-row input[type="datetime-local"],
+.form-row textarea,
+.form-row select {
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    font-size: 14px;
+    font-family: inherit;
+    width: 100%;
+    max-width: 480px;
+    background: var(--body-bg);
+    color: var(--body-fg);
+}
+.form-row textarea { min-height: 110px; line-height: 1.5; }
+
+.form-row input:focus,
+.form-row textarea:focus,
+.form-row select:focus {
+    outline: 2px solid var(--accent-subtle);
+    border-color: var(--accent);
+}
+
+.form-row .help, .form-row .hint {
+    color: var(--body-quiet);
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.errorlist {
+    color: var(--error-fg);
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    padding: 6px 10px;
+    margin: 0 0 8px;
+    list-style: none;
+    border-radius: 3px;
+    font-size: 13px;
+}
+.errorlist li { padding: 2px 0; }
+
+/* Submit row — 4 buttons in spec colors */
+
+.submit-row {
+    padding: 14px 18px;
+    background: var(--body-bg);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    align-items: center;
+}
+
+.submit-row .deletelink-box {
+    margin-right: auto;
+}
+
+.submit-row button,
+.submit-row input[type="submit"] {
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    color: var(--button-fg);
+}
+
+.submit-row .default,
+.submit-row input[name="_save"] {
+    background: var(--button-bg);
+}
+.submit-row .default:hover,
+.submit-row input[name="_save"]:hover {
+    background: var(--button-hover-bg);
+}
+
+.submit-row input[name="_continue"] {
+    background: var(--default-button-bg);
+}
+.submit-row input[name="_continue"]:hover {
+    background: var(--default-button-hover-bg);
+}
+
+.submit-row input[name="_addanother"] {
+    background: var(--close-button-bg);
+}
+.submit-row input[name="_addanother"]:hover {
+    background: var(--close-button-hover-bg);
+}
+
+.submit-row .deletelink {
+    background: var(--delete-button-bg);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-decoration: none;
+    display: inline-block;
+}
+.submit-row .deletelink:hover {
+    background: var(--delete-button-hover-bg);
+    color: #fff;
+    text-decoration: none;
+}
+
+/* --- Misc ------------------------------------------------------------ */
+
+.errornote {
+    background: var(--error-bg);
+    color: var(--error-fg);
+    border: 1px solid var(--error-border);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    border-radius: 3px;
+}
+
+.help { color: var(--body-quiet); font-size: 12px; }
+.empty-list { color: var(--body-quiet); padding: 14px; text-align: center; }

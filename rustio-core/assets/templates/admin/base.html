@@ -1,48 +1,54 @@
-{% extends "base.html" %}
-
-{% block title %}{{ page_title }} | RustIO admin{% endblock %}
-
-{% block body %}
-<header class="admin-header">
-    <div class="admin-header-inner">
-        <a class="admin-brand" href="/admin">RustIO admin</a>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ page_title|default(site_title) }} | {{ site_title }}{% endblock %}</title>
+    <link rel="stylesheet" href="/static/admin.css">
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block bodyclass %}{% endblock %}">
+<div id="container">
+    <div id="header">
+        <div id="branding">
+            {% block branding %}<h1><a href="/admin">{{ site_header }}</a></h1>{% endblock %}
+        </div>
         {% if identity %}
-        <div class="admin-user">
-            <span>{{ identity.email }}</span>
+        <div id="user-tools">
+            Welcome, <strong>{{ identity.email }}</strong>.
+            {% if identity.is_admin %}<a href="/admin/users">Users</a>{% endif %}
             <form method="post" action="/admin/logout" class="inline-form">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                <button type="submit" class="link-button">Sign out</button>
+                <button type="submit" class="link-button">Log out</button>
             </form>
         </div>
         {% endif %}
     </div>
-</header>
 
-<main class="admin-main">
-    <aside class="admin-sidebar">
-        <ul>
-            <li class="nav-item"><a href="/admin">Dashboard</a></li>
-            {% if entries %}
-            <li class="nav-section">Application models</li>
-            {% for entry in entries %}
-            <li class="nav-item"><a href="/admin/{{ entry.admin_name }}">{{ entry.display_name }}</a></li>
-            {% endfor %}
-            {% endif %}
+    {% block breadcrumbs %}
+    {% if identity %}
+    <div class="breadcrumbs">
+        <a href="/admin">Home</a>
+    </div>
+    {% endif %}
+    {% endblock %}
 
-            {% if identity and identity.is_admin %}
-            <li class="nav-section">Auth &amp; users</li>
-            <li class="nav-item"><a href="/admin/users">Users</a></li>
-            <li class="nav-item"><a href="/admin/groups">Groups</a></li>
-            {% endif %}
-        </ul>
-    </aside>
-
-    <section class="admin-content">
+    <div id="content" class="{% block coltype %}colM{% endblock %}">
         {% if flash %}
-        <div class="flash flash-{{ flash.kind }}">{{ flash.message }}</div>
+        <div class="messagelist message-{{ flash.kind }}">{{ flash.message }}</div>
         {% endif %}
 
-        {% block content %}{% endblock %}
-    </section>
-</main>
-{% endblock %}
+        <div id="content-main">
+            {% block content %}{% endblock %}
+        </div>
+
+        {% block sidebar %}{% endblock %}
+    </div>
+
+    <footer>
+        <small>RustIO administration — single binary, plain HTML, system fonts.</small>
+    </footer>
+</div>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

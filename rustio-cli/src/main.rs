@@ -551,7 +551,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     migrations::apply(&db, "migrations").await?;
     background::spawn_housekeeping(db.clone());
 
-    let templates = Templates::new(Some("templates".into()))?;
+    let template_dir = std::env::var("RUSTIO_TEMPLATE_DIR").unwrap_or_else(|_| "templates".into());
+    let templates = Templates::new(Some(template_dir.into()))?;
 
     let admin = Admin::new();
     admin.seed_permissions(&db).await?;

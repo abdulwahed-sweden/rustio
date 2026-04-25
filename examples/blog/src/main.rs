@@ -75,8 +75,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let indexer = Indexer::spawn(meili.clone(), 1024);
 
-    // Templates: pick up overrides from ./templates/ if present.
-    let templates = Templates::new(Some("templates".into()))?;
+    // Templates: pick up overrides from $RUSTIO_TEMPLATE_DIR (default
+    // ./templates/). Edits to files in that directory are reflected on
+    // the next request — no restart needed.
+    let template_dir = std::env::var("RUSTIO_TEMPLATE_DIR").unwrap_or_else(|_| "templates".into());
+    let templates = Templates::new(Some(template_dir.into()))?;
 
     // Admin — register models with search wired in, then materialise their permissions.
     let admin = Admin::new().model_with_search::<apps::posts::Post>(indexer.clone());

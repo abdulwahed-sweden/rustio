@@ -188,6 +188,10 @@ pub fn embedded_rustio_css() -> &'static str {
     include_str!("../assets/static/css/rustio.css")
 }
 
+pub fn embedded_admin_css() -> &'static str {
+    include_str!("../assets/static/css/admin.css")
+}
+
 pub fn embedded_search_js() -> &'static str {
     include_str!("../assets/static/js/search.js")
 }

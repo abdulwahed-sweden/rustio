@@ -127,6 +127,18 @@ pub fn register_admin_routes(
         .with_header("cache-control", "public, max-age=3600"))
     });
 
+    // Phase 6a admin stylesheet — Django classic layout, RustIO brand.
+    // Served alongside /static/rustio.css; the new admin pages link to
+    // this one, the legacy templates keep using rustio.css.
+    let router = router.get("/static/admin.css", |_req| async move {
+        Ok(Response::new(
+            hyper::StatusCode::OK,
+            bytes::Bytes::from_static(crate::server::embedded_admin_css().as_bytes()),
+        )
+        .with_header("content-type", "text/css; charset=utf-8")
+        .with_header("cache-control", "public, max-age=3600"))
+    });
+
     // Client for the embedded search page.
     let router = router.get("/static/search.js", |_req| async move {
         Ok(Response::new(
