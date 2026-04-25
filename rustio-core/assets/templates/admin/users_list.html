@@ -17,7 +17,7 @@
 </div>
 
 {% if users %}
-<table class="results">
+<table class="results row-clickable">
     <thead>
         <tr>
             <th scope="col">Email</th>
@@ -27,12 +27,16 @@
         </tr>
     </thead>
     <tbody>
+        {# Phase 7a/0.5/h — every cell is wrapped in an anchor to the
+           profile view so the entire row is clickable without
+           JavaScript. The destination is the read-only view; from
+           there the operator picks Edit or Delete. #}
         {% for u in users %}
-        <tr>
-            <td><a href="/admin/users/{{ u.id }}/edit">{{ u.email }}</a></td>
-            <td><span class="rio-pill rio-pill-{{ u.role == 'admin' and 'rose' or (u.role == 'staff' and 'indigo' or 'emerald') }}">{{ u.role }}</span></td>
-            <td>{% if u.is_active %}Yes{% else %}<span class="help">No</span>{% endif %}</td>
-            <td class="help">{{ u.created_at }}</td>
+        <tr class="user-row">
+            <td><a href="/admin/users/{{ u.id }}/" class="row-link">{{ u.email }}</a></td>
+            <td><a href="/admin/users/{{ u.id }}/" class="row-link"><span class="rio-pill rio-pill-{{ u.role == 'developer' and 'rose' or (u.role == 'administrator' and 'rose' or (u.role == 'supervisor' and 'amber' or (u.role == 'staff' and 'indigo' or 'emerald'))) }}">{{ u.role }}</span></a></td>
+            <td><a href="/admin/users/{{ u.id }}/" class="row-link">{% if u.is_active %}Yes{% else %}<span class="help">No</span>{% endif %}</a></td>
+            <td><a href="/admin/users/{{ u.id }}/" class="row-link help">{{ u.created_at }}</a></td>
         </tr>
         {% endfor %}
     </tbody>

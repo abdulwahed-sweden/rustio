@@ -309,6 +309,144 @@ async fn render_user_edit_with_errors(
     Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
 }
 
+// ---------- User view (Phase 7a/0.5/h) ----------
+//
+// Read-only profile page. Sits between the users list (which now
+// links each row here, not to /edit) and the destructive surfaces.
+// The view is the navigation hub — Back, Edit, Delete buttons all
+// live here — so the edit + delete pages don't have to render
+// profile metadata; they stay focused on the action they perform.
+
+#[derive(Serialize)]
+struct UserViewGroup {
+    name: String,
+    description: String,
+}
+
+#[derive(Serialize)]
+struct UserViewCtx {
+    #[serde(flatten)]
+    base: BaseContext,
+    page_title: String,
+    entries: Vec<SidebarEntry>,
+    target_id: i64,
+    target_email: String,
+    target_role: String,
+    target_is_active: bool,
+    target_is_demo: bool,
+    target_demo_label: Option<String>,
+    target_created_at: String,
+    target_updated_at: String,
+    groups: Vec<UserViewGroup>,
+    /// Direct permission grants (NOT via groups). Empty for the
+    /// common case — direct grants are the rare exception, callers
+    /// usually attach via groups.
+    direct_perms: Vec<String>,
+    /// `Identity::user_id == target.id`. Disables the Delete button
+    /// (matches `do_user_delete`'s self-delete guard).
+    is_self: bool,
+    /// `would_orphan_developers(target.id, Some(Role::User))`. Same
+    /// flag the delete confirm page uses.
+    is_last_developer: bool,
+    /// Convenience flag for the template: Administrator sessions
+    /// always have edit perm for built-in user pages, but threading
+    /// the bool through keeps the template free of role logic.
+    can_edit: bool,
+    /// `!is_self && !is_last_developer`. The template renders the
+    /// Delete button as `<a>` when true, `<span class="disabled">`
+    /// otherwise — same blocking surface as the confirm page, just
+    /// promoted to the navigation row.
+    can_delete: bool,
+}
+
+pub(crate) async fn show_user_view(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    user_id: i64,
+    csrf: String,
+) -> Result<Response> {
+    let row = sqlx::query(
+        "SELECT id, email, role, is_active, is_demo, demo_label, \
+                created_at, updated_at \
+         FROM rustio_users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(ctx.db.pool())
+    .await?;
+    let row = row.ok_or_else(|| Error::NotFound(format!("user #{user_id}")))?;
+    let r = Row::from_pg(&row);
+
+    // Group memberships for display. Same JOIN shape as
+    // `do_user_edit`'s checkbox seed, but ordered for readable output.
+    let group_rows = sqlx::query(
+        "SELECT g.name, g.description \
+         FROM rustio_groups g \
+         JOIN rustio_user_groups ug ON ug.group_id = g.id \
+         WHERE ug.user_id = $1 \
+         ORDER BY g.name ASC",
+    )
+    .bind(user_id)
+    .fetch_all(ctx.db.pool())
+    .await?;
+    let groups = group_rows
+        .iter()
+        .map(|r| {
+            let r = Row::from_pg(r);
+            Ok(UserViewGroup {
+                name: r.get_string("name")?,
+                description: r.get_string("description")?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    // Direct permission grants — explicitly NOT joined through
+    // groups. These are the rare per-user overrides; the template
+    // calls them out so admins can spot drift from group-only policy.
+    let direct_perms: Vec<String> = sqlx::query_scalar(
+        "SELECT p.name \
+         FROM rustio_permissions p \
+         JOIN rustio_user_permissions up ON up.permission_id = p.id \
+         WHERE up.user_id = $1 \
+         ORDER BY p.name ASC",
+    )
+    .bind(user_id)
+    .fetch_all(ctx.db.pool())
+    .await?;
+
+    let is_self = identity.user_id == user_id;
+    let is_last_developer =
+        auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
+
+    let target_email = r.get_string("email")?;
+    let view = UserViewCtx {
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
+        page_title: format!("User: {target_email}"),
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        target_id: user_id,
+        target_email,
+        target_role: r.get_string("role")?,
+        target_is_active: r.get_bool("is_active")?,
+        target_is_demo: r.get_bool("is_demo")?,
+        target_demo_label: r.get_optional_string("demo_label")?,
+        target_created_at: r
+            .get_datetime("created_at")?
+            .format("%Y-%m-%d %H:%M UTC")
+            .to_string(),
+        target_updated_at: r
+            .get_datetime("updated_at")?
+            .format("%Y-%m-%d %H:%M UTC")
+            .to_string(),
+        groups,
+        direct_perms,
+        is_self,
+        is_last_developer,
+        can_edit: true,
+        can_delete: !is_self && !is_last_developer,
+    };
+    let body = ctx.templates.render("admin/user_view.html", &view)?;
+    Ok(Response::html(body))
+}
+
 // ---------- User delete (Phase 7a/0.5/f) ----------
 
 #[derive(Serialize)]

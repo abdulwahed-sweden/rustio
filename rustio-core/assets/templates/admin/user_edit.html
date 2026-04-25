@@ -11,6 +11,10 @@
 {% endblock %}
 
 {% block content %}
+<div class="object-tools-row">
+    <a href="/admin/users/{{ user_id }}/" class="btn-back">&larr; Back to profile</a>
+</div>
+
 <h1>Change user</h1>
 
 {% if errors %}

@@ -1,0 +1,90 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}user-view{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a>
+    &rsaquo; <a href="/admin/users">Users</a>
+    &rsaquo; {{ target_email }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="object-tools-row">
+    <a href="/admin/users" class="btn-back">&larr; Back to users</a>
+
+    {% if can_edit %}
+    <a href="/admin/users/{{ target_id }}/edit" class="btn-edit">Edit</a>
+    {% endif %}
+
+    {% if can_delete %}
+    <a href="/admin/users/{{ target_id }}/delete" class="btn-delete">Delete</a>
+    {% else %}
+    <span class="btn-delete disabled" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">Delete</span>
+    {% endif %}
+</div>
+
+<h1>User profile: {{ target_email }}</h1>
+
+<fieldset class="module">
+    <h2>Identity</h2>
+    <div class="form-row">
+        <label>Email:</label>
+        <span>{{ target_email }}</span>
+    </div>
+    <div class="form-row">
+        <label>Role:</label>
+        <span class="rio-pill rio-pill-{{ target_role == 'developer' and 'rose' or (target_role == 'administrator' and 'rose' or (target_role == 'supervisor' and 'amber' or (target_role == 'staff' and 'indigo' or 'emerald'))) }}">{{ target_role }}</span>
+    </div>
+    <div class="form-row">
+        <label>Active:</label>
+        <span>{% if target_is_active %}Yes{% else %}<span class="help">No (cannot sign in)</span>{% endif %}</span>
+    </div>
+    {% if target_is_demo %}
+    <div class="form-row">
+        <label>Demo account:</label>
+        <span>{{ target_demo_label or "Yes" }}</span>
+    </div>
+    {% endif %}
+</fieldset>
+
+<fieldset class="module">
+    <h2>Group memberships ({{ groups|length }})</h2>
+    {% if groups %}
+    <ul class="profile-group-list">
+        {% for g in groups %}
+        <li>
+            <strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No group memberships.</p>
+    {% endif %}
+</fieldset>
+
+{% if direct_perms %}
+<fieldset class="module">
+    <h2>Direct permissions ({{ direct_perms|length }})</h2>
+    <ul class="profile-perm-list">
+        {% for p in direct_perms %}
+        <li><code>{{ p }}</code></li>
+        {% endfor %}
+    </ul>
+    <p class="help">These are permissions granted directly to this user, outside of group memberships. Direct grants bypass the group/role policy and are easy to forget — usually you want to assign perms via a group instead.</p>
+</fieldset>
+{% endif %}
+
+<fieldset class="module">
+    <h2>Timeline</h2>
+    <div class="form-row">
+        <label>Created:</label>
+        <span>{{ target_created_at }}</span>
+    </div>
+    <div class="form-row">
+        <label>Updated:</label>
+        <span>{{ target_updated_at }}</span>
+    </div>
+</fieldset>
+{% endblock %}

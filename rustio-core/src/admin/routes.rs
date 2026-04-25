@@ -422,6 +422,28 @@ pub fn register_admin_routes(
         }
     });
 
+    // Phase 7a/0.5/h — read-only user profile view. MUST be
+    // registered AFTER `/admin/users/new` and the `:id/edit` +
+    // `:id/delete` routes above: the router matches in insertion
+    // order, and `:id` is a wildcard that would happily swallow
+    // "new" or extra path segments. Putting this last preserves
+    // the more-specific routes' priority.
+    let c = ctx.clone();
+    let ac = auth_ctx.clone();
+    let router = router.get("/admin/users/:id", move |req| {
+        let c = c.clone();
+        let ac = ac.clone();
+        async move {
+            match role_guard(&c, &req, Role::Administrator).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => {
+                    let id = parse_id(req.param("id"))?;
+                    super::builtin::show_user_view(&ac, ident, id, handlers::csrf_token(&req)).await
+                }
+            }
+        }
+    });
+
     // --- Built-in groups admin (admin-only) ---
     let c = ctx.clone();
     let ac = auth_ctx.clone();

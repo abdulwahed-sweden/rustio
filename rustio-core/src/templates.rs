@@ -138,6 +138,7 @@ const EMBEDDED_TEMPLATES: &[(&str, &str)] = &[
     ("admin/users_list.html", include_str!("../assets/templates/admin/users_list.html")),
     ("admin/user_edit.html", include_str!("../assets/templates/admin/user_edit.html")),
     ("admin/user_new.html", include_str!("../assets/templates/admin/user_new.html")),
+    ("admin/user_view.html", include_str!("../assets/templates/admin/user_view.html")),
     ("admin/user_confirm_delete.html", include_str!("../assets/templates/admin/user_confirm_delete.html")),
     ("admin/groups_list.html", include_str!("../assets/templates/admin/groups_list.html")),
     ("admin/group_edit.html", include_str!("../assets/templates/admin/group_edit.html")),
@@ -285,6 +286,169 @@ mod tests {
             body.contains(r#"<button type="submit" class="deletelink-button" disabled>"#),
             "submit must be disabled on self-delete"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 7a/0.5/h — admin/user_view.html
+    //
+    // Five render tests covering the load-bearing template branches:
+    // - groups list populated vs empty
+    // - is_self / is_last_developer disable the Delete button
+    // - is_demo absent → no demo row
+    //
+    // All run as sandbox tests (no DB) because the template only
+    // depends on the context dict — perfect for catching template
+    // typos + missing variables without needing postgres.
+    // ------------------------------------------------------------------
+
+    fn view_ctx_base() -> serde_json::Value {
+        serde_json::json!({
+            "target_id": 42,
+            "target_email": "alice@example.com",
+            "target_role": "staff",
+            "target_is_active": true,
+            "target_is_demo": false,
+            "target_demo_label": null,
+            "target_created_at": "2026-04-25 12:00 UTC",
+            "target_updated_at": "2026-04-25 12:30 UTC",
+            "groups": [],
+            "direct_perms": [],
+            "is_self": false,
+            "is_last_developer": false,
+            "can_edit": true,
+            "can_delete": true,
+            "csrf_token": "test-csrf",
+        })
+    }
+
+    #[test]
+    fn user_view_renders_with_groups() {
+        let t = Templates::new(None).unwrap();
+        let mut ctx = view_ctx_base();
+        ctx["groups"] = serde_json::json!([
+            { "name": "Auditors", "description": "read-only audit access" },
+            { "name": "Content Editors", "description": "" },
+        ]);
+        let body = t.render("admin/user_view.html", &ctx).unwrap();
+        assert!(
+            body.contains("Group memberships (2)"),
+            "membership count must reflect the groups list length"
+        );
+        assert!(body.contains("Auditors"));
+        assert!(body.contains("Content Editors"));
+        // Description-empty branch: the `<span class=\"help\">` must
+        // NOT render for the second group.
+        assert!(body.contains("read-only audit access"));
+    }
+
+    #[test]
+    fn user_view_without_groups_shows_empty_message() {
+        let t = Templates::new(None).unwrap();
+        let body = t.render("admin/user_view.html", &view_ctx_base()).unwrap();
+        assert!(
+            body.contains("No group memberships"),
+            "empty-state copy must appear when the groups list is empty"
+        );
+        assert!(body.contains("Group memberships (0)"));
+    }
+
+    #[test]
+    fn user_view_is_self_disables_delete_as_span() {
+        let t = Templates::new(None).unwrap();
+        let mut ctx = view_ctx_base();
+        ctx["is_self"] = serde_json::Value::Bool(true);
+        ctx["can_delete"] = serde_json::Value::Bool(false);
+        let body = t.render("admin/user_view.html", &ctx).unwrap();
+        assert!(
+            body.contains(r#"<span class="btn-delete disabled""#),
+            "Delete must render as a disabled <span>, not an <a>"
+        );
+        assert!(
+            body.contains("Cannot delete your own account"),
+            "tooltip must explain the self-delete refusal"
+        );
+        // Edit must still render as an anchor — administrators can
+        // edit themselves, just not delete.
+        assert!(
+            body.contains(r#"<a href="/admin/users/42/edit""#),
+            "Edit button stays clickable on a self-view"
+        );
+    }
+
+    #[test]
+    fn user_view_last_developer_disables_delete() {
+        let t = Templates::new(None).unwrap();
+        let mut ctx = view_ctx_base();
+        ctx["is_last_developer"] = serde_json::Value::Bool(true);
+        ctx["can_delete"] = serde_json::Value::Bool(false);
+        let body = t.render("admin/user_view.html", &ctx).unwrap();
+        assert!(body.contains(r#"<span class="btn-delete disabled""#));
+        assert!(
+            body.contains("Cannot delete the last active developer"),
+            "tooltip must explain the orphan refusal"
+        );
+    }
+
+    /// The users list now navigates to the profile view (not edit).
+    /// Lock the invariant: every cell in every row carries a `.row-link`
+    /// anchor pointing to `/admin/users/:id/` — never to `/edit`. A
+    /// regression here would silently revert /h's UX shift.
+    #[test]
+    fn users_list_renders_row_clickable_links() {
+        let t = Templates::new(None).unwrap();
+        let ctx = serde_json::json!({
+            "page_title": "Users",
+            "users": [
+                { "id": 7, "email": "alice@example.com", "role": "staff",
+                  "is_active": true, "created_at": "2026-04-01" },
+                { "id": 9, "email": "bob@example.com", "role": "developer",
+                  "is_active": false, "created_at": "2026-04-02" },
+            ],
+            "csrf_token": "x",
+        });
+        let body = t.render("admin/users_list.html", &ctx).unwrap();
+
+        // The table must declare itself row-clickable (CSS hook).
+        assert!(body.contains(r#"class="results row-clickable""#));
+
+        // Each row → 4 anchors pointing at the profile, none at /edit.
+        let count_for = |needle: &str| body.matches(needle).count();
+        assert_eq!(
+            count_for(r#"href="/admin/users/7/""#),
+            4,
+            "every cell in row 7 must link to the profile view (4 anchors)"
+        );
+        assert_eq!(
+            count_for(r#"href="/admin/users/9/""#),
+            4,
+            "every cell in row 9 must link to the profile view (4 anchors)"
+        );
+        // Defensive: no /edit links should leak through from the
+        // pre-/h pattern.
+        assert_eq!(
+            count_for(r#"href="/admin/users/7/edit""#),
+            0,
+            "list rows must NOT link to /edit anymore — that lives behind the view"
+        );
+    }
+
+    #[test]
+    fn user_view_real_user_omits_demo_row() {
+        let t = Templates::new(None).unwrap();
+        // is_demo defaults to false in view_ctx_base.
+        let body = t.render("admin/user_view.html", &view_ctx_base()).unwrap();
+        assert!(
+            !body.contains("Demo account:"),
+            "demo row must NOT render for a real (non-demo) user"
+        );
+
+        // Demo case: row renders with the label.
+        let mut demo_ctx = view_ctx_base();
+        demo_ctx["target_is_demo"] = serde_json::Value::Bool(true);
+        demo_ctx["target_demo_label"] = serde_json::Value::String("staff @ rustio.local".into());
+        let demo_body = t.render("admin/user_view.html", &demo_ctx).unwrap();
+        assert!(demo_body.contains("Demo account:"));
+        assert!(demo_body.contains("staff @ rustio.local"));
     }
 
     /// Companion to `…with_last_developer_banner`: when neither guard

@@ -456,6 +456,25 @@ body.login {
 .results tr:hover td { background: var(--selected-row); }
 .results .action-checkbox { width: 24px; padding-right: 0; }
 
+/* Phase 7a/0.5/h — row-clickable list. Each <td> contains exactly
+   one anchor to the profile view; the anchor is a block-level
+   element so the click target fills the cell. We zero the cell's
+   own padding so clicks at the cell edge land on the anchor, not
+   the cell. The anchor inherits color from the row so a hover
+   tinting on `tr:hover td` carries through. */
+.results.row-clickable td { padding: 0; }
+.results.row-clickable .row-link {
+    display: block;
+    padding: 8px 12px;
+    color: inherit;
+    text-decoration: none;
+}
+.results.row-clickable .row-link:hover { text-decoration: none; }
+/* Bold the first column anchor so the email visually anchors the
+   row even though every cell is the same link. */
+.results.row-clickable td:first-child .row-link { font-weight: 600; }
+.results.row-clickable .row-link.help { color: var(--body-quiet); }
+
 .paginator {
     margin-top: 12px;
     font-size: 12px;
@@ -814,6 +833,81 @@ fieldset.module h2 {
 
 .danger-zone h2 {
     background: var(--delete-button-bg);
+}
+
+/* --- Phase 7a/0.5/h — User profile view -------------------------------- */
+
+/* Action row at the top of the view page: Back / Edit / Delete. Plain
+   `display: flex` rather than abusing `.object-tools` so this row sits
+   ABOVE the H1 instead of being merged into it. */
+.object-tools-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.object-tools-row .btn-back,
+.object-tools-row .btn-edit,
+.object-tools-row .btn-delete {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    border: 1px solid transparent;
+}
+.object-tools-row .btn-back {
+    background: var(--default-button-bg);
+    color: #fff;
+}
+.object-tools-row .btn-back:hover {
+    background: var(--default-button-hover-bg);
+}
+.object-tools-row .btn-edit {
+    background: var(--button-bg);
+    color: #fff;
+}
+.object-tools-row .btn-edit:hover {
+    background: var(--button-hover-bg);
+}
+.object-tools-row .btn-delete {
+    background: var(--delete-button-bg);
+    color: #fff;
+}
+.object-tools-row .btn-delete:hover {
+    background: var(--delete-button-hover-bg);
+}
+/* When the view's guard flags fire, Delete is rendered as a span
+   instead of an anchor and gets this style. Title attribute carries
+   the reason so hover reveals which guard refused. */
+.object-tools-row .btn-delete.disabled {
+    background: var(--default-button-bg);
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Profile fieldsets — read-only, so styling is lighter than the edit
+   form. Inherits .module + .form-row from the existing form CSS. */
+.user-view .form-row label {
+    color: var(--body-quiet);
+    font-weight: 500;
+}
+.user-view .profile-group-list,
+.user-view .profile-perm-list {
+    list-style: disc;
+    padding-left: 20px;
+    margin: 0 0 6px;
+}
+.user-view .profile-group-list li,
+.user-view .profile-perm-list li {
+    margin: 2px 0;
+}
+.user-view .muted {
+    color: var(--body-quiet);
+    font-style: italic;
+    margin: 0;
 }
 
 /* --- 403 forbidden page (Phase 7a/0.5/b) ----------------------------- */
