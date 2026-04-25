@@ -27,6 +27,28 @@
 {% else %}
 <p class="help">No models are registered yet. Add one with <code>#[derive(RustioAdmin)]</code>.</p>
 {% endif %}
+
+{# Django-style Auth section. Admin-only because /admin/users and
+   /admin/groups are gated by admin_only_guard in routes.rs.
+   "Add" links are absent because Phase 6b deferred user/group
+   creation via the UI to Phase 7 — the CLI is the path today. #}
+{% if identity and identity.is_admin %}
+<div class="module app-list" id="auth-app">
+    <h2>Authentication and authorization</h2>
+    <table>
+        <tbody>
+            <tr class="model-row">
+                <td><a href="/admin/users" class="changelink">Users</a></td>
+                <td><a href="/admin/users" class="changelink">Change</a></td>
+            </tr>
+            <tr class="model-row">
+                <td><a href="/admin/groups" class="changelink">Groups</a></td>
+                <td><a href="/admin/groups" class="changelink">Change</a></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block sidebar %}
