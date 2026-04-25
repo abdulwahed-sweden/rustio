@@ -673,6 +673,33 @@ fieldset.module h2 {
 .help { color: var(--body-quiet); font-size: 12px; }
 .empty-list { color: var(--body-quiet); padding: 14px; text-align: center; }
 
+/* --- Checkbox lists (Phase 6b/3 — user/group permission selection) - */
+
+.checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.checkbox-list .checkbox-item {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-weight: 400;
+    font-size: 13px;
+    color: var(--body-fg);
+    text-align: left;
+}
+.checkbox-list .checkbox-item input[type="checkbox"] {
+    margin: 0;
+    flex-shrink: 0;
+}
+.checkbox-list code {
+    font-size: 12px;
+    background: var(--darkened-bg);
+    padding: 1px 5px;
+    border-radius: 2px;
+}
+
 /* --- Delete confirmation (Phase 6b/1) ----------------------------- */
 
 .cascade-list {

@@ -1,68 +1,88 @@
 {% extends "admin/base.html" %}
 
-{% block content %}
-<div class="page-header">
-    <h1>Edit user</h1>
-    <a href="/admin/users" class="link-muted">Back to users</a>
+{% block bodyclass %}change-form user-edit{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a>
+    &rsaquo; <a href="/admin/users">Users</a>
+    &rsaquo; {{ email }}
 </div>
+{% endblock %}
+
+{% block content %}
+<h1>Change user</h1>
 
 {% if errors %}
-<div class="flash flash-error">
-    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
-</div>
+{% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
-<form method="post" class="model-form">
+<form method="post" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <div class="form-row">
-        <label>Email</label>
-        <input type="email" value="{{ email }}" disabled>
-        <small class="muted">Email changes aren't exposed here — they require a full user update.</small>
-    </div>
 
-    <div class="form-row">
-        <label for="field-role">Role</label>
-        <select id="field-role" name="role">
-            <option value="admin" {% if role == "admin" %}selected{% endif %}>Admin (superuser)</option>
-            <option value="staff" {% if role == "staff" %}selected{% endif %}>Staff (admin access, per-model permissions)</option>
-            <option value="user"  {% if role == "user"  %}selected{% endif %}>User (no admin access)</option>
-        </select>
-    </div>
+    <fieldset class="module aligned">
+        <h2>Identity</h2>
+        <div class="form-row">
+            <label>Email:</label>
+            <div class="field-input">
+                <input type="email" value="{{ email }}" disabled>
+                <p class="help">Email changes aren't exposed here — they require a full user update.</p>
+            </div>
+        </div>
+        <div class="form-row">
+            <label for="id_role">Role:</label>
+            <div class="field-input">
+                <select id="id_role" name="role">
+                    <option value="admin" {% if role == "admin" %}selected{% endif %}>Admin (superuser)</option>
+                    <option value="staff" {% if role == "staff" %}selected{% endif %}>Staff (admin access, per-model permissions)</option>
+                    <option value="user"  {% if role == "user"  %}selected{% endif %}>User (no admin access)</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <label for="id_is_active">Active:</label>
+            <div class="field-input">
+                <input type="checkbox" id="id_is_active" name="is_active"{% if is_active %} checked{% endif %}>
+                <p class="help">Inactive users cannot sign in or hold sessions.</p>
+            </div>
+        </div>
+    </fieldset>
 
-    <div class="form-row form-row-checkbox">
-        <label><input type="checkbox" name="is_active" {% if is_active %}checked{% endif %}> Active</label>
-        <small class="muted">Inactive users cannot sign in or hold sessions.</small>
-    </div>
-
-    <fieldset class="form-fieldset">
-        <legend>Groups</legend>
+    <fieldset class="module aligned">
+        <h2>Groups</h2>
         {% if all_groups %}
-        <div class="checkbox-list">
-            {% for g in all_groups %}
-            <label class="checkbox-item">
-                <input type="checkbox" name="group_{{ g.id }}"
-                    {% if g.id in user_groups %}checked{% endif %}>
-                <span><strong>{{ g.name }}</strong>{% if g.description %} — <span class="muted">{{ g.description }}</span>{% endif %}</span>
-            </label>
-            {% endfor %}
+        <div class="form-row">
+            <label>Membership:</label>
+            <div class="field-input checkbox-list">
+                {% for g in all_groups %}
+                <label class="checkbox-item">
+                    <input type="checkbox" name="group_{{ g.id }}"{% if g.id in user_groups %} checked{% endif %}>
+                    <strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}
+                </label>
+                {% endfor %}
+            </div>
         </div>
         {% else %}
-        <p class="muted">No groups yet. Create one under Groups.</p>
+        <div class="form-row">
+            <label>&nbsp;</label>
+            <div class="field-input"><p class="help">No groups yet. Create one under <a href="/admin/groups">Groups</a>.</p></div>
+        </div>
         {% endif %}
     </fieldset>
 
-    <fieldset class="form-fieldset">
-        <legend>Reset password (optional)</legend>
+    <fieldset class="module aligned">
+        <h2>Reset password (optional)</h2>
         <div class="form-row">
-            <label for="new-password">New password</label>
-            <input type="password" id="new-password" name="new_password" autocomplete="new-password">
-            <small class="muted">Leave blank to keep the current password unchanged.</small>
+            <label for="id_new_password">New password:</label>
+            <div class="field-input">
+                <input type="password" id="id_new_password" name="new_password" autocomplete="new-password">
+                <p class="help">Leave blank to keep the current password unchanged. This sets <em>this user's</em> password — to change your own, visit <a href="/admin/password_change">Change password</a>.</p>
+            </div>
         </div>
     </fieldset>
 
-    <div class="form-actions">
-        <button type="submit" class="btn">Save</button>
-        <a href="/admin/users" class="btn btn-ghost">Cancel</a>
+    <div class="submit-row">
+        <input type="submit" name="_save" value="Save" class="default">
     </div>
 </form>
 {% endblock %}

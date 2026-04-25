@@ -16,7 +16,7 @@ use crate::http::{Request, Response};
 use crate::orm::{Db, Row};
 use crate::templates::Templates;
 
-use super::render::{FlashCtx, IdentityCtx, SidebarEntry};
+use super::render::{BaseContext, FlashCtx, IdentityCtx, SidebarEntry};
 use super::types::Admin;
 
 pub(crate) struct AuthAdminCtx {
@@ -38,12 +38,12 @@ struct UserRow {
 
 #[derive(Serialize)]
 struct UsersListCtx {
+    #[serde(flatten)]
+    base: BaseContext,
     page_title: &'static str,
-    identity: IdentityCtx,
     entries: Vec<SidebarEntry>,
     users: Vec<UserRow>,
     flash: Option<FlashCtx>,
-    csrf_token: String,
 }
 
 pub(crate) async fn list_users(
@@ -77,12 +77,11 @@ pub(crate) async fn list_users(
         .collect::<Result<Vec<_>>>()?;
 
     let view = UsersListCtx {
+        base: BaseContext::new(Some(&identity), csrf),
         page_title: "Users",
-        identity: (&identity).into(),
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         users,
         flash: None,
-        csrf_token: csrf,
     };
     let body = ctx.templates.render("admin/users_list.html", &view)?;
     Ok(Response::html(body))
@@ -92,8 +91,9 @@ pub(crate) async fn list_users(
 
 #[derive(Serialize)]
 struct UserEditCtx {
+    #[serde(flatten)]
+    base: BaseContext,
     page_title: String,
-    identity: IdentityCtx,
     entries: Vec<SidebarEntry>,
     user_id: i64,
     email: String,
@@ -103,7 +103,6 @@ struct UserEditCtx {
     user_groups: Vec<i64>,
     errors: Vec<String>,
     flash: Option<FlashCtx>,
-    csrf_token: String,
 }
 
 #[derive(Serialize)]
@@ -153,8 +152,8 @@ pub(crate) async fn show_user_edit(
     .await?;
 
     let view = UserEditCtx {
+        base: BaseContext::new(Some(&identity), csrf),
         page_title: format!("Edit user #{user_id}"),
-        identity: (&identity).into(),
         entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         user_id,
         email: r.get_string("email")?,
@@ -164,7 +163,6 @@ pub(crate) async fn show_user_edit(
         user_groups: group_ids,
         errors: vec![],
         flash: None,
-        csrf_token: csrf,
     };
     let body = ctx.templates.render("admin/user_edit.html", &view)?;
     Ok(Response::html(body))

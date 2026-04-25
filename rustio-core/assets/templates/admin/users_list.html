@@ -1,38 +1,43 @@
 {% extends "admin/base.html" %}
 
+{% block bodyclass %}change-list users-list{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a> &rsaquo; Users
+</div>
+{% endblock %}
+
 {% block content %}
-<div class="page-header">
-    <h1>Users</h1>
+<div class="object-tools">
+    <h1>Select user to change</h1>
+    <ul class="object-tools-actions">
+        <li><span class="help">Add user via the CLI: <code>rustio user create --email &lt;…&gt; --role &lt;…&gt;</code></span></li>
+    </ul>
 </div>
 
 {% if users %}
-<table class="data-table">
+<table class="results">
     <thead>
         <tr>
-            <th>#</th>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Active</th>
-            <th>Created</th>
-            <th class="actions-col">Actions</th>
+            <th scope="col">Email</th>
+            <th scope="col">Role</th>
+            <th scope="col">Active</th>
+            <th scope="col">Joined</th>
         </tr>
     </thead>
     <tbody>
-        {% for user in users %}
+        {% for u in users %}
         <tr>
-            <td>{{ user.id }}</td>
-            <td>{{ user.email }}</td>
-            <td><span class="tag tag-{{ user.role }}">{{ user.role }}</span></td>
-            <td>{% if user.is_active %}<span class="dot dot-ok" title="active"></span>{% else %}<span class="dot dot-off" title="disabled"></span>{% endif %}</td>
-            <td class="muted">{{ user.created_at }}</td>
-            <td class="actions-col">
-                <a href="/admin/users/{{ user.id }}/edit">Edit</a>
-            </td>
+            <td><a href="/admin/users/{{ u.id }}/edit">{{ u.email }}</a></td>
+            <td><span class="rio-pill rio-pill-{{ u.role == 'admin' and 'rose' or (u.role == 'staff' and 'indigo' or 'emerald') }}">{{ u.role }}</span></td>
+            <td>{% if u.is_active %}Yes{% else %}<span class="help">No</span>{% endif %}</td>
+            <td class="help">{{ u.created_at }}</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 {% else %}
-<p class="muted">No users yet.</p>
+<p class="empty-list">No users yet.</p>
 {% endif %}
 {% endblock %}
