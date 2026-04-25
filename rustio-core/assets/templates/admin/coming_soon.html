@@ -1,0 +1,22 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}coming-soon{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a> &rsaquo; Developer tools &rsaquo; {{ feature_name }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="module">
+    <h2>{{ feature_name }}</h2>
+    <div class="coming-soon-body">
+        <p>{{ description }}</p>
+        <p class="help">This developer tool will be implemented in Phase 8.</p>
+        <p>
+            <a href="/admin" class="forbidden-home">Return to dashboard</a>
+        </p>
+    </div>
+</div>
+{% endblock %}

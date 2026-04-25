@@ -543,3 +543,70 @@ pub(crate) async fn show_log_entries(
     let body = ctx.templates.render("admin/log_entries.html", &view)?;
     Ok(Response::html(body))
 }
+
+// ---- Developer-only stubs (Phase 7a/0.5/e) -------------------------------
+//
+// All three render the shared `admin/coming_soon.html` with a feature-
+// specific title + description. Phase 8 fills in real implementations.
+
+async fn render_coming_soon(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: &Request,
+    feature: &str,
+    description: &str,
+) -> Result<Response> {
+    let view = render::ComingSoonCtx {
+        base: BaseContext::new(Some(&identity), csrf_token(req), &ctx.admin),
+        page_title: feature.to_string(),
+        feature_name: feature.to_string(),
+        description: description.to_string(),
+    };
+    let body = ctx.templates.render("admin/coming_soon.html", &view)?;
+    Ok(Response::html(body))
+}
+
+pub(crate) async fn show_schema_browser(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: &Request,
+) -> Result<Response> {
+    render_coming_soon(
+        ctx,
+        identity,
+        req,
+        "Schema Browser",
+        "Read-only inspection of registered models, fields, and relations.",
+    )
+    .await
+}
+
+pub(crate) async fn show_execution_logs(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: &Request,
+) -> Result<Response> {
+    render_coming_soon(
+        ctx,
+        identity,
+        req,
+        "Execution Logs",
+        "Recent SQL queries, execution times, and slow-query analysis.",
+    )
+    .await
+}
+
+pub(crate) async fn show_sql_console(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: &Request,
+) -> Result<Response> {
+    render_coming_soon(
+        ctx,
+        identity,
+        req,
+        "SQL Console",
+        "Read-only ad-hoc SQL queries against the live database, scoped to non-destructive statements.",
+    )
+    .await
+}

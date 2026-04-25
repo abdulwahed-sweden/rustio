@@ -46,26 +46,14 @@ async fn login_guard(ctx: &AdminCtx, req: &Request) -> Result<Guard> {
         Some(i) => i,
         None => return Ok(Guard::Redirect(Response::redirect("/admin/login"))),
     };
-    if !ident.can_access_admin() {
-        return Err(Error::Forbidden("admin access required".into()));
+    // Deactivated user: bounce to login. Phase 7a/0.5/e moved the
+    // role-floor decision out of `login_guard` and into `role_guard`
+    // so the rendered `forbidden.html` page can show the required
+    // role. `login_guard` now owns only "session-valid + active".
+    if !ident.is_active {
+        return Ok(Guard::Redirect(Response::redirect("/admin/login")));
     }
     Ok(Guard::Allow(ident))
-}
-
-/// Like `login_guard` but also checks a specific permission. Admins
-/// skip the check.
-async fn permission_guard(ctx: &AdminCtx, req: &Request, permission: &str) -> Result<Guard> {
-    match login_guard(ctx, req).await? {
-        Guard::Redirect(r) => Ok(Guard::Redirect(r)),
-        Guard::Allow(ident) => {
-            if !auth::check_permission(&ctx.db, &ident, permission).await? {
-                return Err(Error::Forbidden(format!(
-                    "missing permission: {permission}"
-                )));
-            }
-            Ok(Guard::Allow(ident))
-        }
-    }
 }
 
 /// Phase 7a/0.5/b — minimum-role guard.
@@ -77,7 +65,6 @@ async fn permission_guard(ctx: &AdminCtx, req: &Request, permission: &str) -> Re
 /// response is carried via `Guard::Redirect(_)` — the variant name
 /// is informational; functionally it carries any non-Allow response
 /// the route closure should return as-is.
-#[allow(dead_code)] // wired into existing handlers in /e
 async fn role_guard(ctx: &AdminCtx, req: &Request, min: Role) -> Result<Guard> {
     match login_guard(ctx, req).await? {
         Guard::Redirect(r) => Ok(Guard::Redirect(r)),
@@ -108,7 +95,6 @@ async fn role_guard(ctx: &AdminCtx, req: &Request, min: Role) -> Result<Guard> {
 /// `Role::bypasses_group_checks` (post-sec2 the `is_active` check runs
 /// first inside `check_permission`, so an inactive Administrator/Dev
 /// is denied). Other tiers consult the M2M permission tables.
-#[allow(dead_code)] // wired into existing handlers in /e
 async fn perm_guard(ctx: &AdminCtx, req: &Request, perm: &str) -> Result<Guard> {
     match role_guard(ctx, req, Role::Staff).await? {
         Guard::Redirect(r) => Ok(Guard::Redirect(r)),
@@ -145,7 +131,7 @@ async fn perm_guard(ctx: &AdminCtx, req: &Request, perm: &str) -> Result<Guard> 
 ///   already blocks them at the panel boundary).
 /// - Administrator + Developer bypass the per-model check.
 /// - Everyone else needs `perm_held == true`.
-#[allow(dead_code)] // exercised by tests + perm_guard once /e wires it
+#[cfg(test)]
 fn perm_guard_verdict(ident: &Identity, perm_held: bool) -> bool {
     if !ident.is_active {
         return false;
@@ -156,18 +142,9 @@ fn perm_guard_verdict(ident: &Identity, perm_held: bool) -> bool {
     perm_held
 }
 
-/// Only admins may pass. Used for user/group management.
-async fn admin_only_guard(ctx: &AdminCtx, req: &Request) -> Result<Guard> {
-    match login_guard(ctx, req).await? {
-        Guard::Redirect(r) => Ok(Guard::Redirect(r)),
-        Guard::Allow(ident) => {
-            if !ident.is_admin() {
-                return Err(Error::Forbidden("admin role required".into()));
-            }
-            Ok(Guard::Allow(ident))
-        }
-    }
-}
+// Phase 7a/0.5/e: `admin_only_guard` deleted. Every former call site
+// migrated to `role_guard(Role::Administrator)`. The new path renders
+// `admin/forbidden.html` instead of returning a text/plain 403.
 
 fn parse_id(raw: Option<&str>) -> Result<i64> {
     raw.and_then(|s| s.parse().ok())
@@ -257,12 +234,12 @@ pub fn register_admin_routes(
         async move { handlers::do_logout(&c, req).await }
     });
 
-    // Dashboard — any logged-in staff/admin.
+    // Dashboard — Staff floor. User-tier sees the forbidden page.
     let c = ctx.clone();
     let router = router.get("/admin", move |req| {
         let c = c.clone();
         async move {
-            match login_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Staff).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => handlers::dashboard(&c, ident, &req).await,
             }
@@ -274,7 +251,7 @@ pub fn register_admin_routes(
     let router = router.get("/admin/history", move |req| {
         let c = c.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => handlers::show_log_entries(&c, ident, &req).await,
             }
@@ -282,12 +259,13 @@ pub fn register_admin_routes(
     });
 
     // Phase 6b/5 — self-service password change. Any logged-in user
-    // (including non-admin staff) can change their own.
+    // (User-tier and above). User-tier can change their own password
+    // even though they can't access the dashboard.
     let c = ctx.clone();
     let router = router.get("/admin/password_change", move |req| {
         let c = c.clone();
         async move {
-            match login_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::User).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => handlers::show_password_change(&c, ident, &req).await,
             }
@@ -297,9 +275,44 @@ pub fn register_admin_routes(
     let router = router.post("/admin/password_change", move |req| {
         let c = c.clone();
         async move {
-            match login_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::User).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => handlers::do_password_change(&c, ident, req).await,
+            }
+        }
+    });
+
+    // Phase 7a/0.5/e — Developer-only stub routes. All three share
+    // `admin/coming_soon.html`; Phase 8 replaces the bodies with real
+    // implementations. Administrator does NOT get access — Developer
+    // is a strictly higher tier in the 5-rank ladder.
+    let c = ctx.clone();
+    let router = router.get("/admin/__schema__", move |req| {
+        let c = c.clone();
+        async move {
+            match role_guard(&c, &req, Role::Developer).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => handlers::show_schema_browser(&c, ident, &req).await,
+            }
+        }
+    });
+    let c = ctx.clone();
+    let router = router.get("/admin/__logs__", move |req| {
+        let c = c.clone();
+        async move {
+            match role_guard(&c, &req, Role::Developer).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => handlers::show_execution_logs(&c, ident, &req).await,
+            }
+        }
+    });
+    let c = ctx.clone();
+    let router = router.get("/admin/__sql_console__", move |req| {
+        let c = c.clone();
+        async move {
+            match role_guard(&c, &req, Role::Developer).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => handlers::show_sql_console(&c, ident, &req).await,
             }
         }
     });
@@ -311,7 +324,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => super::builtin::list_users(&ac, ident, handlers::csrf_token(&req)).await,
             }
@@ -324,7 +337,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => super::builtin::show_new_user(&ac, ident, handlers::csrf_token(&req)).await,
             }
@@ -337,7 +350,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => super::builtin::do_new_user(&ac, ident, req).await,
             }
@@ -350,7 +363,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -366,7 +379,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -383,7 +396,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => super::builtin::list_groups(&ac, ident, handlers::csrf_token(&req)).await,
             }
@@ -396,7 +409,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => super::builtin::show_new_group(&ac, ident, handlers::csrf_token(&req)).await,
             }
@@ -409,7 +422,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => super::builtin::do_new_group(&ac, ident, req).await,
             }
@@ -422,7 +435,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -438,7 +451,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -455,7 +468,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -471,7 +484,7 @@ pub fn register_admin_routes(
         let c = c.clone();
         let ac = ac.clone();
         async move {
-            match admin_only_guard(&c, &req).await? {
+            match role_guard(&c, &req, Role::Administrator).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -488,7 +501,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "view")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => handlers::list_model(&c, ident, &name, &req).await,
             }
@@ -502,7 +515,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "add")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => handlers::show_new_form(&c, ident, &name, &req).await,
             }
@@ -514,7 +527,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "add")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => handlers::do_create(&c, ident, &name, req).await,
             }
@@ -528,7 +541,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "change")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -543,7 +556,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "change")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -561,7 +574,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "view")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -578,7 +591,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "delete")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -593,7 +606,7 @@ pub fn register_admin_routes(
         async move {
             let name = model_name_from_req(&req)?;
             let perm = perm_for(&c, &name, "delete")?;
-            match permission_guard(&c, &req, &perm).await? {
+            match perm_guard(&c, &req, &perm).await? {
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
@@ -694,5 +707,87 @@ mod tests {
         // Supervisor doesn't bypass; needs the per-model perm.
         let id = make_identity(Role::Supervisor, true);
         assert!(!perm_guard_verdict(&id, false));
+    }
+
+    // ---- Phase 7a/0.5/e — wired-guard matrix proofs ---------------------
+    //
+    // Re-frames the /b primitives as the live guard outcomes per the
+    // user's matrix in 7a/0.5/e. Each test pins a specific row.
+
+    #[test]
+    fn guards_user_tier_denied_at_dashboard() {
+        // Dashboard guard is `role_guard(Staff)`. User-tier fails the
+        // floor and renders forbidden.html instead of being redirected.
+        let id = make_identity(Role::User, true);
+        assert!(
+            !id.role.includes(Role::Staff),
+            "User-tier must NOT pass the Staff floor on /admin"
+        );
+    }
+
+    #[test]
+    fn guards_staff_can_view_posts_via_auditors_group() {
+        // perm_guard("view") on /admin/posts/. Staff with the perm
+        // (granted via Auditors group on demo-mode boot) passes.
+        let id = make_identity(Role::Staff, true);
+        let perm_held = true; // simulates Auditors → posts.view_post
+        assert!(
+            perm_guard_verdict(&id, perm_held),
+            "Staff with view perm must reach the changelist"
+        );
+    }
+
+    #[test]
+    fn guards_staff_cannot_delete_via_auditors_group() {
+        // Auditors only has view perms. Staff trying to hit
+        // /admin/posts/N/delete fails the perm check.
+        let id = make_identity(Role::Staff, true);
+        let perm_held = false; // Auditors lacks delete_post
+        assert!(
+            !perm_guard_verdict(&id, perm_held),
+            "Staff without delete perm must hit forbidden"
+        );
+    }
+
+    #[test]
+    fn guards_supervisor_can_change_via_system_operators() {
+        // Supervisor in System Operators group has change perms but
+        // not delete. Doesn't bypass — the perm IS what carries them.
+        let id = make_identity(Role::Supervisor, true);
+        // Floor satisfied (Supervisor includes Staff). Per-model perm
+        // granted via group.
+        assert!(id.role.includes(Role::Staff));
+        assert!(perm_guard_verdict(&id, true), "with change perm → allow");
+        assert!(
+            !perm_guard_verdict(&id, false),
+            "without delete perm → deny"
+        );
+    }
+
+    #[test]
+    fn guards_developer_stubs_render_for_developer_only() {
+        // role_guard(Developer) on the 3 stub routes. Only Developer
+        // identities pass.
+        let dev = make_identity(Role::Developer, true);
+        assert!(dev.role.includes(Role::Developer), "Developer passes");
+
+        for &lower in &[Role::User, Role::Staff, Role::Supervisor, Role::Administrator] {
+            let id = make_identity(lower, true);
+            assert!(
+                !id.role.includes(Role::Developer),
+                "{lower:?} must NOT reach developer stubs"
+            );
+        }
+    }
+
+    #[test]
+    fn guards_administrator_blocked_from_developer_stubs() {
+        // Specific assertion from the matrix: Administrator is the
+        // second-highest tier but does NOT include Developer.
+        let admin = make_identity(Role::Administrator, true);
+        assert!(
+            !admin.role.includes(Role::Developer),
+            "Administrator must hit forbidden on /admin/__schema__/ etc."
+        );
     }
 }

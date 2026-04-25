@@ -863,3 +863,17 @@ body.forbidden #content { background: var(--darkened-bg); }
     font-size: 12px;
     color: #7F1D1D;
 }
+
+/* --- Coming Soon stub pages (Phase 7a/0.5/e — Developer tools) ----- */
+
+.coming-soon-body {
+    padding: 18px 22px;
+}
+.coming-soon-body p {
+    margin: 0 0 10px;
+}
+.coming-soon-body .help {
+    color: var(--body-quiet);
+    font-size: 12px;
+    margin-bottom: 14px;
+}

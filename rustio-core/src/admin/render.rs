@@ -559,6 +559,19 @@ pub(crate) fn map_audit_actions(actions: Vec<super::audit::AdminAction>) -> Vec<
 }
 
 // ---------------------------------------------------------------------------
+// "Coming in Phase 8" stub page (Phase 7a/0.5/e — Developer-only).
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub(crate) struct ComingSoonCtx {
+    #[serde(flatten)]
+    pub base: BaseContext,
+    pub page_title: String,
+    pub feature_name: String,
+    pub description: String,
+}
+
+// ---------------------------------------------------------------------------
 // 403 Forbidden page (Phase 7a/0.5/b).
 // ---------------------------------------------------------------------------
 
