@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+use tokio::sync::OnceCell;
+
 use crate::auth::{self, Identity};
 use crate::error::{Error, Result};
 use crate::http::{Request, Response};
@@ -14,6 +16,24 @@ use super::audit;
 use super::render;
 use super::render::BaseContext;
 use super::types::Admin;
+
+/// Lazy idempotent initializer for the `rustio_admin_actions` table.
+/// Phase 5b proved that Postgres' `CREATE TABLE IF NOT EXISTS` is not
+/// race-safe under concurrent DDL — the OnceCell collapses parallel
+/// first-requests into a single DDL execution. Failures are logged and
+/// swallowed so the dashboard's Recent Actions sidebar continues to
+/// silent-degrade rather than 500 the page.
+static AUDIT_TABLE_READY: OnceCell<()> = OnceCell::const_new();
+
+async fn ensure_audit_ready(db: &Db) {
+    AUDIT_TABLE_READY
+        .get_or_init(|| async {
+            if let Err(e) = audit::ensure_table(db).await {
+                log::warn!("audit::ensure_table failed: {e}");
+            }
+        })
+        .await;
+}
 
 pub(crate) struct AdminCtx {
     pub admin: Arc<Admin>,
@@ -86,9 +106,8 @@ pub(crate) async fn do_logout(ctx: &AdminCtx, req: Request) -> Result<Response> 
 // ---- Dashboard -----------------------------------------------------------
 
 pub(crate) async fn dashboard(ctx: &AdminCtx, identity: Identity, req: &Request) -> Result<Response> {
-    // The audit table may not exist yet (no Phase 6a wiring point calls
-    // ensure_table). Degrade silently to "no recent activity" if the
-    // query fails.
+    // Phase 6b/2: lazy table init on first audit-touching request.
+    ensure_audit_ready(&ctx.db).await;
     let recent_actions = audit::recent(&ctx.db, 10, None, None)
         .await
         .unwrap_or_default();
@@ -400,4 +419,62 @@ pub(crate) async fn do_delete(
         hook.on_delete(id);
     }
     Ok(Response::redirect(format!("/admin/{admin_name}")))
+}
+
+// ---- History (Phase 6b/2) ------------------------------------------------
+
+pub(crate) async fn show_object_history(
+    ctx: &AdminCtx,
+    identity: Identity,
+    admin_name: &str,
+    id: i64,
+    req: &Request,
+) -> Result<Response> {
+    let entry = ctx
+        .admin
+        .find(admin_name)
+        .ok_or_else(|| Error::NotFound(format!("no admin model: {admin_name}")))?;
+    let label = entry
+        .ops
+        .object_label(&ctx.db, id)
+        .await?
+        .unwrap_or_else(|| format!("#{id}"));
+
+    ensure_audit_ready(&ctx.db).await;
+    let actions = audit::for_object(&ctx.db, admin_name, id)
+        .await
+        .unwrap_or_default();
+
+    let view = render::ObjectHistoryCtx {
+        base: BaseContext::new(Some(&identity), csrf_token(req)),
+        page_title: format!("History: {} — {}", entry.singular_name, label),
+        admin_name: admin_name.to_string(),
+        display_name: entry.display_name.to_string(),
+        singular_name: entry.singular_name.to_string(),
+        object_id: id,
+        object_label: label,
+        entries: render::map_audit_actions(actions),
+        flash: None,
+    };
+    let body = ctx.templates.render("admin/object_history.html", &view)?;
+    Ok(Response::html(body))
+}
+
+pub(crate) async fn show_log_entries(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: &Request,
+) -> Result<Response> {
+    ensure_audit_ready(&ctx.db).await;
+    let actions = audit::recent(&ctx.db, 100, None, None)
+        .await
+        .unwrap_or_default();
+    let view = render::LogEntriesCtx {
+        base: BaseContext::new(Some(&identity), csrf_token(req)),
+        page_title: "Recent admin actions",
+        entries: render::map_audit_actions(actions),
+        flash: None,
+    };
+    let body = ctx.templates.render("admin/log_entries.html", &view)?;
+    Ok(Response::html(body))
 }

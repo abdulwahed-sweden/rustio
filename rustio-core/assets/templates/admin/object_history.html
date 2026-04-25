@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}object-history{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a>
+    &rsaquo; <a href="/admin/{{ admin_name }}/">{{ display_name }}</a>
+    &rsaquo; <a href="/admin/{{ admin_name }}/{{ object_id }}/edit">{{ object_label }}</a>
+    &rsaquo; History
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Change history: {{ object_label }}</h1>
+
+{% if entries %}
+<table class="results">
+    <thead>
+        <tr>
+            <th scope="col">Date/time</th>
+            <th scope="col">User</th>
+            <th scope="col">Action</th>
+            <th scope="col">Summary</th>
+            <th scope="col">IP</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in entries %}
+        <tr>
+            <td title="{{ e.timestamp_iso }}">{{ e.when_relative }}</td>
+            <td>{{ e.user_email }}</td>
+            <td><span class="{{ e.pill_class }}">{{ e.label }}</span></td>
+            <td>{{ e.summary }}</td>
+            <td class="help">{{ e.ip_address }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty-list">This {{ singular_name|lower }} has no recorded history. Once it's edited via the admin, every change is logged here.</p>
+{% endif %}
+{% endblock %}

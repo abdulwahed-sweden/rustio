@@ -1,0 +1,44 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}log-entries{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a> &rsaquo; Recent actions
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Recent admin actions</h1>
+
+{% if entries %}
+<table class="results">
+    <thead>
+        <tr>
+            <th scope="col">Date/time</th>
+            <th scope="col">User</th>
+            <th scope="col">Action</th>
+            <th scope="col">Object</th>
+            <th scope="col">Summary</th>
+            <th scope="col">IP</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for e in entries %}
+        <tr>
+            <td title="{{ e.timestamp_iso }}">{{ e.when_relative }}</td>
+            <td>{{ e.user_email }}</td>
+            <td><span class="{{ e.pill_class }}">{{ e.label }}</span></td>
+            <td>
+                <a href="/admin/{{ e.model_admin_name }}/{{ e.object_id }}/edit">{{ e.model_name }} #{{ e.object_id }}</a>
+            </td>
+            <td>{{ e.summary }}</td>
+            <td class="help">{{ e.ip_address }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty-list">No recent actions yet. Audit entries appear here as soon as the admin starts logging them.</p>
+{% endif %}
+{% endblock %}

@@ -465,6 +465,71 @@ pub(crate) fn confirm_delete_ctx(
 }
 
 // ---------------------------------------------------------------------------
+// History pages (Phase 6b/2 — first real audit consumer).
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub(crate) struct HistoryEntryCtx {
+    pub timestamp_iso: String,
+    pub when_relative: String,
+    pub user_email: String,
+    pub action_type: String,
+    pub label: &'static str,
+    pub pill_class: &'static str,
+    pub model_name: String,
+    pub model_admin_name: String,
+    pub object_id: i64,
+    pub summary: String,
+    pub ip_address: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct ObjectHistoryCtx {
+    #[serde(flatten)]
+    pub base: BaseContext,
+    pub page_title: String,
+    pub admin_name: String,
+    pub display_name: String,
+    pub singular_name: String,
+    pub object_id: i64,
+    pub object_label: String,
+    pub entries: Vec<HistoryEntryCtx>,
+    pub flash: Option<FlashCtx>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct LogEntriesCtx {
+    #[serde(flatten)]
+    pub base: BaseContext,
+    pub page_title: &'static str,
+    pub entries: Vec<HistoryEntryCtx>,
+    pub flash: Option<FlashCtx>,
+}
+
+pub(crate) fn map_audit_actions(actions: Vec<super::audit::AdminAction>) -> Vec<HistoryEntryCtx> {
+    actions
+        .into_iter()
+        .map(|a| HistoryEntryCtx {
+            timestamp_iso: a.timestamp.to_rfc3339(),
+            when_relative: relative_time(a.timestamp),
+            user_email: a.user_email.unwrap_or_else(|| "—".to_string()),
+            label: action_label(&a.action_type),
+            pill_class: action_pill_class(&a.action_type),
+            model_name: a.model_name.clone(),
+            // Phase 6b assumption: model_name in the audit row IS the
+            // admin_name slug. The `audit::record` callsite that lands
+            // when actions are logged (Phase 7+) must pass the admin
+            // slug here. The dashboard uses the same convention.
+            model_admin_name: a.model_name,
+            action_type: a.action_type,
+            object_id: a.object_id,
+            summary: a.summary,
+            ip_address: a.ip_address.unwrap_or_default(),
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Error page (orphan render — no live caller in NEW; Phase 9 may add a 5xx
 // handler that renders this. Kept Django-shape for design consistency.)
 // ---------------------------------------------------------------------------

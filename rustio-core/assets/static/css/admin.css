@@ -373,6 +373,16 @@ body.login {
     font-size: 12px;
 }
 
+/* The history link sits in object-tools but reads as a neutral link,
+   not an "Add"-style call to action. */
+.object-tools-actions .historylink {
+    color: var(--link-fg);
+    font-weight: 500;
+}
+.object-tools-actions .historylink::before {
+    content: "↻ ";
+}
+
 #changelist {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 220px;

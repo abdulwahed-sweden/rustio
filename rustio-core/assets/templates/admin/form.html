@@ -11,6 +11,11 @@
 {% endblock %}
 
 {% block content %}
+{% if mode == "edit" and object_id %}
+<ul class="object-tools object-tools-actions">
+    <li><a href="/admin/{{ admin_name }}/{{ object_id }}/history" class="historylink">History</a></li>
+</ul>
+{% endif %}
 <h1>{{ mode == "new" and "Add" or "Change" }} {{ singular_name|lower }}</h1>
 
 {% if errors %}

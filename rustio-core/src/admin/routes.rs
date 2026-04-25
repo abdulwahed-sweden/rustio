@@ -180,6 +180,18 @@ pub fn register_admin_routes(
         }
     });
 
+    // Phase 6b/2 — global history log (admin-only; high-signal page).
+    let c = ctx.clone();
+    let router = router.get("/admin/history", move |req| {
+        let c = c.clone();
+        async move {
+            match admin_only_guard(&c, &req).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => handlers::show_log_entries(&c, ident, &req).await,
+            }
+        }
+    });
+
     // --- Built-in users admin (admin-only) ---
     let c = ctx.clone();
     let ac = auth_ctx.clone();
@@ -339,6 +351,24 @@ pub fn register_admin_routes(
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
                     handlers::do_update(&c, ident, &name, id, req).await
+                }
+            }
+        }
+    });
+
+    // Phase 6b/2 — per-object history. Read-only; same `view` permission
+    // as the changelist (if you can list, you can read the audit trail).
+    let c = ctx.clone();
+    let router = router.get("/admin/:admin_name/:id/history", move |req| {
+        let c = c.clone();
+        async move {
+            let name = model_name_from_req(&req)?;
+            let perm = perm_for(&c, &name, "view")?;
+            match permission_guard(&c, &req, &perm).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => {
+                    let id = parse_id(req.param("id"))?;
+                    handlers::show_object_history(&c, ident, &name, id, &req).await
                 }
             }
         }
