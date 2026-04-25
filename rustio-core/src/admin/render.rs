@@ -245,6 +245,11 @@ pub(crate) struct ListCtx {
     pub total_pages: usize,
     pub per_page: usize,
     pub total_rows: usize,
+    /// Whether the bulk-action UI should render. Always `false` in
+    /// Phase 6a — the `/admin/<model>/_action` POST endpoint isn't
+    /// wired until a later phase. Templates hide the action bar
+    /// when this is `false` so we don't ship UI that 404s on submit.
+    pub bulk_actions_enabled: bool,
     pub flash: Option<FlashCtx>,
 }
 
@@ -304,6 +309,7 @@ pub(crate) fn list_ctx(
         total_pages,
         per_page,
         total_rows,
+        bulk_actions_enabled: false,
         flash: None,
     }
 }

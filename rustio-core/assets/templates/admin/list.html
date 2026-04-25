@@ -25,6 +25,11 @@
             </form>
         </div>
 
+        {# Bulk-action form is gated on `bulk_actions_enabled` (always
+           false in Phase 6a — the POST handler isn't wired). When the
+           flag is off we drop the surrounding <form> + checkboxes
+           entirely so the page never renders a Submit that 404s. #}
+        {% if bulk_actions_enabled %}
         <form method="post" action="/admin/{{ admin_name }}/_action">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <div class="actions">
@@ -37,12 +42,15 @@
                 <button type="submit">Go</button>
                 <span class="action-counter">{{ rows|length }} of {{ total_rows }} selected</span>
             </div>
+        {% endif %}
 
             {% if rows %}
             <table class="results">
                 <thead>
                     <tr>
+                        {% if bulk_actions_enabled %}
                         <th class="action-checkbox"><input type="checkbox" id="action-toggle"></th>
+                        {% endif %}
                         {% for col in columns %}
                         <th scope="col">{{ col }}</th>
                         {% endfor %}
@@ -51,7 +59,9 @@
                 <tbody>
                     {% for row in rows %}
                     <tr>
+                        {% if bulk_actions_enabled %}
                         <td class="action-checkbox"><input type="checkbox" name="_selected_action" value="{{ row.id }}"></td>
+                        {% endif %}
                         {% for cell in row.cells %}
                         <td>
                             {% if loop.index0 == 0 %}
@@ -68,7 +78,9 @@
             {% else %}
             <p class="empty-list">No {{ display_name|lower }} match the current filter.</p>
             {% endif %}
+        {% if bulk_actions_enabled %}
         </form>
+        {% endif %}
 
         {% if total_pages > 1 %}
         <p class="paginator">
