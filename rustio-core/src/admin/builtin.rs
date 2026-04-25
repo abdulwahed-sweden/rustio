@@ -361,6 +361,97 @@ pub(crate) async fn do_group_edit(
     Ok(Response::redirect("/admin/groups"))
 }
 
+// ---------- Group delete (Phase 7a/0.5/sec1) ----------
+
+#[derive(Serialize)]
+struct GroupDeleteCtx {
+    #[serde(flatten)]
+    base: BaseContext,
+    page_title: String,
+    entries: Vec<SidebarEntry>,
+    group_id: i64,
+    name: String,
+    description: String,
+    /// How many users currently belong to this group. The delete
+    /// cascades through `rustio_user_groups` (FK ON DELETE CASCADE)
+    /// so the row count drops to zero on save.
+    user_count: i64,
+    /// How many permissions are currently attached. Cascade through
+    /// `rustio_group_permissions`.
+    perm_count: i64,
+}
+
+pub(crate) async fn show_group_delete(
+    ctx: &AuthAdminCtx,
+    identity: Identity,
+    group_id: i64,
+    csrf: String,
+) -> Result<Response> {
+    let row = sqlx::query("SELECT id, name, description FROM rustio_groups WHERE id = $1")
+        .bind(group_id)
+        .fetch_optional(ctx.db.pool())
+        .await?;
+    let row = row.ok_or_else(|| Error::NotFound(format!("group #{group_id}")))?;
+    let r = Row::from_pg(&row);
+
+    let user_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rustio_user_groups WHERE group_id = $1")
+            .bind(group_id)
+            .fetch_one(ctx.db.pool())
+            .await?;
+    let perm_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM rustio_group_permissions WHERE group_id = $1")
+            .bind(group_id)
+            .fetch_one(ctx.db.pool())
+            .await?;
+
+    let name = r.get_string("name")?;
+    let view = GroupDeleteCtx {
+        base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
+        page_title: format!("Delete group: {name}"),
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        group_id,
+        name,
+        description: r.get_string("description")?,
+        user_count,
+        perm_count,
+    };
+    let body = ctx.templates.render("admin/group_confirm_delete.html", &view)?;
+    Ok(Response::html(body))
+}
+
+pub(crate) async fn do_group_delete(
+    ctx: &AuthAdminCtx,
+    _identity: Identity,
+    group_id: i64,
+    _req: Request,
+) -> Result<Response> {
+    // Capture every user that's losing this group BEFORE the cascade
+    // wipes the M2M table — we need the ids to invalidate the perm
+    // cache once their membership drops.
+    let user_ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT user_id FROM rustio_user_groups WHERE group_id = $1",
+    )
+    .bind(group_id)
+    .fetch_all(ctx.db.pool())
+    .await?;
+
+    // The FKs on rustio_user_groups + rustio_group_permissions are
+    // ON DELETE CASCADE, so this single DELETE clears all M2M rows.
+    sqlx::query("DELETE FROM rustio_groups WHERE id = $1")
+        .bind(group_id)
+        .execute(ctx.db.pool())
+        .await?;
+
+    // Cache invalidation has to be explicit — the cascade ran in PG,
+    // not via our `remove_user_from_group` helper.
+    for uid in user_ids {
+        crate::auth::invalidate_user_cache(uid);
+    }
+
+    Ok(Response::redirect("/admin/groups"))
+}
+
 // ---------- New user ----------
 
 #[derive(Serialize)]

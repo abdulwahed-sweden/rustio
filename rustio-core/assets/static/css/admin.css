@@ -768,3 +768,17 @@ fieldset.module h2 {
 }
 
 .confirm-form .submit-row { justify-content: flex-start; }
+
+/* Inline destructive link used in list rows + edit-form danger zone. */
+.deletelink-inline {
+    color: var(--delete-button-bg);
+    font-weight: 500;
+}
+.deletelink-inline:hover {
+    color: var(--delete-button-hover-bg);
+    text-decoration: underline;
+}
+
+.danger-zone h2 {
+    background: var(--delete-button-bg);
+}

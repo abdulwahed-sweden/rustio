@@ -21,6 +21,7 @@ pub use permissions::{
     init_permission_tables, permissions_for_user, register_model_permissions,
     remove_user_from_group, Permission, PermissionError, Superuser,
 };
+pub(crate) use permissions::invalidate_user_cache;
 pub use role::Role;
 pub use sessions::{
     create_session, delete_session, identity_from_session, init_session_tables,

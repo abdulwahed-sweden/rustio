@@ -359,6 +359,39 @@ pub fn register_admin_routes(
         }
     });
 
+    // Phase 7a/0.5/sec1 — group delete.
+    let c = ctx.clone();
+    let ac = auth_ctx.clone();
+    let router = router.get("/admin/groups/:id/delete", move |req| {
+        let c = c.clone();
+        let ac = ac.clone();
+        async move {
+            match admin_only_guard(&c, &req).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => {
+                    let id = parse_id(req.param("id"))?;
+                    super::builtin::show_group_delete(&ac, ident, id, handlers::csrf_token(&req)).await
+                }
+            }
+        }
+    });
+
+    let c = ctx.clone();
+    let ac = auth_ctx.clone();
+    let router = router.post("/admin/groups/:id/delete", move |req| {
+        let c = c.clone();
+        let ac = ac.clone();
+        async move {
+            match admin_only_guard(&c, &req).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => {
+                    let id = parse_id(req.param("id"))?;
+                    super::builtin::do_group_delete(&ac, ident, id, req).await
+                }
+            }
+        }
+    });
+
     // Per-model list — needs `view` permission.
     let c = ctx.clone();
     let router = router.get("/admin/:admin_name", move |req| {

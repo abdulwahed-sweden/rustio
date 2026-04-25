@@ -1,0 +1,50 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}delete-confirmation group-delete{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a>
+    &rsaquo; <a href="/admin/groups">Groups</a>
+    &rsaquo; <a href="/admin/groups/{{ group_id }}/edit">{{ name }}</a>
+    &rsaquo; Delete
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Are you sure?</h1>
+
+<p>Are you sure you want to delete the group <strong>"{{ name }}"</strong>?
+{% if user_count > 0 or perm_count > 0 %}
+The following will also be removed (cascade):
+{% else %}
+This group has no users and no permissions attached, so the delete is clean.
+{% endif %}
+</p>
+
+{% if user_count > 0 or perm_count > 0 %}
+<ul class="cascade-list">
+    <li><strong>Group:</strong> {{ name }}{% if description %} — <span class="help">{{ description }}</span>{% endif %}</li>
+    {% if user_count > 0 %}
+    <li>
+        <strong>{{ user_count }} user membership{{ user_count != 1 and "s" or "" }}</strong>
+        — affected users keep their accounts but lose this group's permissions.
+    </li>
+    {% endif %}
+    {% if perm_count > 0 %}
+    <li>
+        <strong>{{ perm_count }} permission attachment{{ perm_count != 1 and "s" or "" }}</strong>
+        — the permissions themselves stay in the catalogue; only the link to this group is removed.
+    </li>
+    {% endif %}
+</ul>
+{% endif %}
+
+<form method="post" action="/admin/groups/{{ group_id }}/delete" class="confirm-form">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="submit-row">
+        <button type="submit" class="deletelink-button">Yes, I'm sure</button>
+        <a href="/admin/groups" class="cancel-link">No, take me back</a>
+    </div>
+</form>
+{% endblock %}

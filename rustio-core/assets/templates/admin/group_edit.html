@@ -62,4 +62,17 @@
         <input type="submit" name="_save" value="Save" class="default">
     </div>
 </form>
+
+<fieldset class="module aligned danger-zone">
+    <h2>Danger zone</h2>
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <div class="field-input">
+            <p>
+                <a href="/admin/groups/{{ group_id }}/delete" class="deletelink-inline">Delete this group</a>
+            </p>
+            <p class="help">Group memberships and permission attachments cascade away. Users keep their accounts.</p>
+        </div>
+    </div>
+</fieldset>
 {% endblock %}

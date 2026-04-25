@@ -22,6 +22,7 @@
         <tr>
             <th scope="col">Name</th>
             <th scope="col">Description</th>
+            <th scope="col" class="actions-col">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -29,6 +30,10 @@
         <tr>
             <td><a href="/admin/groups/{{ g.id }}/edit"><strong>{{ g.name }}</strong></a></td>
             <td class="help">{{ g.description }}</td>
+            <td class="actions-col">
+                <a href="/admin/groups/{{ g.id }}/edit" class="changelink">Edit</a>
+                <a href="/admin/groups/{{ g.id }}/delete" class="deletelink-inline">Delete</a>
+            </td>
         </tr>
         {% endfor %}
     </tbody>

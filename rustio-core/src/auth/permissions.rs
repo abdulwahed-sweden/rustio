@@ -123,7 +123,7 @@ static PERM_CACHE: Lazy<DashMap<i64, CacheEntry>> = Lazy::new(DashMap::new);
 
 const PERM_CACHE_TTL: Duration = Duration::from_secs(60);
 
-fn invalidate_user_cache(user_id: i64) {
+pub(crate) fn invalidate_user_cache(user_id: i64) {
     PERM_CACHE.remove(&user_id);
 }
 
