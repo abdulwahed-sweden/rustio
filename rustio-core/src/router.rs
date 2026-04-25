@@ -116,7 +116,13 @@ impl Router {
     /// handler with captured params, or an error describing why it
     /// didn't match.
     fn find(&self, method: &Method, path: &str) -> MatchResult {
-        let path_segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        let mut path_segs: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        // Normalise trailing slash: `/admin/posts/` and `/admin/posts`
+        // address the same handler. Skip when the only segment is empty
+        // (the root path `/`), so root-route lookups still work.
+        if path_segs.len() > 1 && path_segs.last() == Some(&"") {
+            path_segs.pop();
+        }
         let mut path_matched = false;
 
         for route in &self.routes {
@@ -270,5 +276,64 @@ mod tests {
             bytes::Bytes::new(),
         );
         assert_eq!(router.dispatch(missing).await.status.as_u16(), 404);
+    }
+
+    #[tokio::test]
+    async fn trailing_slash_is_normalised_for_static_and_param_routes() {
+        let router = Router::new()
+            .get("/admin/:name", |req| async move {
+                let name = req.param("name").unwrap_or("").to_string();
+                Ok(Response::text(name))
+            })
+            .get("/admin/:name/:id/edit", |req| async move {
+                Ok(Response::text(format!(
+                    "{}/{}",
+                    req.param("name").unwrap_or(""),
+                    req.param("id").unwrap_or(""),
+                )))
+            });
+
+        for path in ["/admin/posts", "/admin/posts/"] {
+            let req = Request::new(
+                Method::GET,
+                path.into(),
+                String::new(),
+                Default::default(),
+                bytes::Bytes::new(),
+            );
+            let resp = router.dispatch(req).await;
+            assert_eq!(resp.status.as_u16(), 200, "GET {path} should be 200");
+            assert_eq!(&resp.body[..], b"posts", "GET {path} body");
+        }
+
+        for path in ["/admin/posts/1/edit", "/admin/posts/1/edit/"] {
+            let req = Request::new(
+                Method::GET,
+                path.into(),
+                String::new(),
+                Default::default(),
+                bytes::Bytes::new(),
+            );
+            let resp = router.dispatch(req).await;
+            assert_eq!(resp.status.as_u16(), 200, "GET {path} should be 200");
+            assert_eq!(&resp.body[..], b"posts/1", "GET {path} body");
+        }
+    }
+
+    #[tokio::test]
+    async fn root_path_still_matches_after_trailing_slash_normalisation() {
+        // Regression check: the trailing-slash strip must NOT collapse
+        // the single empty segment that represents the root path.
+        let router = Router::new().get("/", |_| async { Ok(Response::text("home")) });
+        let req = Request::new(
+            Method::GET,
+            "/".into(),
+            String::new(),
+            Default::default(),
+            bytes::Bytes::new(),
+        );
+        let resp = router.dispatch(req).await;
+        assert_eq!(resp.status.as_u16(), 200);
+        assert_eq!(&resp.body[..], b"home");
     }
 }
