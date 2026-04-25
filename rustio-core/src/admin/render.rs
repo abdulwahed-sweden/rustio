@@ -445,3 +445,18 @@ pub(crate) fn confirm_delete_ctx(
         flash: None,
     }
 }
+
+// ---------------------------------------------------------------------------
+// Error page (orphan render — no live caller in NEW; Phase 9 may add a 5xx
+// handler that renders this. Kept Django-shape for design consistency.)
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[allow(dead_code)]
+pub(crate) struct ErrorCtx {
+    #[serde(flatten)]
+    pub base: BaseContext,
+    pub status_code: u16,
+    pub status_message: String,
+    pub details: String,
+}
