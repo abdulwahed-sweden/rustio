@@ -27,11 +27,19 @@
         </div>
         {% if identity %}
         <div class="topbar-tools">
-            <span class="hidden sm:inline">Welcome, <strong class="text-white font-semibold">{{ identity.email }}</strong>.</span>
-            <a href="/admin/password_change" class="hidden md:inline">Change password</a>
+            <span class="hidden md:inline">Welcome, <strong class="text-white font-semibold">{{ identity.email }}</strong>.</span>
+            <a href="/admin/password_change" class="hidden lg:inline">Change password</a>
+            {# Compact key icon for narrower viewports — keeps the action
+               reachable without the longer label crowding the topbar. #}
+            <a href="/admin/password_change" class="lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-white/10 transition-colors" aria-label="Change password" title="Change password">
+                {{ icon("key", class="w-4 h-4") }}
+            </a>
             <form method="post" action="/admin/logout" class="inline-form">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                <button type="submit" class="link-button">Log out</button>
+                <button type="submit" class="link-button hidden md:inline">Log out</button>
+                <button type="submit" class="link-button md:hidden inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-white/10 transition-colors" aria-label="Log out" title="Log out">
+                    {{ icon("log-out", class="w-4 h-4") }}
+                </button>
             </form>
         </div>
         {% endif %}

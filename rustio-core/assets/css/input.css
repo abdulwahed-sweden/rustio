@@ -219,6 +219,30 @@
   .results.row-clickable td:first-child .row-link { @apply font-semibold; }
   .results.row-clickable .row-link.help { @apply text-gray-600 text-[13.5px]; }
 
+  /* --- User rows (Phase 7a/0.5/h) ---------------------------------- */
+  /* The .user-row class on each <tr> is preserved as a public-API
+     hook so projects can target it from CSS. The visual hover is
+     already handled by .results tr:hover; this rule just gives the
+     class a defined-but-no-op so it isn't a dangling attribute. */
+  .user-row { @apply transition-colors; }
+
+  /* --- Bulk-action UI (Phase 6a, gated until Phase 8) -------------- */
+  /* Rendered only when `bulk_actions_enabled = true` is passed to
+     list.html. The handler isn't wired yet, so for now this CSS
+     describes the eventual visual; safe to keep here. */
+  .actions {
+    @apply px-3.5 py-2.5 mb-3 bg-gray-50 border border-gray-200 rounded-md flex items-center gap-3 text-[13.5px] text-gray-700;
+  }
+  .actions select {
+    @apply px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-[13.5px];
+  }
+  .actions button {
+    @apply px-3 py-1.5 rounded-md bg-metal text-white text-[13px] font-semibold border-0 cursor-pointer hover:bg-metal-dark transition-colors;
+  }
+  .action-counter { @apply text-gray-500 text-[13px] ml-auto; }
+  .action-checkbox { @apply w-10 text-center pr-0; }
+  .action-checkbox input[type=checkbox] { @apply w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust; }
+
   /* --- Pills / badges ---------------------------------------------- */
   .rio-pill {
     @apply inline-flex items-center px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-wider rounded-md mr-1.5;
