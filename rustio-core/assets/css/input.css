@@ -53,13 +53,14 @@
   body {
     @apply bg-paper text-metal antialiased font-sans;
     font-feature-settings: "ss01", "tnum";
+    line-height: 1.6;
   }
 
-  h1 { @apply text-2xl font-semibold tracking-tight text-metal; }
-  h2 { @apply text-lg  font-semibold tracking-tight text-metal; }
-  h3 { @apply text-base font-semibold text-metal; }
+  h1 { @apply text-[26px] font-bold tracking-tight text-metal leading-tight; }
+  h2 { @apply text-[18px] font-semibold tracking-tight text-metal; }
+  h3 { @apply text-[16px] font-semibold text-metal; }
 
-  a { @apply text-rust hover:text-rust-hover; }
+  a { @apply text-rust hover:text-rust-hover transition-colors; }
   ::selection { @apply bg-rust text-white; }
 }
 
@@ -68,66 +69,75 @@
 
   /* Layout shell */
   .admin-shell { @apply min-h-screen flex flex-col; }
-  .topbar      { @apply h-14 px-5 flex items-center justify-between bg-metal-surface text-white border-b border-metal-dark; }
-  .topbar-brand { @apply flex items-center gap-2.5 font-bold text-base tracking-tight; }
-  .topbar-mark  { @apply w-7 h-7 rounded-md bg-rust text-white text-[13px] font-bold inline-flex items-center justify-center shadow-mark; }
-  .topbar-tools { @apply flex items-center gap-4 text-[13px] text-gray-300; }
-  .topbar-tools a { @apply text-gray-300 hover:text-white no-underline; }
+
+  /* Topbar — 64px (was 56) for proper presence; brand + tools both
+     bumped a notch in size for legibility. */
+  .topbar      { @apply h-16 px-6 flex items-center justify-between bg-metal-surface text-white border-b border-metal-dark; }
+  .topbar-brand { @apply flex items-center gap-3 font-bold text-[16.5px] tracking-tight; }
+  .topbar-mark  { @apply w-8 h-8 rounded-md bg-rust text-white text-[14px] font-bold inline-flex items-center justify-center shadow-mark; }
+  .topbar-tools { @apply flex items-center gap-5 text-[14.5px] text-gray-300; }
+  .topbar-tools a { @apply text-gray-300 hover:text-white no-underline transition-colors; }
   .topbar-tools .link-button {
-    @apply bg-transparent border-0 text-gray-300 hover:text-white cursor-pointer p-0 text-[13px];
+    @apply bg-transparent border-0 text-gray-300 hover:text-white cursor-pointer p-0 text-[14.5px] transition-colors;
     font-family: inherit;
   }
   .topbar-tools .inline-form { @apply inline; }
 
   .admin-body  { @apply flex-1 flex; }
-  .sidebar     { @apply hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-gray-200 py-4 px-3 gap-1; }
-  .sidebar-section { @apply text-[11px] uppercase tracking-wider text-gray-400 font-semibold px-3 py-2 mt-2 first:mt-0; }
+
+  /* Sidebar — 240px wide. Links pad more generously for click area
+     (py-2.5) and read at 14.5px so they're not eye-strain. Active
+     state combines a rust tint with a 2px left accent rule for a
+     refined look that's instantly scannable. */
+  .sidebar     { @apply hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-gray-200 py-5 px-3 gap-0.5; }
+  .sidebar-section { @apply text-[12px] uppercase tracking-wider text-gray-500 font-semibold px-3 py-2 mt-3 first:mt-0; }
   .sidebar-link {
-    @apply flex items-center gap-2.5 px-3 py-2 rounded-md text-[14px] font-medium text-metal hover:bg-gray-100 no-underline transition;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-[14.5px] font-medium text-metal hover:bg-gray-100 no-underline transition-colors duration-150;
   }
-  .sidebar-link svg { @apply w-4 h-4 shrink-0 text-gray-500; }
+  .sidebar-link svg { @apply w-[17px] h-[17px] shrink-0 text-gray-500; }
   .sidebar-link-active {
-    @apply flex items-center gap-2.5 px-3 py-2 rounded-md text-[14px] font-semibold text-rust bg-rust/5 no-underline;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-[14.5px] font-semibold text-rust bg-rust/10 no-underline relative;
+    box-shadow: inset 3px 0 0 0 theme("colors.rust.DEFAULT");
   }
-  .sidebar-link-active svg { @apply w-4 h-4 shrink-0 text-rust; }
+  .sidebar-link-active svg { @apply w-[17px] h-[17px] shrink-0 text-rust; }
 
   .content-shell { @apply flex-1 min-w-0 flex flex-col; }
   .content-area  { @apply flex-1 px-6 md:px-8 py-6 md:py-8 max-w-7xl w-full; }
 
-  /* Demo banner */
+  /* Demo banner — louder so it can't be missed in a screenshot. */
   .demo-banner {
-    @apply px-5 py-2.5 bg-amber-50 text-amber-900 border-b border-amber-200 text-[13px];
+    @apply px-5 py-3 bg-amber-50 text-amber-900 border-b border-amber-200 text-[14.5px] font-medium;
   }
-  .demo-banner code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[12px] font-mono; }
+  .demo-banner code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[13px] font-mono; }
 
   /* Breadcrumbs */
   .breadcrumbs {
-    @apply text-[13px] text-gray-500 mb-4;
+    @apply text-[13.5px] text-gray-600 mb-4;
   }
-  .breadcrumbs a { @apply text-gray-500 hover:text-rust no-underline; }
+  .breadcrumbs a { @apply text-gray-600 hover:text-rust no-underline transition-colors; }
 
   /* --- Buttons ------------------------------------------------------ */
   .btn-primary {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-[14px] shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition no-underline cursor-pointer border-0;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-[14.5px] shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition-all duration-150 no-underline cursor-pointer border-0;
   }
   .btn-ghost {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-white text-metal font-semibold text-[14px] border border-gray-200 hover:border-gray-400 transition no-underline cursor-pointer;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-white text-metal font-semibold text-[14.5px] border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-colors duration-150 no-underline cursor-pointer;
   }
   .btn-delete {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14px] hover:bg-red-800 transition no-underline cursor-pointer border-0;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14.5px] hover:bg-red-800 transition-colors duration-150 no-underline cursor-pointer border-0;
   }
   .btn-back { @apply btn-ghost; }
   .btn-edit { @apply btn-primary; }
 
   /* Inline destructive link inside lists / danger zones */
   .deletelink-inline {
-    @apply text-red-700 font-medium hover:text-red-800 hover:underline;
+    @apply text-red-700 font-medium hover:text-red-800 hover:underline transition-colors text-[14px];
   }
 
   /* The Phase 6a/0.5 confirm-page submit. Keeps the class name so
      /f-fix2's :disabled rule keeps working. */
   .deletelink-button {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14px] uppercase tracking-wide hover:bg-red-800 transition border-0 cursor-pointer;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14px] uppercase tracking-wide hover:bg-red-800 transition-colors duration-150 border-0 cursor-pointer;
   }
   .deletelink-button:disabled,
   .deletelink-button[disabled] {
@@ -136,17 +146,17 @@
 
   /* --- Cards / modules --------------------------------------------- */
   .card {
-    @apply bg-white border border-gray-200 rounded-xl p-6;
+    @apply bg-white border border-gray-200 rounded-xl p-6 transition-shadow duration-150;
   }
   .module {
     @apply bg-white border border-gray-200 rounded-xl mb-4 overflow-hidden;
   }
   .module h2, .module caption {
-    @apply bg-gray-50 text-gray-600 px-4 py-3 text-[12px] font-semibold uppercase tracking-wider border-b border-gray-200;
+    @apply bg-gray-50 text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-gray-200;
   }
   .module table { @apply w-full border-collapse; }
   .module td, .module th {
-    @apply px-4 py-3 border-b border-gray-100 text-left;
+    @apply px-4 py-3.5 border-b border-gray-100 text-left text-[14.5px];
   }
   .module tr:last-child td { @apply border-b-0; }
 
@@ -158,60 +168,60 @@
   .object-tools-actions {
     @apply flex gap-3 list-none m-0 p-0 items-center;
   }
-  .object-tools-actions a { @apply text-[13px] font-medium text-emerald-700 no-underline hover:underline; }
+  .object-tools-actions a { @apply text-[13.5px] font-medium text-emerald-700 no-underline hover:underline; }
   .object-tools-actions .historylink { @apply text-rust no-underline; }
   .object-tools-actions .historylink::before { content: "↻ "; }
   .object-tools-actions .addlink { @apply text-emerald-700; }
   .object-tools-actions .addlink::before { content: "+ "; }
 
-  .object-tools-row { @apply flex items-center gap-2 mb-4 flex-wrap; }
+  .object-tools-row { @apply flex items-center gap-2 mb-5 flex-wrap; }
 
   /* --- Toolbar with search ----------------------------------------- */
   #toolbar {
-    @apply bg-gray-50 border border-gray-200 rounded-md p-3 mb-5;
+    @apply bg-gray-50 border border-gray-200 rounded-md p-3.5 mb-5;
     border-left: 3px solid theme("colors.rust.DEFAULT");
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
   }
   #toolbar .search { @apply flex gap-2.5 items-center; }
   #toolbar .search input {
-    @apply flex-1 pl-9 pr-3 py-2 rounded-md border border-gray-200 bg-white text-[14px] font-sans;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238B949E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
+    @apply flex-1 pl-10 pr-3 py-2.5 rounded-md border border-gray-200 bg-white text-[14.5px] font-sans;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%238B949E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
     background-repeat: no-repeat;
-    background-position: 11px center;
-    background-size: 14px 14px;
+    background-position: 12px center;
+    background-size: 15px 15px;
   }
   #toolbar .search input:focus {
     @apply outline-none border-rust ring-2 ring-rust/10;
   }
   #toolbar .search input::placeholder { @apply text-gray-500; }
   #toolbar .search button {
-    @apply px-4 py-2 rounded-md bg-metal text-white text-[12px] font-semibold hover:bg-metal-dark border-0 cursor-pointer;
+    @apply px-4 py-2.5 rounded-md bg-metal text-white text-[13px] font-semibold hover:bg-metal-dark border-0 cursor-pointer transition-colors;
   }
 
   /* --- Results table ----------------------------------------------- */
   .results {
-    @apply w-full border-collapse bg-white border border-gray-200 rounded-md text-[14px] overflow-hidden;
+    @apply w-full border-collapse bg-white border border-gray-200 rounded-md text-[14.5px] overflow-hidden;
   }
   .results th, .results td {
-    @apply px-4 py-3 text-left border-b border-gray-100;
+    @apply px-4 py-3.5 text-left border-b border-gray-100;
   }
   .results th {
-    @apply bg-gray-50 text-metal font-semibold text-[12px] uppercase tracking-wider;
+    @apply bg-gray-50 text-metal font-semibold text-[12.5px] uppercase tracking-wider;
   }
   .results tbody tr:nth-child(even) td { @apply bg-gray-50/50; }
   .results tr:hover td { @apply bg-rust/5; }
   .results.row-clickable td { @apply p-0; }
   .results.row-clickable .row-link {
-    @apply block px-4 py-3 text-metal no-underline;
+    @apply block px-4 py-3.5 text-metal no-underline transition-colors;
   }
   .results.row-clickable .row-link:hover { @apply no-underline; }
   .results.row-clickable td:first-child .row-link { @apply font-semibold; }
-  .results.row-clickable .row-link.help { @apply text-gray-500; }
+  .results.row-clickable .row-link.help { @apply text-gray-600 text-[13.5px]; }
 
   /* --- Pills / badges ---------------------------------------------- */
   .rio-pill {
-    @apply inline-flex items-center px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-md mr-1.5;
+    @apply inline-flex items-center px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-wider rounded-md mr-1.5;
   }
   .rio-pill-emerald { @apply bg-emerald-100 text-emerald-800; }
   .rio-pill-indigo  { @apply bg-indigo-100 text-indigo-800; }
@@ -220,7 +230,7 @@
 
   /* Phase 7a/2 — modern badge style for tags / status */
   .badge {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold border;
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[13px] font-semibold border;
   }
   .badge::before {
     content: "";
@@ -228,13 +238,13 @@
   }
   .badge-rust  { @apply bg-rust/10 text-rust border-rust/20; }
   .badge-teal  { @apply bg-teal/10 text-teal border-teal/20; }
-  .badge-muted { @apply bg-paper text-gray-500 border-gray-200; }
+  .badge-muted { @apply bg-paper text-gray-600 border-gray-200; }
 
   /* --- Forms ------------------------------------------------------- */
   .form-row { @apply mb-4; }
   .form-row-grid { @apply grid grid-cols-1 md:grid-cols-2 gap-4; }
   .form-row label, .form-label {
-    @apply block text-[13px] font-semibold text-metal mb-1.5;
+    @apply block text-[14px] font-semibold text-metal mb-1.5;
   }
   .form-input,
   .form-row input[type=text],
@@ -243,7 +253,7 @@
   .form-row input[type=search],
   .form-row select,
   .form-row textarea {
-    @apply w-full px-3 py-2.5 rounded-md border border-gray-200 bg-white text-[14px] font-sans;
+    @apply w-full px-3.5 py-2.5 rounded-md border border-gray-200 bg-white text-[15px] font-sans transition-colors;
   }
   .form-input:focus,
   .form-row input:focus,
@@ -251,72 +261,72 @@
   .form-row textarea:focus {
     @apply outline-none border-rust ring-2 ring-rust/10;
   }
-  .form-help, .help { @apply text-[12.5px] text-gray-500; }
+  .form-help, .help { @apply text-[13.5px] text-gray-600 leading-snug; }
   .field-input { @apply w-full; }
 
   fieldset.module {
     @apply bg-white border border-gray-200 rounded-xl p-0 mb-5;
   }
   fieldset.module h2 {
-    @apply bg-gray-50 text-gray-600 px-5 py-3 text-[12px] font-semibold uppercase tracking-wider border-b border-gray-200 m-0 rounded-t-xl;
+    @apply bg-gray-50 text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-gray-200 m-0 rounded-t-xl;
   }
   fieldset.module .form-row {
-    @apply px-5 py-3.5 border-b border-gray-100;
+    @apply px-5 py-4 border-b border-gray-100;
   }
   fieldset.module .form-row:last-child { @apply border-b-0; }
   fieldset.module.aligned .form-row { @apply md:grid md:grid-cols-[200px_1fr] md:gap-4 md:items-start; }
 
-  .submit-row { @apply flex gap-2.5 items-center mt-5; }
+  .submit-row { @apply flex gap-2.5 items-center mt-6 flex-wrap; }
   .submit-row input[type=submit], .submit-row button {
     @apply btn-primary;
   }
   .submit-row .cancel-link { @apply btn-ghost; }
   .submit-row .deletelink-button { @apply ml-auto; }
 
-  .checkbox-list { @apply flex flex-col gap-2; }
-  .checkbox-list label.checkbox-item { @apply flex items-center gap-2 text-[14px] font-normal m-0; }
+  .checkbox-list { @apply flex flex-col gap-2.5; }
+  .checkbox-list label.checkbox-item { @apply flex items-center gap-2.5 text-[14.5px] font-normal m-0; }
 
   /* --- Notices ----------------------------------------------------- */
   .errornote {
-    @apply px-4 py-3 mb-4 bg-red-50 text-red-800 border border-red-200 rounded-md text-[13.5px];
+    @apply px-4 py-3.5 mb-4 bg-red-50 text-red-800 border border-red-200 rounded-md text-[14.5px];
   }
   .warningnote {
-    @apply px-4 py-3 mb-4 bg-amber-50 text-amber-900 border border-amber-200 rounded-md text-[13.5px];
+    @apply px-4 py-3.5 mb-4 bg-amber-50 text-amber-900 border border-amber-200 rounded-md text-[14.5px];
   }
-  .warningnote code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[12.5px] font-mono; }
+  .warningnote code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[13px] font-mono; }
 
-  .messagelist { @apply px-4 py-3 mb-4 rounded-md text-[13.5px] border; }
+  .messagelist { @apply px-4 py-3.5 mb-4 rounded-md text-[14.5px] border; }
   .message-success { @apply bg-emerald-50 text-emerald-800 border-emerald-200; }
   .message-warning { @apply bg-amber-50 text-amber-900 border-amber-200; }
   .message-error   { @apply bg-red-50 text-red-800 border-red-200; }
 
   .empty-list {
-    @apply px-7 py-10 text-center text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-md text-[14px];
+    @apply px-7 py-12 text-center text-gray-600 bg-gray-50 border border-dashed border-gray-300 rounded-md text-[14.5px];
   }
 
   /* --- Paginator --------------------------------------------------- */
-  .paginator { @apply mt-5 text-[12px] text-gray-500 flex flex-wrap items-center gap-1.5; }
+  .paginator { @apply mt-6 text-[13px] text-gray-600 flex flex-wrap items-center gap-1.5; }
   .paginator .this-page {
-    @apply bg-rust text-white px-2 py-0.5 rounded-md font-semibold;
+    @apply bg-rust text-white px-2.5 py-1 rounded-md font-semibold;
   }
   .paginator a {
-    @apply px-2 py-0.5 rounded-md border border-gray-200 text-rust no-underline hover:bg-gray-50;
+    @apply px-2.5 py-1 rounded-md border border-gray-200 text-rust no-underline hover:bg-gray-50 transition-colors;
   }
 
   /* --- Filter sidebar (changelist right rail) ---------------------- */
   #changelist {
     @apply grid gap-5 mt-2;
-    grid-template-columns: minmax(0, 1fr) 220px;
+    grid-template-columns: minmax(0, 1fr) 230px;
   }
   #changelist-filter {
     @apply bg-white border border-gray-200 rounded-xl p-4 self-start;
   }
-  #changelist-filter h2 { @apply text-[12px] uppercase tracking-wider text-gray-500 m-0 mb-2; }
-  #changelist-filter h3 { @apply text-[12px] text-gray-500 mt-3 mb-1.5; }
+  #changelist-filter h2 { @apply text-[12.5px] uppercase tracking-wider text-gray-700 m-0 mb-2; }
+  #changelist-filter h3 { @apply text-[12.5px] text-gray-600 mt-3 mb-1.5 uppercase tracking-wider; }
   #changelist-filter ul { @apply list-none m-0 p-0 flex flex-col gap-1; }
-  #changelist-filter li { @apply text-[13px]; }
+  #changelist-filter li { @apply text-[13.5px]; }
   #changelist-filter li.selected a { @apply text-rust font-semibold; }
-  #changelist-filter li a { @apply text-metal hover:text-rust no-underline; }
+  #changelist-filter li a { @apply text-metal hover:text-rust no-underline transition-colors; }
   @media (max-width: 768px) {
     #changelist { grid-template-columns: 1fr; }
   }
@@ -324,14 +334,14 @@
   /* --- Login ------------------------------------------------------- */
   body.login { @apply bg-paper; }
   #login-form {
-    @apply w-[360px] max-w-[92vw] mx-auto mt-20 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm;
+    @apply w-[400px] max-w-[92vw] mx-auto mt-16 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-md;
   }
   #login-form .module h2 {
-    @apply bg-metal-surface text-rust px-5 py-4 text-[16px] font-semibold normal-case tracking-normal;
+    @apply bg-metal-surface text-rust px-6 py-5 text-[17px] font-semibold normal-case tracking-normal border-0;
   }
-  #login-form form { @apply p-5; }
-  #login-form .form-row { @apply mb-4; }
-  #login-form button { @apply w-full uppercase tracking-wide; }
+  #login-form form { @apply p-6; }
+  #login-form .form-row { @apply mb-5; }
+  #login-form button { @apply w-full uppercase tracking-wide py-3; }
 
   /* --- Forbidden / coming-soon ------------------------------------- */
   .forbidden-page,
@@ -352,12 +362,12 @@
   /* --- View page (Phase 7a/0.5/h) ----------------------------------- */
   .user-view .profile-group-list,
   .user-view .profile-perm-list {
-    @apply list-disc pl-5 my-1.5;
+    @apply list-disc pl-5 my-1.5 text-[14.5px];
   }
-  .user-view .muted { @apply text-gray-500 italic m-0; }
+  .user-view .muted { @apply text-gray-600 italic m-0 text-[14px]; }
 
   /* Cascade list on confirm-delete pages */
-  .cascade-list { @apply list-disc pl-5 my-3 space-y-1.5 text-[14px]; }
+  .cascade-list { @apply list-disc pl-5 my-3 space-y-1.5 text-[14.5px]; }
 
   /* --- Confirm-form layout ----------------------------------------- */
   .confirm-form .submit-row { @apply justify-start; }
