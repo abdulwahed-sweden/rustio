@@ -14,7 +14,7 @@ use crate::templates::Templates;
 
 use super::audit;
 use super::render;
-use super::render::BaseContext;
+use super::render::{BaseContext, SidebarEntry};
 use super::types::Admin;
 
 /// Lazy idempotent initializer for the `rustio_admin_actions` table.
@@ -558,6 +558,7 @@ async fn render_coming_soon(
 ) -> Result<Response> {
     let view = render::ComingSoonCtx {
         base: BaseContext::new(Some(&identity), csrf_token(req), &ctx.admin),
+        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
         page_title: feature.to_string(),
         feature_name: feature.to_string(),
         description: description.to_string(),

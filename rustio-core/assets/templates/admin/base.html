@@ -8,23 +8,34 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
-<div id="container">
-    <div id="header">
-        <div id="branding">
-            {% block branding %}<h1><a href="/admin">{{ site_header }}</a></h1>{% endblock %}
+<div class="admin-shell">
+
+    {# Top bar — brand mark left, user tools right.
+       Phase 7a/2 brings the brand mark inline with `R` in a rust square. #}
+    <header class="topbar">
+        <div class="topbar-brand">
+            {% block topbar_brand %}
+            {% if identity %}
+            {# Mobile sidebar toggle — only useful when there's a sidebar to open. #}
+            <button type="button" class="md:hidden inline-flex items-center justify-center w-8 h-8 -ml-1 mr-1 rounded-md text-gray-300 hover:text-white hover:bg-white/10" data-sidebar-toggle aria-label="Toggle sidebar">
+                {{ icon("menu", class="w-5 h-5") }}
+            </button>
+            {% endif %}
+            <a href="/admin" class="topbar-mark">R</a>
+            <a href="/admin" class="text-white no-underline hover:text-white">{{ site_header }}</a>
+            {% endblock %}
         </div>
         {% if identity %}
-        <div id="user-tools">
-            Welcome, <strong>{{ identity.email }}</strong>.
-            <a href="/admin/password_change">Change password</a>
-            {% if identity.is_admin %}<a href="/admin/users">Users</a>{% endif %}
+        <div class="topbar-tools">
+            <span class="hidden sm:inline">Welcome, <strong class="text-white font-semibold">{{ identity.email }}</strong>.</span>
+            <a href="/admin/password_change" class="hidden md:inline">Change password</a>
             <form method="post" action="/admin/logout" class="inline-form">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <button type="submit" class="link-button">Log out</button>
             </form>
         </div>
         {% endif %}
-    </div>
+    </header>
 
     {% if is_demo_session %}
     <div class="demo-banner" role="alert">
@@ -33,30 +44,88 @@
     </div>
     {% endif %}
 
-    {% block breadcrumbs %}
-    {% if identity %}
-    <div class="breadcrumbs">
-        <a href="/admin">Home</a>
-    </div>
-    {% endif %}
-    {% endblock %}
+    <div class="admin-body">
 
-    <div id="content" class="{% block coltype %}colM{% endblock %}">
-        {% if flash %}
-        <div class="messagelist message-{{ flash.kind }}">{{ flash.message }}</div>
+        {% if identity %}
+        <aside class="sidebar" id="sidebar" aria-label="Admin navigation">
+            <div class="sidebar-section">Manage</div>
+            <a href="/admin" class="sidebar-link" data-active-prefix="/admin" data-active-exact="/admin">{{ icon("home") }} Dashboard</a>
+            {% for entry in entries %}
+            <a href="/admin/{{ entry.admin_name }}/" class="sidebar-link" data-active-prefix="/admin/{{ entry.admin_name }}">{{ icon("table") }} {{ entry.display_name }}</a>
+            {% endfor %}
+            {% if identity.is_admin %}
+            <a href="/admin/users" class="sidebar-link" data-active-prefix="/admin/users">{{ icon("users") }} Users</a>
+            <a href="/admin/groups" class="sidebar-link" data-active-prefix="/admin/groups">{{ icon("users-2") }} Groups</a>
+            {% endif %}
+
+            {% if identity.is_developer %}
+            <div class="sidebar-section">Developer</div>
+            <a href="/admin/__schema__" class="sidebar-link" data-active-prefix="/admin/__schema__">{{ icon("database") }} Schema</a>
+            <a href="/admin/__logs__" class="sidebar-link" data-active-prefix="/admin/__logs__">{{ icon("clock") }} Logs</a>
+            <a href="/admin/__sql_console__" class="sidebar-link" data-active-prefix="/admin/__sql_console__">{{ icon("terminal") }} SQL console</a>
+            {% endif %}
+        </aside>
         {% endif %}
 
-        <div id="content-main">
-            {% block content %}{% endblock %}
-        </div>
+        <div class="content-shell">
+            <div class="content-area" id="content">
+                {% block breadcrumbs %}
+                {% if identity %}
+                <div class="breadcrumbs">
+                    <a href="/admin">Home</a>
+                </div>
+                {% endif %}
+                {% endblock %}
 
-        {% block sidebar %}{% endblock %}
+                {% if flash %}
+                <div class="messagelist message-{{ flash.kind }}">{{ flash.message }}</div>
+                {% endif %}
+
+                <div id="content-main">
+                    {% block content %}{% endblock %}
+                </div>
+
+                {% block sidebar %}{% endblock %}
+            </div>
+        </div>
     </div>
 
-    <footer>
+    <footer class="px-6 md:px-8 py-4 text-[12px] text-gray-500 border-t border-gray-200">
         <small>{{ footer_copyright }}</small>
     </footer>
 </div>
+
+{# Sidebar wiring — two small jobs:
+   1. Highlight the active link based on window.location.pathname (saves
+      threading current_path through 25 BaseContext::new sites).
+   2. Mobile drawer toggle for the hamburger button in the top bar.
+   No external JS, no framework, ~30 lines. #}
+<script>
+(function () {
+    var path = window.location.pathname;
+    document.querySelectorAll(".sidebar-link").forEach(function (a) {
+        var prefix = a.getAttribute("data-active-prefix");
+        var exact  = a.getAttribute("data-active-exact");
+        var hit = false;
+        if (exact && path === exact) hit = true;
+        else if (prefix && (path === prefix || path.indexOf(prefix + "/") === 0)) hit = true;
+        if (hit) {
+            a.classList.remove("sidebar-link");
+            a.classList.add("sidebar-link-active");
+            a.setAttribute("aria-current", "page");
+        }
+    });
+
+    var toggle = document.querySelector("[data-sidebar-toggle]");
+    var sidebar = document.getElementById("sidebar");
+    if (toggle && sidebar) {
+        toggle.addEventListener("click", function () {
+            sidebar.classList.toggle("hidden");
+            sidebar.classList.toggle("flex");
+        });
+    }
+})();
+</script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -20,6 +20,11 @@ use crate::auth::Identity;
 pub(crate) struct IdentityCtx {
     pub email: String,
     pub is_admin: bool,
+    /// Phase 7a/2 — exposed so the sidebar can show the
+    /// Developer-only section (`/admin/__schema__`, `/__logs__`,
+    /// `/__sql_console__`) without making it look like dead nav for
+    /// Administrator-rank users.
+    pub is_developer: bool,
 }
 
 impl From<&Identity> for IdentityCtx {
@@ -27,6 +32,7 @@ impl From<&Identity> for IdentityCtx {
         Self {
             email: i.email.clone(),
             is_admin: i.is_admin(),
+            is_developer: i.is_active && i.role.includes(crate::auth::Role::Developer),
         }
     }
 }
@@ -111,6 +117,10 @@ pub(crate) struct LoginCtx {
 pub(crate) struct DashboardCtx {
     #[serde(flatten)]
     pub base: BaseContext,
+    /// Phase 7a/2 — sidebar nav. Same shape every other page already
+    /// uses (list/form/confirm-delete/builtin), so the base.html
+    /// sidebar partial works uniformly across all pages.
+    pub entries: Vec<SidebarEntry>,
     pub apps: Vec<DashboardApp>,
     pub recent_actions: Vec<RecentActionCtx>,
     pub flash: Option<FlashCtx>,
@@ -213,6 +223,7 @@ pub(crate) fn dashboard_ctx(
 
     DashboardCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
+        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
         apps: group_entries_by_app(admin.entries()),
         recent_actions: recent,
         flash: None,
@@ -566,6 +577,9 @@ pub(crate) fn map_audit_actions(actions: Vec<super::audit::AdminAction>) -> Vec<
 pub(crate) struct ComingSoonCtx {
     #[serde(flatten)]
     pub base: BaseContext,
+    /// Phase 7a/2 — sidebar nav entries (Developer-tier sees this
+    /// page; the sidebar should still render with full nav).
+    pub entries: Vec<SidebarEntry>,
     pub page_title: String,
     pub feature_name: String,
     pub description: String,
@@ -579,6 +593,10 @@ pub(crate) struct ComingSoonCtx {
 pub(crate) struct ForbiddenCtx {
     #[serde(flatten)]
     pub base: BaseContext,
+    /// Phase 7a/2 — sidebar entries; even on a 403 the user is
+    /// authenticated, so the sidebar should render with whichever
+    /// surfaces they CAN reach.
+    pub entries: Vec<SidebarEntry>,
     pub page_title: &'static str,
     /// The permission codename or URL the user tried to reach. Shown
     /// in the body when present so the operator can audit how the
@@ -603,6 +621,7 @@ pub(crate) fn render_forbidden_body(
 ) -> crate::error::Result<String> {
     let view = ForbiddenCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
+        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
         page_title: "Permission denied",
         attempted,
         required_role,
