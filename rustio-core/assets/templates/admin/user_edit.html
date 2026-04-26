@@ -6,25 +6,38 @@
 <div class="breadcrumbs">
     <a href="/admin">Home</a>
     &rsaquo; <a href="/admin/users">Users</a>
-    &rsaquo; {{ email }}
+    &rsaquo; <a href="/admin/users/{{ user_id }}/">{{ email }}</a>
+    &rsaquo; Edit
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="object-tools-row">
-    <a href="/admin/users/{{ user_id }}/" class="btn-back">&larr; Back to profile</a>
+<div class="flex items-center gap-2 mb-5 flex-wrap">
+    <a href="/admin/users/{{ user_id }}/" class="btn-ghost">
+        {{ icon("arrow-left", class="w-4 h-4") }} Back to profile
+    </a>
 </div>
 
-<h1>Change user</h1>
+<div class="flex items-center gap-3 mb-5">
+    {{ icon("pencil", class="w-6 h-6 text-rust") }}
+    <h1 class="text-2xl font-bold tracking-tight">Edit user</h1>
+</div>
 
 {% if errors %}
 {% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
 {% if is_last_developer %}
-<div class="warningnote last-developer-banner">
-    <strong>Heads up:</strong> {{ email }} is the last active developer. Demoting their role or unchecking <em>Active</em> will be refused. To swap who holds the developer role, promote a backup first via
-    <code>rustio user role set --email someone@example.com --role developer</code>.
+<div class="warningnote">
+    <div class="flex items-start gap-2">
+        <span class="mt-0.5 shrink-0">{{ icon("circle-alert", class="w-4 h-4") }}</span>
+        <div>
+            <strong>Heads up:</strong> {{ email }} is the last active developer.
+            Demoting their role or unchecking <em>Active</em> will be refused.
+            To swap who holds the developer role, promote a backup first via
+            <code>rustio user role set --email someone@example.com --role developer</code>.
+        </div>
+    </div>
 </div>
 {% endif %}
 
@@ -36,8 +49,8 @@
         <div class="form-row">
             <label>Email:</label>
             <div class="field-input">
-                <input type="email" value="{{ email }}" disabled>
-                <p class="help">Email changes aren't exposed here — they require a full user update.</p>
+                <input type="email" value="{{ email }}" disabled class="opacity-60 cursor-not-allowed">
+                <p class="form-help mt-1">Email changes aren't exposed here — they require a full user update.</p>
             </div>
         </div>
         <div class="form-row">
@@ -55,8 +68,11 @@
         <div class="form-row">
             <label for="id_is_active">Active:</label>
             <div class="field-input">
-                <input type="checkbox" id="id_is_active" name="is_active"{% if is_active %} checked{% endif %}>
-                <p class="help">Inactive users cannot sign in or hold sessions.</p>
+                <label class="inline-flex items-center gap-2">
+                    <input type="checkbox" id="id_is_active" name="is_active"{% if is_active %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                    <span>Allow this user to sign in</span>
+                </label>
+                <p class="form-help mt-1">Inactive users cannot sign in or hold sessions.</p>
             </div>
         </div>
     </fieldset>
@@ -69,8 +85,8 @@
             <div class="field-input checkbox-list">
                 {% for g in all_groups %}
                 <label class="checkbox-item">
-                    <input type="checkbox" name="group_{{ g.id }}"{% if g.id in user_groups %} checked{% endif %}>
-                    <strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}
+                    <input type="checkbox" name="group_{{ g.id }}"{% if g.id in user_groups %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                    <span><strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}</span>
                 </label>
                 {% endfor %}
             </div>
@@ -78,7 +94,7 @@
         {% else %}
         <div class="form-row">
             <label>&nbsp;</label>
-            <div class="field-input"><p class="help">No groups yet. Create one under <a href="/admin/groups">Groups</a>.</p></div>
+            <div class="field-input"><p class="form-help">No groups yet. Create one under <a href="/admin/groups" class="text-rust hover:underline">Groups</a>.</p></div>
         </div>
         {% endif %}
     </fieldset>
@@ -89,13 +105,13 @@
             <label for="id_new_password">New password:</label>
             <div class="field-input">
                 <input type="password" id="id_new_password" name="new_password" autocomplete="new-password">
-                <p class="help">Leave blank to keep the current password unchanged. This sets <em>this user's</em> password — to change your own, visit <a href="/admin/password_change">Change password</a>.</p>
+                <p class="form-help mt-1">Leave blank to keep the current password unchanged. This sets <em>this user's</em> password — to change your own, visit <a href="/admin/password_change" class="text-rust hover:underline">Change password</a>.</p>
             </div>
         </div>
     </fieldset>
 
     <div class="submit-row">
-        <input type="submit" name="_save" value="Save" class="default">
+        <button type="submit" name="_save" class="btn-primary">Save</button>
     </div>
 </form>
 
@@ -104,10 +120,10 @@
     <div class="form-row">
         <label>&nbsp;</label>
         <div class="field-input">
-            <p>
-                <a href="/admin/users/{{ user_id }}/delete" class="deletelink-inline">Delete this user</a>
-            </p>
-            <p class="help">Group memberships, direct permission grants, and active sessions all cascade away.</p>
+            <a href="/admin/users/{{ user_id }}/delete" class="deletelink-inline inline-flex items-center gap-1.5">
+                {{ icon("trash", class="w-4 h-4") }} Delete this user
+            </a>
+            <p class="form-help mt-1">Group memberships, direct permission grants, and active sessions all cascade away.</p>
         </div>
     </div>
 </fieldset>

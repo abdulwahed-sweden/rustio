@@ -6,65 +6,82 @@
 <div class="breadcrumbs">
     <a href="/admin">Home</a>
     &rsaquo; <a href="/admin/users">Users</a>
-    &rsaquo; <a href="/admin/users/{{ user_id }}/edit">{{ email }}</a>
+    &rsaquo; <a href="/admin/users/{{ user_id }}/">{{ email }}</a>
     &rsaquo; Delete
 </div>
 {% endblock %}
 
 {% block content %}
-<h1>Are you sure?</h1>
-
-{% if is_self %}
-<div class="errornote">
-    You cannot delete <strong>your own account</strong> while signed in. Sign in as another administrator to remove this user.
-</div>
-{% elif is_last_developer %}
-<div class="errornote">
-    <strong>{{ email }}</strong> is the last active developer. Promote another user to <em>Developer</em> via <code>rustio-cli user role set</code> before deleting this account.
-</div>
-{% endif %}
-
-<p>Are you sure you want to delete the user <strong>"{{ email }}"</strong> ({{ role }})?
-{% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
-The following will also be removed (cascade):
-{% else %}
-This user has no group memberships, no active sessions, and no direct permission grants, so the delete is clean.
-{% endif %}
-</p>
-
-{% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
-<ul class="cascade-list">
-    <li><strong>User:</strong> {{ email }} <span class="help">— role: {{ role }}</span></li>
-    {% if group_count > 0 %}
-    <li>
-        <strong>{{ group_count }} group membership{{ group_count != 1 and "s" or "" }}</strong>
-        — the groups themselves stay; only this user's link to each is removed.
-    </li>
-    {% endif %}
-    {% if session_count > 0 %}
-    <li>
-        <strong>{{ session_count }} active session{{ session_count != 1 and "s" or "" }}</strong>
-        — any browser currently signed in as this user is logged out immediately.
-    </li>
-    {% endif %}
-    {% if direct_perm_count > 0 %}
-    <li>
-        <strong>{{ direct_perm_count }} direct permission grant{{ direct_perm_count != 1 and "s" or "" }}</strong>
-        — the permissions themselves stay in the catalogue; only the link to this user is removed.
-    </li>
-    {% endif %}
-</ul>
-{% endif %}
-
-<form method="post" action="/admin/users/{{ user_id }}/delete" class="confirm-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <div class="submit-row">
-        {% if is_self or is_last_developer %}
-        <button type="submit" class="deletelink-button" disabled>Yes, I'm sure</button>
-        {% else %}
-        <button type="submit" class="deletelink-button">Yes, I'm sure</button>
-        {% endif %}
-        <a href="/admin/users" class="cancel-link">No, take me back</a>
+<div class="max-w-3xl">
+    <div class="flex items-center gap-3 mb-4">
+        <span class="w-10 h-10 rounded-full bg-red-100 text-red-700 inline-flex items-center justify-center">
+            {{ icon("circle-alert", class="w-5 h-5") }}
+        </span>
+        <h1 class="text-2xl font-bold tracking-tight">Are you sure?</h1>
     </div>
-</form>
+
+    {% if is_self %}
+    <div class="errornote">
+        <div class="flex items-start gap-2">
+            <span class="mt-0.5 shrink-0">{{ icon("circle-x", class="w-4 h-4") }}</span>
+            <div>
+                You cannot delete <strong>your own account</strong> while signed in. Sign in as another administrator to remove this user.
+            </div>
+        </div>
+    </div>
+    {% elif is_last_developer %}
+    <div class="errornote">
+        <div class="flex items-start gap-2">
+            <span class="mt-0.5 shrink-0">{{ icon("circle-x", class="w-4 h-4") }}</span>
+            <div>
+                <strong>{{ email }}</strong> is the last active developer. Promote another user to <em>Developer</em> via <code class="bg-paper px-1.5 py-0.5 rounded text-[12.5px] font-mono">rustio-cli user role set</code> before deleting this account.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <p class="text-[15px] mb-3">
+            Delete the user <strong>"{{ email }}"</strong> (<span class="rio-pill rio-pill-{{ role == 'developer' and 'rose' or (role == 'administrator' and 'rose' or (role == 'supervisor' and 'amber' or (role == 'staff' and 'indigo' or 'emerald'))) }}">{{ role }}</span>)?
+            {% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
+            The following will also be removed (cascade):
+            {% else %}
+            This user has no group memberships, no active sessions, and no direct permission grants, so the delete is clean.
+            {% endif %}
+        </p>
+
+        {% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
+        <ul class="cascade-list">
+            <li><strong>User:</strong> {{ email }} <span class="help">— role: {{ role }}</span></li>
+            {% if group_count > 0 %}
+            <li><strong>{{ group_count }} group membership{{ group_count != 1 and "s" or "" }}</strong> — the groups themselves stay; only this user's link to each is removed.</li>
+            {% endif %}
+            {% if session_count > 0 %}
+            <li><strong>{{ session_count }} active session{{ session_count != 1 and "s" or "" }}</strong> — any browser currently signed in as this user is logged out immediately.</li>
+            {% endif %}
+            {% if direct_perm_count > 0 %}
+            <li><strong>{{ direct_perm_count }} direct permission grant{{ direct_perm_count != 1 and "s" or "" }}</strong> — the permissions themselves stay in the catalogue; only the link to this user is removed.</li>
+            {% endif %}
+        </ul>
+        {% endif %}
+
+        <form method="post" action="/admin/users/{{ user_id }}/delete" class="confirm-form mt-5">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <div class="submit-row">
+                {% if is_self or is_last_developer %}
+                <button type="submit" class="deletelink-button" disabled>
+                    {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
+                </button>
+                {% else %}
+                <button type="submit" class="deletelink-button">
+                    {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
+                </button>
+                {% endif %}
+                <a href="/admin/users" class="btn-ghost">
+                    {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}

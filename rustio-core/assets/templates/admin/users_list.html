@@ -9,11 +9,16 @@
 {% endblock %}
 
 {% block content %}
-<div class="object-tools">
-    <h1>Select user to change</h1>
-    <ul class="object-tools-actions">
-        <li><a href="/admin/users/new" class="addlink">Add user</a></li>
-    </ul>
+<div class="flex items-end justify-between gap-4 mb-5 flex-wrap">
+    <div>
+        <h1 class="text-2xl font-bold tracking-tight">Users</h1>
+        <p class="text-gray-500 text-[14px] mt-1">
+            {% if users %}{{ users|length }} user{% if users|length != 1 %}s{% endif %}{% else %}No users yet{% endif %}
+        </p>
+    </div>
+    <a href="/admin/users/new" class="btn-primary">
+        {{ icon("plus", class="w-4 h-4") }} Add user
+    </a>
 </div>
 
 {% if users %}
@@ -35,13 +40,13 @@
         <tr class="user-row">
             <td><a href="/admin/users/{{ u.id }}/" class="row-link">{{ u.email }}</a></td>
             <td><a href="/admin/users/{{ u.id }}/" class="row-link"><span class="rio-pill rio-pill-{{ u.role == 'developer' and 'rose' or (u.role == 'administrator' and 'rose' or (u.role == 'supervisor' and 'amber' or (u.role == 'staff' and 'indigo' or 'emerald'))) }}">{{ u.role }}</span></a></td>
-            <td><a href="/admin/users/{{ u.id }}/" class="row-link">{% if u.is_active %}Yes{% else %}<span class="help">No</span>{% endif %}</a></td>
+            <td><a href="/admin/users/{{ u.id }}/" class="row-link">{% if u.is_active %}<span class="badge badge-teal">Active</span>{% else %}<span class="badge badge-muted">Inactive</span>{% endif %}</a></td>
             <td><a href="/admin/users/{{ u.id }}/" class="row-link help">{{ u.created_at }}</a></td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
 {% else %}
-<p class="empty-list">No users yet.</p>
+<p class="empty-list">No users yet. Add one to get started.</p>
 {% endif %}
 {% endblock %}

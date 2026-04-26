@@ -11,7 +11,16 @@
 {% endblock %}
 
 {% block content %}
-<h1>Change group</h1>
+<div class="flex items-center gap-2 mb-5 flex-wrap">
+    <a href="/admin/groups" class="btn-ghost">
+        {{ icon("arrow-left", class="w-4 h-4") }} Back to groups
+    </a>
+</div>
+
+<div class="flex items-center gap-3 mb-5">
+    {{ icon("users-2", class="w-6 h-6 text-rust") }}
+    <h1 class="text-2xl font-bold tracking-tight">Edit group: <span class="text-gray-500 font-normal">{{ name }}</span></h1>
+</div>
 
 {% if errors %}
 {% include "admin/includes/_field_errors.html" %}
@@ -41,25 +50,27 @@
         {% if all_permissions %}
         <div class="form-row">
             <label>Granted:</label>
-            <div class="field-input checkbox-list permission-list">
-                {% for p in all_permissions %}
-                <label class="checkbox-item">
-                    <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %}>
-                    <code>{{ p.name }}</code>
-                </label>
-                {% endfor %}
+            <div class="field-input">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {% for p in all_permissions %}
+                    <label class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded border border-gray-200 hover:border-rust hover:bg-rust/5 transition cursor-pointer">
+                        <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                        <code class="text-[12.5px] font-mono">{{ p.name }}</code>
+                    </label>
+                    {% endfor %}
+                </div>
             </div>
         </div>
         {% else %}
         <div class="form-row">
             <label>&nbsp;</label>
-            <div class="field-input"><p class="help">No permissions registered yet. They appear after a model with <code>#[derive(RustioAdmin)]</code> boots and emits its own.</p></div>
+            <div class="field-input"><p class="form-help">No permissions registered yet. They appear after a model with <code class="bg-paper px-1.5 py-0.5 rounded text-[12.5px] font-mono">#[derive(RustioAdmin)]</code> boots and emits its own.</p></div>
         </div>
         {% endif %}
     </fieldset>
 
     <div class="submit-row">
-        <input type="submit" name="_save" value="Save" class="default">
+        <button type="submit" name="_save" class="btn-primary">Save</button>
     </div>
 </form>
 
@@ -68,10 +79,10 @@
     <div class="form-row">
         <label>&nbsp;</label>
         <div class="field-input">
-            <p>
-                <a href="/admin/groups/{{ group_id }}/delete" class="deletelink-inline">Delete this group</a>
-            </p>
-            <p class="help">Group memberships and permission attachments cascade away. Users keep their accounts.</p>
+            <a href="/admin/groups/{{ group_id }}/delete" class="deletelink-inline inline-flex items-center gap-1.5">
+                {{ icon("trash", class="w-4 h-4") }} Delete this group
+            </a>
+            <p class="form-help mt-1">Group memberships and permission attachments cascade away. Users keep their accounts.</p>
         </div>
     </div>
 </fieldset>

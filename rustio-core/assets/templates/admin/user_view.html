@@ -11,80 +11,107 @@
 {% endblock %}
 
 {% block content %}
-<div class="object-tools-row">
-    <a href="/admin/users" class="btn-back">&larr; Back to users</a>
-
+<div class="flex items-center gap-2 mb-5 flex-wrap">
+    <a href="/admin/users" class="btn-ghost">
+        {{ icon("arrow-left", class="w-4 h-4") }} Back to users
+    </a>
+    <div class="flex-1"></div>
     {% if can_edit %}
-    <a href="/admin/users/{{ target_id }}/edit" class="btn-edit">Edit</a>
+    <a href="/admin/users/{{ target_id }}/edit" class="btn-primary">
+        {{ icon("pencil", class="w-4 h-4") }} Edit
+    </a>
     {% endif %}
-
     {% if can_delete %}
-    <a href="/admin/users/{{ target_id }}/delete" class="btn-delete">Delete</a>
+    <a href="/admin/users/{{ target_id }}/delete" class="btn-delete">
+        {{ icon("trash", class="w-4 h-4") }} Delete
+    </a>
     {% else %}
-    <span class="btn-delete disabled" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">Delete</span>
+    <span class="btn-delete opacity-50 cursor-not-allowed select-none" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
+        {{ icon("trash", class="w-4 h-4") }} Delete
+    </span>
     {% endif %}
 </div>
 
-<h1>User profile: {{ target_email }}</h1>
+<div class="flex items-center gap-3 mb-6">
+    <span class="w-12 h-12 rounded-full bg-rust/10 text-rust inline-flex items-center justify-center font-bold text-lg">
+        {{ target_email[0:1]|upper }}
+    </span>
+    <div>
+        <h1 class="text-2xl font-bold tracking-tight">{{ target_email }}</h1>
+        <p class="text-gray-500 text-[13.5px]">User profile</p>
+    </div>
+</div>
 
-<fieldset class="module">
-    <h2>Identity</h2>
-    <div class="form-row">
-        <label>Email:</label>
-        <span>{{ target_email }}</span>
-    </div>
-    <div class="form-row">
-        <label>Role:</label>
-        <span class="rio-pill rio-pill-{{ target_role == 'developer' and 'rose' or (target_role == 'administrator' and 'rose' or (target_role == 'supervisor' and 'amber' or (target_role == 'staff' and 'indigo' or 'emerald'))) }}">{{ target_role }}</span>
-    </div>
-    <div class="form-row">
-        <label>Active:</label>
-        <span>{% if target_is_active %}Yes{% else %}<span class="help">No (cannot sign in)</span>{% endif %}</span>
-    </div>
-    {% if target_is_demo %}
-    <div class="form-row">
-        <label>Demo account:</label>
-        <span>{{ target_demo_label or "Yes" }}</span>
-    </div>
-    {% endif %}
-</fieldset>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-<fieldset class="module">
+    <fieldset class="module">
+        <h2>Identity</h2>
+        <div class="form-row">
+            <label>Email</label>
+            <div class="field-input">{{ target_email }}</div>
+        </div>
+        <div class="form-row">
+            <label>Role</label>
+            <div class="field-input"><span class="rio-pill rio-pill-{{ target_role == 'developer' and 'rose' or (target_role == 'administrator' and 'rose' or (target_role == 'supervisor' and 'amber' or (target_role == 'staff' and 'indigo' or 'emerald'))) }}">{{ target_role }}</span></div>
+        </div>
+        <div class="form-row">
+            <label>Status</label>
+            <div class="field-input">
+                {% if target_is_active %}
+                <span class="badge badge-teal">Active</span>
+                {% else %}
+                <span class="badge badge-muted">Inactive (cannot sign in)</span>
+                {% endif %}
+            </div>
+        </div>
+        {% if target_is_demo %}
+        <div class="form-row">
+            <label>Demo</label>
+            <div class="field-input"><span class="badge badge-rust">{{ target_demo_label or "Demo account" }}</span></div>
+        </div>
+        {% endif %}
+    </fieldset>
+
+    <fieldset class="module">
+        <h2>Timeline</h2>
+        <div class="form-row">
+            <label>Created</label>
+            <div class="field-input">{{ target_created_at }}</div>
+        </div>
+        <div class="form-row">
+            <label>Updated</label>
+            <div class="field-input">{{ target_updated_at }}</div>
+        </div>
+    </fieldset>
+
+</div>
+
+<fieldset class="module mt-5">
     <h2>Group memberships ({{ groups|length }})</h2>
+    <div class="px-5 py-4">
     {% if groups %}
-    <ul class="profile-group-list">
+    <div class="flex flex-wrap gap-2">
         {% for g in groups %}
-        <li>
-            <strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}
-        </li>
+        <span class="badge badge-rust" title="{{ g.description }}">{{ g.name }}</span>
         {% endfor %}
-    </ul>
+    </div>
     {% else %}
-    <p class="muted">No group memberships.</p>
+    <p class="text-gray-500 italic">No group memberships.</p>
     {% endif %}
+    </div>
 </fieldset>
 
 {% if direct_perms %}
 <fieldset class="module">
     <h2>Direct permissions ({{ direct_perms|length }})</h2>
-    <ul class="profile-perm-list">
-        {% for p in direct_perms %}
-        <li><code>{{ p }}</code></li>
-        {% endfor %}
-    </ul>
-    <p class="help">These are permissions granted directly to this user, outside of group memberships. Direct grants bypass the group/role policy and are easy to forget — usually you want to assign perms via a group instead.</p>
+    <div class="px-5 py-4">
+        <div class="flex flex-wrap gap-2 mb-3">
+            {% for p in direct_perms %}
+            <code class="bg-paper border border-gray-200 px-2 py-1 rounded text-[12.5px] font-mono">{{ p }}</code>
+            {% endfor %}
+        </div>
+        <p class="form-help">These are permissions granted directly to this user, outside of group memberships. Direct grants bypass the group/role policy and are easy to forget — usually you want to assign perms via a group instead.</p>
+    </div>
 </fieldset>
 {% endif %}
-
-<fieldset class="module">
-    <h2>Timeline</h2>
-    <div class="form-row">
-        <label>Created:</label>
-        <span>{{ target_created_at }}</span>
-    </div>
-    <div class="form-row">
-        <label>Updated:</label>
-        <span>{{ target_updated_at }}</span>
-    </div>
-</fieldset>
 {% endblock %}

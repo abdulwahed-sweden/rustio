@@ -11,7 +11,10 @@
 {% endblock %}
 
 {% block content %}
-<h1>Add user</h1>
+<div class="flex items-center gap-3 mb-5">
+    {{ icon("plus", class="w-6 h-6 text-rust") }}
+    <h1 class="text-2xl font-bold tracking-tight">Add user</h1>
+</div>
 
 {% if errors %}
 {% include "admin/includes/_field_errors.html" %}
@@ -26,14 +29,14 @@
             <label for="id_email">Email:</label>
             <div class="field-input">
                 <input type="email" id="id_email" name="email" value="{{ email }}" required autocomplete="off" autofocus>
-                <p class="help">Must be unique across all users.</p>
+                <p class="form-help mt-1">Must be unique across all users.</p>
             </div>
         </div>
         <div class="form-row">
             <label for="id_password">Password:</label>
             <div class="field-input">
                 <input type="password" id="id_password" name="password" required autocomplete="new-password">
-                <p class="help">At least 8 characters. The user can change it later via <em>Change password</em>.</p>
+                <p class="form-help mt-1">At least 8 characters. The user can change it later via <em>Change password</em>.</p>
             </div>
         </div>
     </fieldset>
@@ -50,15 +53,18 @@
                     <option value="administrator" {% if role == "administrator" %}selected{% endif %}>Administrator (full coverage; bypasses group checks)</option>
                     <option value="developer"     {% if role == "developer"     %}selected{% endif %}>Developer (schema browser + execution logs + SQL console)</option>
                 </select>
-                <p class="help">Higher roles include all lower-role capabilities. Group memberships are assigned on the next page after save.</p>
+                <p class="form-help mt-1">Higher roles include all lower-role capabilities. Group memberships are assigned on the next page after save.</p>
             </div>
         </div>
     </fieldset>
 
-    <p class="help">After saving you'll be sent to the user's edit page where you can pick group memberships.</p>
+    <p class="form-help mt-2">After saving you'll be sent to the user's edit page where you can pick group memberships.</p>
 
     <div class="submit-row">
-        <input type="submit" name="_save" value="Add user" class="default">
+        <button type="submit" name="_save" class="btn-primary">
+            {{ icon("plus", class="w-4 h-4") }} Add user
+        </button>
+        <a href="/admin/users" class="btn-ghost">Cancel</a>
     </div>
 </form>
 {% endblock %}

@@ -406,6 +406,26 @@ mod tests {
         assert!(body.contains("Group memberships (0)"));
     }
 
+    /// Semantic invariant: when `can_delete` is false (whatever
+    /// reason), the Delete element must render as a `<span>` (not an
+    /// `<a href>`) so a misclick can't hit the destructive endpoint.
+    /// The exact CSS classes used to disable it are styling, not
+    /// contract.
+    fn assert_delete_is_disabled_span(body: &str, expected_tooltip: &str) {
+        assert!(
+            body.contains(r#"<span class="btn-delete"#),
+            "Delete must render as a <span> with btn-delete class when guarded"
+        );
+        assert!(
+            !body.contains(r#"<a href="/admin/users/42/delete""#),
+            "Delete must NOT render as an <a href=…/delete> when guarded"
+        );
+        assert!(
+            body.contains(expected_tooltip),
+            "tooltip must contain {expected_tooltip:?} so the operator knows why"
+        );
+    }
+
     #[test]
     fn user_view_is_self_disables_delete_as_span() {
         let t = Templates::new(None).unwrap();
@@ -413,14 +433,7 @@ mod tests {
         ctx["is_self"] = serde_json::Value::Bool(true);
         ctx["can_delete"] = serde_json::Value::Bool(false);
         let body = t.render("admin/user_view.html", &ctx).unwrap();
-        assert!(
-            body.contains(r#"<span class="btn-delete disabled""#),
-            "Delete must render as a disabled <span>, not an <a>"
-        );
-        assert!(
-            body.contains("Cannot delete your own account"),
-            "tooltip must explain the self-delete refusal"
-        );
+        assert_delete_is_disabled_span(&body, "Cannot delete your own account");
         // Edit must still render as an anchor — administrators can
         // edit themselves, just not delete.
         assert!(
@@ -436,11 +449,7 @@ mod tests {
         ctx["is_last_developer"] = serde_json::Value::Bool(true);
         ctx["can_delete"] = serde_json::Value::Bool(false);
         let body = t.render("admin/user_view.html", &ctx).unwrap();
-        assert!(body.contains(r#"<span class="btn-delete disabled""#));
-        assert!(
-            body.contains("Cannot delete the last active developer"),
-            "tooltip must explain the orphan refusal"
-        );
+        assert_delete_is_disabled_span(&body, "Cannot delete the last active developer");
     }
 
     /// The users list now navigates to the profile view (not edit).
@@ -491,18 +500,27 @@ mod tests {
         let t = Templates::new(None).unwrap();
         // is_demo defaults to false in view_ctx_base.
         let body = t.render("admin/user_view.html", &view_ctx_base()).unwrap();
+        // The demo label string only appears when target_is_demo=true.
+        // Looking for the demo-account marker that's only in the
+        // gated `{% if target_is_demo %}` block.
         assert!(
-            !body.contains("Demo account:"),
-            "demo row must NOT render for a real (non-demo) user"
+            !body.contains("badge-rust\">staff @"),
+            "demo badge must NOT render for a real (non-demo) user"
+        );
+        assert!(
+            !body.contains("Demo account"),
+            "demo label must NOT appear for a real user"
         );
 
-        // Demo case: row renders with the label.
+        // Demo case: badge renders with the label.
         let mut demo_ctx = view_ctx_base();
         demo_ctx["target_is_demo"] = serde_json::Value::Bool(true);
         demo_ctx["target_demo_label"] = serde_json::Value::String("staff @ rustio.local".into());
         let demo_body = t.render("admin/user_view.html", &demo_ctx).unwrap();
-        assert!(demo_body.contains("Demo account:"));
-        assert!(demo_body.contains("staff @ rustio.local"));
+        assert!(
+            demo_body.contains("staff @ rustio.local"),
+            "demo label must render in the badge for a demo user"
+        );
     }
 
     /// Companion to `…with_last_developer_banner`: when neither guard
@@ -524,9 +542,19 @@ mod tests {
             "csrf_token": "test-csrf",
         });
         let body = t.render("admin/user_confirm_delete.html", &ctx).unwrap();
+        // Submit must render without `disabled`. The exact button
+        // markup includes an icon child (Phase 7a/2), so we assert
+        // on the contract — `<button type="submit" class="deletelink-button">`
+        // present, and `disabled` NOT present anywhere on it.
         assert!(
-            body.contains(r#"<button type="submit" class="deletelink-button">Yes, I'm sure</button>"#),
-            "submit button must render WITHOUT `disabled` for a normal user"
+            body.contains(r#"<button type="submit" class="deletelink-button">"#),
+            "submit button must render with deletelink-button class"
+        );
+        // Find the button's opening tag and assert no disabled attr
+        // sneaks in via a different code path.
+        assert!(
+            !body.contains(r#"<button type="submit" class="deletelink-button" disabled>"#),
+            "submit button must NOT render with `disabled` for a deletable user"
         );
         // And the warning banners must NOT appear.
         assert!(!body.contains("is the last active developer"));
