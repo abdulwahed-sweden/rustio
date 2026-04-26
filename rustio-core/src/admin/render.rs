@@ -377,12 +377,21 @@ pub(crate) struct FormCtx {
 #[derive(Serialize)]
 pub(crate) struct FormField {
     pub name: &'static str,
-    pub label: &'static str,
+    /// Phase 1/b — humanised label sourced from
+    /// `intelligence::field_ui_metadata` ("created_at" → "Created At")
+    /// instead of the raw column name. `String` because the intelligence
+    /// layer owns the buffer.
+    pub label: String,
     pub widget: &'static str,
     pub input_type: &'static str,
     pub value: String,
     pub hint: Option<String>,
     pub placeholder: Option<String>,
+    /// Phase 1/b — `true` for fields the form template should mark
+    /// with the required-asterisk. Optional types and booleans never
+    /// carry the marker (booleans always submit a value, optionals
+    /// are explicitly nullable).
+    pub required: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -426,14 +435,20 @@ pub(crate) fn form_ctx(
             } else {
                 f.field_type.widget()
             };
+            // Phase 1/b — bools always submit (checked = true, absent
+            // = false), so they never carry a required-asterisk; every
+            // other non-nullable field does.
+            let required = !f.field_type.nullable()
+                && !matches!(f.field_type, super::types::FieldType::Bool);
             FormField {
                 name: f.name,
-                label: f.label,
+                label: ui.label,
                 widget,
                 input_type: html_input_type_for(f.field_type),
                 value,
-                hint: ui.hint.map(|s| s.to_string()),
-                placeholder: ui.placeholder.map(|s| s.to_string()),
+                hint: ui.hint,
+                placeholder: ui.placeholder,
+                required,
             }
         })
         .collect();
@@ -832,6 +847,98 @@ mod tests {
             !body.contains("RUSTIO_DEMO_MODE"),
             "banner copy must be absent for real users"
         );
+    }
+
+    #[test]
+    fn form_renders_required_marker_humanised_label_and_cancel() {
+        // Phase 1/b — template-only assertion. Hand-built JSON ctx
+        // mirrors the shape `form_ctx` produces; exercises the three
+        // user-visible additions (humanised label, required-asterisk,
+        // Cancel button) without depending on AdminEntry plumbing.
+        let templates = Templates::new(None).expect("embedded templates");
+        let ctx = serde_json::json!({
+            "site_title": "RustIO administration",
+            "site_header": "RustIO administration",
+            "index_title": "Site administration",
+            "footer_copyright": "RustIO test",
+            "csrf_token": "fake",
+            "is_demo_session": false,
+            "demo_label": null,
+            "page_title": "Add post",
+            "entries": [],
+            "admin_name": "posts",
+            "display_name": "Posts",
+            "singular_name": "Post",
+            "mode": "new",
+            "object_id": null,
+            "errors": [],
+            "identity": { "email": "admin@example.com", "is_admin": true, "is_developer": false },
+            "fields": [
+                {
+                    "name": "title",
+                    "label": "Title",
+                    "widget": "text",
+                    "input_type": "text",
+                    "value": "",
+                    "hint": null,
+                    "placeholder": null,
+                    "required": true,
+                },
+                {
+                    "name": "published",
+                    "label": "Published",
+                    "widget": "checkbox",
+                    "input_type": "checkbox",
+                    "value": "false",
+                    "hint": null,
+                    "placeholder": null,
+                    "required": false,
+                },
+            ],
+        });
+        let body = templates
+            .render("admin/form.html", &ctx)
+            .expect("form renders");
+
+        // Humanised label is rendered.
+        assert!(body.contains(">Title"), "humanised Title label missing");
+
+        // Required-asterisk: present for `title`, absent for `published`.
+        // The label tag for `title` should contain the marker.
+        let title_label_idx = body
+            .find("for=\"id_title\"")
+            .expect("title label present");
+        let title_label_end = title_label_idx
+            + body[title_label_idx..]
+                .find("</label>")
+                .expect("label closes");
+        let title_label = &body[title_label_idx..title_label_end];
+        assert!(
+            title_label.contains("class=\"required\""),
+            "title label should carry the required marker, got: {title_label:?}"
+        );
+
+        let published_label_idx = body
+            .find("for=\"id_published\"")
+            .expect("published label present");
+        let published_label_end = published_label_idx
+            + body[published_label_idx..]
+                .find("</label>")
+                .expect("label closes");
+        let published_label = &body[published_label_idx..published_label_end];
+        assert!(
+            !published_label.contains("class=\"required\""),
+            "non-required field should not carry the marker, got: {published_label:?}"
+        );
+
+        // Cancel button points at the list page for this admin.
+        assert!(
+            body.contains("href=\"/admin/posts/\"") && body.contains(">\n            Cancel"),
+            "Cancel link to list page missing",
+        );
+
+        // Save button still there — regression guard.
+        assert!(body.contains("name=\"_save\""), "Save button missing");
     }
 
     #[test]

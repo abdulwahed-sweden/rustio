@@ -33,7 +33,7 @@
         <h2>General</h2>
         {% for field in fields %}
         <div class="form-row field-{{ field.name }}">
-            <label for="id_{{ field.name }}">{{ field.label }}{% if field.input_type != "checkbox" %}:{% endif %}</label>
+            <label for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}{% if field.input_type != "checkbox" %}:{% endif %}</label>
             <div class="field-input">
                 {% if field.widget == "checkbox" %}
                     <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
@@ -63,6 +63,9 @@
         <button type="submit" name="_addanother" value="Save and add another" class="btn-ghost">
             Save and add another
         </button>
+        <a href="/admin/{{ admin_name }}/" class="btn-ghost">
+            Cancel
+        </a>
         {% if mode == "edit" and object_id %}
         <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="btn-delete ml-auto">
             {{ icon("trash", class="w-4 h-4") }} Delete

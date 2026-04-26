@@ -112,12 +112,21 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
             continue;
         }
 
+        // Phase 1/b — precompute human-readable validation messages
+        // at expansion time so the runtime error path doesn't repeat
+        // the same `format!` work per request and so every model
+        // emits identically-styled copy ("Title is required.").
+        let humanised_label = humanise_field(&fname_str);
+        let required_msg = format!("{humanised_label} is required.");
+        let number_msg = format!("{humanised_label} must be a number.");
+        let date_invalid_msg = format!("{humanised_label} is not a valid date.");
+
         match kind {
             FieldKind::String => {
                 from_form_parses.push(quote! {
                     let #fname = match form.get(#fname_str) {
                         Some(v) if !v.is_empty() => v.to_string(),
-                        _ => { errors.push(format!("{} is required", #fname_str)); String::new() }
+                        _ => { errors.push(#required_msg.to_string()); String::new() }
                     };
                 });
                 from_form_fields.push(quote! { #fname });
@@ -132,7 +141,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                 from_form_parses.push(quote! {
                     let #fname: i32 = match form.get(#fname_str).and_then(|v| v.parse().ok()) {
                         Some(v) => v,
-                        None => { errors.push(format!("{} must be a number", #fname_str)); 0 }
+                        None => { errors.push(#number_msg.to_string()); 0 }
                     };
                 });
                 from_form_fields.push(quote! { #fname });
@@ -141,7 +150,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                 from_form_parses.push(quote! {
                     let #fname: i64 = match form.get(#fname_str).and_then(|v| v.parse().ok()) {
                         Some(v) => v,
-                        None => { errors.push(format!("{} must be a number", #fname_str)); 0 }
+                        None => { errors.push(#number_msg.to_string()); 0 }
                     };
                 });
                 from_form_fields.push(quote! { #fname });
@@ -164,10 +173,10 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                         Some(raw) if !raw.is_empty() => {
                             match ::chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M") {
                                 Ok(dt) => ::chrono::DateTime::<::chrono::Utc>::from_naive_utc_and_offset(dt, ::chrono::Utc),
-                                Err(_) => { errors.push(format!("{} is not a valid date", #fname_str)); ::chrono::Utc::now() }
+                                Err(_) => { errors.push(#date_invalid_msg.to_string()); ::chrono::Utc::now() }
                             }
                         }
-                        _ => { errors.push(format!("{} is required", #fname_str)); ::chrono::Utc::now() }
+                        _ => { errors.push(#required_msg.to_string()); ::chrono::Utc::now() }
                     };
                 });
                 from_form_fields.push(quote! { #fname });
@@ -287,6 +296,27 @@ impl FieldKind {
 /// real model needs another conventionally-named timestamp.
 fn is_auto_timestamp_name(name: &str) -> bool {
     matches!(name, "created_at" | "updated_at")
+}
+
+/// Phase 1/b — turn a snake_case column name into a Title-Case label
+/// for human-readable validation errors emitted by `from_form`. Mirrors
+/// `rustio_core::admin::intelligence::humanise` so the error message
+/// label and the rendered form label use identical capitalisation.
+fn humanise_field(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut next_upper = true;
+    for ch in s.chars() {
+        if ch == '_' {
+            out.push(' ');
+            next_upper = true;
+        } else if next_upper {
+            out.push(ch.to_ascii_uppercase());
+            next_upper = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn classify_type(ty: &syn::Type) -> syn::Result<FieldKind> {

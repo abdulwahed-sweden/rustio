@@ -275,16 +275,29 @@
   .form-row input[type=email],
   .form-row input[type=password],
   .form-row input[type=search],
+  .form-row input[type=number],
+  .form-row input[type=url],
+  .form-row input[type=tel],
+  .form-row input[type=date],
+  .form-row input[type=time],
+  .form-row input[type=datetime-local],
   .form-row select,
   .form-row textarea {
     @apply w-full px-3.5 py-2.5 rounded-md border border-gray-200 bg-white text-[15px] font-sans transition-colors;
   }
+  /* Phase 1/b — textareas get a consistent baseline so a one-line draft
+     and a long body both feel deliberate. The `rows="5"` attribute on
+     the form template is the upper bound; min-height is the floor. */
+  .form-row textarea { @apply min-h-32 leading-relaxed; }
   .form-input:focus,
   .form-row input:focus,
   .form-row select:focus,
   .form-row textarea:focus {
     @apply outline-none border-rust ring-2 ring-rust/10;
   }
+  /* Phase 1/b — required-field marker. Small, muted-rust asterisk
+     beside the label so the visual weight stays on the label text. */
+  .form-row label .required { @apply text-rust font-semibold ml-0.5; }
   .form-help, .help { @apply text-[13.5px] text-gray-600 leading-snug; }
   .field-input { @apply w-full; }
 
