@@ -1,6 +1,6 @@
 DB_URL ?= postgres://postgres:dev@localhost/rustio_dev
 
-.PHONY: up down db-setup migrate run check clean
+.PHONY: up down db-setup migrate run check clean css css-watch css-check
 
 up:
 	docker compose up -d
@@ -39,3 +39,34 @@ check:
 clean:
 	cargo clean
 	docker compose down -v
+
+# --- Phase 7a/2: Tailwind build pipeline ----------------------------------
+# `make css` regenerates rustio-core/assets/static/css/admin.css from the
+# Tailwind source in rustio-core/assets/css/input.css. The output IS
+# committed (so `cargo run` works for anyone without Node), but anyone
+# editing styles needs Node + `npm install` first. `make css-check`
+# fails if the committed CSS is out of sync with the input — wire it
+# into a pre-commit hook if you want.
+
+css:
+	@if [ ! -d node_modules ]; then \
+		echo "node_modules missing — run 'npm install' first"; exit 1; \
+	fi
+	npx tailwindcss -i rustio-core/assets/css/input.css -o rustio-core/assets/static/css/admin.css --minify
+
+css-watch:
+	@if [ ! -d node_modules ]; then \
+		echo "node_modules missing — run 'npm install' first"; exit 1; \
+	fi
+	npx tailwindcss -i rustio-core/assets/css/input.css -o rustio-core/assets/static/css/admin.css --watch
+
+css-check:
+	@if [ ! -d node_modules ]; then \
+		echo "node_modules missing — run 'npm install' first"; exit 1; \
+	fi
+	@npx tailwindcss -i rustio-core/assets/css/input.css -o /tmp/admin.css.expected --minify 2>/dev/null
+	@if diff -q /tmp/admin.css.expected rustio-core/assets/static/css/admin.css > /dev/null; then \
+		echo "css in sync"; \
+	else \
+		echo "ERROR: rustio-core/assets/static/css/admin.css is out of date — run 'make css'"; exit 1; \
+	fi

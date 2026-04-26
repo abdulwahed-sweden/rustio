@@ -195,3 +195,20 @@ pub fn embedded_admin_css() -> &'static str {
 pub fn embedded_search_js() -> &'static str {
     include_str!("../assets/static/js/search.js")
 }
+
+// Phase 7a/2 — self-hosted Inter (Latin subset) for the redesigned
+// admin UI. Each weight is a separate woff2 file ~24KB; total ~95KB
+// added to the binary. Served from `/static/fonts/Inter-{Weight}.woff2`
+// by `register_admin_routes`. Single-binary deploy invariant intact.
+pub fn embedded_inter_regular() -> &'static [u8] {
+    include_bytes!("../assets/static/fonts/Inter-Regular.woff2")
+}
+pub fn embedded_inter_medium() -> &'static [u8] {
+    include_bytes!("../assets/static/fonts/Inter-Medium.woff2")
+}
+pub fn embedded_inter_semibold() -> &'static [u8] {
+    include_bytes!("../assets/static/fonts/Inter-SemiBold.woff2")
+}
+pub fn embedded_inter_bold() -> &'static [u8] {
+    include_bytes!("../assets/static/fonts/Inter-Bold.woff2")
+}

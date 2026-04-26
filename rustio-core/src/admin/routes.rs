@@ -215,6 +215,43 @@ pub fn register_admin_routes(
         .with_header("cache-control", "public, max-age=3600"))
     });
 
+    // Phase 7a/2 — self-hosted Inter (Latin subset, four weights).
+    // Registered as separate routes rather than a `:file` wildcard
+    // so the binary doesn't risk leaking arbitrary files from the
+    // assets dir; only the four explicitly-baked weights are served.
+    let router = router.get("/static/fonts/Inter-Regular.woff2", |_req| async move {
+        Ok(Response::new(
+            hyper::StatusCode::OK,
+            bytes::Bytes::from_static(crate::server::embedded_inter_regular()),
+        )
+        .with_header("content-type", "font/woff2")
+        .with_header("cache-control", "public, max-age=31536000, immutable"))
+    });
+    let router = router.get("/static/fonts/Inter-Medium.woff2", |_req| async move {
+        Ok(Response::new(
+            hyper::StatusCode::OK,
+            bytes::Bytes::from_static(crate::server::embedded_inter_medium()),
+        )
+        .with_header("content-type", "font/woff2")
+        .with_header("cache-control", "public, max-age=31536000, immutable"))
+    });
+    let router = router.get("/static/fonts/Inter-SemiBold.woff2", |_req| async move {
+        Ok(Response::new(
+            hyper::StatusCode::OK,
+            bytes::Bytes::from_static(crate::server::embedded_inter_semibold()),
+        )
+        .with_header("content-type", "font/woff2")
+        .with_header("cache-control", "public, max-age=31536000, immutable"))
+    });
+    let router = router.get("/static/fonts/Inter-Bold.woff2", |_req| async move {
+        Ok(Response::new(
+            hyper::StatusCode::OK,
+            bytes::Bytes::from_static(crate::server::embedded_inter_bold()),
+        )
+        .with_header("content-type", "font/woff2")
+        .with_header("cache-control", "public, max-age=31536000, immutable"))
+    });
+
     // Public: login/logout.
     let c = ctx.clone();
     let router = router.get("/admin/login", move |req| {

@@ -11,3 +11,9 @@
 
 # Local cookie / smoke-test scratch
 /tmp/rustio.jar
+
+# Phase 7a/2 — node_modules from the Tailwind build pipeline.
+# The compiled `rustio-core/assets/static/css/admin.css` IS committed
+# (so `cargo run` works without Node). `make css` regenerates it.
+node_modules/
+package-lock.json

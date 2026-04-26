@@ -1,0 +1,364 @@
+/* RustIO admin — Tailwind input. Phase 7a/2.
+ *
+ * This file is the SOURCE. The compiled output lives at
+ * `rustio-core/assets/static/css/admin.css` and is baked into the
+ * binary via `include_str!`. Run `make css` to rebuild after editing.
+ *
+ * Hybrid class strategy: semantic component classes live in
+ * `@layer components` so projects overriding admin templates by class
+ * name don't silently break. Utility classes are used directly inside
+ * templates for one-offs.
+ *
+ * Brand tokens come from `tailwind.config.js theme.extend`, which
+ * mirrors `docs/brand.md`. Don't hand-tune colours or shadows here —
+ * change the config so the brand stays the single source of truth.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- @font-face: self-hosted Inter (Phase 7a/2) ---------------------- */
+@layer base {
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/static/fonts/Inter-Regular.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("/static/fonts/Inter-Medium.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("/static/fonts/Inter-SemiBold.woff2") format("woff2");
+  }
+  @font-face {
+    font-family: "Inter";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("/static/fonts/Inter-Bold.woff2") format("woff2");
+  }
+
+  html { @apply text-[16px]; }
+  body {
+    @apply bg-paper text-metal antialiased font-sans;
+    font-feature-settings: "ss01", "tnum";
+  }
+
+  h1 { @apply text-2xl font-semibold tracking-tight text-metal; }
+  h2 { @apply text-lg  font-semibold tracking-tight text-metal; }
+  h3 { @apply text-base font-semibold text-metal; }
+
+  a { @apply text-rust hover:text-rust-hover; }
+  ::selection { @apply bg-rust text-white; }
+}
+
+/* --- Component classes (the public API contract) --------------------- */
+@layer components {
+
+  /* Layout shell */
+  .admin-shell { @apply min-h-screen flex flex-col; }
+  .topbar      { @apply h-14 px-5 flex items-center justify-between bg-metal-surface text-white border-b border-metal-dark; }
+  .topbar-brand { @apply flex items-center gap-2.5 font-bold text-base tracking-tight; }
+  .topbar-mark  { @apply w-7 h-7 rounded-md bg-rust text-white text-[13px] font-bold inline-flex items-center justify-center shadow-mark; }
+  .topbar-tools { @apply flex items-center gap-4 text-[13px] text-gray-300; }
+  .topbar-tools a { @apply text-gray-300 hover:text-white no-underline; }
+  .topbar-tools .link-button {
+    @apply bg-transparent border-0 text-gray-300 hover:text-white cursor-pointer p-0 text-[13px];
+    font-family: inherit;
+  }
+  .topbar-tools .inline-form { @apply inline; }
+
+  .admin-body  { @apply flex-1 flex; }
+  .sidebar     { @apply hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-gray-200 py-4 px-3 gap-1; }
+  .sidebar-section { @apply text-[11px] uppercase tracking-wider text-gray-400 font-semibold px-3 py-2 mt-2 first:mt-0; }
+  .sidebar-link {
+    @apply flex items-center gap-2.5 px-3 py-2 rounded-md text-[14px] font-medium text-metal hover:bg-gray-100 no-underline transition;
+  }
+  .sidebar-link svg { @apply w-4 h-4 shrink-0 text-gray-500; }
+  .sidebar-link-active {
+    @apply flex items-center gap-2.5 px-3 py-2 rounded-md text-[14px] font-semibold text-rust bg-rust/5 no-underline;
+  }
+  .sidebar-link-active svg { @apply w-4 h-4 shrink-0 text-rust; }
+
+  .content-shell { @apply flex-1 min-w-0 flex flex-col; }
+  .content-area  { @apply flex-1 px-6 md:px-8 py-6 md:py-8 max-w-7xl w-full; }
+
+  /* Demo banner */
+  .demo-banner {
+    @apply px-5 py-2.5 bg-amber-50 text-amber-900 border-b border-amber-200 text-[13px];
+  }
+  .demo-banner code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[12px] font-mono; }
+
+  /* Breadcrumbs */
+  .breadcrumbs {
+    @apply text-[13px] text-gray-500 mb-4;
+  }
+  .breadcrumbs a { @apply text-gray-500 hover:text-rust no-underline; }
+
+  /* --- Buttons ------------------------------------------------------ */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-[14px] shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition no-underline cursor-pointer border-0;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-white text-metal font-semibold text-[14px] border border-gray-200 hover:border-gray-400 transition no-underline cursor-pointer;
+  }
+  .btn-delete {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14px] hover:bg-red-800 transition no-underline cursor-pointer border-0;
+  }
+  .btn-back { @apply btn-ghost; }
+  .btn-edit { @apply btn-primary; }
+
+  /* Inline destructive link inside lists / danger zones */
+  .deletelink-inline {
+    @apply text-red-700 font-medium hover:text-red-800 hover:underline;
+  }
+
+  /* The Phase 6a/0.5 confirm-page submit. Keeps the class name so
+     /f-fix2's :disabled rule keeps working. */
+  .deletelink-button {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14px] uppercase tracking-wide hover:bg-red-800 transition border-0 cursor-pointer;
+  }
+  .deletelink-button:disabled,
+  .deletelink-button[disabled] {
+    @apply bg-gray-400 opacity-60 cursor-not-allowed hover:bg-gray-400;
+  }
+
+  /* --- Cards / modules --------------------------------------------- */
+  .card {
+    @apply bg-white border border-gray-200 rounded-xl p-6;
+  }
+  .module {
+    @apply bg-white border border-gray-200 rounded-xl mb-4 overflow-hidden;
+  }
+  .module h2, .module caption {
+    @apply bg-gray-50 text-gray-600 px-4 py-3 text-[12px] font-semibold uppercase tracking-wider border-b border-gray-200;
+  }
+  .module table { @apply w-full border-collapse; }
+  .module td, .module th {
+    @apply px-4 py-3 border-b border-gray-100 text-left;
+  }
+  .module tr:last-child td { @apply border-b-0; }
+
+  /* --- Object-tools row (heading + add link) ----------------------- */
+  .object-tools {
+    @apply flex items-center justify-between gap-4 mb-5 list-none p-0;
+  }
+  .object-tools h1 { @apply m-0; }
+  .object-tools-actions {
+    @apply flex gap-3 list-none m-0 p-0 items-center;
+  }
+  .object-tools-actions a { @apply text-[13px] font-medium text-emerald-700 no-underline hover:underline; }
+  .object-tools-actions .historylink { @apply text-rust no-underline; }
+  .object-tools-actions .historylink::before { content: "↻ "; }
+  .object-tools-actions .addlink { @apply text-emerald-700; }
+  .object-tools-actions .addlink::before { content: "+ "; }
+
+  .object-tools-row { @apply flex items-center gap-2 mb-4 flex-wrap; }
+
+  /* --- Toolbar with search ----------------------------------------- */
+  #toolbar {
+    @apply bg-gray-50 border border-gray-200 rounded-md p-3 mb-5;
+    border-left: 3px solid theme("colors.rust.DEFAULT");
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  #toolbar .search { @apply flex gap-2.5 items-center; }
+  #toolbar .search input {
+    @apply flex-1 pl-9 pr-3 py-2 rounded-md border border-gray-200 bg-white text-[14px] font-sans;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238B949E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
+    background-repeat: no-repeat;
+    background-position: 11px center;
+    background-size: 14px 14px;
+  }
+  #toolbar .search input:focus {
+    @apply outline-none border-rust ring-2 ring-rust/10;
+  }
+  #toolbar .search input::placeholder { @apply text-gray-500; }
+  #toolbar .search button {
+    @apply px-4 py-2 rounded-md bg-metal text-white text-[12px] font-semibold hover:bg-metal-dark border-0 cursor-pointer;
+  }
+
+  /* --- Results table ----------------------------------------------- */
+  .results {
+    @apply w-full border-collapse bg-white border border-gray-200 rounded-md text-[14px] overflow-hidden;
+  }
+  .results th, .results td {
+    @apply px-4 py-3 text-left border-b border-gray-100;
+  }
+  .results th {
+    @apply bg-gray-50 text-metal font-semibold text-[12px] uppercase tracking-wider;
+  }
+  .results tbody tr:nth-child(even) td { @apply bg-gray-50/50; }
+  .results tr:hover td { @apply bg-rust/5; }
+  .results.row-clickable td { @apply p-0; }
+  .results.row-clickable .row-link {
+    @apply block px-4 py-3 text-metal no-underline;
+  }
+  .results.row-clickable .row-link:hover { @apply no-underline; }
+  .results.row-clickable td:first-child .row-link { @apply font-semibold; }
+  .results.row-clickable .row-link.help { @apply text-gray-500; }
+
+  /* --- Pills / badges ---------------------------------------------- */
+  .rio-pill {
+    @apply inline-flex items-center px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded-md mr-1.5;
+  }
+  .rio-pill-emerald { @apply bg-emerald-100 text-emerald-800; }
+  .rio-pill-indigo  { @apply bg-indigo-100 text-indigo-800; }
+  .rio-pill-rose    { @apply bg-rose-100 text-rose-800; }
+  .rio-pill-amber   { @apply bg-amber-100 text-amber-800; }
+
+  /* Phase 7a/2 — modern badge style for tags / status */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold border;
+  }
+  .badge::before {
+    content: "";
+    @apply w-1.5 h-1.5 rounded-full bg-current;
+  }
+  .badge-rust  { @apply bg-rust/10 text-rust border-rust/20; }
+  .badge-teal  { @apply bg-teal/10 text-teal border-teal/20; }
+  .badge-muted { @apply bg-paper text-gray-500 border-gray-200; }
+
+  /* --- Forms ------------------------------------------------------- */
+  .form-row { @apply mb-4; }
+  .form-row-grid { @apply grid grid-cols-1 md:grid-cols-2 gap-4; }
+  .form-row label, .form-label {
+    @apply block text-[13px] font-semibold text-metal mb-1.5;
+  }
+  .form-input,
+  .form-row input[type=text],
+  .form-row input[type=email],
+  .form-row input[type=password],
+  .form-row input[type=search],
+  .form-row select,
+  .form-row textarea {
+    @apply w-full px-3 py-2.5 rounded-md border border-gray-200 bg-white text-[14px] font-sans;
+  }
+  .form-input:focus,
+  .form-row input:focus,
+  .form-row select:focus,
+  .form-row textarea:focus {
+    @apply outline-none border-rust ring-2 ring-rust/10;
+  }
+  .form-help, .help { @apply text-[12.5px] text-gray-500; }
+  .field-input { @apply w-full; }
+
+  fieldset.module {
+    @apply bg-white border border-gray-200 rounded-xl p-0 mb-5;
+  }
+  fieldset.module h2 {
+    @apply bg-gray-50 text-gray-600 px-5 py-3 text-[12px] font-semibold uppercase tracking-wider border-b border-gray-200 m-0 rounded-t-xl;
+  }
+  fieldset.module .form-row {
+    @apply px-5 py-3.5 border-b border-gray-100;
+  }
+  fieldset.module .form-row:last-child { @apply border-b-0; }
+  fieldset.module.aligned .form-row { @apply md:grid md:grid-cols-[200px_1fr] md:gap-4 md:items-start; }
+
+  .submit-row { @apply flex gap-2.5 items-center mt-5; }
+  .submit-row input[type=submit], .submit-row button {
+    @apply btn-primary;
+  }
+  .submit-row .cancel-link { @apply btn-ghost; }
+  .submit-row .deletelink-button { @apply ml-auto; }
+
+  .checkbox-list { @apply flex flex-col gap-2; }
+  .checkbox-list label.checkbox-item { @apply flex items-center gap-2 text-[14px] font-normal m-0; }
+
+  /* --- Notices ----------------------------------------------------- */
+  .errornote {
+    @apply px-4 py-3 mb-4 bg-red-50 text-red-800 border border-red-200 rounded-md text-[13.5px];
+  }
+  .warningnote {
+    @apply px-4 py-3 mb-4 bg-amber-50 text-amber-900 border border-amber-200 rounded-md text-[13.5px];
+  }
+  .warningnote code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[12.5px] font-mono; }
+
+  .messagelist { @apply px-4 py-3 mb-4 rounded-md text-[13.5px] border; }
+  .message-success { @apply bg-emerald-50 text-emerald-800 border-emerald-200; }
+  .message-warning { @apply bg-amber-50 text-amber-900 border-amber-200; }
+  .message-error   { @apply bg-red-50 text-red-800 border-red-200; }
+
+  .empty-list {
+    @apply px-7 py-10 text-center text-gray-500 bg-gray-50 border border-dashed border-gray-200 rounded-md text-[14px];
+  }
+
+  /* --- Paginator --------------------------------------------------- */
+  .paginator { @apply mt-5 text-[12px] text-gray-500 flex flex-wrap items-center gap-1.5; }
+  .paginator .this-page {
+    @apply bg-rust text-white px-2 py-0.5 rounded-md font-semibold;
+  }
+  .paginator a {
+    @apply px-2 py-0.5 rounded-md border border-gray-200 text-rust no-underline hover:bg-gray-50;
+  }
+
+  /* --- Filter sidebar (changelist right rail) ---------------------- */
+  #changelist {
+    @apply grid gap-5 mt-2;
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
+  #changelist-filter {
+    @apply bg-white border border-gray-200 rounded-xl p-4 self-start;
+  }
+  #changelist-filter h2 { @apply text-[12px] uppercase tracking-wider text-gray-500 m-0 mb-2; }
+  #changelist-filter h3 { @apply text-[12px] text-gray-500 mt-3 mb-1.5; }
+  #changelist-filter ul { @apply list-none m-0 p-0 flex flex-col gap-1; }
+  #changelist-filter li { @apply text-[13px]; }
+  #changelist-filter li.selected a { @apply text-rust font-semibold; }
+  #changelist-filter li a { @apply text-metal hover:text-rust no-underline; }
+  @media (max-width: 768px) {
+    #changelist { grid-template-columns: 1fr; }
+  }
+
+  /* --- Login ------------------------------------------------------- */
+  body.login { @apply bg-paper; }
+  #login-form {
+    @apply w-[360px] max-w-[92vw] mx-auto mt-20 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm;
+  }
+  #login-form .module h2 {
+    @apply bg-metal-surface text-rust px-5 py-4 text-[16px] font-semibold normal-case tracking-normal;
+  }
+  #login-form form { @apply p-5; }
+  #login-form .form-row { @apply mb-4; }
+  #login-form button { @apply w-full uppercase tracking-wide; }
+
+  /* --- Forbidden / coming-soon ------------------------------------- */
+  .forbidden-page,
+  .coming-soon-body {
+    @apply max-w-xl mx-auto my-16 text-center py-10 px-6 bg-white border border-gray-200 rounded-xl;
+  }
+  .forbidden-page h1 { @apply text-rust mb-3; }
+  .coming-soon-body h1 { @apply mb-3; }
+
+  /* --- Danger zone (user_edit, group_edit) -------------------------- */
+  .danger-zone {
+    @apply mt-6 border-red-200;
+  }
+  .danger-zone h2 {
+    @apply bg-red-50 text-red-800;
+  }
+
+  /* --- View page (Phase 7a/0.5/h) ----------------------------------- */
+  .user-view .profile-group-list,
+  .user-view .profile-perm-list {
+    @apply list-disc pl-5 my-1.5;
+  }
+  .user-view .muted { @apply text-gray-500 italic m-0; }
+
+  /* Cascade list on confirm-delete pages */
+  .cascade-list { @apply list-disc pl-5 my-3 space-y-1.5 text-[14px]; }
+
+  /* --- Confirm-form layout ----------------------------------------- */
+  .confirm-form .submit-row { @apply justify-start; }
+}

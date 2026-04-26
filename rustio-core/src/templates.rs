@@ -48,6 +48,22 @@ impl Templates {
         let disk_root = project_templates_dir;
         let mut env = Environment::new();
         env.set_loader(move |name| load_template(disk_root.as_deref(), name));
+
+        // Phase 7a/2 — `icon(name, class="...")` returns inline SVG
+        // for one of the lucide stroke icons baked at compile time.
+        // Templates use this to render sidebar nav icons, button
+        // icons, alert-banner glyphs without an extra HTTP round
+        // trip. See `admin/icons.rs` for the catalogue.
+        env.add_function("icon", |name: &str, kwargs: minijinja::value::Kwargs| {
+            let class: String = kwargs.get("class").unwrap_or_default();
+            kwargs.assert_all_used().ok();
+            // The output is HTML — minijinja's autoescape would mangle
+            // it. Wrap in `safe()` so it renders as markup.
+            minijinja::value::Value::from_safe_string(
+                crate::admin::icons::render_inline(name, &class),
+            )
+        });
+
         Ok(Arc::new(Self {
             env: Mutex::new(env),
         }))
@@ -319,6 +335,44 @@ mod tests {
             "can_delete": true,
             "csrf_token": "test-csrf",
         })
+    }
+
+    /// Phase 7a/2 — the `icon()` minijinja function is registered in
+    /// `Templates::new`. A template can call `{{ icon("home", class="w-4 h-4") }}`
+    /// and the inline SVG is emitted unescaped (because we wrap it in
+    /// `Value::from_safe_string`). Lock that contract.
+    #[test]
+    fn icon_function_emits_inline_svg() {
+        // Write a temp template that exercises icon() and render it.
+        let dir = tempdir();
+        let admin_dir = dir.join("admin");
+        std::fs::create_dir_all(&admin_dir).unwrap();
+        std::fs::write(
+            admin_dir.join("icon_test.html"),
+            r#"<div>{{ icon("home", class="sidebar-icon") }}</div>"#,
+        )
+        .unwrap();
+
+        let t = Templates::new(Some(dir.clone())).unwrap();
+        let body = t.render("admin/icon_test.html", &Empty {}).unwrap();
+        assert!(
+            body.contains("<svg"),
+            "icon() must emit raw <svg> markup, not escape it"
+        );
+        assert!(body.contains(r#"class="sidebar-icon""#));
+        assert!(body.contains(r#"viewBox="0 0 24 24""#));
+        assert!(body.contains(r#"stroke="currentColor""#));
+
+        // Unknown icon name → empty string, page still renders.
+        std::fs::write(
+            admin_dir.join("icon_missing.html"),
+            r#"<span>{{ icon("not-real") }}</span>"#,
+        )
+        .unwrap();
+        let body = t.render("admin/icon_missing.html", &Empty {}).unwrap();
+        assert_eq!(body.trim(), "<span></span>", "missing icon must be silent");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

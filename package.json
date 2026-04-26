@@ -1,0 +1,16 @@
+{
+  "name": "rustio-admin-css",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tailwind build pipeline for rustio-core admin UI. Output baked into the binary via include_str!.",
+  "scripts": {
+    "css": "tailwindcss -i rustio-core/assets/css/input.css -o rustio-core/assets/static/css/admin.css --minify",
+    "css:watch": "tailwindcss -i rustio-core/assets/css/input.css -o rustio-core/assets/static/css/admin.css --watch",
+    "css:check": "tailwindcss -i rustio-core/assets/css/input.css -o /tmp/admin.css.expected --minify && diff /tmp/admin.css.expected rustio-core/assets/static/css/admin.css"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.17",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49"
+  }
+}

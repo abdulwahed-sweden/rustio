@@ -4,6 +4,7 @@ mod audit;
 mod builtin;
 mod entry_builder;
 mod handlers;
+pub(crate) mod icons;
 mod intelligence;
 mod relations;
 mod render;
