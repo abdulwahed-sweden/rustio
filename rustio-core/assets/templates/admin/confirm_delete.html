@@ -12,35 +12,50 @@
 {% endblock %}
 
 {% block content %}
-<h1>Are you sure?</h1>
-
-<p>Are you sure you want to delete the {{ singular_name|lower }} <strong>"{{ object_label }}"</strong>?
-{% if cascading %}
-All of the following related objects, and any rows that reference them, will be removed
-(only if the database has <code>ON DELETE CASCADE</code> on the foreign key):
-{% else %}
-This action cannot be undone.
-{% endif %}
-</p>
-
-{% if cascading %}
-<ul class="cascade-list">
-    <li><strong>{{ singular_name }}:</strong> {{ object_label }}</li>
-    {% for item in cascading %}
-    <li>
-        <strong>{{ item.source_display_name }}</strong> &mdash; rows whose
-        <code>{{ item.source_field }}</code> points at this {{ singular_name|lower }}
-        (<a href="/admin/{{ item.source_admin_name }}/?{{ item.source_field }}={{ object_id }}">browse</a>)
-    </li>
-    {% endfor %}
-</ul>
-{% endif %}
-
-<form method="post" action="/admin/{{ admin_name }}/{{ object_id }}/delete" class="confirm-form">
-    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <div class="submit-row">
-        <button type="submit" class="deletelink-button">Yes, I'm sure</button>
-        <a href="/admin/{{ admin_name }}/" class="cancel-link">No, take me back</a>
+<div class="max-w-3xl">
+    <div class="flex items-center gap-3 mb-4">
+        <span class="w-10 h-10 rounded-full bg-red-100 text-red-700 inline-flex items-center justify-center">
+            {{ icon("circle-alert", class="w-5 h-5") }}
+        </span>
+        <h1 class="text-2xl font-bold tracking-tight">Are you sure?</h1>
     </div>
-</form>
+
+    <div class="card">
+        <p class="text-[15px] mb-3">
+            Delete the {{ singular_name|lower }} <strong>"{{ object_label }}"</strong>?
+            {% if cascading %}
+            All of the following related rows will be removed if the
+            database has <code class="bg-paper px-1.5 py-0.5 rounded text-[13px] font-mono">ON DELETE CASCADE</code> on the foreign key.
+            {% else %}
+            This action cannot be undone.
+            {% endif %}
+        </p>
+
+        {% if cascading %}
+        <ul class="cascade-list">
+            <li><strong>{{ singular_name }}:</strong> {{ object_label }}</li>
+            {% for item in cascading %}
+            <li>
+                <strong>{{ item.source_display_name }}</strong> — rows whose
+                <code class="bg-paper px-1.5 py-0.5 rounded text-[12.5px] font-mono">{{ item.source_field }}</code>
+                points at this {{ singular_name|lower }}
+                (<a href="/admin/{{ item.source_admin_name }}/?{{ item.source_field }}={{ object_id }}" class="text-rust hover:underline">browse</a>)
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+
+        <form method="post" action="/admin/{{ admin_name }}/{{ object_id }}/delete" class="confirm-form mt-5">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <div class="submit-row">
+                <button type="submit" class="deletelink-button">
+                    {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
+                </button>
+                <a href="/admin/{{ admin_name }}/" class="btn-ghost">
+                    {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}

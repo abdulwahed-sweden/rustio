@@ -1,10 +1,14 @@
-{# Render a list of field errors as a Django-shape .errornote block.
-   Caller passes `errors` (an iterable of strings); empty iterables
-   render nothing. #}
+{# Render a list of field errors. Caller passes `errors`
+   (an iterable of strings); empty iterables render nothing. #}
 {% if errors %}
-<ul class="errorlist">
-    {% for err in errors %}
-    <li>{{ err }}</li>
-    {% endfor %}
-</ul>
+<div class="errornote">
+    <div class="flex items-start gap-2">
+        <span class="mt-0.5 shrink-0">{{ icon("circle-alert", class="w-4 h-4") }}</span>
+        <ul class="space-y-1 m-0 p-0 list-none">
+            {% for err in errors %}
+            <li>{{ err }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
 {% endif %}

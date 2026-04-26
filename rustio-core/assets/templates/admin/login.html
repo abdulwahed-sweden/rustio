@@ -2,34 +2,42 @@
 
 {% block bodyclass %}login{% endblock %}
 
-{# Login page: card-only layout. Override every shell block so the
-   header / breadcrumbs / sidebar disappear — the user is not yet
-   authenticated. #}
+{# Login page: card-only layout. Override the topbar brand so the
+   header reads as a marketing surface, not a logged-in admin chrome. #}
 
-{% block branding %}{% endblock %}
+{% block topbar_brand %}
+<a href="/admin" class="topbar-mark">R</a>
+<a href="/admin" class="text-white no-underline hover:text-white">{{ site_header }}</a>
+{% endblock %}
+
 {% block breadcrumbs %}{% endblock %}
 
 {% block content %}
-<div id="login-form">
-    <div class="module">
-        <h2>{{ site_header }}</h2>
-        <form method="post" action="/admin/login">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            {% if error %}
-            <div class="errornote">{{ error }}</div>
-            {% endif %}
-            <div class="form-row">
-                <label for="id_email">Email</label>
-                <input type="email" id="id_email" name="email" autocomplete="username" autofocus required>
-            </div>
-            <div class="form-row">
-                <label for="id_password">Password</label>
-                <input type="password" id="id_password" name="password" autocomplete="current-password" required>
-            </div>
-            <div class="submit-row">
-                <button type="submit" class="default">Log in</button>
-            </div>
-        </form>
+<div class="flex items-start justify-center pt-12 pb-20">
+    <div id="login-form">
+        <div class="module">
+            <h2 class="flex items-center gap-2">
+                {{ icon("key", class="w-4 h-4") }}
+                Sign in
+            </h2>
+            <form method="post" action="/admin/login">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                {% if error %}
+                <div class="errornote">{{ error }}</div>
+                {% endif %}
+                <div class="form-row">
+                    <label for="id_email">Email</label>
+                    <input type="email" id="id_email" name="email" autocomplete="username" autofocus required>
+                </div>
+                <div class="form-row">
+                    <label for="id_password">Password</label>
+                    <input type="password" id="id_password" name="password" autocomplete="current-password" required>
+                </div>
+                <div class="submit-row">
+                    <button type="submit" class="default">Sign in</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}

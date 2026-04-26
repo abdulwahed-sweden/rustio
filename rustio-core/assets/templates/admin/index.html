@@ -2,80 +2,89 @@
 
 {% block bodyclass %}dashboard{% endblock %}
 
-{% block coltype %}colMS{% endblock %}
-
 {% block content %}
-<h1>{{ index_title }}</h1>
+<div class="mb-6">
+    <h1 class="text-3xl font-bold tracking-tight">{{ index_title }}</h1>
+    <p class="text-gray-500 text-[14.5px] mt-1">Welcome back. Pick a model to manage or jump to a recent change.</p>
+</div>
 
-{% if apps %}
-{% for app in apps %}
-<div class="module app-list">
-    <h2>{{ app.label }}</h2>
-    <table>
-        <tbody>
+<div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+
+    <div class="space-y-6">
+
+    {% if apps %}
+    {% for app in apps %}
+    <section class="card">
+        <h2 class="text-[12px] uppercase tracking-wider text-gray-500 font-semibold mb-3">{{ app.label }}</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {% for model in app.models %}
-            <tr class="model-row">
-                <td><a href="/admin/{{ model.admin_name }}/" class="changelink">{{ model.display_name }}</a></td>
-                <td>
-                    <a href="/admin/{{ model.admin_name }}/new" class="addlink">Add</a>
-                    <a href="/admin/{{ model.admin_name }}/" class="changelink">Change</a>
-                </td>
-            </tr>
+            <div class="flex items-center justify-between border border-gray-200 rounded-md px-3 py-2.5 hover:border-rust hover:bg-rust/5 transition">
+                <a href="/admin/{{ model.admin_name }}/" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-2">
+                    {{ icon("table", class="w-4 h-4 text-gray-400") }}
+                    {{ model.display_name }}
+                </a>
+                <div class="flex gap-2 text-[12.5px]">
+                    <a href="/admin/{{ model.admin_name }}/new" class="text-emerald-700 font-medium no-underline hover:underline">+ Add</a>
+                    <a href="/admin/{{ model.admin_name }}/" class="text-rust font-medium no-underline hover:underline">Change</a>
+                </div>
+            </div>
             {% endfor %}
-        </tbody>
-    </table>
-</div>
-{% endfor %}
-{% else %}
-<p class="help">No models are registered yet. Add one with <code>#[derive(RustioAdmin)]</code>.</p>
-{% endif %}
+        </div>
+    </section>
+    {% endfor %}
+    {% else %}
+    <section class="empty-list">
+        No models are registered yet. Add one with <code class="bg-paper px-1.5 py-0.5 rounded text-[13px] font-mono">#[derive(RustioAdmin)]</code>.
+    </section>
+    {% endif %}
 
-{# Django-style Auth section. Admin-only because /admin/users and
-   /admin/groups are gated by admin_only_guard in routes.rs.
-   "Add" links are absent because Phase 6b deferred user/group
-   creation via the UI to Phase 7 — the CLI is the path today. #}
-{% if identity and identity.is_admin %}
-<div class="module app-list" id="auth-app">
-    <h2>Authentication and authorization</h2>
-    <table>
-        <tbody>
-            <tr class="model-row">
-                <td><a href="/admin/users" class="changelink">Users</a></td>
-                <td>
-                    <a href="/admin/users/new" class="addlink">Add</a>
-                    <a href="/admin/users" class="changelink">Change</a>
-                </td>
-            </tr>
-            <tr class="model-row">
-                <td><a href="/admin/groups" class="changelink">Groups</a></td>
-                <td>
-                    <a href="/admin/groups/new" class="addlink">Add</a>
-                    <a href="/admin/groups" class="changelink">Change</a>
-                </td>
-            </tr>
-        </tbody>
-    </table>
-</div>
-{% endif %}
-{% endblock %}
+    {% if identity and identity.is_admin %}
+    <section class="card" id="auth-app">
+        <h2 class="text-[12px] uppercase tracking-wider text-gray-500 font-semibold mb-3">Authentication & authorization</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div class="flex items-center justify-between border border-gray-200 rounded-md px-3 py-2.5 hover:border-rust hover:bg-rust/5 transition">
+                <a href="/admin/users" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-2">
+                    {{ icon("users", class="w-4 h-4 text-gray-400") }} Users
+                </a>
+                <div class="flex gap-2 text-[12.5px]">
+                    <a href="/admin/users/new" class="text-emerald-700 font-medium no-underline hover:underline">+ Add</a>
+                    <a href="/admin/users" class="text-rust font-medium no-underline hover:underline">Change</a>
+                </div>
+            </div>
+            <div class="flex items-center justify-between border border-gray-200 rounded-md px-3 py-2.5 hover:border-rust hover:bg-rust/5 transition">
+                <a href="/admin/groups" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-2">
+                    {{ icon("users-2", class="w-4 h-4 text-gray-400") }} Groups
+                </a>
+                <div class="flex gap-2 text-[12.5px]">
+                    <a href="/admin/groups/new" class="text-emerald-700 font-medium no-underline hover:underline">+ Add</a>
+                    <a href="/admin/groups" class="text-rust font-medium no-underline hover:underline">Change</a>
+                </div>
+            </div>
+        </div>
+    </section>
+    {% endif %}
 
-{% block sidebar %}
-<div id="content-related">
-    <div class="module" id="recent-actions">
-        <h2>Recent actions</h2>
-        {% if recent_actions %}
-        <ul>
-            {% for entry in recent_actions %}
-            <li>
-                <span class="{{ entry.pill_class }}">{{ entry.label }}</span>
-                <a href="/admin/{{ entry.model_name }}/{{ entry.object_id }}/edit">{{ entry.summary }}</a>
-                <div class="when">{{ entry.model_name }} · {{ entry.user_email }} · {{ entry.when_relative }}</div>
-            </li>
-            {% endfor %}
-        </ul>
-        {% else %}
-        <div class="empty">No recent activity yet.</div>
-        {% endif %}
     </div>
+
+    <aside class="space-y-6 lg:sticky lg:top-6 self-start">
+        <section class="card">
+            <h2 class="text-[12px] uppercase tracking-wider text-gray-500 font-semibold mb-3 flex items-center gap-2">
+                {{ icon("clock", class="w-4 h-4") }} Recent activity
+            </h2>
+            {% if recent_actions %}
+            <ul class="space-y-3">
+                {% for entry in recent_actions %}
+                <li class="text-[13.5px] leading-snug">
+                    <span class="{{ entry.pill_class }}">{{ entry.label }}</span>
+                    <a href="/admin/{{ entry.model_name }}/{{ entry.object_id }}/edit" class="text-metal hover:text-rust font-medium no-underline">{{ entry.summary }}</a>
+                    <div class="text-gray-500 text-[12px] mt-0.5">{{ entry.model_name }} · {{ entry.user_email }} · {{ entry.when_relative }}</div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="text-gray-500 italic text-[13.5px]">No recent activity yet.</p>
+            {% endif %}
+        </section>
+    </aside>
 </div>
 {% endblock %}

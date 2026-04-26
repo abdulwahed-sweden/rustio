@@ -12,13 +12,16 @@
 {% endblock %}
 
 {% block content %}
-<h1>Change history: {{ object_label }}</h1>
+<div class="flex items-end gap-2 mb-5">
+    {{ icon("clock", class="w-6 h-6 text-rust") }}
+    <h1 class="text-2xl font-bold tracking-tight">Change history: <span class="text-gray-500 font-normal">{{ object_label }}</span></h1>
+</div>
 
 {% if entries %}
 <table class="results">
     <thead>
         <tr>
-            <th scope="col">Date/time</th>
+            <th scope="col">When</th>
             <th scope="col">User</th>
             <th scope="col">Action</th>
             <th scope="col">Summary</th>
@@ -32,7 +35,7 @@
             <td>{{ e.user_email }}</td>
             <td><span class="{{ e.pill_class }}">{{ e.label }}</span></td>
             <td>{{ e.summary }}</td>
-            <td class="help">{{ e.ip_address }}</td>
+            <td class="help text-[12.5px]">{{ e.ip_address }}</td>
         </tr>
         {% endfor %}
     </tbody>

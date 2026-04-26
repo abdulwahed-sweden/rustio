@@ -9,13 +9,16 @@
 {% endblock %}
 
 {% block content %}
-<h1>Recent admin actions</h1>
+<div class="flex items-center gap-2 mb-5">
+    {{ icon("clock", class="w-6 h-6 text-rust") }}
+    <h1 class="text-2xl font-bold tracking-tight">Recent admin actions</h1>
+</div>
 
 {% if entries %}
 <table class="results">
     <thead>
         <tr>
-            <th scope="col">Date/time</th>
+            <th scope="col">When</th>
             <th scope="col">User</th>
             <th scope="col">Action</th>
             <th scope="col">Object</th>
@@ -30,10 +33,10 @@
             <td>{{ e.user_email }}</td>
             <td><span class="{{ e.pill_class }}">{{ e.label }}</span></td>
             <td>
-                <a href="/admin/{{ e.model_admin_name }}/{{ e.object_id }}/edit">{{ e.model_name }} #{{ e.object_id }}</a>
+                <a href="/admin/{{ e.model_admin_name }}/{{ e.object_id }}/edit" class="text-rust hover:underline">{{ e.model_name }} #{{ e.object_id }}</a>
             </td>
             <td>{{ e.summary }}</td>
-            <td class="help">{{ e.ip_address }}</td>
+            <td class="help text-[12.5px]">{{ e.ip_address }}</td>
         </tr>
         {% endfor %}
     </tbody>

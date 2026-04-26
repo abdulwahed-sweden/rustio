@@ -11,12 +11,16 @@
 {% endblock %}
 
 {% block content %}
-{% if mode == "edit" and object_id %}
-<ul class="object-tools object-tools-actions">
-    <li><a href="/admin/{{ admin_name }}/{{ object_id }}/history" class="historylink">History</a></li>
-</ul>
-{% endif %}
-<h1>{{ mode == "new" and "Add" or "Change" }} {{ singular_name|lower }}</h1>
+<div class="flex items-end justify-between gap-4 mb-5 flex-wrap">
+    <div>
+        <h1 class="text-2xl font-bold tracking-tight">{{ mode == "new" and "Add" or "Change" }} {{ singular_name|lower }}</h1>
+    </div>
+    {% if mode == "edit" and object_id %}
+    <a href="/admin/{{ admin_name }}/{{ object_id }}/history" class="btn-ghost">
+        {{ icon("clock", class="w-4 h-4") }} History
+    </a>
+    {% endif %}
+</div>
 
 {% if errors %}
 {% include "admin/includes/_field_errors.html" %}
@@ -33,7 +37,8 @@
             <div class="field-input">
                 {% if field.widget == "checkbox" %}
                     <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
-                        value="true"{% if field.value == "true" %} checked{% endif %}>
+                        value="true"{% if field.value == "true" %} checked{% endif %}
+                        class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
                 {% elif field.widget == "textarea" %}
                     <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
                         {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
@@ -42,21 +47,27 @@
                         value="{{ field.value }}"
                         {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
                 {% endif %}
-                {% if field.hint %}<p class="help">{{ field.hint }}</p>{% endif %}
+                {% if field.hint %}<p class="form-help mt-1">{{ field.hint }}</p>{% endif %}
             </div>
         </div>
         {% endfor %}
     </fieldset>
 
     <div class="submit-row">
+        <button type="submit" name="_save" value="Save" class="btn-primary">
+            Save
+        </button>
+        <button type="submit" name="_continue" value="Save and continue editing" class="btn-ghost">
+            Save and continue editing
+        </button>
+        <button type="submit" name="_addanother" value="Save and add another" class="btn-ghost">
+            Save and add another
+        </button>
         {% if mode == "edit" and object_id %}
-        <span class="deletelink-box">
-            <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="deletelink">Delete</a>
-        </span>
+        <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="btn-delete ml-auto">
+            {{ icon("trash", class="w-4 h-4") }} Delete
+        </a>
         {% endif %}
-        <input type="submit" name="_addanother" value="Save and add another">
-        <input type="submit" name="_continue" value="Save and continue editing">
-        <input type="submit" name="_save" value="Save" class="default">
     </div>
 </form>
 {% endblock %}
