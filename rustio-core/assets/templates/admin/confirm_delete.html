@@ -14,7 +14,7 @@
 {% block content %}
 <div class="max-w-3xl">
     <div class="flex items-center gap-3 mb-4">
-        <span class="w-10 h-10 rounded-full bg-red-100 text-red-700 inline-flex items-center justify-center">
+        <span class="hero-icon hero-icon-danger">
             {{ icon("circle-alert", class="w-5 h-5") }}
         </span>
         <h1 class="text-2xl font-bold tracking-tight">Are you sure?</h1>
@@ -25,7 +25,7 @@
             Delete the {{ singular_name|lower }} <strong>"{{ object_label }}"</strong>?
             {% if cascading %}
             All of the following related rows will be removed if the
-            database has <code class="bg-paper px-1.5 py-0.5 rounded text-[13px] font-mono">ON DELETE CASCADE</code> on the foreign key.
+            database has <code class="code-pill">ON DELETE CASCADE</code> on the foreign key.
             {% else %}
             This action cannot be undone.
             {% endif %}
@@ -37,7 +37,7 @@
             {% for item in cascading %}
             <li>
                 <strong>{{ item.source_display_name }}</strong> — rows whose
-                <code class="bg-paper px-1.5 py-0.5 rounded text-[12.5px] font-mono">{{ item.source_field }}</code>
+                <code class="code-pill">{{ item.source_field }}</code>
                 points at this {{ singular_name|lower }}
                 (<a href="/admin/{{ item.source_admin_name }}/?{{ item.source_field }}={{ object_id }}" class="text-rust hover:underline">browse</a>)
             </li>
