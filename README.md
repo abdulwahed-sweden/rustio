@@ -231,7 +231,14 @@ See `docs/architecture.md` for the longer version.
    `include_str!`. Override anything by dropping a file in
    `templates/` or `static/`.
 2. **No magic.** The macro emits readable code (`cargo expand`).
-3. **Plain HTML + plain CSS.** No Bootstrap, no Tailwind, no React.
+3. **Tailwind at build time, single binary at deploy.** As of Phase 7a/2,
+   admin styles are authored in Tailwind and compiled into a single
+   minified `admin.css` that's `include_str!`-baked into the binary
+   alongside the templates. Inter font weights ship as self-hosted
+   woff2 (~95KB). The deployed binary still has zero CDN dependencies.
+   No React, no SPA, no JS framework — just plain server-rendered
+   HTML with ~30 lines of inline JS for the sidebar drawer and search
+   keyboard shortcut.
 4. **Deterministic AI.** The planner is rule-based. No LLM at runtime.
 5. **Strict by construction.** The AI's `Primitive` enum is
    `#[non_exhaustive]` + `deny_unknown_fields`. Destructive

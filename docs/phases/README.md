@@ -18,6 +18,7 @@ rule).
 | `PHASE6b.md` | 6b | Built-in groups admin pages + permission inheritance |
 | `PHASE7a-0.md` | 7a/0 | `SiteBranding` API |
 | `PHASE7a-0_5.md` | 7a/0.5 | Authorization, demo users, view-first navigation (12 commits) |
+| `PHASE7a-2.md` | 7a/2 | Admin redesign — Tailwind build pipeline + sidebar + Inter + lucide icons (5 commits) |
 
 Read the latest report (`PHASE7a-0_5.md`) for the current state of
 the framework. Earlier reports stay accurate as a record of how the

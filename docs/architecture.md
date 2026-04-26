@@ -140,6 +140,48 @@ time. Skipping the render test means the missing registry isn't
 caught by `cargo test`, only by browser smoke. The triple is one
 edit unit; treat it that way.
 
+### Styling pipeline (Phase 7a/2)
+
+`rustio-core/assets/static/css/admin.css` is **generated**, not
+authored. The source is `rustio-core/assets/css/input.css` (Tailwind
+directives + an `@layer components` block defining the public-API
+class contract: `.btn-primary`, `.module`, `.results`, `.empty-list`,
+etc.). Tailwind scans the templates under `assets/templates/` for
+class usage and emits a minified bundle.
+
+Build pipeline (lives at the workspace root):
+
+| File | Role |
+|---|---|
+| `package.json` | tailwindcss + autoprefixer + postcss as devDependencies |
+| `tailwind.config.js` | `theme.extend` mirrors `docs/brand.md` (palette, Inter, radii, shadows) |
+| `postcss.config.js` | tailwind + autoprefixer plugin chain |
+| `Makefile` targets | `make css`, `make css-watch`, `make css-check` |
+
+`make css` regenerates the minified `admin.css`. The compiled output
+**is committed** so anyone running `cargo build` without Node sees a
+working UI; `make css-check` diffs the committed file against a
+fresh build and fails if they drift, suitable for a pre-commit hook.
+
+Inter font ships as four self-hosted woff2 weights under
+`rustio-core/assets/static/fonts/`, served by routes registered in
+`register_admin_routes` (each weight is its own explicit route, not
+a path-wildcard, so the binary can't be tricked into serving
+arbitrary files from the assets dir).
+
+### Icons (Phase 7a/2)
+
+A custom minijinja function `icon(name, class="...")` is registered
+in `Templates::new`. It looks up an inline SVG fragment from
+`admin/icons.rs` (16 lucide stroke icons baked at compile time) and
+emits a `<svg fill="none" stroke="currentColor">` so colour follows
+the rendering context. Templates write `{{ icon("home", class="w-4 h-4") }}`;
+unknown names render as empty strings (silent, never panic) so a
+typo can't crash the page.
+
+To add a new icon: drop the lucide inner SVG fragment into
+`ICONS` in `admin/icons.rs` and update the unit-test catalogue.
+
 ## Sessions
 
 Sessions are rows in `rustio_sessions`. The token is a 32-byte

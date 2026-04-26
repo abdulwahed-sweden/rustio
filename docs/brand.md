@@ -215,7 +215,7 @@ brand supersedes three of them:
 
 | Phase 6a contract | This brand |
 |---|---|
-| Plain CSS only. No Tailwind, no Bootstrap, no JS-driven styles. | **Still true.** |
+| Plain CSS only. No Tailwind, no Bootstrap, no JS-driven styles. | **Superseded as of Phase 7a/2** — Tailwind at build time, single minified `admin.css` baked into the binary at deploy. The single-binary invariant is preserved; the "no Tailwind" rule was about avoiding a runtime CDN, which no longer applies. |
 | System font stack — no @font-face, no Google Fonts. | **Superseded.** Inter via Google Fonts (or self-hosted woff2). |
 | Sharp corners (≤3px radius). Flat (no shadows, no gradients). | **Superseded.** 6–12px radii, four named shadows. No gradients. |
 | Single theme. No dark-mode toggle. | **Still true.** Dark surfaces are component-level (top bar, code block), not a theme switch. |
@@ -283,4 +283,4 @@ file is the destination, not the path.
 
 ---
 
-*Adopted: 2026-04-26. Implementation phase: TBD.*
+*Adopted: 2026-04-26. **Implemented:** Phase 7a/2 (commits `4d773e0` → `9f00dce`).*

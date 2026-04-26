@@ -166,15 +166,19 @@ single edit unit `(file, registry, render-test)` — see the
 
 ---
 
-## Adding a new admin template — the triple
+## Adding a new admin template — the triple (plus one)
 
-Three changes, one logical edit:
+Four changes now, one logical edit (Phase 7a/2 added the CSS rebuild):
 
 1. **Create the file** at
    `rustio-core/assets/templates/admin/<name>.html`.
 2. **Register it** in `EMBEDDED_TEMPLATES` (`rustio-core/src/templates.rs`)
    with an `include_str!(...)` line.
-3. **Add a render test** in the same `templates::tests` module:
+3. **Run `make css`** to compile any new Tailwind utility classes
+   the template uses into `rustio-core/assets/static/css/admin.css`.
+   Commit the regenerated CSS alongside the template — `make css-check`
+   in CI / pre-commit will fail otherwise.
+4. **Add a render test** in the same `templates::tests` module:
 
 ```rust
 #[test]
@@ -399,6 +403,19 @@ The dev DB (`rustio_dev` on local Postgres) is the user's working
 state; don't reset it without explicit go-ahead even when "starting
 fresh" looks like the obvious move.
 
+### Build pipeline operations (Phase 7a/2)
+
+- Modifying `package.json`, `tailwind.config.js`, `postcss.config.js`,
+  or any other workspace-root build config.
+- Upgrading `tailwindcss` or its peers across major versions.
+- Changing the `make css` target's input/output paths.
+- Adding new fonts or icon sets that grow the binary.
+- Removing or replacing the Tailwind pipeline.
+
+The Phase 7a/2 build pipeline is part of the framework's deploy
+contract; touching it changes how every consumer's `cargo build`
+behaves. Confirm before any change.
+
 ---
 
 ## When in doubt — ask
@@ -430,7 +447,9 @@ A sub-phase is done when **all** of these are true:
 3. `cargo clippy --workspace --all-targets` clean.
 4. PG-gated tests green where applicable
    (`RUSTIO_TEST_DB=1 cargo test --ignored`).
-5. Browser smoke matrix (curl-based, no human in loop) green
+5. **`make css-check`** clean — the committed `admin.css` matches a
+   fresh Tailwind build from `input.css` (Phase 7a/2).
+6. Browser smoke matrix (curl-based, no human in loop) green
    where the sub-phase touches HTTP surfaces.
 6. The commit message documents deviations from the spec, the
    reasoning, and the test counts before/after.
