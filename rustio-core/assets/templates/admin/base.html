@@ -4,6 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ page_title|default(site_title) }} | {{ site_title }}{% endblock %}</title>
+
+    {# Phase 2 — design-system fonts (docs/design-system.json
+       typography.fontFamilies). Loaded from Google Fonts because the
+       weights aren't self-hosted yet; a follow-up sub-phase should
+       move these to /static/fonts/ to match the Phase 7a/2 self-host
+       contract. Roboto covers `font-sans`, Space Grotesk covers
+       `font-heading`, JetBrains Mono covers `font-mono`. #}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="/static/admin.css">
     {% block extra_head %}{% endblock %}
 </head>
