@@ -613,21 +613,56 @@
   .page-header {
     @apply flex items-end justify-between gap-md mb-lg flex-wrap;
   }
-  /* Hero-icon disc — repeated 5× in the audit. Default neutral; opt
-   * into `.hero-icon-accent` (rust on rust theme, blue on light) or
-   * `.hero-icon-danger` for confirm-delete pages. */
+  /* Hero-icon disc — Phase 3/b-0 retune for exact visual parity with
+   * the inline patterns that live in 7 templates today.
+   *
+   * Base: 40×40 perfect circle, no colour. Variants are the only
+   * source of bg / text colour, so a hero-icon without a variant
+   * is invisible — by design (matches the inline patterns, all of
+   * which set both bg and text on the same span).
+   *
+   * Modifiers, all at-most-Tailwind-default values (no invented
+   * tokens):
+   *   .hero-icon-lg     → w-12 h-12 (forbidden, coming_soon, user_view)
+   *   .hero-icon-avatar → font-bold text-lg, used on the letter
+   *                       avatar in user_view
+   *   .hero-icon-accent → JSON semantic accent (blue on light theme,
+   *                       rust under <html class="theme-brand">).
+   *                       Not used by the 3/b refactor sweep itself,
+   *                       provided for new call sites.
+   *   .hero-icon-rust   → legacy `bg-rust/10 text-rust` pair so the
+   *                       password_change, coming_soon, user_view
+   *                       sites keep their orange under the default
+   *                       light theme.
+   *   .hero-icon-danger → legacy `bg-red-100 text-red-700` pair
+   *                       matching the inline confirm-delete /
+   *                       forbidden chrome 1-for-1.
+   */
   .hero-icon {
-    @apply inline-flex items-center justify-center w-10 h-10 rounded-md
-           bg-surface-muted text-text;
+    @apply inline-flex items-center justify-center w-10 h-10 rounded-full;
   }
+  .hero-icon-lg     { @apply w-12 h-12; }
+  .hero-icon-avatar { @apply font-bold text-lg; }
   .hero-icon-accent { @apply bg-accent/10 text-accent; }
-  .hero-icon-danger { @apply bg-danger/10 text-danger; }
+  .hero-icon-rust   { @apply bg-rust/10 text-rust; }
+  .hero-icon-danger { @apply bg-red-100 text-red-700; }
 
-  /* Inline `<code>` chip — replaces 8 occurrences of the same
-   * `bg-paper px-1.5 py-0.5 rounded text-[12.5px] font-mono` pattern. */
+  /* Inline `<code>` chip — Phase 3/b-0 retune for exact visual parity
+   * with the inline pattern that lives in 8 templates today
+   * (`bg-paper px-1.5 py-0.5 rounded text-[13px] font-mono`).
+   *
+   * Display stays inline (no `inline-block`) so the chip flows with
+   * surrounding sentence text. Padding + radius use Tailwind
+   * defaults. No border. `bg-paper` is the legacy warm-paper neutral,
+   * kept here so the chip matches existing card/module backgrounds.
+   *
+   * Note: `text-[13px]` matches 5 of 8 inline occurrences. The three
+   * sites that currently use `text-[12.5px]` will shift +0.5px on
+   * the refactor sweep — imperceptible at chip scale. Documented as
+   * an explicit, accepted deviation per the user spec ("13px
+   * equivalent"). */
   .code-pill {
-    @apply inline-block bg-surface-muted text-text px-xs py-px rounded-sm
-           text-caption font-mono border border-border;
+    @apply bg-paper px-1.5 py-0.5 rounded text-[13px] font-mono;
   }
 
   /* Page-action row — back button + flex-1 + primary/secondary, used
