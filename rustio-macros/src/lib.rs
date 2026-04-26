@@ -42,6 +42,17 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
         let fname = f.ident.as_ref().unwrap();
         let fname_str = fname.to_string();
         let kind = classify_type(&f.ty)?;
+        // Phase 1/a — fields named `created_at` / `updated_at` are
+        // managed by the framework: hidden from forms, defaulted to
+        // `Utc::now()` in `from_form`. The macro already wires that
+        // behaviour through `FieldKind::DateTimeAuto`; this promotion
+        // is the missing trigger that makes the variant reachable for
+        // the conventionally named timestamp columns.
+        let kind = if matches!(kind, FieldKind::DateTime) && is_auto_timestamp_name(&fname_str) {
+            FieldKind::DateTimeAuto
+        } else {
+            kind
+        };
         let editable = fname_str != "id" && kind != FieldKind::DateTimeAuto;
 
         let type_variant = kind.field_type_ident();
@@ -267,6 +278,15 @@ impl FieldKind {
             FieldKind::OptionalI64 => format_ident!("OptionalI64"),
         }
     }
+}
+
+/// Phase 1/a — names treated as framework-managed timestamps. These
+/// fields are auto-promoted to `FieldKind::DateTimeAuto` regardless of
+/// declared type so the admin UI doesn't render them and `from_form`
+/// fills them with `Utc::now()`. Conservative list; expand only when a
+/// real model needs another conventionally-named timestamp.
+fn is_auto_timestamp_name(name: &str) -> bool {
+    matches!(name, "created_at" | "updated_at")
 }
 
 fn classify_type(ty: &syn::Type) -> syn::Result<FieldKind> {

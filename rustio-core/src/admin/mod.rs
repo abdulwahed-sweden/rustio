@@ -17,6 +17,8 @@ mod admin_intelligence_tests;
 #[cfg(test)]
 mod audit_tests;
 #[cfg(test)]
+mod macro_tests;
+#[cfg(test)]
 mod relations_tests;
 #[cfg(test)]
 mod suggestions_tests;

@@ -32,3 +32,11 @@ pub use crate::search::{Indexer, MeiliClient, Searchable};
 pub use crate::server::Server;
 
 pub use rustio_macros::RustioAdmin;
+
+// `RustioAdmin` emits `::rustio_core::*` paths in its expansion. That
+// resolves cleanly for downstream consumers, but inside this crate's
+// own compilation unit `rustio_core` isn't a known extern. Aliasing
+// the crate to itself under `cfg(test)` lets the macro be exercised by
+// `admin::macro_tests` without changing any non-test build.
+#[cfg(test)]
+extern crate self as rustio_core;
