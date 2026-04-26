@@ -1,4 +1,4 @@
-/* RustIO admin — Tailwind input. Phase 7a/2.
+/* RustIO admin — Tailwind input.
  *
  * This file is the SOURCE. The compiled output lives at
  * `rustio-core/assets/static/css/admin.css` and is baked into the
@@ -9,16 +9,89 @@
  * name don't silently break. Utility classes are used directly inside
  * templates for one-offs.
  *
- * Brand tokens come from `tailwind.config.js theme.extend`, which
- * mirrors `docs/brand.md`. Don't hand-tune colours or shadows here —
- * change the config so the brand stays the single source of truth.
+ * Phase 2 — Design system foundation. Source of truth:
+ * `docs/design-system.json`. Mirrored in `tailwind.config.js`.
+ * Semantic colour tokens are CSS custom properties so the same
+ * Tailwind utility (`bg-surface`, `text-accent`) adapts to the active
+ * theme (default light / `<html class="dark">` / `<html class="theme-rust">`).
+ * Templates haven't been refactored yet — Phase 7a/2 component
+ * classes still reference `bg-rust`, `bg-paper`, `bg-metal-*`. Those
+ * legacy colour names live alongside the semantic tokens until the
+ * template-refactor sub-phase ships.
  */
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* --- @font-face: self-hosted Inter (Phase 7a/2) ---------------------- */
+/* --- Phase 2 design tokens — themed CSS variables -------------------- *
+ * Channel format `R G B` (space-separated, no `rgb()` wrapper) is what
+ * `rgb(var(--ds-color-*) / <alpha-value>)` in tailwind.config.js
+ * expects. Layer values for light/rust themes are intentionally empty
+ * — only the dark theme stacks surfaces by depth.
+ * --------------------------------------------------------------------- */
+@layer base {
+  :root {
+    /* themes.light from docs/design-system.json */
+    --ds-color-bg:             244 246 251; /* #F4F6FB */
+    --ds-color-surface:        255 255 255; /* #FFFFFF */
+    --ds-color-surface-muted:  249 250 251; /* #F9FAFB */
+    --ds-color-text:            17  24  39; /* #111827 */
+    --ds-color-text-muted:     107 114 128; /* #6B7280 */
+    --ds-color-border:         229 231 235; /* #E5E7EB */
+    --ds-color-primary:         17  24  39; /* #111827 */
+    --ds-color-accent:          59 130 246; /* #3B82F6 */
+    --ds-color-success:         22 163  74; /* #16A34A */
+    --ds-color-warning:        217 119   6; /* #D97706 */
+    --ds-color-danger:         220  38  38; /* #DC2626 */
+    --ds-color-layer-1:        255 255 255; /* unused on light, fallback to surface */
+    --ds-color-layer-2:        255 255 255;
+    --ds-color-layer-3:        255 255 255;
+    --ds-color-layer-4:        255 255 255;
+  }
+
+  .dark {
+    /* themes.dark from docs/design-system.json */
+    --ds-color-bg:              43  45  51; /* #2B2D33 */
+    --ds-color-layer-1:         49  52  58; /* #31343A */
+    --ds-color-layer-2:         56  59  66; /* #383B42 */
+    --ds-color-layer-3:         64  68  76; /* #40444C */
+    --ds-color-layer-4:         72  76  85; /* #484C55 */
+    --ds-color-surface:         56  59  66; /* #383B42 */
+    --ds-color-surface-muted:   49  52  58; /* #31343A */
+    --ds-color-text:           245 245 245; /* #F5F5F5 */
+    --ds-color-text-muted:     184 184 192; /* #B8B8C0 */
+    --ds-color-border:          74  78  87; /* #4A4E57 */
+    --ds-color-primary:        245 245 245; /* #F5F5F5 */
+    --ds-color-accent:          91 140 255; /* #5B8CFF */
+    --ds-color-success:         52 211 153; /* #34D399 */
+    --ds-color-warning:        251 191  36; /* #FBBF24 */
+    --ds-color-danger:         248 113 113; /* #F87171 */
+  }
+
+  .theme-rust {
+    /* themes.rust from docs/design-system.json */
+    --ds-color-bg:             255 250 248; /* #FFFAF8 */
+    --ds-color-surface:        255 255 255; /* #FFFFFF */
+    --ds-color-surface-muted:  255 245 241; /* #FFF5F1 */
+    --ds-color-text:            17  24  39; /* #111827 */
+    --ds-color-text-muted:     107 114 128; /* #6B7280 */
+    --ds-color-border:         239 230 225; /* #EFE6E1 */
+    --ds-color-primary:         17  24  39; /* #111827 */
+    --ds-color-accent:         194  65  12; /* #C2410C */
+    --ds-color-success:         22 163  74; /* #16A34A */
+    --ds-color-warning:        217 119   6; /* #D97706 */
+    --ds-color-danger:         220  38  38; /* #DC2626 */
+  }
+}
+
+/* --- @font-face: legacy Inter ----------------------------------------- *
+ * Phase 7a/2 self-hosted Inter. Phase 2 design-system.json declares
+ * Roboto / Space Grotesk / JetBrains Mono as the canonical families;
+ * those font files aren't on disk yet. Keeping Inter loaded so any
+ * caller still requesting `font-family: "Inter"` resolves until the
+ * font-loading sub-phase replaces these with the JSON families.
+ * --------------------------------------------------------------------- */
 @layer base {
   @font-face {
     font-family: "Inter";
@@ -49,7 +122,7 @@
     src: url("/static/fonts/Inter-Bold.woff2") format("woff2");
   }
 
-  html { @apply text-[16px]; }
+  html { @apply text-body; }
   body {
     @apply bg-paper text-metal antialiased font-sans;
     font-feature-settings: "ss01", "tnum";
@@ -407,4 +480,159 @@
 
   /* --- Confirm-form layout ----------------------------------------- */
   .confirm-form .submit-row { @apply justify-start; }
+
+  /* =====================================================================
+   * Phase 2 — Design-system token layer.
+   * Source of truth: docs/design-system.json (theme.components.*).
+   *
+   * Rules of engagement:
+   *   - Every value below is JSON-derived (no invented dimensions).
+   *   - These rules sit AFTER the Phase 7a/2 component classes above,
+   *     so where names collide (`.btn-primary`, `.btn-ghost`, `.card`,
+   *     `.badge`) the cascade picks the design-system version. The
+   *     legacy Phase 7a/2 declarations remain as a transitional safety
+   *     net — the next sub-phase prunes them once every template has
+   *     been refactored onto semantic tokens.
+   *   - No template HTML changes in this commit. Templates inherit
+   *     the new visuals on next render.
+   * =================================================================== */
+
+  /* --- Buttons (components.button: height 40px, radius md) -------- */
+  /* Primary: filled with the JSON `primary` colour (light: near-black,
+   * dark: near-white, rust: near-black). The brand-orange CTA the
+   * Phase 7a/2 admin used is a rust-theme behaviour now — switch via
+   * `<html class="theme-rust">`. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
+           bg-primary text-surface font-semibold text-small no-underline border-0
+           shadow-card cursor-pointer transition-colors duration-150
+           hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+  /* Secondary: outline button keyed to the JSON `border` + `text`
+   * tokens. Lower-prominence sibling to primary. */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
+           bg-surface text-text font-semibold text-small no-underline border border-border
+           cursor-pointer transition-colors duration-150
+           hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+  /* Ghost: transparent, text-only. Used for cancel / back / dismiss. */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
+           bg-transparent text-text font-semibold text-small no-underline border-0
+           cursor-pointer transition-colors duration-150
+           hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+  /* Danger: filled with the JSON `danger` colour. Destructive intent. */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
+           bg-danger text-surface font-semibold text-small no-underline border-0
+           shadow-card cursor-pointer transition-colors duration-150
+           hover:bg-danger/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+
+  /* --- Input (components.input: height 42px, radius md) ----------- */
+  /* Standalone — works outside the .form-row scope so a stray input on
+   * the login card or a search bar gets the same treatment as a
+   * fieldset child. Templates that already match `.form-row input[…]`
+   * will receive both rules; the cascade and identical declarations
+   * resolve to the same visual. */
+  .input {
+    @apply w-full h-[42px] px-sm rounded-md bg-surface text-text text-body
+           border border-border font-sans transition-colors
+           placeholder:text-text-muted
+           focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+
+  /* --- Cards (components.card: radius lg, shadow card, padding lg) - */
+  .card {
+    @apply bg-surface text-text border border-border rounded-lg shadow-card p-lg
+           transition-shadow duration-150;
+  }
+  /* Compact card — same surface contract, denser padding for sidebars
+   * / inline panels. JSON doesn't define a compact step, so this uses
+   * the next-down spacing token (md) — still inside the JSON scale. */
+  .card-compact {
+    @apply bg-surface text-text border border-border rounded-md shadow-card p-md;
+  }
+
+  /* --- Tables (components.table: rowHeight 48px) ------------------- */
+  .table {
+    @apply w-full border-collapse bg-surface text-text rounded-md overflow-hidden border border-border;
+  }
+  .table th, .table td {
+    @apply px-md text-left border-b border-border;
+    height: 48px;
+  }
+  .table th {
+    @apply bg-surface-muted text-text-muted font-semibold text-caption uppercase tracking-wider;
+  }
+  .table tbody tr:last-child td { @apply border-b-0; }
+  /* Compact variant — drops to 36px rows for chronologies / log
+   * tables. Below the JSON `48px` floor; flagged as deviation. */
+  .table-compact th, .table-compact td {
+    @apply px-sm text-small;
+    height: 36px;
+  }
+
+  /* --- Badges (single token; replaces split rio-pill / badge) ------ */
+  /* Variants follow the JSON semantic colour palette: success / warning
+   * / danger / neutral. Existing `.badge-rust`, `.badge-teal`,
+   * `.badge-muted` stay above as legacy aliases. */
+  .badge-success {
+    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
+           bg-success/10 text-success border border-success/20
+           text-caption font-semibold;
+  }
+  .badge-warning {
+    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
+           bg-warning/10 text-warning border border-warning/20
+           text-caption font-semibold;
+  }
+  .badge-danger {
+    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
+           bg-danger/10 text-danger border border-danger/20
+           text-caption font-semibold;
+  }
+  .badge-neutral {
+    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
+           bg-surface-muted text-text-muted border border-border
+           text-caption font-semibold;
+  }
+
+  /* --- Layout helpers from the audit ------------------------------- */
+  /* Repeated 4× in the audit: h1 + subline on the left, primary
+   * action on the right, mb-5 below. Single token replaces the inline
+   * `flex items-end justify-between gap-4 mb-5 flex-wrap`. */
+  .page-header {
+    @apply flex items-end justify-between gap-md mb-lg flex-wrap;
+  }
+  /* Hero-icon disc — repeated 5× in the audit. Default neutral; opt
+   * into `.hero-icon-accent` (rust on rust theme, blue on light) or
+   * `.hero-icon-danger` for confirm-delete pages. */
+  .hero-icon {
+    @apply inline-flex items-center justify-center w-10 h-10 rounded-md
+           bg-surface-muted text-text;
+  }
+  .hero-icon-accent { @apply bg-accent/10 text-accent; }
+  .hero-icon-danger { @apply bg-danger/10 text-danger; }
+
+  /* Inline `<code>` chip — replaces 8 occurrences of the same
+   * `bg-paper px-1.5 py-0.5 rounded text-[12.5px] font-mono` pattern. */
+  .code-pill {
+    @apply inline-block bg-surface-muted text-text px-xs py-px rounded-sm
+           text-caption font-mono border border-border;
+  }
+
+  /* Page-action row — back button + flex-1 + primary/secondary, used
+   * on user_view, user_edit, group_edit, group_new etc. */
+  .page-actions {
+    @apply flex items-center gap-sm mb-lg flex-wrap;
+  }
+
+  /* "Small note under heading" pattern — 17 occurrences of `text-gray-500
+   * text-[14px] mt-1` in the audit. */
+  .subhead-note {
+    @apply text-text-muted text-small mt-xs;
+  }
 }
