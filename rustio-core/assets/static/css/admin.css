@@ -349,7 +349,7 @@ body.login {
 
 .object-tools {
     list-style: none;
-    margin: 0 0 14px;
+    margin: 0 0 18px;
     padding: 0;
     display: flex;
     align-items: center;
@@ -387,34 +387,56 @@ body.login {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 220px;
     gap: 18px;
-    margin-top: 4px;
+    margin-top: 8px;
 }
 
 #changelist-main { min-width: 0; }
 
-#toolbar { margin-bottom: 12px; }
+/* Toolbar — the search row sits inside its own tinted panel so the
+   "tools zone" reads as separate from the data zone (the white
+   table below). The 3px rust-accent left rule is the same brand
+   colour the changelinks use; it ties the panel to the framework
+   without the heavier "branded card" treatment we'd reserve for
+   actions. The 20px margin-bottom gives the data table room to
+   breathe — was 12px and felt cramped against the search input. */
+#toolbar {
+    background: var(--darkened-bg);
+    border: 1px solid var(--hairline-color);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 4px 4px 0;
+    padding: 12px 14px;
+    margin-bottom: 20px;
+}
 #toolbar .search {
     display: flex;
-    gap: 8px;
+    gap: 10px;
     align-items: center;
 }
 #toolbar .search input {
     flex: 1;
-    padding: 6px 10px;
+    padding: 8px 12px 8px 34px;
     border: 1px solid var(--border-color);
     border-radius: 3px;
-    font-size: 13px;
+    font-size: 13.5px;
     font-family: inherit;
+    /* Inline magnifier (lucide-style stroke icon, muted grey). The
+       data URI keeps single-binary deploy intact — no extra HTTP. */
+    background-color: var(--body-bg);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238B949E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
+    background-repeat: no-repeat;
+    background-position: 11px center;
+    background-size: 14px 14px;
 }
 #toolbar .search input:focus {
     outline: 2px solid var(--accent-subtle);
     border-color: var(--accent);
 }
+#toolbar .search input::placeholder { color: var(--body-quiet); }
 #toolbar .search button {
     background: var(--default-button-bg);
     color: var(--button-fg);
     border: 0;
-    padding: 6px 12px;
+    padding: 8px 14px;
     border-radius: 3px;
     font-size: 12px;
     cursor: pointer;
@@ -443,7 +465,7 @@ body.login {
     font-size: 13px;
 }
 .results th, .results td {
-    padding: 8px 12px;
+    padding: 10px 14px;
     text-align: left;
     border-bottom: 1px solid var(--hairline-color);
 }
@@ -453,6 +475,10 @@ body.login {
     color: var(--body-loud);
     font-size: 12px;
 }
+/* Zebra rows — a hair lighter than the toolbar tint so the alternation
+   is visible without competing. Stays below the :hover rule in source
+   order so hover always wins on the row the user is pointing at. */
+.results tbody tr:nth-child(even) td { background: #FAFBFC; }
 .results tr:hover td { background: var(--selected-row); }
 .results .action-checkbox { width: 24px; padding-right: 0; }
 
@@ -465,7 +491,7 @@ body.login {
 .results.row-clickable td { padding: 0; }
 .results.row-clickable .row-link {
     display: block;
-    padding: 8px 12px;
+    padding: 10px 14px;
     color: inherit;
     text-decoration: none;
 }
@@ -476,7 +502,8 @@ body.login {
 .results.row-clickable .row-link.help { color: var(--body-quiet); }
 
 .paginator {
-    margin-top: 12px;
+    margin-top: 18px;
+    padding-top: 4px;
     font-size: 12px;
     color: var(--body-quiet);
 }
@@ -731,7 +758,15 @@ fieldset.module h2 {
 }
 
 .help { color: var(--body-quiet); font-size: 12px; }
-.empty-list { color: var(--body-quiet); padding: 14px; text-align: center; }
+.empty-list {
+    color: var(--body-quiet);
+    padding: 28px;
+    text-align: center;
+    background: var(--darkened-bg);
+    border: 1px dashed var(--border-color);
+    border-radius: 4px;
+    font-size: 13px;
+}
 
 /* --- Checkbox lists (Phase 6b/3 — user/group permission selection) - */
 
