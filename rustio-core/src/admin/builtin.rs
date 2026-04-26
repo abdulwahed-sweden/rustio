@@ -79,7 +79,7 @@ pub(crate) async fn list_users(
     let view = UsersListCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Users",
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         users,
         flash: None,
     };
@@ -161,7 +161,7 @@ pub(crate) async fn show_user_edit(
     let view = UserEditCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         user_id,
         email: r.get_string("email")?,
         role: r.get_string("role")?,
@@ -294,7 +294,7 @@ async fn render_user_edit_with_errors(
     let view = UserEditCtx {
         base: BaseContext::new(Some(identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         user_id,
         email: r.get_string("email")?,
         role: role.as_str().into(),
@@ -421,7 +421,7 @@ pub(crate) async fn show_user_view(
     let view = UserViewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("User: {target_email}"),
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         target_id: user_id,
         target_email,
         target_role: r.get_string("role")?,
@@ -513,7 +513,7 @@ pub(crate) async fn show_user_delete(
     let view = UserDeleteCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Delete user: {email}"),
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         user_id,
         email,
         role: r.get_string("role")?,
@@ -588,7 +588,7 @@ pub(crate) async fn list_groups(
     let view = GroupsListCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Groups",
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         groups: load_groups(&ctx.db).await?,
         flash: None,
     };
@@ -655,7 +655,7 @@ pub(crate) async fn show_group_edit(
     let view = GroupEditCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit group #{group_id}"),
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         group_id,
         name: r.get_string("name")?,
         description: r.get_string("description")?,
@@ -761,7 +761,7 @@ pub(crate) async fn show_group_delete(
     let view = GroupDeleteCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Delete group: {name}"),
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         group_id,
         name,
         description: r.get_string("description")?,
@@ -827,7 +827,7 @@ pub(crate) async fn show_new_user(
     let view = UserNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         email: String::new(),
         role: "staff".into(),
         errors: Vec::new(),
@@ -911,7 +911,7 @@ pub(crate) async fn do_new_user(
     let view = UserNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         email,
         role: role_str,
         errors,
@@ -941,7 +941,7 @@ pub(crate) async fn show_new_group(
     let view = GroupNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         name: String::new(),
         description: String::new(),
         errors: Vec::new(),
@@ -999,7 +999,7 @@ pub(crate) async fn do_new_group(
     let view = GroupNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
-        entries: ctx.admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         name,
         description,
         errors,

@@ -223,7 +223,7 @@ pub(crate) fn dashboard_ctx(
 
     DashboardCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
-        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         apps: group_entries_by_app(admin.entries()),
         recent_actions: recent,
         flash: None,
@@ -331,7 +331,7 @@ pub(crate) fn list_ctx(
     ListCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: entry.display_name.to_string(),
-        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         admin_name: entry.admin_name,
         display_name: entry.display_name,
         singular_name: entry.singular_name,
@@ -412,10 +412,24 @@ pub(crate) fn form_ctx(
             // Phase 6a: pass None to the classifier (ContextConfig
             // integration deferred to Phase 7).
             let ui = super::intelligence::field_ui_metadata(f, None);
+            // Phase 7a/2/critical-fix — string fields with content-y
+            // names (body / description / notes / content / summary)
+            // render as <textarea> instead of a single-line <input>.
+            // FieldType doesn't have a Text variant; this name-hint
+            // heuristic is the surgical fix until the macro learns to
+            // emit a richer FieldType.
+            let widget = if matches!(
+                f.field_type,
+                super::types::FieldType::String | super::types::FieldType::OptionalString
+            ) && is_long_text_name(f.name) {
+                "textarea"
+            } else {
+                f.field_type.widget()
+            };
             FormField {
                 name: f.name,
                 label: f.label,
-                widget: f.field_type.widget(),
+                widget,
                 input_type: html_input_type_for(f.field_type),
                 value,
                 hint: ui.hint.map(|s| s.to_string()),
@@ -430,7 +444,7 @@ pub(crate) fn form_ctx(
             "new" => format!("Add {}", entry.singular_name),
             _ => format!("Change {}", entry.singular_name),
         },
-        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         admin_name: entry.admin_name,
         display_name: entry.display_name,
         singular_name: entry.singular_name,
@@ -440,6 +454,17 @@ pub(crate) fn form_ctx(
         errors,
         flash: None,
     }
+}
+
+/// Phase 7a/2/critical-fix — names that imply multi-line content.
+/// Used by `form_ctx` to upgrade a `String` / `OptionalString` field
+/// to a `<textarea>` instead of a single-line `<input>`. Conservative
+/// list; expand only when a real model needs it.
+fn is_long_text_name(name: &str) -> bool {
+    matches!(
+        name,
+        "body" | "description" | "notes" | "content" | "summary" | "bio" | "details"
+    )
 }
 
 fn html_input_type_for(ft: super::types::FieldType) -> &'static str {
@@ -494,7 +519,7 @@ pub(crate) fn confirm_delete_ctx(
     ConfirmDeleteCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: format!("Delete {}", entry.singular_name),
-        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         admin_name: entry.admin_name,
         singular_name: entry.singular_name,
         object_id,
@@ -621,7 +646,7 @@ pub(crate) fn render_forbidden_body(
 ) -> crate::error::Result<String> {
     let view = ForbiddenCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
-        entries: admin.entries().iter().map(SidebarEntry::from).collect(),
+        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         page_title: "Permission denied",
         attempted,
         required_role,
