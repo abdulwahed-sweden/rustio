@@ -941,6 +941,117 @@ mod tests {
         assert!(body.contains("name=\"_save\""), "Save button missing");
     }
 
+    /// Phase 1/c — shared list-page context fixture. Returns a JSON
+    /// value with the empty-state shape (`rows: []`, `total_rows: 0`).
+    /// Callers patch `search_query` / `filters` to flip between the
+    /// true-empty and filtered-empty branches.
+    fn empty_list_ctx_skeleton() -> serde_json::Value {
+        serde_json::json!({
+            "site_title": "RustIO administration",
+            "site_header": "RustIO administration",
+            "index_title": "Site administration",
+            "footer_copyright": "RustIO test",
+            "csrf_token": "fake",
+            "is_demo_session": false,
+            "demo_label": null,
+            "page_title": "Posts",
+            "entries": [],
+            "admin_name": "posts",
+            "display_name": "Posts",
+            "singular_name": "Post",
+            "columns": ["title", "body", "author"],
+            "rows": [],
+            "search_query": "",
+            "filters": [],
+            "page": 1,
+            "total_pages": 1,
+            "per_page": 25,
+            "total_rows": 0,
+            "bulk_actions_enabled": false,
+            "identity": { "email": "admin@example.com", "is_admin": true, "is_developer": false },
+        })
+    }
+
+    #[test]
+    fn list_true_empty_renders_friendly_cta() {
+        // No rows, no search, no active filter — show the "Create
+        // your first …" CTA and the friendly heading.
+        let templates = Templates::new(None).expect("embedded templates");
+        let ctx = empty_list_ctx_skeleton();
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+
+        assert!(body.contains("No posts yet."), "true-empty heading missing");
+        assert!(
+            body.contains("Create your first post"),
+            "true-empty CTA copy missing",
+        );
+        assert!(
+            body.contains("href=\"/admin/posts/new\""),
+            "true-empty CTA link missing",
+        );
+        // The filtered-empty wording must NOT appear in this branch.
+        assert!(
+            !body.contains("No results match your search"),
+            "true-empty branch leaked filtered-empty copy",
+        );
+    }
+
+    #[test]
+    fn list_filtered_empty_omits_cta() {
+        // Search query active, no rows — show "no results match" and
+        // suppress the CTA so we're not nudging "create" when the
+        // user is actively narrowing.
+        let templates = Templates::new(None).expect("embedded templates");
+        let mut ctx = empty_list_ctx_skeleton();
+        ctx["search_query"] = serde_json::Value::String("nonsense".into());
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+
+        assert!(
+            body.contains("No results match your search"),
+            "filtered-empty copy missing",
+        );
+        assert!(
+            !body.contains("Create your first post"),
+            "filtered-empty branch must not show the create CTA",
+        );
+        assert!(
+            !body.contains("No posts yet"),
+            "filtered-empty branch must not show the true-empty heading",
+        );
+    }
+
+    #[test]
+    fn list_filter_only_empty_omits_cta() {
+        // Search empty but a filter group has a `current` value —
+        // still treated as filtered, not true empty.
+        let templates = Templates::new(None).expect("embedded templates");
+        let mut ctx = empty_list_ctx_skeleton();
+        ctx["filters"] = serde_json::json!([
+            {
+                "field": "published",
+                "label": "Published",
+                "options": [],
+                "current": "true",
+            }
+        ]);
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+
+        assert!(
+            body.contains("No results match your search"),
+            "filter-only empty should still show 'No results match' copy",
+        );
+        assert!(
+            !body.contains("Create your first post"),
+            "filter-only empty must not show the create CTA",
+        );
+    }
+
     #[test]
     fn render_forbidden_body_with_attempted_perm() {
         let admin = Admin::new();

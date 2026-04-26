@@ -79,8 +79,25 @@
                     {% endfor %}
                 </tbody>
             </table>
+            {% elif search_query or (filters|selectattr("current")|list|length) %}
+            {# Phase 1/c — filtered empty: search box has a value or at
+               least one filter group has a `current` selection. The
+               table is empty *because* of the user's input, so don't
+               offer a "create first" CTA; just say nothing matched. #}
+            <p class="empty-list">No results match your search.</p>
             {% else %}
-            <p class="empty-list">No {{ display_name|lower }} match the current filter.</p>
+            {# Phase 1/c — true empty: no rows, no search, no active
+               filter. Offer the primary CTA so a fresh user can act
+               immediately without hunting for the Add button in the
+               toolbar above. #}
+            <div class="empty-list">
+                <p class="text-base font-semibold text-metal mb-1">No {{ display_name|lower }} yet.</p>
+                <p class="text-[13.5px] text-gray-600 mb-4">Get started by creating your first {{ singular_name|lower }}.</p>
+                <a class="btn-primary" href="/admin/{{ admin_name }}/new">
+                    {{ icon("plus", class="w-4 h-4") }}
+                    Create your first {{ singular_name|lower }}
+                </a>
+            </div>
             {% endif %}
         {% if bulk_actions_enabled %}
         </form>
