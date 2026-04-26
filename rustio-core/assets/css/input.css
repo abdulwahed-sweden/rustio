@@ -69,6 +69,12 @@
     --ds-color-danger:         248 113 113; /* #F87171 */
   }
 
+  /* `.theme-brand` is the official activation class for the optional
+   * brand-accented theme (Phase 2 cleanup). `.theme-rust` is kept as a
+   * backward-compatible alias so any caller still toggling that class
+   * keeps working. Combined selector means single CSS rule — no value
+   * duplication, no chance of the two drifting. */
+  .theme-brand,
   .theme-rust {
     /* themes.rust from docs/design-system.json */
     --ds-color-bg:             255 250 248; /* #FFFAF8 */

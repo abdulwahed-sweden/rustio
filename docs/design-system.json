@@ -147,7 +147,9 @@
     "rules": [
       "Use semantic tokens (surface, text, border, accent) — never raw hex in components.",
       "Dark theme uses layers (layer1–layer4) for stacked surfaces; pick by depth.",
-      "Rust theme is brand-accented; admin defaults to light/dark.",
+      "Default admin theme is light. Activate dark via <html class=\"dark\">.",
+      "Optional brand-accented theme: <html class=\"theme-brand\">. Backed by the themes.rust token block.",
+      "theme-rust is a backward-compatible alias of theme-brand; new code should prefer theme-brand.",
       "Every interactive element must have a visible focus state using accent."
     ]
   }
