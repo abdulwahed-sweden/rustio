@@ -147,7 +147,6 @@ const EMBEDDED_TEMPLATES: &[(&str, &str)] = &[
     ("admin/list.html", include_str!("../assets/templates/admin/list.html")),
     ("admin/form.html", include_str!("../assets/templates/admin/form.html")),
     ("admin/confirm_delete.html", include_str!("../assets/templates/admin/confirm_delete.html")),
-    ("admin/error.html", include_str!("../assets/templates/admin/error.html")),
     ("admin/object_history.html", include_str!("../assets/templates/admin/object_history.html")),
     ("admin/log_entries.html", include_str!("../assets/templates/admin/log_entries.html")),
     ("admin/password_change.html", include_str!("../assets/templates/admin/password_change.html")),

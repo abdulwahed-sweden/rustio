@@ -304,7 +304,6 @@
   .submit-row input[type=submit], .submit-row button {
     @apply btn-primary;
   }
-  .submit-row .cancel-link { @apply btn-ghost; }
   .submit-row .deletelink-button { @apply ml-auto; }
 
   .checkbox-list { @apply flex flex-col gap-2.5; }
