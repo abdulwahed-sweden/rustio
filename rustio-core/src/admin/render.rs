@@ -464,19 +464,26 @@ pub(crate) fn form_ctx(
             // Phase 6a: pass None to the classifier (ContextConfig
             // integration deferred to Phase 7).
             let ui = super::intelligence::field_ui_metadata(f, None);
-            // Phase 7a/2/critical-fix — string fields with content-y
+            // Phase 5/c — base widget + input_type from the centralized
+            // FieldType→UI mapping. Adding a new FieldType variant now
+            // only requires a new arm in `map_field_to_ui`; the form
+            // template needs no change.
+            let (base_widget, input_type) = map_field_to_ui(f.field_type);
+            // Phase 7a/2/critical-fix — String fields with content-y
             // names (body / description / notes / content / summary)
-            // render as <textarea> instead of a single-line <input>.
-            // FieldType doesn't have a Text variant; this name-hint
-            // heuristic is the surgical fix until the macro learns to
-            // emit a richer FieldType.
+            // render as <textarea> instead of the base single-line
+            // <input>. FieldType doesn't have a Text variant; this
+            // name-hint heuristic is the override layer that
+            // `map_field_to_ui` deliberately leaves to the caller
+            // (the mapping fn takes only `&FieldType`, not the field
+            // name). Behaviour preserved bit-for-bit from pre-5/c.
             let widget = if matches!(
                 f.field_type,
                 super::types::FieldType::String | super::types::FieldType::OptionalString
             ) && is_long_text_name(f.name) {
                 "textarea"
             } else {
-                f.field_type.widget()
+                base_widget
             };
             // Phase 1/b — bools always submit (checked = true, absent
             // = false), so they never carry a required-asterisk; every
@@ -487,7 +494,7 @@ pub(crate) fn form_ctx(
                 name: f.name,
                 label: ui.label,
                 widget,
-                input_type: html_input_type_for(f.field_type),
+                input_type,
                 value,
                 hint: ui.hint,
                 placeholder: ui.placeholder,
@@ -525,13 +532,35 @@ fn is_long_text_name(name: &str) -> bool {
     )
 }
 
-fn html_input_type_for(ft: super::types::FieldType) -> &'static str {
+/// Phase 5/c — backend-driven field-to-UI mapping.
+///
+/// Returns the (`widget`, `input_type`) pair the form template should
+/// render for a given `FieldType`. Single source of truth: adding a
+/// new variant to `FieldType` (e.g. a future `Email` / `Password` /
+/// `Float` / `Date` / `Time`) is a one-arm change here, with no
+/// template edit required.
+///
+/// `widget` is the branch the template's outer `if` selects on
+/// (`"input"` / `"checkbox"` / `"textarea"`). `input_type` is the
+/// HTML5 `type` attribute used when widget is `"input"`.
+///
+/// Returns `&'static str` (deviating from the spec's `String`
+/// signature) because `FormField.widget` and `.input_type` are
+/// already `&'static str`; allocating two `String`s per call would
+/// force a downstream type change with no behavioural benefit.
+///
+/// `String → ("input", "text")` is the BASE mapping. Callers wanting
+/// `<textarea>` for content-y fields apply that as a post-mapping
+/// override (see `is_long_text_name` in `form_ctx`); the function
+/// takes only `&FieldType`, not the field name, so the textarea
+/// decision is intentionally outside its scope.
+fn map_field_to_ui(ft: super::types::FieldType) -> (&'static str, &'static str) {
     use super::types::FieldType::*;
     match ft {
-        Bool => "checkbox",
-        I32 | I64 | OptionalI64 => "number",
-        DateTime | OptionalDateTime => "datetime-local",
-        String | OptionalString => "text",
+        Bool => ("checkbox", "checkbox"),
+        I32 | I64 | OptionalI64 => ("input", "number"),
+        DateTime | OptionalDateTime => ("input", "datetime-local"),
+        String | OptionalString => ("input", "text"),
     }
 }
 
@@ -743,8 +772,25 @@ pub(crate) struct ErrorCtx {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::admin::FieldType;
     use crate::auth::Role;
     use crate::templates::Templates;
+
+    /// Phase 5/c — locks the FieldType→UI mapping. Adding a new
+    /// FieldType variant requires updating this test along with the
+    /// match in `map_field_to_ui`; that's the single place to encode
+    /// "what UI does this field render as".
+    #[test]
+    fn maps_field_types_to_expected_widgets() {
+        assert_eq!(map_field_to_ui(FieldType::Bool),             ("checkbox", "checkbox"));
+        assert_eq!(map_field_to_ui(FieldType::String),           ("input", "text"));
+        assert_eq!(map_field_to_ui(FieldType::OptionalString),   ("input", "text"));
+        assert_eq!(map_field_to_ui(FieldType::I32),              ("input", "number"));
+        assert_eq!(map_field_to_ui(FieldType::I64),              ("input", "number"));
+        assert_eq!(map_field_to_ui(FieldType::OptionalI64),      ("input", "number"));
+        assert_eq!(map_field_to_ui(FieldType::DateTime),         ("input", "datetime-local"));
+        assert_eq!(map_field_to_ui(FieldType::OptionalDateTime), ("input", "datetime-local"));
+    }
 
     fn fake_identity(role: Role) -> Identity {
         Identity {
