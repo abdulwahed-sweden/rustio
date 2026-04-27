@@ -45,6 +45,7 @@
                     class="input mb-xs"
                     data-search-input
                     data-target="id_{{ field.name }}"
+                    {% if field.search_url %}data-search-url="{{ field.search_url }}"{% endif %}
                     aria-controls="id_{{ field.name }}"
                     aria-label="Filter {{ field.label }} options"
                 >

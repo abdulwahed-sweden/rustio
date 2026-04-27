@@ -144,23 +144,84 @@
         });
     }
 
-    // Phase 7.2 — searchable FK selects: filter <option> children of
-    // the target select by text content as the user types in the
-    // sibling search input. Progressive enhancement; the plain
-    // <select> is fully functional with JS disabled. The currently-
-    // selected option is exempt from filtering so a chosen value
-    // never disappears mid-edit.
+    // Phase 7.2 / 7.3 — searchable FK selects.
+    //
+    //   Phase 7.2 (no data-search-url): client-side filter — hide
+    //   <option> children of the target select that don't match the
+    //   query, exempting the currently-selected option.
+    //
+    //   Phase 7.3 (data-search-url present): remote search — fetch
+    //   the search endpoint at >=2 chars and replace the select's
+    //   options with the JSON response. The currently-selected
+    //   option is preserved (re-prepended if absent from results) so
+    //   the form posts the same FK value the user picked earlier.
+    //
+    // Progressive enhancement: the plain <select> is fully functional
+    // with JS disabled OR if fetch errors out (errors are swallowed,
+    // existing options remain).
     document.querySelectorAll("[data-search-input]").forEach(function (input) {
         var targetId = input.getAttribute("data-target");
         var select = document.getElementById(targetId);
         if (!select) return;
+        var searchUrl = input.getAttribute("data-search-url");
         input.addEventListener("input", function () {
-            var q = input.value.toLowerCase();
-            for (var i = 0; i < select.options.length; i++) {
-                var opt = select.options[i];
-                var match = opt.textContent.toLowerCase().indexOf(q) !== -1;
-                // Always keep the selected option visible.
-                opt.hidden = !match && !opt.selected;
+            var raw = input.value;
+            if (searchUrl) {
+                // Remote-search path. Skip <2 chars to avoid hammering
+                // the endpoint on stray keystrokes.
+                var q = raw.trim();
+                if (q.length < 2) return;
+                fetch(searchUrl + "?q=" + encodeURIComponent(q), {
+                    headers: { "Accept": "application/json" },
+                    credentials: "same-origin"
+                })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error("search failed");
+                        return r.json();
+                    })
+                    .then(function (data) {
+                        // Capture the currently-selected option so we can
+                        // re-add it if the search results don't include it.
+                        var idx = select.selectedIndex;
+                        var keepValue = idx >= 0 ? select.options[idx].value : "";
+                        var keepLabel = idx >= 0 ? select.options[idx].textContent : "";
+                        select.innerHTML = "";
+                        var foundKept = false;
+                        for (var i = 0; i < data.length; i++) {
+                            var item = data[i];
+                            var opt = document.createElement("option");
+                            opt.value = item.value;
+                            opt.textContent = item.label;
+                            if (keepValue && item.value === keepValue) {
+                                opt.selected = true;
+                                foundKept = true;
+                            }
+                            select.appendChild(opt);
+                        }
+                        if (keepValue && !foundKept) {
+                            // Selected value not in results — prepend it
+                            // so the form still posts the operator's prior
+                            // pick if they don't change it.
+                            var keep = document.createElement("option");
+                            keep.value = keepValue;
+                            keep.textContent = keepLabel;
+                            keep.selected = true;
+                            select.insertBefore(keep, select.firstChild);
+                        }
+                    })
+                    .catch(function () {
+                        // Swallow — leave existing options in place so
+                        // the form remains submittable.
+                    });
+            } else {
+                // Phase 7.2 client-side filter — hide non-matches,
+                // exempt the selected option.
+                var q = raw.toLowerCase();
+                for (var i = 0; i < select.options.length; i++) {
+                    var opt = select.options[i];
+                    var match = opt.textContent.toLowerCase().indexOf(q) !== -1;
+                    opt.hidden = !match && !opt.selected;
+                }
             }
         });
     });

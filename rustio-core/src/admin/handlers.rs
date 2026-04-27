@@ -582,6 +582,43 @@ pub(crate) async fn show_log_entries(
     Ok(Response::html(body))
 }
 
+// ---- Phase 7.3 — remote-search endpoint for FK selects -------------------
+
+/// JSON endpoint that powers the remote search on FK / M2M
+/// `<select>` fields. The form template emits
+/// `data-search-url="/admin/search/<Model>"` on the search input and
+/// JS appends `?q=<query>` per keystroke. Returns up to 20
+/// `SelectOption`s whose label contains the query (case-insensitive).
+///
+/// Auth: same Staff guard as the dashboard. Anyone who can see the
+/// admin can drive this endpoint; we don't expose it more broadly.
+///
+/// Failure modes — none surface as errors:
+///   - Unknown model name → `[]`
+///   - Empty query → `[]` (filter on empty string would return
+///     everything; the front-end gates at `q.length >= 2` but a
+///     direct curl against `?q=` should still be benign)
+///   - No matching rows → `[]`
+pub(crate) async fn show_search(
+    ctx: &AdminCtx,
+    _identity: Identity,
+    model: &str,
+    req: &Request,
+) -> Result<Response> {
+    let q = req.query().get("q").unwrap_or("").trim().to_string();
+    // Empty query → return [] without hitting the DB. Saves a list()
+    // round-trip when the front-end accidentally fires a 0-char
+    // request (e.g. on initial focus).
+    if q.is_empty() {
+        return Ok(Response::json_raw("[]"));
+    }
+    let opts = render::search_options(&ctx.admin, &ctx.db, model, &q).await?;
+    let body = serde_json::to_string(&opts).map_err(|e| {
+        Error::Internal(format!("search response serialization failed: {e}"))
+    })?;
+    Ok(Response::json_raw(body))
+}
+
 // ---- Developer-only stubs (Phase 7a/0.5/e) -------------------------------
 //
 // All three render the shared `admin/coming_soon.html` with a feature-

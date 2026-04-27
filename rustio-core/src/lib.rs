@@ -5,6 +5,12 @@
 //! provides the admin UI, HTTP/2 server, Postgres ORM, migrations,
 //! full-text search (Meilisearch), sessions, and granular RBAC.
 
+// Phase 7.3 — admin render-test fixtures hand-build large
+// `serde_json::json!` literals (FormField has ~16 fields × multiple
+// fields per fixture). The default recursion limit (128) is too low
+// for those macro expansions; 256 is the conventional bump.
+#![recursion_limit = "256"]
+
 pub mod admin;
 pub mod ai;
 pub mod auth;

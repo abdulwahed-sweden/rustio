@@ -142,6 +142,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
             FormField {
                 name: "password",
@@ -161,6 +162,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
         ],
     }]
@@ -549,6 +551,13 @@ pub(crate) struct FormField {
     /// message under the search input ("Showing first 50 results.
     /// Keep typing to filter.").
     pub has_more: bool,
+    /// Phase 7.3 — when present, JS upgrades the client-side filter
+    /// to a remote-search call against this URL. `Some("/admin/search/User")`
+    /// for FK / M2M fields whose target resolves; `None` for enums,
+    /// non-relation fields, and bespoke-handler-built fields. The
+    /// plain `<select>` keeps working with the truncated 50-row
+    /// initial set when JS is disabled or the URL is `None`.
+    pub search_url: Option<String>,
 }
 
 /// Phase 6 — one logical group of fields on a form. `title: None`
@@ -669,6 +678,13 @@ pub(crate) fn form_ctx(
             // Phase 6 — span hint. Long-text textareas span the full
             // grid (col-span-2); everything else takes one half.
             let span: u8 = if widget == "textarea" { 2 } else { 1 };
+            // Phase 7.3 — remote-search URL only for relation-backed
+            // fields. Enum / closed-list selects keep `None` (their
+            // option set is in-page; nothing to fetch).
+            let search_url = f
+                .relation
+                .as_ref()
+                .map(|rel| format!("/admin/search/{}", rel.target_model));
             FormField {
                 name: f.name,
                 label: ui.label,
@@ -692,6 +708,7 @@ pub(crate) fn form_ctx(
                 maxlength: None,
                 searchable,
                 has_more,
+                search_url,
             }
         })
         .collect::<Vec<FormField>>();
@@ -879,6 +896,65 @@ pub(crate) async fn resolve_relation_options(
         out.insert(f.name, (opts, has_more));
     }
     Ok(out)
+}
+
+/// Phase 7.3 — case-insensitive substring filter for SelectOption
+/// labels. Hoisted out of the search handler so the filter logic is
+/// unit-testable without DB / route plumbing.
+pub(crate) fn filter_options(
+    opts: Vec<SelectOption>,
+    query: &str,
+    limit: usize,
+) -> Vec<SelectOption> {
+    let needle = query.to_lowercase();
+    opts.into_iter()
+        .filter(|o| o.label.to_lowercase().contains(&needle))
+        .take(limit)
+        .collect()
+}
+
+/// Phase 7.3 — remote-search row cap. Capped lower than the initial
+/// page render (Phase 7.2's `FK_OPTIONS_LIMIT = 50`) because each
+/// search hit is a network round-trip that the user actively
+/// initiated; 20 is the conventional typeahead size.
+pub(crate) const SEARCH_RESULT_LIMIT: usize = 20;
+
+/// Phase 7.3 — backend for the `/admin/search/:model` endpoint.
+/// Resolves the target AdminEntry by model name (singular / slug /
+/// display), fetches its rows via `AdminOps::list`, builds
+/// SelectOption labels via the same display-field ladder as
+/// `resolve_relation_options` (with `display_field=None` because the
+/// search URL doesn't currently encode it), and filters by the
+/// query. Returns an empty Vec if the model is unknown or no rows
+/// match — never an error, never a panic.
+pub(crate) async fn search_options(
+    admin: &Admin,
+    db: &Db,
+    model: &str,
+    query: &str,
+) -> Result<Vec<SelectOption>> {
+    let target = admin.entries().iter().find(|e| {
+        e.singular_name == model || e.admin_name == model || e.display_name == model
+    });
+    let Some(target) = target else {
+        return Ok(Vec::new());
+    };
+    let rows = target.ops.list(db).await?;
+    let display_idx = pick_display_index(target.fields, None);
+    let opts: Vec<SelectOption> = rows
+        .into_iter()
+        .map(|r| {
+            let label = display_idx
+                .and_then(|i| r.cells.get(i).cloned())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| r.id.to_string());
+            SelectOption {
+                value: r.id.to_string(),
+                label,
+            }
+        })
+        .collect();
+    Ok(filter_options(opts, query, SEARCH_RESULT_LIMIT))
 }
 
 /// Phase 7 — pick the index in `fields` whose name matches the
@@ -1169,6 +1245,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     maxlength: None,
                     searchable: false,
                     has_more: false,
+                    search_url: None,
                 },
                 FormField {
                     name: "password",
@@ -1191,6 +1268,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     maxlength: None,
                     searchable: false,
                     has_more: false,
+                    search_url: None,
                 },
             ],
         },
@@ -1217,6 +1295,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             }],
         },
     ]
@@ -1251,6 +1330,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 maxlength: Some(150),
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
             FormField {
                 name: "description",
@@ -1270,6 +1350,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
         ],
     }]
@@ -1307,6 +1388,7 @@ pub(crate) fn user_edit_identity_sections(
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
             FormField {
                 name: "role",
@@ -1326,6 +1408,7 @@ pub(crate) fn user_edit_identity_sections(
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
             FormField {
                 name: "is_active",
@@ -1345,6 +1428,7 @@ pub(crate) fn user_edit_identity_sections(
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
         ],
     }]
@@ -1375,6 +1459,7 @@ pub(crate) fn user_edit_password_sections() -> Vec<FormSection> {
             maxlength: None,
             searchable: false,
             has_more: false,
+            search_url: None,
         }],
     }]
 }
@@ -1403,6 +1488,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
             FormField {
                 name: "new_password1",
@@ -1422,6 +1508,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
             FormField {
                 name: "new_password2",
@@ -1441,6 +1528,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 maxlength: None,
                 searchable: false,
                 has_more: false,
+                search_url: None,
             },
         ],
     }]
@@ -1625,6 +1713,115 @@ mod tests {
         assert!(
             !body.contains("Item 1"),
             "rendered HTML must not contain the Phase 7 mock label"
+        );
+    }
+
+    /// Phase 7.3 — `filter_options` is the testable core of the
+    /// `/admin/search/:model` endpoint. Locks the contract:
+    ///   - case-insensitive substring match against `label`
+    ///   - results capped at the requested `limit`
+    ///   - empty query returns everything (callers gate length;
+    ///     the endpoint short-circuits empty in `show_search`)
+    #[test]
+    fn remote_search_returns_results() {
+        let opts = vec![
+            SelectOption { value: "1".to_string(), label: "alice@example.com".to_string() },
+            SelectOption { value: "2".to_string(), label: "bob@example.com".to_string() },
+            SelectOption { value: "3".to_string(), label: "Alice Cooper".to_string() },
+            SelectOption { value: "4".to_string(), label: "carol@acme.io".to_string() },
+        ];
+
+        // Case-insensitive: "alice" matches alice@example.com AND
+        // "Alice Cooper".
+        let r = filter_options(opts.clone(), "alice", 20);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0].value, "1");
+        assert_eq!(r[1].value, "3");
+
+        // Mixed case in query: also case-insensitive.
+        let r = filter_options(opts.clone(), "BoB", 20);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].value, "2");
+
+        // Limit honoured.
+        let r = filter_options(opts.clone(), "a", 2);
+        assert_eq!(r.len(), 2, "limit=2 caps the result vec");
+
+        // No matches → empty.
+        let r = filter_options(opts.clone(), "zzznoexist", 20);
+        assert!(r.is_empty());
+
+        // The legacy mock label MUST never appear (regression guard).
+        let r = filter_options(opts, "Item", 20);
+        assert!(r.is_empty(), "no row labelled 'Item' — legacy mock is gone");
+    }
+
+    /// Phase 7.3 — FK fields gain a `search_url` pointing at the
+    /// `/admin/search/<TargetModel>` endpoint. Locks both the URL
+    /// shape and the template's `data-search-url` attribute.
+    #[test]
+    fn fk_field_carries_search_url() {
+        static FK_FIELDS: &[crate::admin::AdminField] = &[crate::admin::AdminField {
+            name: "author_id",
+            label: "author_id",
+            field_type: FieldType::I64,
+            editable: true,
+            relation: Some(crate::admin::AdminRelation {
+                target_model: "User",
+                display_field: Some("email"),
+                multi: false,
+            }),
+            choices: None,
+        }];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
+        );
+        let ident = fake_identity(Role::Administrator);
+        let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
+        relation_options.insert(
+            "author_id",
+            (
+                vec![SelectOption { value: "1".into(), label: "alice@example.com".into() }],
+                false,
+            ),
+        );
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            relation_options,
+        );
+
+        let author = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "author_id")
+            .expect("author_id field");
+        assert_eq!(
+            author.search_url.as_deref(),
+            Some("/admin/search/User"),
+            "FK fields must carry the JSON search endpoint URL"
+        );
+
+        // Rendered template surfaces the URL as a data attribute.
+        // minijinja autoescapes `/` to `&#x2f;` in attribute values
+        // (OWASP-safe — browsers decode it back when reading the DOM,
+        // and `input.dataset.searchUrl` returns the unescaped string,
+        // which is what the JS fetch handler uses).
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &ctx)
+            .expect("form renders");
+        assert!(
+            body.contains("data-search-url=\"&#x2f;admin&#x2f;search&#x2f;User\""),
+            "search_url must surface as data-search-url on the search input"
         );
     }
 
@@ -2170,6 +2367,7 @@ mod tests {
                             "maxlength": null,
                             "searchable": false,
                             "has_more": false,
+                            "search_url": null,
                         },
                         {
                             "name": "published",
@@ -2189,6 +2387,7 @@ mod tests {
                             "maxlength": null,
                             "searchable": false,
                             "has_more": false,
+                            "search_url": null,
                         },
                     ],
                 },

@@ -319,6 +319,28 @@ pub fn register_admin_routes(
         }
     });
 
+    // Phase 7.3 — JSON search endpoint that powers the remote
+    // typeahead on FK / M2M `<select>` fields. Staff-guarded (same
+    // tier as the dashboard); the admin already exposes per-row
+    // metadata through the list pages so this isn't a new
+    // information surface, just a faster lookup. Registered with
+    // `:model` as the final segment — distinct enough not to
+    // collide with the project-level `/admin/:admin_name/...`
+    // wildcards registered later in the file.
+    let c = ctx.clone();
+    let router = router.get("/admin/search/:model", move |req| {
+        let c = c.clone();
+        async move {
+            match role_guard(&c, &req, Role::Staff).await? {
+                Guard::Redirect(r) => Ok(r),
+                Guard::Allow(ident) => {
+                    let model = req.param("model").unwrap_or("").to_string();
+                    handlers::show_search(&c, ident, &model, &req).await
+                }
+            }
+        }
+    });
+
     // Phase 7a/0.5/e — Developer-only stub routes. All three share
     // `admin/coming_soon.html`; Phase 8 replaces the bodies with real
     // implementations. Administrator does NOT get access — Developer
