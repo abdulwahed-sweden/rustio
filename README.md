@@ -18,6 +18,8 @@ granular permissions — without writing the glue.
 | Authorization | Users + Groups + per-action permissions, 60s LRU cache |
 | Caching | In-process LRU query cache with prefix invalidation |
 | Middleware | logger, csrf, rate_limit, gzip, security_headers |
+| Admin UI | sections + responsive grid, schema-driven widget mapping, FK / M2M selects with client-side filter and remote search, Inter font (self-hosted), 16 lucide icons |
+| Styling | Tailwind at build time → single minified `admin.css` baked into the binary at deploy. Tokens in `docs/design-system.json` are the source of truth |
 
 ## Quick start
 
@@ -134,10 +136,24 @@ You now have:
 
 ## Users, groups, permissions
 
-Three roles:
-- **Admin** — superuser. Bypasses every permission check.
-- **Staff** — can access admin, but only does what permissions allow.
-- **User** — no admin access.
+Two parallel grammars:
+
+- **Role** — the linear access ladder, one per user:
+  `User < Staff < Supervisor < Administrator < Developer`. Routes
+  set a floor with `role_guard(min: Role)`. `Administrator` and
+  `Developer` bypass per-permission checks (the trusted-operator
+  tier); `Staff` and `Supervisor` go through the permission machinery.
+  `is_active = FALSE` short-circuits both, checked **before** the
+  bypass.
+- **Permission** — a bag of codenames (`posts.add_post`,
+  `posts.change_post`, …), granted to a user directly or inherited
+  from a group. Routes call `perm_guard(perm: &str)`.
+
+Permission lookups are cached for 60s in a `DashMap` per user.
+Wholesale group writes (`DELETE FROM rustio_user_groups WHERE
+user_id = $1`) must call `invalidate_user_cache` explicitly — the
+per-pair helpers `add_user_to_group` / `remove_user_from_group`
+invalidate internally.
 
 Granting permissions, two paths:
 
@@ -198,9 +214,11 @@ Every command that talks to the DB takes `--db` or reads `DATABASE_URL`.
 ## Architecture
 
 ```
-rustio-core/                          ~7,000 LOC, 30+ tests
+rustio-core/                          ~14,700 LOC, 348 sandbox + 41 PG-gated tests
 ├── src/
-│   ├── admin/        list/edit/delete UI + built-in users/groups
+│   ├── admin/        types / render / handlers / routes / builtin /
+│   │                 audit / relations / intelligence / suggestions /
+│   │                 entry_builder / icons (16 lucide stroke icons)
 │   ├── ai/           planner, reviewer, executor (deterministic)
 │   ├── auth/         users, sessions, permissions (split files)
 │   ├── middleware/   logger, csrf, rate_limit, gzip, security
@@ -210,20 +228,26 @@ rustio-core/                          ~7,000 LOC, 30+ tests
 │   ├── server.rs     hyper glue + graceful shutdown
 │   └── ...
 └── assets/
-    ├── templates/    12 default Jinja templates (admin)
-    └── static/       hand-written CSS, ~280 lines
+    ├── templates/    24 admin templates (22 pages + 2 includes)
+    ├── css/          input.css — Tailwind source (authored)
+    └── static/
+        ├── css/      admin.css — minified Tailwind output (generated, ~65KB)
+        ├── fonts/    Inter Regular/Medium/SemiBold/Bold (woff2, ~95KB)
+        └── js/       search.js — vanilla search UI helper
 
 rustio-macros/                        ~400 LOC
 └── src/lib.rs        #[derive(RustioAdmin)]
 
-rustio-cli/                           ~470 LOC
+rustio-cli/                           ~600 LOC
 └── src/main.rs       the `rustio` binary
 
 examples/blog/                        ~150 LOC
 └── full Postgres + search + auth example
 ```
 
-See `docs/architecture.md` for the longer version.
+See `docs/architecture.md` for the longer version, `docs/brand.md`
+for the visual brand spec, and `docs/phases/` for the per-phase
+chronology.
 
 ## Design principles (unchanged from 0.9)
 

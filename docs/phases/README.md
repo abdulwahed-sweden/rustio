@@ -19,8 +19,20 @@ rule).
 | `PHASE7a-0.md` | 7a/0 | `SiteBranding` API |
 | `PHASE7a-0_5.md` | 7a/0.5 | Authorization, demo users, view-first navigation (12 commits) |
 | `PHASE7a-2.md` | 7a/2 | Admin redesign — Tailwind build pipeline + sidebar + Inter + lucide icons (5 commits) |
+| `PHASE1-ux.md` | 1 (UX) | Admin UX stabilization — auto timestamps, form polish, empty states |
 
-Read the latest report (`PHASE7a-0_5.md`) for the current state of
-the framework. Earlier reports stay accurate as a record of how the
-codebase got to where it is, not as live documentation of how it
-behaves now.
+The next chronological block — Phases 2 (design system foundation),
+3 (token migration sweep, six sub-phases), 4 (UI consistency polish),
+5 (a/c/d — dynamic list + smart field-to-UI mapping + enum/relation
+selects), 6 (layout intelligence), 6.2 (unify bespoke forms onto
+`FormField`), 7 (audit fixes), 7.1 (real FK / M2M data), 7.2
+(searchable + truncated FK selects), 7.3 (remote-search endpoint) —
+ships **without** a separate `PHASE*.md` per sub-phase. Each
+sub-phase's commit message is the authoritative report; `git log
+--oneline` is the index. `CHANGELOG.md`'s Unreleased section rolls
+the headlines up.
+
+Read the latest dedicated report (`PHASE7a-2.md`) plus the Unreleased
+CHANGELOG entry for the current state of the framework. Earlier
+reports stay accurate as a record of how the codebase got to where
+it is, not as live documentation of how it behaves now.

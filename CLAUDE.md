@@ -460,4 +460,4 @@ Anything less, the sub-phase is **in_progress**.
 
 ---
 
-*Last updated: end of Phase 7a/0.5.*
+*Last updated: end of Phase 7.3.*

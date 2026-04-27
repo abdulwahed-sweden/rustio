@@ -1,5 +1,130 @@
 # Changelog
 
+## Unreleased — Admin redesign + dynamic form layer
+
+Post-1.0 work on the admin surface: a design-system pass, a
+schema-driven form-rendering layer, foreign-key navigation, and a
+Tailwind build pipeline. The single-binary deploy invariant is
+preserved — admin.css and Inter woff2 are still `include_str!`-baked.
+
+### Added
+
+- **Design system** (Phase 2). `docs/design-system.json` is the single
+  source of truth for tokens (palette, typography ramp, spacing,
+  radii, shadows). `tailwind.config.js` mirrors it via `theme.extend`.
+  Two themes: light default + optional `theme-brand` (alias
+  `theme-rust`) on `<html class="theme-brand">`. Dark surfaces are
+  component-level (top bar, code blocks); no theme-wide dark toggle.
+- **Tailwind build pipeline** (Phase 7a/2). Source at
+  `rustio-core/assets/css/input.css`; compiled `admin.css` at
+  `rustio-core/assets/static/css/admin.css` is committed. `make css`
+  rebuilds; `make css-check` enforces parity in CI / pre-commit.
+- **Self-hosted Inter** (Phase 7a/2). Four woff2 weights
+  (Regular/Medium/SemiBold/Bold) under
+  `rustio-core/assets/static/fonts/`, served by explicit per-weight
+  routes registered in `register_admin_routes`. Adds ~95KB to the
+  binary. No CDN dependency.
+- **lucide icon set** (Phase 7a/2). 16 stroke icons baked at compile
+  time in `admin/icons.rs`; templates write
+  `{{ icon("home", class="w-4 h-4") }}`. Unknown names render as
+  empty strings (silent, never panic).
+- **Sidebar navigation** (Phase 7a/2). Top-bar brand mark + collapsible
+  sidebar with per-link active highlight (driven by
+  `window.location.pathname`, no per-page context plumbing). Mobile
+  drawer toggle. ~30 lines of inline JS, no framework.
+- **Auto timestamps** (Phase 1/a). `created_at` / `updated_at` of type
+  `DateTime<Utc>` are auto-promoted to `DateTimeAuto` in the admin —
+  hidden on create, read-only on edit, populated by the framework.
+- **Empty-state UX** (Phase 1/c). List pages distinguish *true-empty*
+  (no rows in the table) from *filtered-empty* (filters are too
+  restrictive); each gets a different message and CTA.
+- **Dynamic list rendering** (Phase 5/a). List pages are no longer
+  hand-rolled per model. The list template iterates a
+  `Vec<ListField>` produced by `list_ctx`, with per-row values
+  via `#[serde(flatten)] HashMap<String, String>`.
+- **Schema-driven widget mapping** (Phase 5/c). `map_field_to_ui`
+  picks widget + input_type from `AdminField` via a four-arm cascade
+  (choices → relation+multi → relation → `FieldType` match). One
+  layer; backend-driven; no template-side switches.
+- **Enum + relation-driven selects** (Phase 5/d). `AdminField.choices`
+  surfaces closed enum lists as `<select>`. `AdminRelation.multi`
+  surfaces M2M relations as multi-`<select>`. Additive — `FieldType`
+  remains `#[derive(Copy)]`.
+- **Layout intelligence** (Phase 6). `FormSection { title, fields }`
+  partitions a model's fields into Default / Metadata / Advanced
+  sections via name heuristics. The generic form template renders
+  each section as a responsive 1-col / 2-col grid.
+- **Unified form rendering** (Phase 6.2). All six bespoke forms
+  (login, password change, user new/edit, group new/edit) now use
+  `FormField` + `FormSection` + the shared
+  `admin/includes/_form_field.html` partial. One renderer for every
+  widget; custom blocks (banners, danger zones, checkbox lists,
+  permission grids) stay bespoke alongside the FormFields.
+- **Real FK / M2M options** (Phase 7.1). Relation selects are
+  populated from the database via `AdminOps::list`, not stub
+  `[("1", "Item 1"), ("2", "Item 2")]` placeholders. `form_ctx`
+  stays sync; show handlers fetch via `resolve_relation_options`
+  (async) and pass the option map in.
+- **FK truncation + searchable selects** (Phase 7.2). Relation
+  options are capped at `FK_OPTIONS_LIMIT = 50` so a relation with
+  1000+ rows is still usable. Each FK select gains a sibling text
+  input that filters `<option>`s client-side; the selected option
+  is exempt so a chosen value never disappears mid-edit. Plain
+  `<select>` remains fully functional with JS disabled.
+- **Remote-search FK endpoint** (Phase 7.3). New
+  `GET /admin/search/:model?q=<query>` route, Staff-guarded, returns
+  `application/json` (`[{value, label}, ...]` capped at 20). With
+  JS enabled the search input fetches against this endpoint; with
+  JS disabled the truncated 50-row plain `<select>` still works.
+- **Granular role ladder** (Phase 7a/0.5). The previous Admin / Staff
+  / User trio expanded to a five-rung linear ladder: `User < Staff
+  < Supervisor < Administrator < Developer`. `Administrator` and
+  `Developer` bypass per-permission checks; `Staff` and `Supervisor`
+  go through the permission machinery. `is_active = FALSE` short-
+  circuits both, checked **before** the bypass.
+- **Demo mode** (Phase 7a/0.5). `RUSTIO_DEMO_MODE=1` seeds one demo
+  user per role (5 users) on boot; email is `<role>@<domain>`,
+  password is the role slug. A demo banner renders site-wide while
+  the session is owned by a demo user. Same binary serves demo and
+  prod; the env var is the only toggle.
+- **CLI escape hatch for orphaned roles** (Phase 7a/0.5/f). When the
+  UI guard refuses a destructive role change, `rustio role set
+  --email --role` (with stdin `I UNDERSTAND` confirmation, or
+  `--yes` for scripted operators) lets an authorized operator
+  proceed.
+
+### Changed
+
+- **Admin module file count** held at 11 (plus four test siblings)
+  through every phase. New surface area landed inside existing
+  files — most density in `render.rs` (which grew from
+  context-struct serialisation to also house the dynamic-form
+  layer, FK option resolution, and the search helpers).
+- **Roles vocabulary** in code, templates, and CLI updated end-to-end
+  (Phase 7a/0.5). Old `Role::Admin` is gone; the closest replacement
+  is `Role::Administrator`. Migration: re-grant operators by role
+  on first boot.
+- **Recursion limit** bumped to `#![recursion_limit = "256"]` in
+  `rustio-core/src/lib.rs` (Phase 7.3). The default 128 was
+  insufficient for the render-test fixtures' hand-built
+  `serde_json::json!` literals once `FormField` grew to ~17 fields.
+
+### Removed
+
+- **Stub FK / M2M options** (Phase 7.1). The placeholder pairs
+  `[("1", "Item 1"), ("2", "Item 2")]` are gone — every relation
+  select is now backed by real data.
+- **Dead `error.html` + `.cancel-link` rule** (Phase 0
+  stabilization).
+
+### Verification snapshot (end of Phase 7.3)
+
+```
+cargo test --workspace --lib              348 passed; 0 failed; 41 ignored
+cargo clippy --workspace --all-targets    clean
+make css-check                            clean
+```
+
 ## 1.0.0 — Production stack
 
 This release pivots RustIO from a single-machine, SQLite-backed admin

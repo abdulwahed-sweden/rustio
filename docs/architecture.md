@@ -66,26 +66,39 @@ error  ──►  http  ──►  router  ──►  server
 files (plus four test siblings), each with one responsibility:
 
 - `mod.rs` — re-exports + the `register_admin_routes` entry-point.
-- `types.rs` — the data vocabulary: `AdminField`, `AdminModel`,
-  `AdminEntry`, `Admin`. No HTTP, no HTML.
+- `types.rs` — the data vocabulary: `AdminField` (with `choices`
+  for closed enum lists), `AdminRelation` (with `multi` for M2M),
+  `AdminModel`, `AdminEntry`, `Admin`. No HTTP, no HTML.
 - `render.rs` — builds `serde::Serialize` context structs for the
   templates (`BaseContext`, `dashboard_ctx`, `list_ctx`, `form_ctx`,
-  `confirm_delete_ctx`). No HTTP, no HTML strings in Rust.
+  `confirm_delete_ctx`). Also holds the dynamic-form layer:
+  `FormField` / `FormSection` (the field grouping that the generic
+  form template iterates), `map_field_to_ui` (cascade: choices →
+  relation+multi → relation → `FieldType` match → widget +
+  input_type), `resolve_relation_options` (async, FK/M2M rows from
+  `AdminOps::list`, capped at `FK_OPTIONS_LIMIT = 50`), and the
+  search helpers `search_options` / `filter_options` powering the
+  `/admin/search/:model` endpoint. No HTTP, no HTML strings in Rust.
 - `handlers.rs` — one `async fn` per generic admin action
-  (list/new/create/edit/update/delete + login/logout/password-change).
-  No URL knowledge.
+  (list/new/create/edit/update/delete + login/logout/password-change
+  + `show_search` for the FK lookup endpoint). No URL knowledge.
 - `routes.rs` — the only file that knows about URL shapes. Wires
   handlers into the router, holds `role_guard` / `perm_guard` /
-  `login_guard`.
+  `login_guard`. Registers `/admin/search/:model` (Staff-guarded,
+  JSON, `?q=` search) before the project-level wildcards.
 - `builtin.rs` — bespoke handlers for the built-in user/group pages
   (`/admin/users`, `/admin/groups`, plus the view + delete surfaces
-  added in Phase 7a/0.5/f and /h).
+  added in Phase 7a/0.5/f and /h). Builds `FormSection` lists via
+  `render::user_new_form_sections` etc. so bespoke and generic forms
+  share one rendering path.
 - `entry_builder.rs` — derives `AdminEntry` lists from a `Schema`
   (the dynamic counterpart to `#[derive(RustioAdmin)]`).
 - `audit.rs` — schema-vs-admin parity audit (catches missing fields).
 - `relations.rs` — relation derivation for foreign-key navigation.
 - `intelligence.rs` — schema-driven layout suggestions.
 - `suggestions.rs` — surfaces the suggestions on the admin index.
+- `icons.rs` — 16 lucide stroke icons, baked at compile time, served
+  by the `icon(name, class="...")` minijinja function.
 
 A new generic admin action (one that applies to every model) touches:
 1. `handlers.rs` for the logic.
@@ -99,10 +112,76 @@ user-profile view in Phase 7a/0.5/h) touches:
 3. `assets/templates/admin/<name>.html` for the markup.
 4. `templates.rs` (`EMBEDDED_TEMPLATES`) for the registry line.
 5. `templates::tests` for the render test.
+6. `make css` if the template uses any new Tailwind utility classes
+   (Phase 7a/2 contract). The compiled `admin.css` is committed
+   alongside the template; `make css-check` enforces parity.
 
 The four template touch-points are the **(file, registry,
 render-test) triple** — see `CLAUDE.md` for why all three are
 load-bearing.
+
+## Forms, sections, and the FK select pipeline
+
+Every admin form — generic-derived OR bespoke (login, password
+change, user new/edit, group new/edit) — flows through the same
+two-step pipeline introduced in Phases 6 / 6.2:
+
+1. A handler builds a `Vec<FormSection>`. `FormSection { title,
+   fields }` partitions the model's fields into Default / Metadata /
+   Advanced groupings. The generic path uses
+   `group_fields_into_sections` (a name-heuristic partition); the
+   bespoke handlers hand-build their sections so they can keep
+   custom blocks (banners, danger zones, group-membership
+   checkboxes, permission grids).
+2. The template `admin/form.html` iterates the sections, and for
+   every field includes `admin/includes/_form_field.html` — one
+   shared renderer that handles all four widgets (`input` /
+   `checkbox` / `textarea` / `select`) and all the optional
+   attributes (`required`, `autofocus`, `disabled`, `maxlength`,
+   `autocomplete`, `placeholder`, plus the search-input wrapper
+   for FK / M2M selects).
+
+Widget choice for a field comes from `map_field_to_ui(&AdminField)`
+— a four-arm cascade: **choices** (closed enum list) → select;
+**relation + multi** → multi-select; **relation** → single select;
+otherwise → `FieldType` match (textarea heuristic for
+body/description; checkbox for bool; text/number/datetime input
+otherwise).
+
+For relation-backed selects, `resolve_relation_options` (called by
+the show handlers, **before** the sync `form_ctx`) fetches the
+target rows via `AdminOps::list`, builds labels via the
+display-field ladder (`display_field` → `name` → `title` → id),
+and truncates at `FK_OPTIONS_LIMIT = 50`. The (options, has_more)
+tuple is threaded into `form_ctx` and onto each FK `FormField`,
+which carries `searchable: true`, `has_more`, and a
+`search_url: Some("/admin/search/<Model>")` so the template can
+upgrade the input client-side.
+
+The search input has two progressively-enhanced modes, both
+fall-back-safe:
+
+- **Client-side filter** (default — Phase 7.2). With JS enabled,
+  the input listener walks `<option>` children of the target select
+  and toggles `option.hidden`. Selected option is exempt so a
+  chosen value never disappears mid-edit.
+- **Remote search** (Phase 7.3). When the field carries
+  `data-search-url`, the input listener `fetch`es the URL with
+  `?q=<query>` at ≥2 chars, replaces the `<option>` set with the
+  JSON response, and re-prepends the previously-selected option if
+  the search results don't contain it (so the form posts the
+  operator's prior FK value if they don't change it). Errors are
+  swallowed; the existing options remain.
+
+With JS disabled, the truncated 50-row plain `<select>` is fully
+functional. `FormData` is unchanged
+(`HashMap<String, String>` — multi-value M2M form posts are out of
+scope until Phase 7.4+).
+
+The `/admin/search/:model` endpoint itself is Staff-guarded, returns
+`application/json` (an array of `{value, label}` objects, capped at
+`SEARCH_RESULT_LIMIT = 20`), and short-circuits to `[]` for unknown
+models / empty queries / no matches — never 5xx.
 
 ## The AI layer, in three stages
 

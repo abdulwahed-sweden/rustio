@@ -258,29 +258,33 @@ file is the destination, not the path.
 
 ---
 
-## Open questions for the redesign phase
+## Open questions — resolved by Phase 7a/2
 
-1. **Sidebar?** The showcase has a top-bar nav, no sidebar. Phase 6a
-   explicitly says "header + breadcrumbs, NO sidebar". The view-first
-   pattern (Phase 7a/0.5/h) was added without a sidebar. **Confirm
-   no-sidebar still holds, or open the question.**
-2. **Icons?** The showcase uses a single text mark "R" and zero icons
-   elsewhere. A modern admin (Linear, Stripe, Firebase) leans on
-   stroke icons for navigation density. Decide before implementation
-   whether to bring an icon set (lucide is the obvious choice) or
-   stay text-only.
-3. **Typography:** ship Inter or stay system-only? See "Inter /
-   single-binary tension" above.
-4. **Existing palette CSS variable names:** the showcase uses `--rust`,
-   the Phase 6a CSS uses `--accent`. The redesign must pick one set
-   and rename consistently. Recommend keeping `--rust` as more
-   descriptive.
-5. **Stats cards — do they have a home in the admin?** The showcase
-   shows a hero + perf stats grid that fits a marketing landing page,
-   not a CRUD admin. Decide which showcase elements actually map to
-   admin surfaces (login / dashboard / list / form / view) and which
-   are purely brand assets to reference.
+1. ~~**Sidebar?**~~ **Yes.** Top-bar brand mark + collapsible
+   left sidebar, mobile drawer toggle. The Phase 6a "no sidebar"
+   contract is superseded.
+2. ~~**Icons?**~~ **lucide.** 16 stroke icons baked at compile time
+   in `admin/icons.rs`; templates use `{{ icon("home", class="w-4 h-4") }}`.
+   Adding an icon: drop the lucide inner-SVG fragment into `ICONS`
+   and update the unit-test catalogue.
+3. ~~**Typography?**~~ **Self-hosted Inter.** Four woff2 weights
+   (Regular/Medium/SemiBold/Bold) under
+   `rustio-core/assets/static/fonts/`, served by per-weight routes
+   from `register_admin_routes`. Adds ~95KB to the binary; preserves
+   single-binary purity. (Phase 2's earlier interim — Roboto + Space
+   Grotesk + JetBrains Mono via Google Fonts — was retired.)
+4. ~~**Token names?**~~ **Tailwind tokens are the source.**
+   `docs/design-system.json` is the canonical token sheet; CSS
+   custom properties in `assets/css/input.css` and `theme.extend` in
+   `tailwind.config.js` mirror it. The Phase 6a `--accent` /
+   `--primary` set was retired in the Phase 3 token sweep; the
+   design-system tokens replaced them.
+5. ~~**Stats cards in admin?**~~ **Login / list / form / view** are
+   in scope. The hero + perf-stats grid stays as a brand asset for
+   landing pages, not the admin shell.
 
 ---
 
-*Adopted: 2026-04-26. **Implemented:** Phase 7a/2 (commits `4d773e0` → `9f00dce`).*
+*Adopted: 2026-04-26. **Implemented:** Phase 7a/2 (commits `4d773e0` → `9f00dce`).
+Token sweep + design-system pass: Phases 2 → 4. Open questions
+above marked resolved as of Phase 7.3.*
