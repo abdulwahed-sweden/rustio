@@ -241,10 +241,10 @@ fn action_label(action_type: &str) -> &'static str {
 
 fn action_pill_class(action_type: &str) -> &'static str {
     match action_type {
-        "create" => "rio-pill rio-pill-emerald",
-        "update" => "rio-pill rio-pill-indigo",
-        "delete" => "rio-pill rio-pill-rose",
-        _ => "rio-pill",
+        "create" => "badge-success",
+        "update" => "badge-neutral",
+        "delete" => "badge-danger",
+        _ => "badge-neutral",
     }
 }
 

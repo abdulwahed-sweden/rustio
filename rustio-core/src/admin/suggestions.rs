@@ -52,8 +52,8 @@ impl Confidence {
     /// CSS pill class reusing the existing status palette.
     pub fn pill_class(self) -> &'static str {
         match self {
-            Confidence::High => "rio-pill rio-pill-emerald",
-            Confidence::Medium => "rio-pill rio-pill-amber",
+            Confidence::High => "badge-success",
+            Confidence::Medium => "badge-warning",
         }
     }
 }

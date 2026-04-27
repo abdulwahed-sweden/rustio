@@ -318,26 +318,12 @@
   .action-checkbox { @apply w-10 text-center pr-0; }
   .action-checkbox input[type=checkbox] { @apply w-4 h-4 rounded border-gray-300 text-rust focus:ring-accent; }
 
-  /* --- Pills / badges ---------------------------------------------- */
-  .rio-pill {
-    @apply inline-flex items-center px-2.5 py-1 text-[11.5px] font-semibold uppercase tracking-wider rounded-md mr-1.5;
-  }
-  .rio-pill-emerald { @apply bg-emerald-100 text-emerald-800; }
-  .rio-pill-indigo  { @apply bg-indigo-100 text-indigo-800; }
-  .rio-pill-rose    { @apply bg-rose-100 text-rose-800; }
-  .rio-pill-amber   { @apply bg-amber-100 text-amber-800; }
-
-  /* Phase 7a/2 — modern badge style for tags / status */
-  .badge {
-    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[13px] font-semibold border;
-  }
-  .badge::before {
-    content: "";
-    @apply w-1.5 h-1.5 rounded-full bg-current;
-  }
-  .badge-rust  { @apply bg-rust/10 text-rust border-rust/20; }
-  .badge-teal  { @apply bg-teal/10 text-teal border-teal/20; }
-  .badge-muted { @apply bg-paper text-gray-600 border-border; }
+  /* --- Pills / badges ----------------------------------------------
+   * Phase 3/d removed the legacy `.rio-pill*` and the Phase 7a/2
+   * `.badge` + `.badge-rust/teal/muted` family. The four canonical
+   * `.badge-success / -warning / -danger / -neutral` tokens at the
+   * bottom of this file are the single chip system. Every callsite
+   * was migrated. */
 
   /* --- Forms ------------------------------------------------------- */
   .form-row { @apply mb-4; }
@@ -589,29 +575,37 @@
     height: 36px;
   }
 
-  /* --- Badges (single token; replaces split rio-pill / badge) ------ */
-  /* Variants follow the JSON semantic colour palette: success / warning
-   * / danger / neutral. Existing `.badge-rust`, `.badge-teal`,
-   * `.badge-muted` stay above as legacy aliases. */
+  /* --- Badges (single token; replaces split rio-pill / badge) ------
+   * Phase 3/d-0 retune — shape matches the legacy `.rio-pill` chip
+   * (compact, uppercase, tracking-wider, rounded-md, no border, no
+   * dot prefix) so the role-pill migration in 3/d is shape-identical
+   * to the previous rendering. Status / group badges that came from
+   * the dot-prefixed `.badge` legacy shrink + go uppercase as part
+   * of the unification — sanctioned visual change per phase spec.
+   *
+   * Colours come from the JSON semantic palette. Exact shade differs
+   * from the previous emerald-100/800 etc. pairs (since the JSON uses
+   * the 600-tier value at /10 opacity), but the colour FAMILY is
+   * preserved on light theme and adapts on dark. */
   .badge-success {
-    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
-           bg-success/10 text-success border border-success/20
-           text-caption font-semibold;
+    @apply inline-flex items-center px-2.5 py-1 rounded-md
+           bg-success/10 text-success
+           text-[11.5px] font-semibold uppercase tracking-wider;
   }
   .badge-warning {
-    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
-           bg-warning/10 text-warning border border-warning/20
-           text-caption font-semibold;
+    @apply inline-flex items-center px-2.5 py-1 rounded-md
+           bg-warning/10 text-warning
+           text-[11.5px] font-semibold uppercase tracking-wider;
   }
   .badge-danger {
-    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
-           bg-danger/10 text-danger border border-danger/20
-           text-caption font-semibold;
+    @apply inline-flex items-center px-2.5 py-1 rounded-md
+           bg-danger/10 text-danger
+           text-[11.5px] font-semibold uppercase tracking-wider;
   }
   .badge-neutral {
-    @apply inline-flex items-center gap-1.5 px-sm py-xs rounded-md
-           bg-surface-muted text-text-muted border border-border
-           text-caption font-semibold;
+    @apply inline-flex items-center px-2.5 py-1 rounded-md
+           bg-surface-muted text-text-muted
+           text-[11.5px] font-semibold uppercase tracking-wider;
   }
 
   /* --- Layout helpers from the audit ------------------------------- */

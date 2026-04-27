@@ -42,7 +42,7 @@
 
     <div class="card">
         <p class="text-[15px] mb-3">
-            Delete the user <strong>"{{ email }}"</strong> (<span class="rio-pill rio-pill-{{ role == 'developer' and 'rose' or (role == 'administrator' and 'rose' or (role == 'supervisor' and 'amber' or (role == 'staff' and 'indigo' or 'emerald'))) }}">{{ role }}</span>)?
+            Delete the user <strong>"{{ email }}"</strong> (<span class="badge-{{ role == 'developer' and 'danger' or (role == 'administrator' and 'danger' or (role == 'supervisor' and 'warning' or (role == 'staff' and 'neutral' or 'success'))) }}">{{ role }}</span>)?
             {% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
             The following will also be removed (cascade):
             {% else %}

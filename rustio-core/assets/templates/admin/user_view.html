@@ -52,22 +52,22 @@
         </div>
         <div class="form-row">
             <label>Role</label>
-            <div class="field-input"><span class="rio-pill rio-pill-{{ target_role == 'developer' and 'rose' or (target_role == 'administrator' and 'rose' or (target_role == 'supervisor' and 'amber' or (target_role == 'staff' and 'indigo' or 'emerald'))) }}">{{ target_role }}</span></div>
+            <div class="field-input"><span class="badge-{{ target_role == 'developer' and 'danger' or (target_role == 'administrator' and 'danger' or (target_role == 'supervisor' and 'warning' or (target_role == 'staff' and 'neutral' or 'success'))) }}">{{ target_role }}</span></div>
         </div>
         <div class="form-row">
             <label>Status</label>
             <div class="field-input">
                 {% if target_is_active %}
-                <span class="badge badge-teal">Active</span>
+                <span class="badge-success">Active</span>
                 {% else %}
-                <span class="badge badge-muted">Inactive (cannot sign in)</span>
+                <span class="badge-neutral">Inactive (cannot sign in)</span>
                 {% endif %}
             </div>
         </div>
         {% if target_is_demo %}
         <div class="form-row">
             <label>Demo</label>
-            <div class="field-input"><span class="badge badge-rust">{{ target_demo_label or "Demo account" }}</span></div>
+            <div class="field-input"><span class="badge-warning">{{ target_demo_label or "Demo account" }}</span></div>
         </div>
         {% endif %}
     </fieldset>
@@ -92,7 +92,7 @@
     {% if groups %}
     <div class="flex flex-wrap gap-2">
         {% for g in groups %}
-        <span class="badge badge-rust" title="{{ g.description }}">{{ g.name }}</span>
+        <span class="badge-neutral" title="{{ g.description }}">{{ g.name }}</span>
         {% endfor %}
     </div>
     {% else %}

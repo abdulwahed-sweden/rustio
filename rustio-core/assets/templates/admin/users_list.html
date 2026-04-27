@@ -39,8 +39,8 @@
         {% for u in users %}
         <tr class="user-row">
             <td><a href="/admin/users/{{ u.id }}/" class="row-link">{{ u.email }}</a></td>
-            <td><a href="/admin/users/{{ u.id }}/" class="row-link"><span class="rio-pill rio-pill-{{ u.role == 'developer' and 'rose' or (u.role == 'administrator' and 'rose' or (u.role == 'supervisor' and 'amber' or (u.role == 'staff' and 'indigo' or 'emerald'))) }}">{{ u.role }}</span></a></td>
-            <td><a href="/admin/users/{{ u.id }}/" class="row-link">{% if u.is_active %}<span class="badge badge-teal">Active</span>{% else %}<span class="badge badge-muted">Inactive</span>{% endif %}</a></td>
+            <td><a href="/admin/users/{{ u.id }}/" class="row-link"><span class="badge-{{ u.role == 'developer' and 'danger' or (u.role == 'administrator' and 'danger' or (u.role == 'supervisor' and 'warning' or (u.role == 'staff' and 'neutral' or 'success'))) }}">{{ u.role }}</span></a></td>
+            <td><a href="/admin/users/{{ u.id }}/" class="row-link">{% if u.is_active %}<span class="badge-success">Active</span>{% else %}<span class="badge-neutral">Inactive</span>{% endif %}</a></td>
             <td><a href="/admin/users/{{ u.id }}/" class="row-link help">{{ u.created_at }}</a></td>
         </tr>
         {% endfor %}

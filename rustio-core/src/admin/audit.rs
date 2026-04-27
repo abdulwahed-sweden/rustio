@@ -115,9 +115,9 @@ impl ActionType {
     /// timeline reads at a glance.
     pub fn pill_class(self) -> &'static str {
         match self {
-            Self::Create => "rio-pill rio-pill-emerald",
-            Self::Update => "rio-pill rio-pill-indigo",
-            Self::Delete => "rio-pill rio-pill-rose",
+            Self::Create => "badge-success",
+            Self::Update => "badge-neutral",
+            Self::Delete => "badge-danger",
         }
     }
 }

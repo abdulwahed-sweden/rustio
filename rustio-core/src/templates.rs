@@ -503,7 +503,7 @@ mod tests {
         // Looking for the demo-account marker that's only in the
         // gated `{% if target_is_demo %}` block.
         assert!(
-            !body.contains("badge-rust\">staff @"),
+            !body.contains("badge-warning\">staff @"),
             "demo badge must NOT render for a real (non-demo) user"
         );
         assert!(
