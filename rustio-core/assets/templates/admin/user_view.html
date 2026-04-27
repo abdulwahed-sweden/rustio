@@ -32,7 +32,7 @@
     {% endif %}
 </div>
 
-<div class="flex items-center gap-3 mb-6">
+<div class="flex items-center gap-3 mb-lg">
     <span class="hero-icon hero-icon-lg hero-icon-rust hero-icon-avatar">
         {{ target_email[0:1]|upper }}
     </span>
@@ -90,7 +90,7 @@
     <h2>Group memberships ({{ groups|length }})</h2>
     <div class="px-5 py-4">
     {% if groups %}
-    <div class="flex flex-wrap gap-2">
+    <div class="flex flex-wrap gap-sm">
         {% for g in groups %}
         <span class="badge-neutral" title="{{ g.description }}">{{ g.name }}</span>
         {% endfor %}
@@ -105,7 +105,7 @@
 <fieldset class="module">
     <h2>Direct permissions ({{ direct_perms|length }})</h2>
     <div class="px-5 py-4">
-        <div class="flex flex-wrap gap-2 mb-3">
+        <div class="flex flex-wrap gap-sm mb-3">
             {% for p in direct_perms %}
             <code class="bg-paper border border-border px-2 py-1 rounded text-caption font-mono">{{ p }}</code>
             {% endfor %}

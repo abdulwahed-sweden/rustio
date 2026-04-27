@@ -53,7 +53,7 @@
             <div class="field-input">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {% for p in all_permissions %}
-                    <label class="inline-flex items-center gap-2 px-2.5 py-1.5 rounded border border-border hover:border-rust hover:bg-rust/5 transition cursor-pointer">
+                    <label class="inline-flex items-center gap-sm px-2.5 py-1.5 rounded border border-border hover:border-rust hover:bg-rust/5 transition cursor-pointer">
                         <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
                         <code class="text-caption font-mono">{{ p.name }}</code>
                     </label>
@@ -82,7 +82,7 @@
             <a href="/admin/groups/{{ group_id }}/delete" class="deletelink-inline inline-flex items-center gap-1.5">
                 {{ icon("trash", class="w-4 h-4") }} Delete this group
             </a>
-            <p class="form-help mt-1">Group memberships and permission attachments cascade away. Users keep their accounts.</p>
+            <p class="form-help mt-xs">Group memberships and permission attachments cascade away. Users keep their accounts.</p>
         </div>
     </div>
 </fieldset>

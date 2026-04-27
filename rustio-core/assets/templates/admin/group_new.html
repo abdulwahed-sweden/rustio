@@ -29,19 +29,19 @@
             <label for="id_name">Name:</label>
             <div class="field-input">
                 <input type="text" id="id_name" name="name" value="{{ name }}" required maxlength="150" autofocus>
-                <p class="form-help mt-1">A short identifier — letters, digits, dots and dashes only. Example: <code class="code-pill">editors</code>.</p>
+                <p class="form-help mt-xs">A short identifier — letters, digits, dots and dashes only. Example: <code class="code-pill">editors</code>.</p>
             </div>
         </div>
         <div class="form-row">
             <label for="id_description">Description:</label>
             <div class="field-input">
                 <textarea id="id_description" name="description" rows="3">{{ description }}</textarea>
-                <p class="form-help mt-1">Optional. What this group is for.</p>
+                <p class="form-help mt-xs">Optional. What this group is for.</p>
             </div>
         </div>
     </fieldset>
 
-    <p class="form-help mt-2">After saving you'll be sent to the group's edit page where you can grant permissions.</p>
+    <p class="form-help mt-sm">After saving you'll be sent to the group's edit page where you can grant permissions.</p>
 
     <div class="submit-row">
         <button type="submit" name="_save" class="btn-primary">

@@ -29,7 +29,7 @@
 
 {% if is_last_developer %}
 <div class="warningnote">
-    <div class="flex items-start gap-2">
+    <div class="flex items-start gap-sm">
         <span class="mt-0.5 shrink-0">{{ icon("circle-alert", class="w-4 h-4") }}</span>
         <div>
             <strong>Heads up:</strong> {{ email }} is the last active developer.
@@ -50,7 +50,7 @@
             <label>Email:</label>
             <div class="field-input">
                 <input type="email" value="{{ email }}" disabled class="opacity-60 cursor-not-allowed">
-                <p class="form-help mt-1">Email changes aren't exposed here — they require a full user update.</p>
+                <p class="form-help mt-xs">Email changes aren't exposed here — they require a full user update.</p>
             </div>
         </div>
         <div class="form-row">
@@ -68,11 +68,11 @@
         <div class="form-row">
             <label for="id_is_active">Active:</label>
             <div class="field-input">
-                <label class="inline-flex items-center gap-2">
+                <label class="inline-flex items-center gap-sm">
                     <input type="checkbox" id="id_is_active" name="is_active"{% if is_active %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
                     <span>Allow this user to sign in</span>
                 </label>
-                <p class="form-help mt-1">Inactive users cannot sign in or hold sessions.</p>
+                <p class="form-help mt-xs">Inactive users cannot sign in or hold sessions.</p>
             </div>
         </div>
     </fieldset>
@@ -105,7 +105,7 @@
             <label for="id_new_password">New password:</label>
             <div class="field-input">
                 <input type="password" id="id_new_password" name="new_password" autocomplete="new-password">
-                <p class="form-help mt-1">Leave blank to keep the current password unchanged. This sets <em>this user's</em> password — to change your own, visit <a href="/admin/password_change" class="text-rust hover:underline">Change password</a>.</p>
+                <p class="form-help mt-xs">Leave blank to keep the current password unchanged. This sets <em>this user's</em> password — to change your own, visit <a href="/admin/password_change" class="text-rust hover:underline">Change password</a>.</p>
             </div>
         </div>
     </fieldset>
@@ -123,7 +123,7 @@
             <a href="/admin/users/{{ user_id }}/delete" class="deletelink-inline inline-flex items-center gap-1.5">
                 {{ icon("trash", class="w-4 h-4") }} Delete this user
             </a>
-            <p class="form-help mt-1">Group memberships, direct permission grants, and active sessions all cascade away.</p>
+            <p class="form-help mt-xs">Group memberships, direct permission grants, and active sessions all cascade away.</p>
         </div>
     </div>
 </fieldset>

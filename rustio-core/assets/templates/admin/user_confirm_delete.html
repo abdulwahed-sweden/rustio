@@ -13,7 +13,7 @@
 
 {% block content %}
 <div class="max-w-3xl">
-    <div class="flex items-center gap-3 mb-4">
+    <div class="flex items-center gap-3 mb-md">
         <span class="hero-icon hero-icon-danger">
             {{ icon("circle-alert", class="w-5 h-5") }}
         </span>
@@ -22,7 +22,7 @@
 
     {% if is_self %}
     <div class="errornote">
-        <div class="flex items-start gap-2">
+        <div class="flex items-start gap-sm">
             <span class="mt-0.5 shrink-0">{{ icon("circle-x", class="w-4 h-4") }}</span>
             <div>
                 You cannot delete <strong>your own account</strong> while signed in. Sign in as another administrator to remove this user.
@@ -31,7 +31,7 @@
     </div>
     {% elif is_last_developer %}
     <div class="errornote">
-        <div class="flex items-start gap-2">
+        <div class="flex items-start gap-sm">
             <span class="mt-0.5 shrink-0">{{ icon("circle-x", class="w-4 h-4") }}</span>
             <div>
                 <strong>{{ email }}</strong> is the last active developer. Promote another user to <em>Developer</em> via <code class="code-pill">rustio-cli user role set</code> before deleting this account.

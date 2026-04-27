@@ -14,7 +14,7 @@
         {{ icon("circle-x", class="w-6 h-6") }}
     </span>
     <h1>Permission denied</h1>
-    <p class="text-text-muted mt-2">You don't have permission to access this page.</p>
+    <p class="text-text-muted mt-sm">You don't have permission to access this page.</p>
 
     {% if required_role %}
     <p class="text-gray-600 text-small mt-3">
@@ -23,12 +23,12 @@
     {% endif %}
 
     {% if attempted %}
-    <p class="text-gray-600 text-small mt-1">
+    <p class="text-gray-600 text-small mt-xs">
         You tried to reach: <code class="code-pill">{{ attempted }}</code>
     </p>
     {% endif %}
 
-    <div class="mt-6">
+    <div class="mt-lg">
         <a href="/admin" class="btn-ghost">
             {{ icon("arrow-left", class="w-4 h-4") }} Return to dashboard
         </a>

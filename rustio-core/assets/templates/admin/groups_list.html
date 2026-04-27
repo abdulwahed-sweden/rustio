@@ -27,7 +27,7 @@
         <tr>
             <th scope="col">Name</th>
             <th scope="col">Description</th>
-            <th scope="col" class="text-right pr-4">Actions</th>
+            <th scope="col" class="text-right pr-md">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -35,7 +35,7 @@
         <tr>
             <td><a href="/admin/groups/{{ g.id }}/edit" class="text-rust hover:underline font-semibold">{{ g.name }}</a></td>
             <td class="help">{{ g.description }}</td>
-            <td class="text-right pr-4">
+            <td class="text-right pr-md">
                 <a href="/admin/groups/{{ g.id }}/edit" class="text-rust no-underline hover:underline mr-3 inline-flex items-center gap-1">
                     {{ icon("pencil", class="w-3.5 h-3.5") }} Edit
                 </a>

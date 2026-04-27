@@ -130,7 +130,12 @@
 
   html { @apply text-body; }
   body {
-    @apply bg-paper text-metal antialiased font-sans;
+    /* Phase 4 — light theme keeps the legacy bg-paper / text-metal
+     * brand pair; <html class="dark"> swaps to the JSON `bg` / `text`
+     * tokens so the whole page actually goes dark instead of staying
+     * warm-cream. This is the most-visible dark-mode contrast fix in
+     * the polish pass. */
+    @apply bg-paper text-metal antialiased font-sans dark:bg-bg dark:text-text;
     font-feature-settings: "ss01", "tnum";
     line-height: 1.6;
   }

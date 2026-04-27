@@ -3,12 +3,12 @@
 {% block bodyclass %}dashboard{% endblock %}
 
 {% block content %}
-<div class="mb-6">
+<div class="mb-lg">
     <h1 class="text-h1 font-heading tracking-tight">{{ index_title }}</h1>
-    <p class="text-text-muted text-body mt-1">Welcome back. Pick a model to manage or jump to a recent change.</p>
+    <p class="text-text-muted text-body mt-xs">Welcome back. Pick a model to manage or jump to a recent change.</p>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+<div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-lg">
 
     <div class="space-y-6">
 
@@ -16,14 +16,14 @@
     {% for app in apps %}
     <section class="card">
         <h2 class="text-caption uppercase tracking-wider text-text-muted font-semibold mb-3">{{ app.label }}</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-sm">
             {% for model in app.models %}
             <div class="flex items-center justify-between border border-border rounded-md px-3 py-2.5 hover:border-rust hover:bg-rust/5 transition">
-                <a href="/admin/{{ model.admin_name }}/" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-2">
+                <a href="/admin/{{ model.admin_name }}/" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-sm">
                     {{ icon("table", class="w-4 h-4 text-gray-400") }}
                     {{ model.display_name }}
                 </a>
-                <div class="flex gap-2 text-caption">
+                <div class="flex gap-sm text-caption">
                     <a href="/admin/{{ model.admin_name }}/new" class="text-emerald-700 font-medium no-underline hover:underline">+ Add</a>
                     <a href="/admin/{{ model.admin_name }}/" class="text-rust font-medium no-underline hover:underline">Change</a>
                 </div>
@@ -41,21 +41,21 @@
     {% if identity and identity.is_admin %}
     <section class="card" id="auth-app">
         <h2 class="text-caption uppercase tracking-wider text-text-muted font-semibold mb-3">Authentication & authorization</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-sm">
             <div class="flex items-center justify-between border border-border rounded-md px-3 py-2.5 hover:border-rust hover:bg-rust/5 transition">
-                <a href="/admin/users" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-2">
+                <a href="/admin/users" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-sm">
                     {{ icon("users", class="w-4 h-4 text-gray-400") }} Users
                 </a>
-                <div class="flex gap-2 text-caption">
+                <div class="flex gap-sm text-caption">
                     <a href="/admin/users/new" class="text-emerald-700 font-medium no-underline hover:underline">+ Add</a>
                     <a href="/admin/users" class="text-rust font-medium no-underline hover:underline">Change</a>
                 </div>
             </div>
             <div class="flex items-center justify-between border border-border rounded-md px-3 py-2.5 hover:border-rust hover:bg-rust/5 transition">
-                <a href="/admin/groups" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-2">
+                <a href="/admin/groups" class="text-metal font-semibold no-underline hover:text-rust flex items-center gap-sm">
                     {{ icon("users-2", class="w-4 h-4 text-gray-400") }} Groups
                 </a>
-                <div class="flex gap-2 text-caption">
+                <div class="flex gap-sm text-caption">
                     <a href="/admin/groups/new" class="text-emerald-700 font-medium no-underline hover:underline">+ Add</a>
                     <a href="/admin/groups" class="text-rust font-medium no-underline hover:underline">Change</a>
                 </div>
@@ -68,7 +68,7 @@
 
     <aside class="space-y-6 lg:sticky lg:top-6 self-start">
         <section class="card">
-            <h2 class="text-caption uppercase tracking-wider text-text-muted font-semibold mb-3 flex items-center gap-2">
+            <h2 class="text-caption uppercase tracking-wider text-text-muted font-semibold mb-3 flex items-center gap-sm">
                 {{ icon("clock", class="w-4 h-4") }} Recent activity
             </h2>
             {% if recent_actions %}

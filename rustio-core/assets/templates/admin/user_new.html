@@ -29,14 +29,14 @@
             <label for="id_email">Email:</label>
             <div class="field-input">
                 <input type="email" id="id_email" name="email" value="{{ email }}" required autocomplete="off" autofocus>
-                <p class="form-help mt-1">Must be unique across all users.</p>
+                <p class="form-help mt-xs">Must be unique across all users.</p>
             </div>
         </div>
         <div class="form-row">
             <label for="id_password">Password:</label>
             <div class="field-input">
                 <input type="password" id="id_password" name="password" required autocomplete="new-password">
-                <p class="form-help mt-1">At least 8 characters. The user can change it later via <em>Change password</em>.</p>
+                <p class="form-help mt-xs">At least 8 characters. The user can change it later via <em>Change password</em>.</p>
             </div>
         </div>
     </fieldset>
@@ -53,12 +53,12 @@
                     <option value="administrator" {% if role == "administrator" %}selected{% endif %}>Administrator (full coverage; bypasses group checks)</option>
                     <option value="developer"     {% if role == "developer"     %}selected{% endif %}>Developer (schema browser + execution logs + SQL console)</option>
                 </select>
-                <p class="form-help mt-1">Higher roles include all lower-role capabilities. Group memberships are assigned on the next page after save.</p>
+                <p class="form-help mt-xs">Higher roles include all lower-role capabilities. Group memberships are assigned on the next page after save.</p>
             </div>
         </div>
     </fieldset>
 
-    <p class="form-help mt-2">After saving you'll be sent to the user's edit page where you can pick group memberships.</p>
+    <p class="form-help mt-sm">After saving you'll be sent to the user's edit page where you can pick group memberships.</p>
 
     <div class="submit-row">
         <button type="submit" name="_save" class="btn-primary">
