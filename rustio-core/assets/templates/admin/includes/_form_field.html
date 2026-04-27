@@ -32,23 +32,46 @@
                 {% if field.autocomplete %}autocomplete="{{ field.autocomplete }}"{% endif %}
                 {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
         {% elif field.widget == "select" %}
-            <select
-                name="{{ field.name }}"
-                id="id_{{ field.name }}"
-                class="input"
-                {% if field.multiple %}multiple{% endif %}
-                {% if field.required %}required{% endif %}
-                {% if field.autofocus %}autofocus{% endif %}
-                {% if field.disabled %}disabled{% endif %}
-            >
-                {% for opt in field.options %}
-                    <option value="{{ opt.value }}"
-                        {% if opt.value == field.value %}selected{% endif %}
-                    >
-                        {{ opt.label }}
-                    </option>
-                {% endfor %}
-            </select>
+            {# Phase 7.2 — searchable selects (FK / M2M, large lists)
+               wrap the <select> with a sibling text input that filters
+               <option> elements client-side via base.html's
+               data-search-input handler. The plain <select> remains
+               fully functional if JS is disabled. #}
+            {% if field.searchable %}
+            <div class="relative">
+                <input
+                    type="text"
+                    placeholder="Search…"
+                    class="input mb-xs"
+                    data-search-input
+                    data-target="id_{{ field.name }}"
+                    aria-controls="id_{{ field.name }}"
+                    aria-label="Filter {{ field.label }} options"
+                >
+            {% endif %}
+                <select
+                    name="{{ field.name }}"
+                    id="id_{{ field.name }}"
+                    class="input"
+                    {% if field.multiple %}multiple{% endif %}
+                    {% if field.required %}required{% endif %}
+                    {% if field.autofocus %}autofocus{% endif %}
+                    {% if field.disabled %}disabled{% endif %}
+                >
+                    {% for opt in field.options %}
+                        <option value="{{ opt.value }}"
+                            {% if opt.value == field.value %}selected{% endif %}
+                        >
+                            {{ opt.label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            {% if field.searchable %}
+                {% if field.has_more %}
+                <p class="form-help mt-xs">Showing first 50 results. Keep typing to filter.</p>
+                {% endif %}
+            </div>
+            {% endif %}
         {% else %}
             <input type="{{ field.input_type }}" id="id_{{ field.name }}" name="{{ field.name }}"
                 value="{{ field.value }}"

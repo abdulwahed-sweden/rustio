@@ -140,6 +140,8 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 autofocus: true,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
             FormField {
                 name: "password",
@@ -157,6 +159,8 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
         ],
     }]
@@ -534,6 +538,17 @@ pub(crate) struct FormField {
     /// names; `None` skips. Surfaced for length-limited free-text fields
     /// on bespoke forms.
     pub maxlength: Option<u16>,
+    /// Phase 7.2 — `true` for select fields backed by a relation
+    /// (FK / M2M) so the form template wraps the `<select>` with a
+    /// client-side filter input. `false` for everything else,
+    /// including enum-style closed-list selects (which are typically
+    /// short enough to need no filter).
+    pub searchable: bool,
+    /// Phase 7.2 — `true` when the relation has more rows than the
+    /// resolver's truncation limit (currently 50). Drives a hint
+    /// message under the search input ("Showing first 50 results.
+    /// Keep typing to filter.").
+    pub has_more: bool,
 }
 
 /// Phase 6 — one logical group of fields on a form. `title: None`
@@ -561,7 +576,7 @@ pub(crate) fn form_ctx(
     // `resolve_relation_options` before invoking this sync builder.
     // A missing entry or empty Vec produces an empty `<select>` — the
     // pre-Phase-7 mock pair is gone.
-    relation_options: HashMap<&'static str, Vec<SelectOption>>,
+    relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)>,
 ) -> FormCtx {
     let fields = entry
         .fields
@@ -616,13 +631,18 @@ pub(crate) fn form_ctx(
             //     A real DB-backed lookup is the next sub-phase per
             //     spec ("Mock for now (no DB query yet)").
             //   - Everything else: None / false.
-            let (options, multiple) = if let Some(values) = f.choices {
+            // Phase 7.2 — per-field tuple now carries four signals so
+            // FormField can drive the searchable filter UI. Order:
+            //   options, multiple, searchable, has_more.
+            //   - choices (enum): closed list, never searchable.
+            //   - relation (FK / M2M): always searchable; has_more
+            //     comes from the resolver's truncation flag.
+            //   - other: no select, all defaults false.
+            let (options, multiple, searchable, has_more) = if let Some(values) = f.choices {
                 let mut opts: Vec<SelectOption> = Vec::with_capacity(values.len() + 1);
                 // Phase 7 / F4 — nullable enum fields prepend a leading
                 // empty option so the user can clear the selection back
-                // to NULL. Required (non-nullable) enum fields skip
-                // this; the HTML5 `required` attribute on `<select>`
-                // (added in F3) blocks empty submission.
+                // to NULL.
                 if f.field_type.nullable() {
                     opts.push(SelectOption {
                         value: String::new(),
@@ -633,16 +653,18 @@ pub(crate) fn form_ctx(
                     value: (*v).to_string(),
                     label: (*v).to_string(),
                 }));
-                (Some(opts), false)
+                (Some(opts), false, false, false)
             } else if let Some(rel) = &f.relation {
-                // Phase 7 — real options pre-fetched by the handler.
-                // Missing key (handler skipped this field) or empty
-                // Vec (no rows in target) both render as an empty
-                // `<select>` rather than the legacy mock pair.
-                let opts = relation_options.get(f.name).cloned().unwrap_or_default();
-                (Some(opts), rel.multi)
+                // Phase 7.2 — `(options, has_more)` from the resolver;
+                // missing entry or empty Vec → empty select. searchable
+                // is always true for relation-backed selects.
+                let (opts, has_more) = relation_options
+                    .get(f.name)
+                    .cloned()
+                    .unwrap_or_default();
+                (Some(opts), rel.multi, true, has_more)
             } else {
-                (None, false)
+                (None, false, false, false)
             };
             // Phase 6 — span hint. Long-text textareas span the full
             // grid (col-span-2); everything else takes one half.
@@ -668,6 +690,8 @@ pub(crate) fn form_ctx(
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable,
+                has_more,
             }
         })
         .collect::<Vec<FormField>>();
@@ -783,15 +807,25 @@ fn is_long_text_name(name: &str) -> bool {
 /// strings. Long-text override (`textarea` for `body`/`description`/
 /// etc.) lives in `form_ctx` because it depends on the field NAME, not
 /// just type.
+/// Phase 7.2 — initial-render row cap for FK / M2M selects. A 1000-row
+/// relation isn't usable as a flat `<select>`; the resolver truncates
+/// to this many entries and the FormField's `has_more` flag drives a
+/// "keep typing to filter" hint in the template. Searchable filtering
+/// runs against the truncated set client-side; future phases can wire
+/// up an XHR endpoint for typeahead beyond the cap.
+pub(crate) const FK_OPTIONS_LIMIT: usize = 50;
+
 /// Phase 7 — fetch real `<select>` options for every FK / M2M field on
 /// an `AdminEntry`, keyed by the field's name. Async because
 /// `AdminOps::list` is the canonical row-fetch API and is itself
 /// async; the caller (a show_* handler) is already async and awaits
 /// this once per page render before invoking the sync `form_ctx`.
 ///
-/// Empty target lists, missing target models, and non-relation fields
-/// all produce a benign empty entry — never a panic, never the
-/// pre-Phase-7 mock pair `[("1","Item 1"), ("2","Item 2")]`.
+/// Phase 7.2 — return value is `(Vec<SelectOption>, bool)` per key. The
+/// bool is `has_more`: `true` when the relation had more rows than
+/// `FK_OPTIONS_LIMIT` and the option list was truncated. Empty target
+/// lists, missing target models, and non-relation fields all produce
+/// a benign empty entry (`(vec![], false)`) — never a panic.
 ///
 /// The label for each option follows the resolution ladder:
 ///   1. `relation.display_field` if present and the column exists on
@@ -803,8 +837,8 @@ pub(crate) async fn resolve_relation_options(
     admin: &Admin,
     entry: &AdminEntry,
     db: &Db,
-) -> Result<HashMap<&'static str, Vec<SelectOption>>> {
-    let mut out: HashMap<&'static str, Vec<SelectOption>> = HashMap::new();
+) -> Result<HashMap<&'static str, (Vec<SelectOption>, bool)>> {
+    let mut out: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
     for f in entry.fields.iter() {
         let Some(rel) = &f.relation else {
             continue;
@@ -821,12 +855,13 @@ pub(crate) async fn resolve_relation_options(
         let Some(target) = target else {
             // Unknown target — emit an empty list so the form still
             // renders with a `<select>` and an explicit empty state.
-            out.insert(f.name, Vec::new());
+            out.insert(f.name, (Vec::new(), false));
             continue;
         };
         let rows = target.ops.list(db).await?;
+        let total = rows.len();
         let display_idx = pick_display_index(target.fields, rel.display_field);
-        let opts: Vec<SelectOption> = rows
+        let mut opts: Vec<SelectOption> = rows
             .into_iter()
             .map(|r| {
                 let label = display_idx
@@ -839,7 +874,9 @@ pub(crate) async fn resolve_relation_options(
                 }
             })
             .collect();
-        out.insert(f.name, opts);
+        let has_more = total > FK_OPTIONS_LIMIT;
+        opts.truncate(FK_OPTIONS_LIMIT);
+        out.insert(f.name, (opts, has_more));
     }
     Ok(out)
 }
@@ -1130,6 +1167,8 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     autofocus: true,
                     disabled: false,
                     maxlength: None,
+                    searchable: false,
+                    has_more: false,
                 },
                 FormField {
                     name: "password",
@@ -1150,6 +1189,8 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     autofocus: false,
                     disabled: false,
                     maxlength: None,
+                    searchable: false,
+                    has_more: false,
                 },
             ],
         },
@@ -1174,6 +1215,8 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             }],
         },
     ]
@@ -1206,6 +1249,8 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 autofocus: true,
                 disabled: false,
                 maxlength: Some(150),
+                searchable: false,
+                has_more: false,
             },
             FormField {
                 name: "description",
@@ -1223,6 +1268,8 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
         ],
     }]
@@ -1258,6 +1305,8 @@ pub(crate) fn user_edit_identity_sections(
                 autofocus: false,
                 disabled: true,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
             FormField {
                 name: "role",
@@ -1275,6 +1324,8 @@ pub(crate) fn user_edit_identity_sections(
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
             FormField {
                 name: "is_active",
@@ -1292,6 +1343,8 @@ pub(crate) fn user_edit_identity_sections(
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
         ],
     }]
@@ -1320,6 +1373,8 @@ pub(crate) fn user_edit_password_sections() -> Vec<FormSection> {
             autofocus: false,
             disabled: false,
             maxlength: None,
+            searchable: false,
+            has_more: false,
         }],
     }]
 }
@@ -1346,6 +1401,8 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 autofocus: true,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
             FormField {
                 name: "new_password1",
@@ -1363,6 +1420,8 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
             FormField {
                 name: "new_password2",
@@ -1380,6 +1439,8 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 autofocus: false,
                 disabled: false,
                 maxlength: None,
+                searchable: false,
+                has_more: false,
             },
         ],
     }]
@@ -1493,23 +1554,26 @@ mod tests {
         );
         let ident = fake_identity(Role::Administrator);
 
-        let mut relation_options: HashMap<&'static str, Vec<SelectOption>> = HashMap::new();
+        let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
         relation_options.insert(
             "author_id",
-            vec![
-                SelectOption {
-                    value: "1".to_string(),
-                    label: "alice@example.com".to_string(),
-                },
-                SelectOption {
-                    value: "2".to_string(),
-                    label: "bob@example.com".to_string(),
-                },
-                SelectOption {
-                    value: "3".to_string(),
-                    label: "charlie@example.com".to_string(),
-                },
-            ],
+            (
+                vec![
+                    SelectOption {
+                        value: "1".to_string(),
+                        label: "alice@example.com".to_string(),
+                    },
+                    SelectOption {
+                        value: "2".to_string(),
+                        label: "bob@example.com".to_string(),
+                    },
+                    SelectOption {
+                        value: "3".to_string(),
+                        label: "charlie@example.com".to_string(),
+                    },
+                ],
+                false,
+            ),
         );
 
         let ctx = form_ctx(
@@ -1561,6 +1625,177 @@ mod tests {
         assert!(
             !body.contains("Item 1"),
             "rendered HTML must not contain the Phase 7 mock label"
+        );
+    }
+
+    /// Phase 7.2 — searchable FK selects render the search-input
+    /// scaffolding (placeholder, `data-target`, `aria-controls`) plus
+    /// the underlying `<select>`. The selected option keeps its
+    /// `selected` marker so the JS filter (which exempts the selected
+    /// option from hiding) never accidentally drops the current
+    /// value. Locks both the FormField shape and the template wrap.
+    #[test]
+    fn searchable_select_filters_options() {
+        // FK column with three real options. `field.value = "2"` so
+        // the second option is the selected one — must persist.
+        static FK_FIELDS: &[crate::admin::AdminField] = &[crate::admin::AdminField {
+            name: "author_id",
+            label: "author_id",
+            field_type: FieldType::I64,
+            editable: true,
+            relation: Some(crate::admin::AdminRelation {
+                target_model: "User",
+                display_field: Some("email"),
+                multi: false,
+            }),
+            choices: None,
+        }];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
+        );
+        let ident = fake_identity(Role::Administrator);
+        let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
+        relation_options.insert(
+            "author_id",
+            (
+                vec![
+                    SelectOption { value: "1".to_string(), label: "alice@example.com".to_string() },
+                    SelectOption { value: "2".to_string(), label: "bob@example.com".to_string() },
+                    SelectOption { value: "3".to_string(), label: "charlie@example.com".to_string() },
+                ],
+                false, // has_more=false (3 < 50)
+            ),
+        );
+
+        // Edit-mode render with the existing row carrying author_id="2".
+        let existing = EditRow {
+            id: 7,
+            values: vec![("author_id".to_string(), "2".to_string())],
+        };
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "edit",
+            Some(7),
+            Some(&existing),
+            vec![],
+            "csrf".into(),
+            relation_options,
+        );
+
+        let author_field = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "author_id")
+            .expect("author_id field present");
+        assert_eq!(author_field.widget, "select");
+        assert!(
+            author_field.searchable,
+            "FK fields must default to searchable=true"
+        );
+        assert!(
+            !author_field.has_more,
+            "3 options is below the 50-row truncation threshold"
+        );
+        assert_eq!(
+            author_field.value, "2",
+            "edit mode must surface the existing author_id value"
+        );
+
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &ctx)
+            .expect("form renders");
+
+        // The search input scaffolding is present.
+        assert!(
+            body.contains("data-search-input"),
+            "search input marker missing"
+        );
+        assert!(
+            body.contains("data-target=\"id_author_id\""),
+            "search input must wire to the select via data-target"
+        );
+        assert!(
+            body.contains("aria-controls=\"id_author_id\""),
+            "search input must announce its target via aria-controls"
+        );
+        assert!(
+            body.contains("placeholder=\"Search…\""),
+            "search input must carry the placeholder copy"
+        );
+
+        // The selected value persists — bob@example.com (value=2) has
+        // the `selected` attribute on its <option>.
+        let bob_idx = body
+            .find("value=\"2\"")
+            .expect("option with value=2 must render");
+        let after_bob = &body[bob_idx..bob_idx.saturating_add(120)];
+        assert!(
+            after_bob.contains("selected"),
+            "selected option must carry `selected`; got: {after_bob:?}"
+        );
+
+        // No has_more hint when below the threshold.
+        assert!(
+            !body.contains("Showing first 50 results"),
+            "has_more hint must not appear when has_more=false"
+        );
+    }
+
+    /// Phase 7.2 — when the relation has more rows than the resolver's
+    /// truncation cap, FormField.has_more flips to true and the
+    /// template renders the "Showing first 50 results" hint paragraph.
+    #[test]
+    fn searchable_select_renders_has_more_hint() {
+        static FK_FIELDS: &[crate::admin::AdminField] = &[crate::admin::AdminField {
+            name: "author_id",
+            label: "author_id",
+            field_type: FieldType::I64,
+            editable: true,
+            relation: Some(crate::admin::AdminRelation {
+                target_model: "User",
+                display_field: None,
+                multi: false,
+            }),
+            choices: None,
+        }];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
+        );
+        let ident = fake_identity(Role::Administrator);
+        let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
+        // Just one option for the test, but flip has_more = true to
+        // simulate a relation that exceeded the resolver's cap.
+        relation_options.insert(
+            "author_id",
+            (
+                vec![SelectOption { value: "1".into(), label: "first".into() }],
+                true,
+            ),
+        );
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            relation_options,
+        );
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &ctx)
+            .expect("form renders");
+        assert!(
+            body.contains("Showing first 50 results"),
+            "has_more hint copy missing"
         );
     }
 
@@ -1933,6 +2168,8 @@ mod tests {
                             "autofocus": false,
                             "disabled": false,
                             "maxlength": null,
+                            "searchable": false,
+                            "has_more": false,
                         },
                         {
                             "name": "published",
@@ -1950,6 +2187,8 @@ mod tests {
                             "autofocus": false,
                             "disabled": false,
                             "maxlength": null,
+                            "searchable": false,
+                            "has_more": false,
                         },
                     ],
                 },

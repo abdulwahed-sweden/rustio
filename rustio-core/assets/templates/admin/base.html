@@ -143,6 +143,27 @@
             sidebar.classList.toggle("flex");
         });
     }
+
+    // Phase 7.2 — searchable FK selects: filter <option> children of
+    // the target select by text content as the user types in the
+    // sibling search input. Progressive enhancement; the plain
+    // <select> is fully functional with JS disabled. The currently-
+    // selected option is exempt from filtering so a chosen value
+    // never disappears mid-edit.
+    document.querySelectorAll("[data-search-input]").forEach(function (input) {
+        var targetId = input.getAttribute("data-target");
+        var select = document.getElementById(targetId);
+        if (!select) return;
+        input.addEventListener("input", function () {
+            var q = input.value.toLowerCase();
+            for (var i = 0; i < select.options.length; i++) {
+                var opt = select.options[i];
+                var match = opt.textContent.toLowerCase().indexOf(q) !== -1;
+                // Always keep the selected option visible.
+                opt.hidden = !match && !opt.selected;
+            }
+        });
+    });
 })();
 </script>
 {% block extra_js %}{% endblock %}
