@@ -412,7 +412,12 @@ pub(crate) struct FormCtx {
     pub singular_name: &'static str,
     pub mode: &'static str, // "new" or "edit"
     pub object_id: Option<i64>,
-    pub fields: Vec<FormField>,
+    /// Phase 6 — fields grouped into logical sections. The form
+    /// template iterates `sections` and within each its `fields`.
+    /// Phase 1/b's flat `fields: Vec<FormField>` is gone; group_into
+    /// the heuristic in `form_ctx` always emits at least one section
+    /// when the model has any editable fields.
+    pub sections: Vec<FormSection>,
     pub errors: Vec<String>,
     pub flash: Option<FlashCtx>,
 }
@@ -455,6 +460,22 @@ pub(crate) struct FormField {
     /// emits `<select multiple>`. `false` for single-select / non-select
     /// widgets.
     pub multiple: bool,
+    /// Phase 6 — grid-span hint. `1` (default) renders the field at
+    /// half-width inside the section's `grid-cols-2`; `2` makes the
+    /// field span both columns. Currently set to `2` for textareas,
+    /// `1` everywhere else; the form template branches on this with
+    /// `{% if field.span == 2 %}col-span-2{% endif %}`.
+    pub span: u8,
+}
+
+/// Phase 6 — one logical group of fields on a form. `title: None`
+/// renders without an `<h3>` (used for the default "core fields"
+/// section). Sections preserve insertion order, and fields within a
+/// section preserve the macro's `FIELDS` order.
+#[derive(Serialize)]
+pub(crate) struct FormSection {
+    pub title: Option<&'static str>,
+    pub fields: Vec<FormField>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -545,6 +566,9 @@ pub(crate) fn form_ctx(
             } else {
                 (None, false)
             };
+            // Phase 6 — span hint. Long-text textareas span the full
+            // grid (col-span-2); everything else takes one half.
+            let span: u8 = if widget == "textarea" { 2 } else { 1 };
             FormField {
                 name: f.name,
                 label: ui.label,
@@ -556,9 +580,15 @@ pub(crate) fn form_ctx(
                 required,
                 options,
                 multiple,
+                span,
             }
         })
-        .collect();
+        .collect::<Vec<FormField>>();
+
+    // Phase 6 — group fields into Default / Metadata / Advanced
+    // sections via a deterministic name heuristic. Order within each
+    // section is preserved from the macro's FIELDS order.
+    let sections = group_fields_into_sections(fields);
 
     FormCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
@@ -572,9 +602,61 @@ pub(crate) fn form_ctx(
         singular_name: entry.singular_name,
         mode,
         object_id,
-        fields,
+        sections,
         errors,
         flash: None,
+    }
+}
+
+/// Phase 6 — partition the form's flat field list into three logical
+/// sections by name heuristic. Default (untitled) collects business
+/// fields; Metadata collects audit-trail timestamps; Advanced collects
+/// system identifiers. Empty sections are dropped, so a form with no
+/// audit / id fields still renders as a single section.
+fn group_fields_into_sections(fields: Vec<FormField>) -> Vec<FormSection> {
+    let mut default_fields = Vec::new();
+    let mut metadata_fields = Vec::new();
+    let mut advanced_fields = Vec::new();
+
+    for field in fields {
+        match classify_field_section(field.name) {
+            FieldSection::Default => default_fields.push(field),
+            FieldSection::Metadata => metadata_fields.push(field),
+            FieldSection::Advanced => advanced_fields.push(field),
+        }
+    }
+
+    let mut sections: Vec<FormSection> = Vec::with_capacity(3);
+    if !default_fields.is_empty() {
+        sections.push(FormSection { title: None, fields: default_fields });
+    }
+    if !metadata_fields.is_empty() {
+        sections.push(FormSection { title: Some("Metadata"), fields: metadata_fields });
+    }
+    if !advanced_fields.is_empty() {
+        sections.push(FormSection { title: Some("Advanced"), fields: advanced_fields });
+    }
+    sections
+}
+
+/// Phase 6 — section bucket for a single field name. Substring match
+/// for audit-trail words (so `created_at`, `updated_at`,
+/// `creation_timestamp` all land in Metadata); exact match for system
+/// identifiers (so `user_id`, `application_id` etc. stay in Default —
+/// they're business-meaningful FKs, not "advanced" internals).
+enum FieldSection {
+    Default,
+    Metadata,
+    Advanced,
+}
+
+fn classify_field_section(name: &str) -> FieldSection {
+    if name.contains("created") || name.contains("updated") || name.contains("timestamp") {
+        FieldSection::Metadata
+    } else if matches!(name, "id" | "uuid" | "slug") {
+        FieldSection::Advanced
+    } else {
+        FieldSection::Default
     }
 }
 
@@ -1088,26 +1170,37 @@ mod tests {
             "object_id": null,
             "errors": [],
             "identity": { "email": "admin@example.com", "is_admin": true, "is_developer": false },
-            "fields": [
+            "sections": [
                 {
-                    "name": "title",
-                    "label": "Title",
-                    "widget": "text",
-                    "input_type": "text",
-                    "value": "",
-                    "hint": null,
-                    "placeholder": null,
-                    "required": true,
-                },
-                {
-                    "name": "published",
-                    "label": "Published",
-                    "widget": "checkbox",
-                    "input_type": "checkbox",
-                    "value": "false",
-                    "hint": null,
-                    "placeholder": null,
-                    "required": false,
+                    "title": null,
+                    "fields": [
+                        {
+                            "name": "title",
+                            "label": "Title",
+                            "widget": "text",
+                            "input_type": "text",
+                            "value": "",
+                            "hint": null,
+                            "placeholder": null,
+                            "required": true,
+                            "options": null,
+                            "multiple": false,
+                            "span": 1,
+                        },
+                        {
+                            "name": "published",
+                            "label": "Published",
+                            "widget": "checkbox",
+                            "input_type": "checkbox",
+                            "value": "false",
+                            "hint": null,
+                            "placeholder": null,
+                            "required": false,
+                            "options": null,
+                            "multiple": false,
+                            "span": 1,
+                        },
+                    ],
                 },
             ],
         });
@@ -1154,6 +1247,159 @@ mod tests {
 
         // Save button still there — regression guard.
         assert!(body.contains("name=\"_save\""), "Save button missing");
+    }
+
+    /// Phase 6 — `form_ctx` partitions editable fields into Default,
+    /// Metadata (audit-trail names), and Advanced (system identifier
+    /// names) sections. Empty buckets are dropped so a model with only
+    /// business fields renders as a single section.
+    #[test]
+    fn fields_are_grouped_into_sections() {
+        // Build an AdminEntry with one field per bucket. All editable
+        // so each appears in the form. Names chosen to fire each
+        // heuristic arm:
+        //   - "title"        → Default
+        //   - "creation_timestamp" → Metadata (substring "timestamp")
+        //   - "uuid"         → Advanced (exact match)
+        static MIXED_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "title",
+                label: "title",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "creation_timestamp",
+                label: "creation_timestamp",
+                field_type: FieldType::DateTime,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "uuid",
+                label: "uuid",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", MIXED_FIELDS, false,
+        );
+        let ident = fake_identity(Role::Administrator);
+        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into());
+
+        // Expect three sections in fixed order: Default → Metadata → Advanced.
+        assert_eq!(ctx.sections.len(), 3, "expected three sections, got {ctx_len:?}",
+            ctx_len = ctx.sections.iter().map(|s| s.title).collect::<Vec<_>>());
+        assert_eq!(ctx.sections[0].title, None,                "first section is the untitled default bucket");
+        assert_eq!(ctx.sections[0].fields.len(), 1);
+        assert_eq!(ctx.sections[0].fields[0].name, "title");
+        assert_eq!(ctx.sections[1].title, Some("Metadata"),    "second section is Metadata");
+        assert_eq!(ctx.sections[1].fields.len(), 1);
+        assert_eq!(ctx.sections[1].fields[0].name, "creation_timestamp");
+        assert_eq!(ctx.sections[2].title, Some("Advanced"),    "third section is Advanced");
+        assert_eq!(ctx.sections[2].fields.len(), 1);
+        assert_eq!(ctx.sections[2].fields[0].name, "uuid");
+
+        // Common-case regression guard: a `user_id` field stays in
+        // the Default section (FK with business meaning, not "advanced").
+        static FK_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "title",
+                label: "title",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "user_id",
+                label: "user_id",
+                field_type: FieldType::I64,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let entry2 = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
+        );
+        let ctx2 = form_ctx(&ident, &admin, &entry2, "new", None, None, vec![], "csrf".into());
+        assert_eq!(ctx2.sections.len(), 1, "FK fields must NOT go to Advanced — they're business-meaningful");
+        assert_eq!(ctx2.sections[0].fields.len(), 2);
+    }
+
+    /// Phase 6 — a textarea-shaped field carries `span = 2`. The form
+    /// template renders that field's wrapper with `col-span-2` so it
+    /// fills the row instead of sharing it with a sibling. Locks
+    /// both the form_ctx span computation AND the template's
+    /// `{% if field.span == 2 %}col-span-2{% endif %}` branch.
+    #[test]
+    fn textarea_fields_span_full_width() {
+        static TEXTAREA_FIELDS: &[crate::admin::AdminField] = &[
+            // "body" hits the long-text-name heuristic → widget = "textarea".
+            crate::admin::AdminField {
+                name: "body",
+                label: "body",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            // Plain string field for contrast.
+            crate::admin::AdminField {
+                name: "title",
+                label: "title",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", TEXTAREA_FIELDS, false,
+        );
+        let ident = fake_identity(Role::Administrator);
+        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into());
+
+        let body_field = ctx.sections[0]
+            .fields
+            .iter()
+            .find(|f| f.name == "body")
+            .expect("body field present");
+        assert_eq!(body_field.widget, "textarea");
+        assert_eq!(body_field.span, 2, "textarea must span both columns");
+
+        let title_field = ctx.sections[0]
+            .fields
+            .iter()
+            .find(|f| f.name == "title")
+            .expect("title field present");
+        assert_eq!(title_field.widget, "input");
+        assert_eq!(title_field.span, 1, "plain input takes one column");
+
+        // Template renders the col-span-2 wrapper for the textarea.
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &ctx)
+            .expect("form renders");
+
+        // The wrapper around the textarea field must include col-span-2.
+        let body_wrapper_idx = body
+            .find("class=\"col-span-2\"")
+            .expect("col-span-2 wrapper present");
+        let body_after = &body[body_wrapper_idx..];
+        assert!(
+            body_after.contains("name=\"body\""),
+            "col-span-2 wrapper should contain the body field"
+        );
     }
 
     /// Phase 1/c — shared list-page context fixture. Returns a JSON

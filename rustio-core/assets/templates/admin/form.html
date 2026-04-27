@@ -29,44 +29,50 @@
 <form method="post" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-    <fieldset class="module aligned">
-        <h2>General</h2>
-        {% for field in fields %}
-        <div class="form-row field-{{ field.name }}">
-            <label for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}{% if field.input_type != "checkbox" %}:{% endif %}</label>
-            <div class="field-input">
-                {% if field.widget == "checkbox" %}
-                    <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
-                        value="true"{% if field.value == "true" %} checked{% endif %}
-                        class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
-                {% elif field.widget == "textarea" %}
-                    <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
-                        {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
-                {% elif field.widget == "select" %}
-                    <select
-                        name="{{ field.name }}"
-                        id="id_{{ field.name }}"
-                        class="input"
-                        {% if field.multiple %}multiple{% endif %}
-                    >
-                        {% for opt in field.options %}
-                            <option value="{{ opt.value }}"
-                                {% if opt.value == field.value %}selected{% endif %}
+    {% for section in sections %}
+        {% if section.title %}
+        <h3 class="mt-lg mb-sm">{{ section.title }}</h3>
+        {% endif %}
+        <div class="grid grid-cols-2 gap-md">
+            {% for field in section.fields %}
+            <div class="{% if field.span == 2 %}col-span-2{% endif %}">
+                <div class="form-row field-{{ field.name }}">
+                    <label for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}{% if field.input_type != "checkbox" %}:{% endif %}</label>
+                    <div class="field-input">
+                        {% if field.widget == "checkbox" %}
+                            <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
+                                value="true"{% if field.value == "true" %} checked{% endif %}
+                                class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                        {% elif field.widget == "textarea" %}
+                            <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
+                                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
+                        {% elif field.widget == "select" %}
+                            <select
+                                name="{{ field.name }}"
+                                id="id_{{ field.name }}"
+                                class="input"
+                                {% if field.multiple %}multiple{% endif %}
                             >
-                                {{ opt.label }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                {% else %}
-                    <input type="{{ field.input_type }}" id="id_{{ field.name }}" name="{{ field.name }}"
-                        value="{{ field.value }}"
-                        {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
-                {% endif %}
-                {% if field.hint %}<p class="form-help mt-xs">{{ field.hint }}</p>{% endif %}
+                                {% for opt in field.options %}
+                                    <option value="{{ opt.value }}"
+                                        {% if opt.value == field.value %}selected{% endif %}
+                                    >
+                                        {{ opt.label }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        {% else %}
+                            <input type="{{ field.input_type }}" id="id_{{ field.name }}" name="{{ field.name }}"
+                                value="{{ field.value }}"
+                                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+                        {% endif %}
+                        {% if field.hint %}<p class="form-help mt-xs">{{ field.hint }}</p>{% endif %}
+                    </div>
+                </div>
             </div>
+            {% endfor %}
         </div>
-        {% endfor %}
-    </fieldset>
+    {% endfor %}
 
     <div class="submit-row">
         <button type="submit" name="_save" value="Save" class="btn-primary">
