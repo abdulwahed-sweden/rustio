@@ -543,18 +543,23 @@ pub(crate) fn form_ctx(
             //     spec ("Mock for now (no DB query yet)").
             //   - Everything else: None / false.
             let (options, multiple) = if let Some(values) = f.choices {
-                (
-                    Some(
-                        values
-                            .iter()
-                            .map(|v| SelectOption {
-                                value: (*v).to_string(),
-                                label: (*v).to_string(),
-                            })
-                            .collect(),
-                    ),
-                    false,
-                )
+                let mut opts: Vec<SelectOption> = Vec::with_capacity(values.len() + 1);
+                // Phase 7 / F4 — nullable enum fields prepend a leading
+                // empty option so the user can clear the selection back
+                // to NULL. Required (non-nullable) enum fields skip
+                // this; the HTML5 `required` attribute on `<select>`
+                // (added in F3) blocks empty submission.
+                if f.field_type.nullable() {
+                    opts.push(SelectOption {
+                        value: String::new(),
+                        label: "—".to_string(),
+                    });
+                }
+                opts.extend(values.iter().map(|v| SelectOption {
+                    value: (*v).to_string(),
+                    label: (*v).to_string(),
+                }));
+                (Some(opts), false)
             } else if let Some(rel) = &f.relation {
                 (
                     Some(vec![

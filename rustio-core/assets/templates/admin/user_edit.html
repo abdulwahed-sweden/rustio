@@ -69,7 +69,7 @@
             <label for="id_is_active">Active:</label>
             <div class="field-input">
                 <label class="inline-flex items-center gap-sm">
-                    <input type="checkbox" id="id_is_active" name="is_active"{% if is_active %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                    <input type="checkbox" id="id_is_active" name="is_active"{% if is_active %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
                     <span>Allow this user to sign in</span>
                 </label>
                 <p class="form-help mt-xs">Inactive users cannot sign in or hold sessions.</p>
@@ -85,7 +85,7 @@
             <div class="field-input checkbox-list">
                 {% for g in all_groups %}
                 <label class="checkbox-item">
-                    <input type="checkbox" name="group_{{ g.id }}"{% if g.id in user_groups %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                    <input type="checkbox" name="group_{{ g.id }}"{% if g.id in user_groups %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
                     <span><strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}</span>
                 </label>
                 {% endfor %}

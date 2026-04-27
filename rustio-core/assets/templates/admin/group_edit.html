@@ -54,7 +54,7 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {% for p in all_permissions %}
                     <label class="inline-flex items-center gap-sm px-2.5 py-1.5 rounded border border-border hover:border-rust hover:bg-rust/5 transition cursor-pointer">
-                        <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %} class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                        <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
                         <code class="text-caption font-mono">{{ p.name }}</code>
                     </label>
                     {% endfor %}

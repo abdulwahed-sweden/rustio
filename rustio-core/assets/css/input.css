@@ -387,7 +387,6 @@
   .submit-row input[type=submit], .submit-row button {
     @apply btn-primary;
   }
-  .submit-row .deletelink-button { @apply ml-auto; }
 
   .checkbox-list { @apply flex flex-col gap-2.5; }
   .checkbox-list label.checkbox-item { @apply flex items-center gap-2.5 text-body font-normal m-0; }

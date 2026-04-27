@@ -111,7 +111,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                 }));
             },
             FieldKind::Bool => quote! {
-                out.push((#fname_str.to_string(), if self.#fname { "yes".to_string() } else { "no".to_string() }));
+                out.push((#fname_str.to_string(), if self.#fname { "true".to_string() } else { "false".to_string() }));
             },
             FieldKind::DateTime | FieldKind::DateTimeAuto => quote! {
                 out.push((#fname_str.to_string(), self.#fname.format("%Y-%m-%d %H:%M").to_string()));

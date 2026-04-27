@@ -33,7 +33,7 @@
         {% if section.title %}
         <h3 class="mt-lg mb-sm">{{ section.title }}</h3>
         {% endif %}
-        <div class="grid grid-cols-2 gap-md">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
             {% for field in section.fields %}
             <div class="{% if field.span == 2 %}col-span-2{% endif %}">
                 <div class="form-row field-{{ field.name }}">
@@ -42,9 +42,11 @@
                         {% if field.widget == "checkbox" %}
                             <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
                                 value="true"{% if field.value == "true" %} checked{% endif %}
-                                class="w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust">
+                                {% if field.required %}required{% endif %}
+                                class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
                         {% elif field.widget == "textarea" %}
                             <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
+                                {% if field.required %}required{% endif %}
                                 {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
                         {% elif field.widget == "select" %}
                             <select
@@ -52,6 +54,7 @@
                                 id="id_{{ field.name }}"
                                 class="input"
                                 {% if field.multiple %}multiple{% endif %}
+                                {% if field.required %}required{% endif %}
                             >
                                 {% for opt in field.options %}
                                     <option value="{{ opt.value }}"
@@ -64,6 +67,7 @@
                         {% else %}
                             <input type="{{ field.input_type }}" id="id_{{ field.name }}" name="{{ field.name }}"
                                 value="{{ field.value }}"
+                                {% if field.required %}required{% endif %}
                                 {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
                         {% endif %}
                         {% if field.hint %}<p class="form-help mt-xs">{{ field.hint }}</p>{% endif %}
