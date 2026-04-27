@@ -15,8 +15,10 @@ use std::collections::HashMap;
 use serde::Serialize;
 
 use super::audit::AdminAction;
-use super::types::{Admin, AdminEntry, EditRow, ListRow};
+use super::types::{Admin, AdminEntry, AdminField, EditRow, ListRow};
 use crate::auth::Identity;
+use crate::error::Result;
+use crate::orm::Db;
 
 #[derive(Serialize)]
 pub(crate) struct IdentityCtx {
@@ -477,7 +479,7 @@ pub(crate) struct FormCtx {
 /// many-to-many memberships. The label and value can diverge — for
 /// FK selects, `value` is the row id, `label` is the human-readable
 /// display string.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub(crate) struct SelectOption {
     pub value: String,
     pub label: String,
@@ -554,6 +556,12 @@ pub(crate) fn form_ctx(
     existing: Option<&EditRow>,
     errors: Vec<String>,
     csrf_token: String,
+    // Phase 7 — pre-fetched FK / M2M options keyed by field name. The
+    // caller (an async show_* handler) builds this via
+    // `resolve_relation_options` before invoking this sync builder.
+    // A missing entry or empty Vec produces an empty `<select>` — the
+    // pre-Phase-7 mock pair is gone.
+    relation_options: HashMap<&'static str, Vec<SelectOption>>,
 ) -> FormCtx {
     let fields = entry
         .fields
@@ -627,13 +635,12 @@ pub(crate) fn form_ctx(
                 }));
                 (Some(opts), false)
             } else if let Some(rel) = &f.relation {
-                (
-                    Some(vec![
-                        SelectOption { value: "1".into(), label: "Item 1".into() },
-                        SelectOption { value: "2".into(), label: "Item 2".into() },
-                    ]),
-                    rel.multi,
-                )
+                // Phase 7 — real options pre-fetched by the handler.
+                // Missing key (handler skipped this field) or empty
+                // Vec (no rows in target) both render as an empty
+                // `<select>` rather than the legacy mock pair.
+                let opts = relation_options.get(f.name).cloned().unwrap_or_default();
+                (Some(opts), rel.multi)
             } else {
                 (None, false)
             };
@@ -776,6 +783,84 @@ fn is_long_text_name(name: &str) -> bool {
 /// strings. Long-text override (`textarea` for `body`/`description`/
 /// etc.) lives in `form_ctx` because it depends on the field NAME, not
 /// just type.
+/// Phase 7 — fetch real `<select>` options for every FK / M2M field on
+/// an `AdminEntry`, keyed by the field's name. Async because
+/// `AdminOps::list` is the canonical row-fetch API and is itself
+/// async; the caller (a show_* handler) is already async and awaits
+/// this once per page render before invoking the sync `form_ctx`.
+///
+/// Empty target lists, missing target models, and non-relation fields
+/// all produce a benign empty entry — never a panic, never the
+/// pre-Phase-7 mock pair `[("1","Item 1"), ("2","Item 2")]`.
+///
+/// The label for each option follows the resolution ladder:
+///   1. `relation.display_field` if present and the column exists on
+///      the target.
+///   2. `"name"` column if present.
+///   3. `"title"` column if present.
+///   4. Stringified id (`row.id.to_string()`).
+pub(crate) async fn resolve_relation_options(
+    admin: &Admin,
+    entry: &AdminEntry,
+    db: &Db,
+) -> Result<HashMap<&'static str, Vec<SelectOption>>> {
+    let mut out: HashMap<&'static str, Vec<SelectOption>> = HashMap::new();
+    for f in entry.fields.iter() {
+        let Some(rel) = &f.relation else {
+            continue;
+        };
+        // The macro emits `target_model` from the
+        // `#[rustio(belongs_to = "User")]` attribute — that's the
+        // singular struct name. Match against any of the AdminEntry
+        // identifiers so handlers don't have to think about which.
+        let target = admin.entries().iter().find(|e| {
+            e.singular_name == rel.target_model
+                || e.admin_name == rel.target_model
+                || e.display_name == rel.target_model
+        });
+        let Some(target) = target else {
+            // Unknown target — emit an empty list so the form still
+            // renders with a `<select>` and an explicit empty state.
+            out.insert(f.name, Vec::new());
+            continue;
+        };
+        let rows = target.ops.list(db).await?;
+        let display_idx = pick_display_index(target.fields, rel.display_field);
+        let opts: Vec<SelectOption> = rows
+            .into_iter()
+            .map(|r| {
+                let label = display_idx
+                    .and_then(|i| r.cells.get(i).cloned())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| r.id.to_string());
+                SelectOption {
+                    value: r.id.to_string(),
+                    label,
+                }
+            })
+            .collect();
+        out.insert(f.name, opts);
+    }
+    Ok(out)
+}
+
+/// Phase 7 — pick the index in `fields` whose name matches the
+/// preferred display column, with a `name` → `title` fallback. Returns
+/// `None` if neither matches; callers fall back to the row id.
+fn pick_display_index(fields: &[AdminField], display_field: Option<&str>) -> Option<usize> {
+    if let Some(preferred) = display_field {
+        if let Some(i) = fields.iter().position(|f| f.name == preferred) {
+            return Some(i);
+        }
+    }
+    for fallback in ["name", "title"] {
+        if let Some(i) = fields.iter().position(|f| f.name == fallback) {
+            return Some(i);
+        }
+    }
+    None
+}
+
 fn map_field_to_ui(field: &super::types::AdminField) -> (&'static str, &'static str) {
     // 1. Closed-list enum → `<select>`. Trumps any FieldType mapping.
     if field.choices.is_some() {
@@ -1369,6 +1454,160 @@ mod tests {
         assert_eq!(map_field_to_ui(&numeric), ("select", "select"));
     }
 
+    /// Phase 7 — FK fields render with the real options the handler
+    /// pre-fetched into `relation_options`, NOT the pre-Phase-7 mock
+    /// pair. Test passes a hand-built map keyed by field name; asserts
+    /// the rendered FormField carries the same options through to the
+    /// HTML.
+    #[test]
+    fn fk_field_renders_real_options() {
+        // AdminEntry with one editable FK column (`author_id`) plus a
+        // plain text title for contrast. AdminRelation points at the
+        // synthetic User entry; the test bypasses the resolver and
+        // injects options directly via the relation_options map.
+        static FK_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "title",
+                label: "title",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "author_id",
+                label: "author_id",
+                field_type: FieldType::I64,
+                editable: true,
+                relation: Some(crate::admin::AdminRelation {
+                    target_model: "User",
+                    display_field: Some("email"),
+                    multi: false,
+                }),
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
+        );
+        let ident = fake_identity(Role::Administrator);
+
+        let mut relation_options: HashMap<&'static str, Vec<SelectOption>> = HashMap::new();
+        relation_options.insert(
+            "author_id",
+            vec![
+                SelectOption {
+                    value: "1".to_string(),
+                    label: "alice@example.com".to_string(),
+                },
+                SelectOption {
+                    value: "2".to_string(),
+                    label: "bob@example.com".to_string(),
+                },
+                SelectOption {
+                    value: "3".to_string(),
+                    label: "charlie@example.com".to_string(),
+                },
+            ],
+        );
+
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            relation_options,
+        );
+
+        // Locate the author_id field in the resolved sections — it
+        // should land in the Default bucket (FK column, name doesn't
+        // hit Metadata or Advanced heuristics).
+        let author_field = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "author_id")
+            .expect("author_id field present");
+        assert_eq!(author_field.widget, "select");
+        let opts = author_field
+            .options
+            .as_ref()
+            .expect("author_id field has options");
+        assert_eq!(opts.len(), 3, "real options length should reflect input");
+        assert_eq!(opts[0].value, "1");
+        assert_eq!(opts[0].label, "alice@example.com");
+        assert_eq!(opts[2].label, "charlie@example.com");
+        // The legacy mock label MUST NOT appear.
+        assert!(
+            !opts.iter().any(|o| o.label == "Item 1" || o.label == "Item 2"),
+            "Phase 7 mock pair must be gone; got: {opts:?}",
+            opts = opts.iter().map(|o| &o.label).collect::<Vec<_>>()
+        );
+
+        // Render the template and confirm the labels surface in the
+        // produced HTML — closes the loop end-to-end.
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &ctx)
+            .expect("form renders");
+        assert!(body.contains("alice@example.com"), "alice option missing in HTML");
+        assert!(body.contains("bob@example.com"),   "bob option missing in HTML");
+        assert!(body.contains("charlie@example.com"), "charlie option missing in HTML");
+        assert!(
+            !body.contains("Item 1"),
+            "rendered HTML must not contain the Phase 7 mock label"
+        );
+    }
+
+    /// Phase 7 — FK field WITHOUT a matching entry in relation_options
+    /// renders an empty `<select>` rather than the legacy mock. Locks
+    /// the empty-state contract in `form_ctx`.
+    #[test]
+    fn fk_field_with_no_options_renders_empty_select() {
+        static FK_FIELDS: &[crate::admin::AdminField] = &[crate::admin::AdminField {
+            name: "author_id",
+            label: "author_id",
+            field_type: FieldType::I64,
+            editable: true,
+            relation: Some(crate::admin::AdminRelation {
+                target_model: "User",
+                display_field: None,
+                multi: false,
+            }),
+            choices: None,
+        }];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing(
+            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
+        );
+        let ident = fake_identity(Role::Administrator);
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+        );
+        let author_field = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "author_id")
+            .expect("author_id field present");
+        assert_eq!(author_field.widget, "select");
+        let opts = author_field.options.as_ref().expect("options is Some");
+        assert!(opts.is_empty(), "no relation_options entry → empty select");
+    }
+
     /// Phase 5/d — a relation with `multi: true` produces
     /// `("select", "select-multiple")`; default `multi: false` stays
     /// single-select. Locks resolution priority #2 vs #3 in
@@ -1804,7 +2043,7 @@ mod tests {
             "posts", "Posts", "Post", "posts", MIXED_FIELDS, false,
         );
         let ident = fake_identity(Role::Administrator);
-        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into());
+        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into(), HashMap::new());
 
         // Expect three sections in fixed order: Default → Metadata → Advanced.
         assert_eq!(ctx.sections.len(), 3, "expected three sections, got {ctx_len:?}",
@@ -1842,7 +2081,7 @@ mod tests {
         let entry2 = AdminEntry::for_testing(
             "posts", "Posts", "Post", "posts", FK_FIELDS, false,
         );
-        let ctx2 = form_ctx(&ident, &admin, &entry2, "new", None, None, vec![], "csrf".into());
+        let ctx2 = form_ctx(&ident, &admin, &entry2, "new", None, None, vec![], "csrf".into(), HashMap::new());
         assert_eq!(ctx2.sections.len(), 1, "FK fields must NOT go to Advanced — they're business-meaningful");
         assert_eq!(ctx2.sections[0].fields.len(), 2);
     }
@@ -1879,7 +2118,7 @@ mod tests {
             "posts", "Posts", "Post", "posts", TEXTAREA_FIELDS, false,
         );
         let ident = fake_identity(Role::Administrator);
-        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into());
+        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into(), HashMap::new());
 
         let body_field = ctx.sections[0]
             .fields

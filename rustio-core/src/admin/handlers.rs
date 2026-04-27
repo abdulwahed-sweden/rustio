@@ -232,7 +232,21 @@ pub(crate) async fn show_new_form(
     req: &Request,
 ) -> Result<Response> {
     let entry = find_project_entry(&ctx.admin, admin_name)?;
-    let form = render::form_ctx(&identity, &ctx.admin, entry, "new", None, None, vec![], csrf_token(req));
+    // Phase 7 — pre-fetch FK / M2M options before calling the sync
+    // form_ctx builder. Empty target lists produce empty `<select>`s
+    // (no mock pairs). One round-trip per FK column on this entry.
+    let relation_options = render::resolve_relation_options(&ctx.admin, entry, &ctx.db).await?;
+    let form = render::form_ctx(
+        &identity,
+        &ctx.admin,
+        entry,
+        "new",
+        None,
+        None,
+        vec![],
+        csrf_token(req),
+        relation_options,
+    );
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
 }
@@ -255,7 +269,19 @@ pub(crate) async fn do_create(
         }
         Err(errors) => {
             let token = csrf_token(&req);
-            let ctx_view = render::form_ctx(&identity, &ctx.admin, entry, "new", None, None, errors, token);
+            let relation_options =
+                render::resolve_relation_options(&ctx.admin, entry, &ctx.db).await?;
+            let ctx_view = render::form_ctx(
+                &identity,
+                &ctx.admin,
+                entry,
+                "new",
+                None,
+                None,
+                errors,
+                token,
+                relation_options,
+            );
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
         }
@@ -306,6 +332,7 @@ pub(crate) async fn show_edit_form(
         .find_row(&ctx.db, id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("{admin_name}/{id}")))?;
+    let relation_options = render::resolve_relation_options(&ctx.admin, entry, &ctx.db).await?;
     let form = render::form_ctx(
         &identity,
         &ctx.admin,
@@ -315,6 +342,7 @@ pub(crate) async fn show_edit_form(
         Some(&row),
         vec![],
         csrf_token(req),
+        relation_options,
     );
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
@@ -340,6 +368,8 @@ pub(crate) async fn do_update(
         Err(errors) => {
             let existing = entry.ops.find_row(&ctx.db, id).await?;
             let token = csrf_token(&req);
+            let relation_options =
+                render::resolve_relation_options(&ctx.admin, entry, &ctx.db).await?;
             let ctx_view = render::form_ctx(
                 &identity,
                 &ctx.admin,
@@ -349,6 +379,7 @@ pub(crate) async fn do_update(
                 existing.as_ref(),
                 errors,
                 token,
+                relation_options,
             );
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
