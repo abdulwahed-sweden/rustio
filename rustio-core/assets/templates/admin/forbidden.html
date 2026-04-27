@@ -17,13 +17,13 @@
     <p class="text-text-muted mt-2">You don't have permission to access this page.</p>
 
     {% if required_role %}
-    <p class="text-gray-600 text-[14px] mt-3">
+    <p class="text-gray-600 text-small mt-3">
         This page requires <strong class="text-metal">{{ required_role }}</strong> access.
     </p>
     {% endif %}
 
     {% if attempted %}
-    <p class="text-gray-600 text-[14px] mt-1">
+    <p class="text-gray-600 text-small mt-1">
         You tried to reach: <code class="code-pill">{{ attempted }}</code>
     </p>
     {% endif %}

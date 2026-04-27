@@ -17,11 +17,11 @@
         <span class="hero-icon hero-icon-danger">
             {{ icon("circle-alert", class="w-5 h-5") }}
         </span>
-        <h1 class="text-2xl font-bold tracking-tight">Are you sure?</h1>
+        <h1 class="text-h1 font-heading tracking-tight">Are you sure?</h1>
     </div>
 
     <div class="card">
-        <p class="text-[15px] mb-3">
+        <p class="text-body mb-3">
             Delete the group <strong>"{{ name }}"</strong>?
             {% if user_count > 0 or perm_count > 0 %}
             The following will also be removed (cascade):

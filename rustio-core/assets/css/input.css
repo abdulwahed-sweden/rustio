@@ -135,9 +135,13 @@
     line-height: 1.6;
   }
 
-  h1 { @apply text-[26px] font-bold tracking-tight text-metal leading-tight; }
-  h2 { @apply text-[18px] font-semibold tracking-tight text-metal; }
-  h3 { @apply text-[16px] font-semibold text-metal; }
+  /* Phase 3/f — heading scale aligns with the JSON typography ramp.
+   * font-heading is Space Grotesk; font-bold and font-semibold come
+   * from the base layer so any unstyled <h1>/<h2>/<h3> renders at the
+   * correct weight without per-template repetition. */
+  h1 { @apply text-h1 font-heading font-bold tracking-tight text-metal leading-tight; }
+  h2 { @apply text-h2 font-heading font-semibold tracking-tight text-metal; }
+  h3 { @apply text-h3 font-heading font-semibold text-metal; }
 
   a { @apply text-rust hover:text-rust-hover transition-colors; }
   ::selection { @apply bg-rust text-white; }
@@ -152,12 +156,12 @@
   /* Topbar — 64px (was 56) for proper presence; brand + tools both
      bumped a notch in size for legibility. */
   .topbar      { @apply h-16 px-6 flex items-center justify-between bg-metal-surface text-white border-b border-metal-dark; }
-  .topbar-brand { @apply flex items-center gap-3 font-bold text-[16.5px] tracking-tight; }
-  .topbar-mark  { @apply w-8 h-8 rounded-md bg-rust text-white text-[14px] font-bold inline-flex items-center justify-center shadow-mark; }
-  .topbar-tools { @apply flex items-center gap-5 text-[14.5px] text-gray-300; }
+  .topbar-brand { @apply flex items-center gap-3 font-bold text-body tracking-tight; }
+  .topbar-mark  { @apply w-8 h-8 rounded-md bg-rust text-white text-small font-bold inline-flex items-center justify-center shadow-mark; }
+  .topbar-tools { @apply flex items-center gap-5 text-body text-gray-300; }
   .topbar-tools a { @apply text-gray-300 hover:text-white no-underline transition-colors; }
   .topbar-tools .link-button {
-    @apply bg-transparent border-0 text-gray-300 hover:text-white cursor-pointer p-0 text-[14.5px] transition-colors;
+    @apply bg-transparent border-0 text-gray-300 hover:text-white cursor-pointer p-0 text-body transition-colors;
     font-family: inherit;
   }
   .topbar-tools .inline-form { @apply inline; }
@@ -169,13 +173,13 @@
      state combines a rust tint with a 2px left accent rule for a
      refined look that's instantly scannable. */
   .sidebar     { @apply hidden md:flex flex-col w-60 shrink-0 bg-surface border-r border-border py-5 px-3 gap-0.5; }
-  .sidebar-section { @apply text-[12px] uppercase tracking-wider text-text-muted font-semibold px-3 py-2 mt-3 first:mt-0; }
+  .sidebar-section { @apply text-caption uppercase tracking-wider text-text-muted font-semibold px-3 py-2 mt-3 first:mt-0; }
   .sidebar-link {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-[14.5px] font-medium text-metal hover:bg-gray-100 no-underline transition-colors duration-150;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-body font-medium text-metal hover:bg-gray-100 no-underline transition-colors duration-150;
   }
   .sidebar-link svg { @apply w-[17px] h-[17px] shrink-0 text-text-muted; }
   .sidebar-link-active {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-[14.5px] font-semibold text-rust bg-rust/10 no-underline relative;
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-body font-semibold text-rust bg-rust/10 no-underline relative;
     box-shadow: inset 3px 0 0 0 theme("colors.rust.DEFAULT");
   }
   .sidebar-link-active svg { @apply w-[17px] h-[17px] shrink-0 text-rust; }
@@ -185,13 +189,13 @@
 
   /* Demo banner — louder so it can't be missed in a screenshot. */
   .demo-banner {
-    @apply px-5 py-3 bg-amber-50 text-amber-900 border-b border-amber-200 text-[14.5px] font-medium;
+    @apply px-5 py-3 bg-amber-50 text-amber-900 border-b border-amber-200 text-body font-medium;
   }
-  .demo-banner code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[13px] font-mono; }
+  .demo-banner code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-small font-mono; }
 
   /* Breadcrumbs */
   .breadcrumbs {
-    @apply text-[13.5px] text-gray-600 mb-4;
+    @apply text-small text-gray-600 mb-4;
   }
   .breadcrumbs a { @apply text-gray-600 hover:text-rust no-underline transition-colors; }
 
@@ -204,10 +208,10 @@
    * with the framework. .btn-delete and .deletelink-button were
    * removed in Phase 3/c (every caller migrated to .btn-danger). */
   .btn-primary {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-[14.5px] shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition-all duration-150 no-underline cursor-pointer border-0;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-body shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition-all duration-150 no-underline cursor-pointer border-0;
   }
   .btn-ghost {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-surface text-metal font-semibold text-[14.5px] border border-border hover:border-gray-400 hover:bg-surface-muted transition-colors duration-150 no-underline cursor-pointer;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-surface text-metal font-semibold text-body border border-border hover:border-gray-400 hover:bg-surface-muted transition-colors duration-150 no-underline cursor-pointer;
   }
   .btn-back { @apply btn-ghost; }
   .btn-edit { @apply btn-primary; }
@@ -216,7 +220,7 @@
    * Phase 3/c — the inline-link → button migration is deferred to a
    * later UX pass (3 callers: groups_list, user_edit, group_edit). */
   .deletelink-inline {
-    @apply text-red-700 font-medium hover:text-red-800 hover:underline transition-colors text-[14px];
+    @apply text-red-700 font-medium hover:text-red-800 hover:underline transition-colors text-small;
   }
 
   /* --- Cards / modules --------------------------------------------- */
@@ -227,11 +231,11 @@
     @apply bg-surface border border-border rounded-xl mb-4 overflow-hidden;
   }
   .module h2, .module caption {
-    @apply bg-surface-muted text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-border;
+    @apply bg-surface-muted text-gray-700 px-5 py-3 text-caption font-semibold uppercase tracking-wider border-b border-border;
   }
   .module table { @apply w-full border-collapse; }
   .module td, .module th {
-    @apply px-4 py-3.5 border-b border-gray-100 text-left text-[14.5px];
+    @apply px-4 py-3.5 border-b border-gray-100 text-left text-body;
   }
   .module tr:last-child td { @apply border-b-0; }
 
@@ -243,7 +247,7 @@
   .object-tools-actions {
     @apply flex gap-3 list-none m-0 p-0 items-center;
   }
-  .object-tools-actions a { @apply text-[13.5px] font-medium text-emerald-700 no-underline hover:underline; }
+  .object-tools-actions a { @apply text-small font-medium text-emerald-700 no-underline hover:underline; }
   .object-tools-actions .historylink { @apply text-rust no-underline; }
   .object-tools-actions .historylink::before { content: "↻ "; }
   .object-tools-actions .addlink { @apply text-emerald-700; }
@@ -260,7 +264,7 @@
   }
   #toolbar .search { @apply flex gap-2.5 items-center; }
   #toolbar .search input {
-    @apply flex-1 pl-10 pr-3 py-2.5 rounded-md border border-border bg-surface text-[14.5px] font-sans;
+    @apply flex-1 pl-10 pr-3 py-2.5 rounded-md border border-border bg-surface text-body font-sans;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%238B949E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
     background-repeat: no-repeat;
     background-position: 12px center;
@@ -271,18 +275,18 @@
   }
   #toolbar .search input::placeholder { @apply text-text-muted; }
   #toolbar .search button {
-    @apply px-4 py-2.5 rounded-md bg-metal text-white text-[13px] font-semibold hover:bg-metal-dark border-0 cursor-pointer transition-colors;
+    @apply px-4 py-2.5 rounded-md bg-metal text-white text-small font-semibold hover:bg-metal-dark border-0 cursor-pointer transition-colors;
   }
 
   /* --- Results table ----------------------------------------------- */
   .results {
-    @apply w-full border-collapse bg-surface border border-border rounded-md text-[14.5px] overflow-hidden;
+    @apply w-full border-collapse bg-surface border border-border rounded-md text-body overflow-hidden;
   }
   .results th, .results td {
     @apply px-4 py-3.5 text-left border-b border-gray-100;
   }
   .results th {
-    @apply bg-surface-muted text-metal font-semibold text-[12.5px] uppercase tracking-wider;
+    @apply bg-surface-muted text-metal font-semibold text-caption uppercase tracking-wider;
   }
   .results tbody tr:nth-child(even) td { @apply bg-surface-muted/50; }
   .results tr:hover td { @apply bg-rust/5; }
@@ -292,7 +296,7 @@
   }
   .results.row-clickable .row-link:hover { @apply no-underline; }
   .results.row-clickable td:first-child .row-link { @apply font-semibold; }
-  .results.row-clickable .row-link.help { @apply text-gray-600 text-[13.5px]; }
+  .results.row-clickable .row-link.help { @apply text-gray-600 text-small; }
 
   /* --- User rows (Phase 7a/0.5/h) ---------------------------------- */
   /* The .user-row class on each <tr> is preserved as a public-API
@@ -306,15 +310,15 @@
      list.html. The handler isn't wired yet, so for now this CSS
      describes the eventual visual; safe to keep here. */
   .actions {
-    @apply px-3.5 py-2.5 mb-3 bg-surface-muted border border-border rounded-md flex items-center gap-3 text-[13.5px] text-gray-700;
+    @apply px-3.5 py-2.5 mb-3 bg-surface-muted border border-border rounded-md flex items-center gap-3 text-small text-gray-700;
   }
   .actions select {
-    @apply px-2.5 py-1.5 rounded-md border border-border bg-surface text-[13.5px];
+    @apply px-2.5 py-1.5 rounded-md border border-border bg-surface text-small;
   }
   .actions button {
-    @apply px-3 py-1.5 rounded-md bg-metal text-white text-[13px] font-semibold border-0 cursor-pointer hover:bg-metal-dark transition-colors;
+    @apply px-3 py-1.5 rounded-md bg-metal text-white text-small font-semibold border-0 cursor-pointer hover:bg-metal-dark transition-colors;
   }
-  .action-counter { @apply text-text-muted text-[13px] ml-auto; }
+  .action-counter { @apply text-text-muted text-small ml-auto; }
   .action-checkbox { @apply w-10 text-center pr-0; }
   .action-checkbox input[type=checkbox] { @apply w-4 h-4 rounded border-gray-300 text-rust focus:ring-accent; }
 
@@ -329,7 +333,7 @@
   .form-row { @apply mb-4; }
   .form-row-grid { @apply grid grid-cols-1 md:grid-cols-2 gap-4; }
   .form-row label, .form-label {
-    @apply block text-[14px] font-semibold text-metal mb-1.5;
+    @apply block text-small font-semibold text-metal mb-1.5;
   }
   .form-input,
   .form-row input[type=text],
@@ -344,7 +348,7 @@
   .form-row input[type=datetime-local],
   .form-row select,
   .form-row textarea {
-    @apply w-full px-3.5 py-2.5 rounded-md border border-border bg-surface text-[15px] font-sans transition-colors;
+    @apply w-full px-3.5 py-2.5 rounded-md border border-border bg-surface text-body font-sans transition-colors;
   }
   /* Phase 1/b — textareas get a consistent baseline so a one-line draft
      and a long body both feel deliberate. The `rows="5"` attribute on
@@ -359,14 +363,14 @@
   /* Phase 1/b — required-field marker. Small, muted-rust asterisk
      beside the label so the visual weight stays on the label text. */
   .form-row label .required { @apply text-rust font-semibold ml-0.5; }
-  .form-help, .help { @apply text-[13.5px] text-gray-600 leading-snug; }
+  .form-help, .help { @apply text-small text-gray-600 leading-snug; }
   .field-input { @apply w-full; }
 
   fieldset.module {
     @apply bg-surface border border-border rounded-xl p-0 mb-5;
   }
   fieldset.module h2 {
-    @apply bg-surface-muted text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-border m-0 rounded-t-xl;
+    @apply bg-surface-muted text-gray-700 px-5 py-3 text-caption font-semibold uppercase tracking-wider border-b border-border m-0 rounded-t-xl;
   }
   fieldset.module .form-row {
     @apply px-5 py-4 border-b border-gray-100;
@@ -381,28 +385,28 @@
   .submit-row .deletelink-button { @apply ml-auto; }
 
   .checkbox-list { @apply flex flex-col gap-2.5; }
-  .checkbox-list label.checkbox-item { @apply flex items-center gap-2.5 text-[14.5px] font-normal m-0; }
+  .checkbox-list label.checkbox-item { @apply flex items-center gap-2.5 text-body font-normal m-0; }
 
   /* --- Notices ----------------------------------------------------- */
   .errornote {
-    @apply px-4 py-3.5 mb-4 bg-red-50 text-red-800 border border-red-200 rounded-md text-[14.5px];
+    @apply px-4 py-3.5 mb-4 bg-red-50 text-red-800 border border-red-200 rounded-md text-body;
   }
   .warningnote {
-    @apply px-4 py-3.5 mb-4 bg-amber-50 text-amber-900 border border-amber-200 rounded-md text-[14.5px];
+    @apply px-4 py-3.5 mb-4 bg-amber-50 text-amber-900 border border-amber-200 rounded-md text-body;
   }
-  .warningnote code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-[13px] font-mono; }
+  .warningnote code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-small font-mono; }
 
-  .messagelist { @apply px-4 py-3.5 mb-4 rounded-md text-[14.5px] border; }
+  .messagelist { @apply px-4 py-3.5 mb-4 rounded-md text-body border; }
   .message-success { @apply bg-emerald-50 text-emerald-800 border-emerald-200; }
   .message-warning { @apply bg-amber-50 text-amber-900 border-amber-200; }
   .message-error   { @apply bg-red-50 text-red-800 border-red-200; }
 
   .empty-list {
-    @apply px-7 py-12 text-center text-gray-600 bg-surface-muted border border-dashed border-gray-300 rounded-md text-[14.5px];
+    @apply px-7 py-12 text-center text-gray-600 bg-surface-muted border border-dashed border-gray-300 rounded-md text-body;
   }
 
   /* --- Paginator --------------------------------------------------- */
-  .paginator { @apply mt-6 text-[13px] text-gray-600 flex flex-wrap items-center gap-1.5; }
+  .paginator { @apply mt-6 text-small text-gray-600 flex flex-wrap items-center gap-1.5; }
   .paginator .this-page {
     @apply bg-rust text-white px-2.5 py-1 rounded-md font-semibold;
   }
@@ -418,10 +422,10 @@
   #changelist-filter {
     @apply bg-surface border border-border rounded-xl p-4 self-start;
   }
-  #changelist-filter h2 { @apply text-[12.5px] uppercase tracking-wider text-gray-700 m-0 mb-2; }
-  #changelist-filter h3 { @apply text-[12.5px] text-gray-600 mt-3 mb-1.5 uppercase tracking-wider; }
+  #changelist-filter h2 { @apply text-caption uppercase tracking-wider text-gray-700 m-0 mb-2; }
+  #changelist-filter h3 { @apply text-caption text-gray-600 mt-3 mb-1.5 uppercase tracking-wider; }
   #changelist-filter ul { @apply list-none m-0 p-0 flex flex-col gap-1; }
-  #changelist-filter li { @apply text-[13.5px]; }
+  #changelist-filter li { @apply text-small; }
   #changelist-filter li.selected a { @apply text-rust font-semibold; }
   #changelist-filter li a { @apply text-metal hover:text-rust no-underline transition-colors; }
   @media (max-width: 768px) {
@@ -434,7 +438,7 @@
     @apply w-[400px] max-w-[92vw] mx-auto mt-16 bg-surface border border-border rounded-xl overflow-hidden shadow-md;
   }
   #login-form .module h2 {
-    @apply bg-metal-surface text-rust px-6 py-5 text-[17px] font-semibold normal-case tracking-normal border-0;
+    @apply bg-metal-surface text-rust px-6 py-5 text-body font-semibold normal-case tracking-normal border-0;
   }
   #login-form form { @apply p-6; }
   #login-form .form-row { @apply mb-5; }
@@ -459,12 +463,12 @@
   /* --- View page (Phase 7a/0.5/h) ----------------------------------- */
   .user-view .profile-group-list,
   .user-view .profile-perm-list {
-    @apply list-disc pl-5 my-1.5 text-[14.5px];
+    @apply list-disc pl-5 my-1.5 text-body;
   }
-  .user-view .muted { @apply text-gray-600 italic m-0 text-[14px]; }
+  .user-view .muted { @apply text-gray-600 italic m-0 text-small; }
 
   /* Cascade list on confirm-delete pages */
-  .cascade-list { @apply list-disc pl-5 my-3 space-y-1.5 text-[14.5px]; }
+  .cascade-list { @apply list-disc pl-5 my-3 space-y-1.5 text-body; }
 
   /* --- Confirm-form layout ----------------------------------------- */
   .confirm-form .submit-row { @apply justify-start; }
@@ -590,22 +594,22 @@
   .badge-success {
     @apply inline-flex items-center px-2.5 py-1 rounded-md
            bg-success/10 text-success
-           text-[11.5px] font-semibold uppercase tracking-wider;
+           text-caption font-semibold uppercase tracking-wider;
   }
   .badge-warning {
     @apply inline-flex items-center px-2.5 py-1 rounded-md
            bg-warning/10 text-warning
-           text-[11.5px] font-semibold uppercase tracking-wider;
+           text-caption font-semibold uppercase tracking-wider;
   }
   .badge-danger {
     @apply inline-flex items-center px-2.5 py-1 rounded-md
            bg-danger/10 text-danger
-           text-[11.5px] font-semibold uppercase tracking-wider;
+           text-caption font-semibold uppercase tracking-wider;
   }
   .badge-neutral {
     @apply inline-flex items-center px-2.5 py-1 rounded-md
            bg-surface-muted text-text-muted
-           text-[11.5px] font-semibold uppercase tracking-wider;
+           text-caption font-semibold uppercase tracking-wider;
   }
 
   /* --- Layout helpers from the audit ------------------------------- */
@@ -651,20 +655,20 @@
 
   /* Inline `<code>` chip — Phase 3/b-0 retune for exact visual parity
    * with the inline pattern that lives in 8 templates today
-   * (`bg-paper px-1.5 py-0.5 rounded text-[13px] font-mono`).
+   * (`bg-paper px-1.5 py-0.5 rounded text-small font-mono`).
    *
    * Display stays inline (no `inline-block`) so the chip flows with
    * surrounding sentence text. Padding + radius use Tailwind
    * defaults. No border. `bg-paper` is the legacy warm-paper neutral,
    * kept here so the chip matches existing card/module backgrounds.
    *
-   * Note: `text-[13px]` matches 5 of 8 inline occurrences. The three
-   * sites that currently use `text-[12.5px]` will shift +0.5px on
+   * Note: `text-small` matches 5 of 8 inline occurrences. The three
+   * sites that currently use `text-caption` will shift +0.5px on
    * the refactor sweep — imperceptible at chip scale. Documented as
    * an explicit, accepted deviation per the user spec ("13px
    * equivalent"). */
   .code-pill {
-    @apply bg-paper px-1.5 py-0.5 rounded text-[13px] font-mono;
+    @apply bg-paper px-1.5 py-0.5 rounded text-small font-mono;
   }
 
   /* Page-action row — back button + flex-1 + primary/secondary, used
@@ -674,7 +678,7 @@
   }
 
   /* "Small note under heading" pattern — 17 occurrences of `text-text-muted
-   * text-[14px] mt-1` in the audit. */
+   * text-small mt-1` in the audit. */
   .subhead-note {
     @apply text-text-muted text-small mt-xs;
   }
