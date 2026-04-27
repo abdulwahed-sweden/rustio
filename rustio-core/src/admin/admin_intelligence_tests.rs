@@ -25,6 +25,7 @@ fn text(name: &'static str) -> AdminField {
         field_type: FieldType::String,
         editable: true,
         relation: None,
+        choices: None,
     }
 }
 
@@ -35,6 +36,7 @@ fn bigint(name: &'static str, editable: bool) -> AdminField {
         field_type: FieldType::I64,
         editable,
         relation: None,
+        choices: None,
     }
 }
 
@@ -45,6 +47,7 @@ fn boolean(name: &'static str) -> AdminField {
         field_type: FieldType::Bool,
         editable: true,
         relation: None,
+        choices: None,
     }
 }
 
@@ -55,6 +58,7 @@ fn datetime(name: &'static str) -> AdminField {
         field_type: FieldType::DateTime,
         editable: true,
         relation: None,
+        choices: None,
     }
 }
 

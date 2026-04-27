@@ -25,6 +25,7 @@ const APPLICANT_FIELDS: &[AdminField] = &[
         field_type: FieldType::I64,
         editable: false,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "personnummer",
@@ -32,6 +33,7 @@ const APPLICANT_FIELDS: &[AdminField] = &[
         field_type: FieldType::String,
         editable: true,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "queue_start_date",
@@ -39,6 +41,7 @@ const APPLICANT_FIELDS: &[AdminField] = &[
         field_type: FieldType::DateTime,
         editable: true,
         relation: None,
+        choices: None,
     },
     // Deliberately omits `annual_income` so a housing-context
     // suggestion fires for it.
@@ -51,6 +54,7 @@ const FULLY_COVERED_FIELDS: &[AdminField] = &[
         field_type: FieldType::I64,
         editable: false,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "personnummer",
@@ -58,6 +62,7 @@ const FULLY_COVERED_FIELDS: &[AdminField] = &[
         field_type: FieldType::String,
         editable: true,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "queue_start_date",
@@ -65,6 +70,7 @@ const FULLY_COVERED_FIELDS: &[AdminField] = &[
         field_type: FieldType::DateTime,
         editable: true,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "annual_income",
@@ -72,6 +78,7 @@ const FULLY_COVERED_FIELDS: &[AdminField] = &[
         field_type: FieldType::I32,
         editable: true,
         relation: None,
+        choices: None,
     },
 ];
 
@@ -82,6 +89,7 @@ const WIDGET_FIELDS: &[AdminField] = &[
         field_type: FieldType::I64,
         editable: false,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "name",
@@ -89,6 +97,7 @@ const WIDGET_FIELDS: &[AdminField] = &[
         field_type: FieldType::String,
         editable: true,
         relation: None,
+        choices: None,
     },
 ];
 

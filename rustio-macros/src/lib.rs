@@ -67,6 +67,13 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                     ::std::option::Option::Some(::rustio_core::admin::AdminRelation {
                         target_model: #target,
                         display_field: #display_tok,
+                        // Phase 5/d — single belongs_to relations default to
+                        // single `<select>`. Many-to-many is opt-in via a
+                        // future `#[rustio(many_to_many)]` attribute; the
+                        // macro emits `false` for now so consumers that want
+                        // multi-select must hand-set the field on the
+                        // generated AdminRelation.
+                        multi: false,
                     })
                 }
             }
@@ -80,6 +87,12 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                 field_type: ::rustio_core::admin::FieldType::#type_variant,
                 editable: #editable,
                 relation: #relation_tokens,
+                // Phase 5/d — derived models don't carry enum choices yet.
+                // A future macro pass will accept `#[rustio(choices = [...])]`
+                // and populate this; today consumers that want a `<select>`
+                // backed by a static value list set this on the generated
+                // AdminField directly.
+                choices: ::std::option::Option::None,
             }
         });
 

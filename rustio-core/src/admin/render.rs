@@ -417,6 +417,18 @@ pub(crate) struct FormCtx {
     pub flash: Option<FlashCtx>,
 }
 
+/// Phase 5/d — one option in a `<select>` list. Both fields are
+/// `String` because options come from runtime data: enum choices
+/// (static strings copied), foreign-key rows (id → display label),
+/// many-to-many memberships. The label and value can diverge — for
+/// FK selects, `value` is the row id, `label` is the human-readable
+/// display string.
+#[derive(Serialize)]
+pub(crate) struct SelectOption {
+    pub value: String,
+    pub label: String,
+}
+
 #[derive(Serialize)]
 pub(crate) struct FormField {
     pub name: &'static str,
@@ -435,6 +447,14 @@ pub(crate) struct FormField {
     /// carry the marker (booleans always submit a value, optionals
     /// are explicitly nullable).
     pub required: bool,
+    /// Phase 5/d — populated when `widget == "select"`. `None` for
+    /// non-select widgets so serialisation doesn't carry an empty
+    /// list per field.
+    pub options: Option<Vec<SelectOption>>,
+    /// Phase 5/d — `true` for many-to-many relations so the template
+    /// emits `<select multiple>`. `false` for single-select / non-select
+    /// widgets.
+    pub multiple: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -464,23 +484,26 @@ pub(crate) fn form_ctx(
             // Phase 6a: pass None to the classifier (ContextConfig
             // integration deferred to Phase 7).
             let ui = super::intelligence::field_ui_metadata(f, None);
-            // Phase 5/c — base widget + input_type from the centralized
-            // FieldType→UI mapping. Adding a new FieldType variant now
-            // only requires a new arm in `map_field_to_ui`; the form
-            // template needs no change.
-            let (base_widget, input_type) = map_field_to_ui(f.field_type);
+            // Phase 5/c+d — base widget + input_type from the centralized
+            // mapping. Sees choices + relation, so enum / FK / M2M fields
+            // resolve to ("select", "select" | "select-multiple") here.
+            let (base_widget, input_type) = map_field_to_ui(f);
             // Phase 7a/2/critical-fix — String fields with content-y
             // names (body / description / notes / content / summary)
             // render as <textarea> instead of the base single-line
-            // <input>. FieldType doesn't have a Text variant; this
-            // name-hint heuristic is the override layer that
-            // `map_field_to_ui` deliberately leaves to the caller
-            // (the mapping fn takes only `&FieldType`, not the field
-            // name). Behaviour preserved bit-for-bit from pre-5/c.
-            let widget = if matches!(
-                f.field_type,
-                super::types::FieldType::String | super::types::FieldType::OptionalString
-            ) && is_long_text_name(f.name) {
+            // <input>. The mapping fn intentionally doesn't see the
+            // field name, so this name-hint override stays in the
+            // caller. Only fires when the base mapping landed on
+            // "input" — a select-shaped field (enum/FK/M2M) doesn't
+            // get rewritten to textarea even if its name happens to
+            // be "body".
+            let widget = if base_widget == "input"
+                && matches!(
+                    f.field_type,
+                    super::types::FieldType::String | super::types::FieldType::OptionalString
+                )
+                && is_long_text_name(f.name)
+            {
                 "textarea"
             } else {
                 base_widget
@@ -490,6 +513,38 @@ pub(crate) fn form_ctx(
             // other non-nullable field does.
             let required = !f.field_type.nullable()
                 && !matches!(f.field_type, super::types::FieldType::Bool);
+            // Phase 5/d — select options + multiple flag.
+            //   - Enum (choices): one option per allowed value (raw
+            //     string used as both value and label per "no
+            //     invented content" rule).
+            //   - FK / M2M (relation): mocked option list for now.
+            //     A real DB-backed lookup is the next sub-phase per
+            //     spec ("Mock for now (no DB query yet)").
+            //   - Everything else: None / false.
+            let (options, multiple) = if let Some(values) = f.choices {
+                (
+                    Some(
+                        values
+                            .iter()
+                            .map(|v| SelectOption {
+                                value: (*v).to_string(),
+                                label: (*v).to_string(),
+                            })
+                            .collect(),
+                    ),
+                    false,
+                )
+            } else if let Some(rel) = &f.relation {
+                (
+                    Some(vec![
+                        SelectOption { value: "1".into(), label: "Item 1".into() },
+                        SelectOption { value: "2".into(), label: "Item 2".into() },
+                    ]),
+                    rel.multi,
+                )
+            } else {
+                (None, false)
+            };
             FormField {
                 name: f.name,
                 label: ui.label,
@@ -499,6 +554,8 @@ pub(crate) fn form_ctx(
                 hint: ui.hint,
                 placeholder: ui.placeholder,
                 required,
+                options,
+                multiple,
             }
         })
         .collect();
@@ -532,31 +589,46 @@ fn is_long_text_name(name: &str) -> bool {
     )
 }
 
-/// Phase 5/c — backend-driven field-to-UI mapping.
+/// Phase 5/c+d — backend-driven field-to-UI mapping.
 ///
 /// Returns the (`widget`, `input_type`) pair the form template should
-/// render for a given `FieldType`. Single source of truth: adding a
-/// new variant to `FieldType` (e.g. a future `Email` / `Password` /
-/// `Float` / `Date` / `Time`) is a one-arm change here, with no
-/// template edit required.
+/// render for a given `AdminField`. The signature takes `&AdminField`
+/// (Phase 5/d change from the original `&FieldType`) so the function
+/// can see relation + choices metadata without the caller needing
+/// per-site logic. Resolution priority (top-down):
 ///
-/// `widget` is the branch the template's outer `if` selects on
-/// (`"input"` / `"checkbox"` / `"textarea"`). `input_type` is the
-/// HTML5 `type` attribute used when widget is `"input"`.
+///   1. `field.choices.is_some()` → enum-style `<select>`.
+///   2. `field.relation.is_some()` && `relation.multi` → `<select multiple>`.
+///   3. `field.relation.is_some()` (belongs-to) → single `<select>`.
+///   4. Fall through to `field.field_type` mapping (the Phase 5/c rules).
 ///
-/// Returns `&'static str` (deviating from the spec's `String`
-/// signature) because `FormField.widget` and `.input_type` are
-/// already `&'static str`; allocating two `String`s per call would
+/// Adding a new `FieldType` variant remains a one-arm change in the
+/// final `match`. The first three arms are additive: any field with
+/// choices or a relation overrides the FieldType-based mapping.
+///
+/// Returns `&'static str` (not `String`) because `FormField.widget` /
+/// `.input_type` are already `&'static str`; allocating per call would
 /// force a downstream type change with no behavioural benefit.
 ///
-/// `String → ("input", "text")` is the BASE mapping. Callers wanting
-/// `<textarea>` for content-y fields apply that as a post-mapping
-/// override (see `is_long_text_name` in `form_ctx`); the function
-/// takes only `&FieldType`, not the field name, so the textarea
-/// decision is intentionally outside its scope.
-fn map_field_to_ui(ft: super::types::FieldType) -> (&'static str, &'static str) {
+/// The `String → ("input", "text")` rule remains the base for plain
+/// strings. Long-text override (`textarea` for `body`/`description`/
+/// etc.) lives in `form_ctx` because it depends on the field NAME, not
+/// just type.
+fn map_field_to_ui(field: &super::types::AdminField) -> (&'static str, &'static str) {
+    // 1. Closed-list enum → `<select>`. Trumps any FieldType mapping.
+    if field.choices.is_some() {
+        return ("select", "select");
+    }
+    // 2. & 3. Relation-backed → `<select>`, with `select-multiple` for M2M.
+    if let Some(rel) = &field.relation {
+        if rel.multi {
+            return ("select", "select-multiple");
+        }
+        return ("select", "select");
+    }
+    // 4. Fall through to the FieldType-based base mapping.
     use super::types::FieldType::*;
-    match ft {
+    match field.field_type {
         Bool => ("checkbox", "checkbox"),
         I32 | I64 | OptionalI64 => ("input", "number"),
         DateTime | OptionalDateTime => ("input", "datetime-local"),
@@ -776,20 +848,74 @@ mod tests {
     use crate::auth::Role;
     use crate::templates::Templates;
 
+    /// Build a minimal AdminField for mapping tests. Phase 5/d shifted
+    /// the mapping fn to take `&AdminField` (so it can see relation +
+    /// choices); this helper hides the boilerplate.
+    fn af(field_type: FieldType) -> crate::admin::AdminField {
+        crate::admin::AdminField {
+            name: "x",
+            label: "x",
+            field_type,
+            editable: true,
+            relation: None,
+            choices: None,
+        }
+    }
+
     /// Phase 5/c — locks the FieldType→UI mapping. Adding a new
     /// FieldType variant requires updating this test along with the
     /// match in `map_field_to_ui`; that's the single place to encode
     /// "what UI does this field render as".
     #[test]
     fn maps_field_types_to_expected_widgets() {
-        assert_eq!(map_field_to_ui(FieldType::Bool),             ("checkbox", "checkbox"));
-        assert_eq!(map_field_to_ui(FieldType::String),           ("input", "text"));
-        assert_eq!(map_field_to_ui(FieldType::OptionalString),   ("input", "text"));
-        assert_eq!(map_field_to_ui(FieldType::I32),              ("input", "number"));
-        assert_eq!(map_field_to_ui(FieldType::I64),              ("input", "number"));
-        assert_eq!(map_field_to_ui(FieldType::OptionalI64),      ("input", "number"));
-        assert_eq!(map_field_to_ui(FieldType::DateTime),         ("input", "datetime-local"));
-        assert_eq!(map_field_to_ui(FieldType::OptionalDateTime), ("input", "datetime-local"));
+        assert_eq!(map_field_to_ui(&af(FieldType::Bool)),             ("checkbox", "checkbox"));
+        assert_eq!(map_field_to_ui(&af(FieldType::String)),           ("input", "text"));
+        assert_eq!(map_field_to_ui(&af(FieldType::OptionalString)),   ("input", "text"));
+        assert_eq!(map_field_to_ui(&af(FieldType::I32)),              ("input", "number"));
+        assert_eq!(map_field_to_ui(&af(FieldType::I64)),              ("input", "number"));
+        assert_eq!(map_field_to_ui(&af(FieldType::OptionalI64)),      ("input", "number"));
+        assert_eq!(map_field_to_ui(&af(FieldType::DateTime)),         ("input", "datetime-local"));
+        assert_eq!(map_field_to_ui(&af(FieldType::OptionalDateTime)), ("input", "datetime-local"));
+    }
+
+    /// Phase 5/d — a field with a non-empty `choices` slice resolves
+    /// to a `<select>` regardless of its underlying FieldType. Locks
+    /// resolution priority #1 in `map_field_to_ui`.
+    #[test]
+    fn enum_field_renders_select() {
+        const VALUES: &[&str] = &["draft", "published", "archived"];
+        let mut field = af(FieldType::String);
+        field.choices = Some(VALUES);
+        assert_eq!(map_field_to_ui(&field), ("select", "select"));
+
+        // FieldType::I64 with choices also resolves to select — the
+        // choices arm runs before the FieldType match.
+        let mut numeric = af(FieldType::I64);
+        numeric.choices = Some(VALUES);
+        assert_eq!(map_field_to_ui(&numeric), ("select", "select"));
+    }
+
+    /// Phase 5/d — a relation with `multi: true` produces
+    /// `("select", "select-multiple")`; default `multi: false` stays
+    /// single-select. Locks resolution priority #2 vs #3 in
+    /// `map_field_to_ui`.
+    #[test]
+    fn relation_multi_sets_multiple() {
+        let mut single = af(FieldType::I64);
+        single.relation = Some(crate::admin::AdminRelation {
+            target_model: "posts",
+            display_field: None,
+            multi: false,
+        });
+        assert_eq!(map_field_to_ui(&single), ("select", "select"));
+
+        let mut many = af(FieldType::I64);
+        many.relation = Some(crate::admin::AdminRelation {
+            target_model: "tags",
+            display_field: None,
+            multi: true,
+        });
+        assert_eq!(map_field_to_ui(&many), ("select", "select-multiple"));
     }
 
     fn fake_identity(role: Role) -> Identity {

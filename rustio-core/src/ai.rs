@@ -898,6 +898,7 @@ mod tests {
                 field_type: FieldType::I64,
                 editable: false,
                 relation: None,
+                choices: None,
             },
             AdminField {
                 name: "title",
@@ -905,6 +906,7 @@ mod tests {
                 field_type: FieldType::String,
                 editable: true,
                 relation: None,
+                choices: None,
             },
         ];
         fn display_values(&self) -> Vec<(String, String)> {

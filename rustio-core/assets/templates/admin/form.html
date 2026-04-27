@@ -42,6 +42,21 @@
                 {% elif field.widget == "textarea" %}
                     <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
                         {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
+                {% elif field.widget == "select" %}
+                    <select
+                        name="{{ field.name }}"
+                        id="id_{{ field.name }}"
+                        class="input"
+                        {% if field.multiple %}multiple{% endif %}
+                    >
+                        {% for opt in field.options %}
+                            <option value="{{ opt.value }}"
+                                {% if opt.value == field.value %}selected{% endif %}
+                            >
+                                {{ opt.label }}
+                            </option>
+                        {% endfor %}
+                    </select>
                 {% else %}
                     <input type="{{ field.input_type }}" id="id_{{ field.name }}" name="{{ field.name }}"
                         value="{{ field.value }}"

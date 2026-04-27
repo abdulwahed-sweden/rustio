@@ -56,12 +56,25 @@ pub struct AdminField {
     pub field_type: FieldType,
     pub editable: bool,
     pub relation: Option<AdminRelation>,
+    /// Phase 5/d — closed list of allowed string values for this
+    /// field. When `Some`, the form layer renders a `<select>` with
+    /// one option per entry. The values double as labels (raw, not
+    /// humanised) per the "no invented content" rule. Hand-populated
+    /// for now; a future macro pass will accept
+    /// `#[rustio(choices = […])]` to derive this automatically.
+    pub choices: Option<&'static [&'static str]>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AdminRelation {
     pub target_model: &'static str,
     pub display_field: Option<&'static str>,
+    /// Phase 5/d — `true` for many-to-many relations (form renders
+    /// `<select multiple>`), `false` for the default belongs-to
+    /// (single `<select>`). Macro emits `false`; consumers that want
+    /// M2M behaviour must hand-set this until the macro learns a
+    /// `#[rustio(many_to_many)]` attribute.
+    pub multi: bool,
 }
 
 /// What the `#[derive(RustioAdmin)]` macro produces for each struct.
@@ -462,6 +475,7 @@ const CORE_USER_FIELDS: &[AdminField] = &[
         field_type: FieldType::I64,
         editable: false,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "email",
@@ -469,6 +483,7 @@ const CORE_USER_FIELDS: &[AdminField] = &[
         field_type: FieldType::String,
         editable: true,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "password_hash",
@@ -476,6 +491,7 @@ const CORE_USER_FIELDS: &[AdminField] = &[
         field_type: FieldType::String,
         editable: false,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "role",
@@ -483,6 +499,7 @@ const CORE_USER_FIELDS: &[AdminField] = &[
         field_type: FieldType::String,
         editable: true,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "is_active",
@@ -490,6 +507,7 @@ const CORE_USER_FIELDS: &[AdminField] = &[
         field_type: FieldType::Bool,
         editable: true,
         relation: None,
+        choices: None,
     },
     AdminField {
         name: "created_at",
@@ -497,6 +515,7 @@ const CORE_USER_FIELDS: &[AdminField] = &[
         field_type: FieldType::DateTime,
         editable: false,
         relation: None,
+        choices: None,
     },
 ];
 
