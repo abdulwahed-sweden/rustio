@@ -168,12 +168,12 @@
      (py-2.5) and read at 14.5px so they're not eye-strain. Active
      state combines a rust tint with a 2px left accent rule for a
      refined look that's instantly scannable. */
-  .sidebar     { @apply hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-gray-200 py-5 px-3 gap-0.5; }
-  .sidebar-section { @apply text-[12px] uppercase tracking-wider text-gray-500 font-semibold px-3 py-2 mt-3 first:mt-0; }
+  .sidebar     { @apply hidden md:flex flex-col w-60 shrink-0 bg-surface border-r border-border py-5 px-3 gap-0.5; }
+  .sidebar-section { @apply text-[12px] uppercase tracking-wider text-text-muted font-semibold px-3 py-2 mt-3 first:mt-0; }
   .sidebar-link {
     @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-[14.5px] font-medium text-metal hover:bg-gray-100 no-underline transition-colors duration-150;
   }
-  .sidebar-link svg { @apply w-[17px] h-[17px] shrink-0 text-gray-500; }
+  .sidebar-link svg { @apply w-[17px] h-[17px] shrink-0 text-text-muted; }
   .sidebar-link-active {
     @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-[14.5px] font-semibold text-rust bg-rust/10 no-underline relative;
     box-shadow: inset 3px 0 0 0 theme("colors.rust.DEFAULT");
@@ -207,7 +207,7 @@
     @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-[14.5px] shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition-all duration-150 no-underline cursor-pointer border-0;
   }
   .btn-ghost {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-white text-metal font-semibold text-[14.5px] border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-colors duration-150 no-underline cursor-pointer;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-surface text-metal font-semibold text-[14.5px] border border-border hover:border-gray-400 hover:bg-surface-muted transition-colors duration-150 no-underline cursor-pointer;
   }
   .btn-back { @apply btn-ghost; }
   .btn-edit { @apply btn-primary; }
@@ -221,13 +221,13 @@
 
   /* --- Cards / modules --------------------------------------------- */
   .card {
-    @apply bg-white border border-gray-200 rounded-xl p-6 transition-shadow duration-150;
+    @apply bg-surface border border-border rounded-xl p-6 transition-shadow duration-150;
   }
   .module {
-    @apply bg-white border border-gray-200 rounded-xl mb-4 overflow-hidden;
+    @apply bg-surface border border-border rounded-xl mb-4 overflow-hidden;
   }
   .module h2, .module caption {
-    @apply bg-gray-50 text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-gray-200;
+    @apply bg-surface-muted text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-border;
   }
   .module table { @apply w-full border-collapse; }
   .module td, .module th {
@@ -253,38 +253,38 @@
 
   /* --- Toolbar with search ----------------------------------------- */
   #toolbar {
-    @apply bg-gray-50 border border-gray-200 rounded-md p-3.5 mb-5;
+    @apply bg-surface-muted border border-border rounded-md p-3.5 mb-5;
     border-left: 3px solid theme("colors.rust.DEFAULT");
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
   }
   #toolbar .search { @apply flex gap-2.5 items-center; }
   #toolbar .search input {
-    @apply flex-1 pl-10 pr-3 py-2.5 rounded-md border border-gray-200 bg-white text-[14.5px] font-sans;
+    @apply flex-1 pl-10 pr-3 py-2.5 rounded-md border border-border bg-surface text-[14.5px] font-sans;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%238B949E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
     background-repeat: no-repeat;
     background-position: 12px center;
     background-size: 15px 15px;
   }
   #toolbar .search input:focus {
-    @apply outline-none border-rust ring-2 ring-rust/10;
+    @apply outline-none border-accent ring-2 ring-accent/10;
   }
-  #toolbar .search input::placeholder { @apply text-gray-500; }
+  #toolbar .search input::placeholder { @apply text-text-muted; }
   #toolbar .search button {
     @apply px-4 py-2.5 rounded-md bg-metal text-white text-[13px] font-semibold hover:bg-metal-dark border-0 cursor-pointer transition-colors;
   }
 
   /* --- Results table ----------------------------------------------- */
   .results {
-    @apply w-full border-collapse bg-white border border-gray-200 rounded-md text-[14.5px] overflow-hidden;
+    @apply w-full border-collapse bg-surface border border-border rounded-md text-[14.5px] overflow-hidden;
   }
   .results th, .results td {
     @apply px-4 py-3.5 text-left border-b border-gray-100;
   }
   .results th {
-    @apply bg-gray-50 text-metal font-semibold text-[12.5px] uppercase tracking-wider;
+    @apply bg-surface-muted text-metal font-semibold text-[12.5px] uppercase tracking-wider;
   }
-  .results tbody tr:nth-child(even) td { @apply bg-gray-50/50; }
+  .results tbody tr:nth-child(even) td { @apply bg-surface-muted/50; }
   .results tr:hover td { @apply bg-rust/5; }
   .results.row-clickable td { @apply p-0; }
   .results.row-clickable .row-link {
@@ -306,17 +306,17 @@
      list.html. The handler isn't wired yet, so for now this CSS
      describes the eventual visual; safe to keep here. */
   .actions {
-    @apply px-3.5 py-2.5 mb-3 bg-gray-50 border border-gray-200 rounded-md flex items-center gap-3 text-[13.5px] text-gray-700;
+    @apply px-3.5 py-2.5 mb-3 bg-surface-muted border border-border rounded-md flex items-center gap-3 text-[13.5px] text-gray-700;
   }
   .actions select {
-    @apply px-2.5 py-1.5 rounded-md border border-gray-200 bg-white text-[13.5px];
+    @apply px-2.5 py-1.5 rounded-md border border-border bg-surface text-[13.5px];
   }
   .actions button {
     @apply px-3 py-1.5 rounded-md bg-metal text-white text-[13px] font-semibold border-0 cursor-pointer hover:bg-metal-dark transition-colors;
   }
-  .action-counter { @apply text-gray-500 text-[13px] ml-auto; }
+  .action-counter { @apply text-text-muted text-[13px] ml-auto; }
   .action-checkbox { @apply w-10 text-center pr-0; }
-  .action-checkbox input[type=checkbox] { @apply w-4 h-4 rounded border-gray-300 text-rust focus:ring-rust; }
+  .action-checkbox input[type=checkbox] { @apply w-4 h-4 rounded border-gray-300 text-rust focus:ring-accent; }
 
   /* --- Pills / badges ---------------------------------------------- */
   .rio-pill {
@@ -337,7 +337,7 @@
   }
   .badge-rust  { @apply bg-rust/10 text-rust border-rust/20; }
   .badge-teal  { @apply bg-teal/10 text-teal border-teal/20; }
-  .badge-muted { @apply bg-paper text-gray-600 border-gray-200; }
+  .badge-muted { @apply bg-paper text-gray-600 border-border; }
 
   /* --- Forms ------------------------------------------------------- */
   .form-row { @apply mb-4; }
@@ -358,7 +358,7 @@
   .form-row input[type=datetime-local],
   .form-row select,
   .form-row textarea {
-    @apply w-full px-3.5 py-2.5 rounded-md border border-gray-200 bg-white text-[15px] font-sans transition-colors;
+    @apply w-full px-3.5 py-2.5 rounded-md border border-border bg-surface text-[15px] font-sans transition-colors;
   }
   /* Phase 1/b — textareas get a consistent baseline so a one-line draft
      and a long body both feel deliberate. The `rows="5"` attribute on
@@ -368,7 +368,7 @@
   .form-row input:focus,
   .form-row select:focus,
   .form-row textarea:focus {
-    @apply outline-none border-rust ring-2 ring-rust/10;
+    @apply outline-none border-accent ring-2 ring-accent/10;
   }
   /* Phase 1/b — required-field marker. Small, muted-rust asterisk
      beside the label so the visual weight stays on the label text. */
@@ -377,10 +377,10 @@
   .field-input { @apply w-full; }
 
   fieldset.module {
-    @apply bg-white border border-gray-200 rounded-xl p-0 mb-5;
+    @apply bg-surface border border-border rounded-xl p-0 mb-5;
   }
   fieldset.module h2 {
-    @apply bg-gray-50 text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-gray-200 m-0 rounded-t-xl;
+    @apply bg-surface-muted text-gray-700 px-5 py-3 text-[12.5px] font-semibold uppercase tracking-wider border-b border-border m-0 rounded-t-xl;
   }
   fieldset.module .form-row {
     @apply px-5 py-4 border-b border-gray-100;
@@ -412,7 +412,7 @@
   .message-error   { @apply bg-red-50 text-red-800 border-red-200; }
 
   .empty-list {
-    @apply px-7 py-12 text-center text-gray-600 bg-gray-50 border border-dashed border-gray-300 rounded-md text-[14.5px];
+    @apply px-7 py-12 text-center text-gray-600 bg-surface-muted border border-dashed border-gray-300 rounded-md text-[14.5px];
   }
 
   /* --- Paginator --------------------------------------------------- */
@@ -421,7 +421,7 @@
     @apply bg-rust text-white px-2.5 py-1 rounded-md font-semibold;
   }
   .paginator a {
-    @apply px-2.5 py-1 rounded-md border border-gray-200 text-rust no-underline hover:bg-gray-50 transition-colors;
+    @apply px-2.5 py-1 rounded-md border border-border text-rust no-underline hover:bg-surface-muted transition-colors;
   }
 
   /* --- Filter sidebar (changelist right rail) ---------------------- */
@@ -430,7 +430,7 @@
     grid-template-columns: minmax(0, 1fr) 230px;
   }
   #changelist-filter {
-    @apply bg-white border border-gray-200 rounded-xl p-4 self-start;
+    @apply bg-surface border border-border rounded-xl p-4 self-start;
   }
   #changelist-filter h2 { @apply text-[12.5px] uppercase tracking-wider text-gray-700 m-0 mb-2; }
   #changelist-filter h3 { @apply text-[12.5px] text-gray-600 mt-3 mb-1.5 uppercase tracking-wider; }
@@ -445,7 +445,7 @@
   /* --- Login ------------------------------------------------------- */
   body.login { @apply bg-paper; }
   #login-form {
-    @apply w-[400px] max-w-[92vw] mx-auto mt-16 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-md;
+    @apply w-[400px] max-w-[92vw] mx-auto mt-16 bg-surface border border-border rounded-xl overflow-hidden shadow-md;
   }
   #login-form .module h2 {
     @apply bg-metal-surface text-rust px-6 py-5 text-[17px] font-semibold normal-case tracking-normal border-0;
@@ -457,7 +457,7 @@
   /* --- Forbidden / coming-soon ------------------------------------- */
   .forbidden-page,
   .coming-soon-body {
-    @apply max-w-xl mx-auto my-16 text-center py-10 px-6 bg-white border border-gray-200 rounded-xl;
+    @apply max-w-xl mx-auto my-16 text-center py-10 px-6 bg-surface border border-border rounded-xl;
   }
   .forbidden-page h1 { @apply text-rust mb-3; }
   .coming-soon-body h1 { @apply mb-3; }
@@ -679,7 +679,7 @@
     @apply flex items-center gap-sm mb-lg flex-wrap;
   }
 
-  /* "Small note under heading" pattern — 17 occurrences of `text-gray-500
+  /* "Small note under heading" pattern — 17 occurrences of `text-text-muted
    * text-[14px] mt-1` in the audit. */
   .subhead-note {
     @apply text-text-muted text-small mt-xs;

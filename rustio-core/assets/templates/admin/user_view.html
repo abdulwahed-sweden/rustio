@@ -38,7 +38,7 @@
     </span>
     <div>
         <h1 class="text-2xl font-bold tracking-tight">{{ target_email }}</h1>
-        <p class="text-gray-500 text-[13.5px]">User profile</p>
+        <p class="text-text-muted text-[13.5px]">User profile</p>
     </div>
 </div>
 
@@ -96,7 +96,7 @@
         {% endfor %}
     </div>
     {% else %}
-    <p class="text-gray-500 italic">No group memberships.</p>
+    <p class="text-text-muted italic">No group memberships.</p>
     {% endif %}
     </div>
 </fieldset>
@@ -107,7 +107,7 @@
     <div class="px-5 py-4">
         <div class="flex flex-wrap gap-2 mb-3">
             {% for p in direct_perms %}
-            <code class="bg-paper border border-gray-200 px-2 py-1 rounded text-[12.5px] font-mono">{{ p }}</code>
+            <code class="bg-paper border border-border px-2 py-1 rounded text-[12.5px] font-mono">{{ p }}</code>
             {% endfor %}
         </div>
         <p class="form-help">These are permissions granted directly to this user, outside of group memberships. Direct grants bypass the group/role policy and are easy to forget — usually you want to assign perms via a group instead.</p>
