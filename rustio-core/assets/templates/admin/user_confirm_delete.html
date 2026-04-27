@@ -69,11 +69,11 @@
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <div class="submit-row">
                 {% if is_self or is_last_developer %}
-                <button type="submit" class="deletelink-button" disabled>
+                <button type="submit" class="btn-danger" disabled>
                     {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
                 </button>
                 {% else %}
-                <button type="submit" class="deletelink-button">
+                <button type="submit" class="btn-danger">
                     {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
                 </button>
                 {% endif %}

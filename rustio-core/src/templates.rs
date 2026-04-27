@@ -276,7 +276,7 @@ mod tests {
             "last-dev banner must point operators at the CLI escape hatch"
         );
         assert!(
-            body.contains(r#"<button type="submit" class="deletelink-button" disabled>"#),
+            body.contains(r#"<button type="submit" class="btn-danger" disabled>"#),
             "submit must be disabled when target is the last active developer"
         );
 
@@ -298,7 +298,7 @@ mod tests {
             "self-delete banner must call out the self-action"
         );
         assert!(
-            body.contains(r#"<button type="submit" class="deletelink-button" disabled>"#),
+            body.contains(r#"<button type="submit" class="btn-danger" disabled>"#),
             "submit must be disabled on self-delete"
         );
     }
@@ -412,8 +412,8 @@ mod tests {
     /// contract.
     fn assert_delete_is_disabled_span(body: &str, expected_tooltip: &str) {
         assert!(
-            body.contains(r#"<span class="btn-delete"#),
-            "Delete must render as a <span> with btn-delete class when guarded"
+            body.contains(r#"<span class="btn-danger"#),
+            "Delete must render as a <span> with btn-danger class when guarded"
         );
         assert!(
             !body.contains(r#"<a href="/admin/users/42/delete""#),
@@ -543,11 +543,11 @@ mod tests {
         let body = t.render("admin/user_confirm_delete.html", &ctx).unwrap();
         // Submit must render without `disabled`. The exact button
         // markup includes an icon child (Phase 7a/2), so we assert
-        // on the contract — `<button type="submit" class="deletelink-button">`
+        // on the contract — `<button type="submit" class="btn-danger">`
         // present, and `disabled` NOT present anywhere on it.
         assert!(
-            body.contains(r#"<button type="submit" class="deletelink-button">"#),
-            "submit button must render with deletelink-button class"
+            body.contains(r#"<button type="submit" class="btn-danger">"#),
+            "submit button must render with btn-danger class"
         );
         // Find the button's opening tag and assert no disabled attr
         // sneaks in via a different code path.

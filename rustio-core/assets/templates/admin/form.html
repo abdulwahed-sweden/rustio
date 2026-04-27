@@ -57,17 +57,17 @@
         <button type="submit" name="_save" value="Save" class="btn-primary">
             Save
         </button>
-        <button type="submit" name="_continue" value="Save and continue editing" class="btn-ghost">
+        <button type="submit" name="_continue" value="Save and continue editing" class="btn-secondary">
             Save and continue editing
         </button>
-        <button type="submit" name="_addanother" value="Save and add another" class="btn-ghost">
+        <button type="submit" name="_addanother" value="Save and add another" class="btn-secondary">
             Save and add another
         </button>
         <a href="/admin/{{ admin_name }}/" class="btn-ghost">
             Cancel
         </a>
         {% if mode == "edit" and object_id %}
-        <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="btn-delete ml-auto">
+        <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="btn-danger ml-auto">
             {{ icon("trash", class="w-4 h-4") }} Delete
         </a>
         {% endif %}

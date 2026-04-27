@@ -22,11 +22,11 @@
     </a>
     {% endif %}
     {% if can_delete %}
-    <a href="/admin/users/{{ target_id }}/delete" class="btn-delete">
+    <a href="/admin/users/{{ target_id }}/delete" class="btn-danger">
         {{ icon("trash", class="w-4 h-4") }} Delete
     </a>
     {% else %}
-    <span class="btn-delete opacity-50 cursor-not-allowed select-none" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
+    <span class="btn-danger opacity-50 cursor-not-allowed select-none" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
         {{ icon("trash", class="w-4 h-4") }} Delete
     </span>
     {% endif %}

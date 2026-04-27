@@ -195,32 +195,28 @@
   }
   .breadcrumbs a { @apply text-gray-600 hover:text-rust no-underline transition-colors; }
 
-  /* --- Buttons ------------------------------------------------------ */
+  /* --- Buttons (Phase 7a/2 visual contract) ------------------------ */
+  /* Phase 7a/2 .btn-primary / .btn-ghost remain here for templates
+   * that haven't been migrated to the Phase 2 design-system block at
+   * the bottom of this file. Cascade picks the design-system block
+   * because it's defined later — these declarations are the
+   * fallback contract for any third-party template still bundled
+   * with the framework. .btn-delete and .deletelink-button were
+   * removed in Phase 3/c (every caller migrated to .btn-danger). */
   .btn-primary {
     @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-[14.5px] shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition-all duration-150 no-underline cursor-pointer border-0;
   }
   .btn-ghost {
     @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-white text-metal font-semibold text-[14.5px] border border-gray-200 hover:border-gray-400 hover:bg-gray-50 transition-colors duration-150 no-underline cursor-pointer;
   }
-  .btn-delete {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14.5px] hover:bg-red-800 transition-colors duration-150 no-underline cursor-pointer border-0;
-  }
   .btn-back { @apply btn-ghost; }
   .btn-edit { @apply btn-primary; }
 
-  /* Inline destructive link inside lists / danger zones */
+  /* Inline destructive link inside lists / danger zones. Kept in
+   * Phase 3/c — the inline-link → button migration is deferred to a
+   * later UX pass (3 callers: groups_list, user_edit, group_edit). */
   .deletelink-inline {
     @apply text-red-700 font-medium hover:text-red-800 hover:underline transition-colors text-[14px];
-  }
-
-  /* The Phase 6a/0.5 confirm-page submit. Keeps the class name so
-     /f-fix2's :disabled rule keeps working. */
-  .deletelink-button {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-red-700 text-white font-semibold text-[14px] uppercase tracking-wide hover:bg-red-800 transition-colors duration-150 border-0 cursor-pointer;
-  }
-  .deletelink-button:disabled,
-  .deletelink-button[disabled] {
-    @apply bg-gray-400 opacity-60 cursor-not-allowed hover:bg-gray-400;
   }
 
   /* --- Cards / modules --------------------------------------------- */
@@ -535,6 +531,18 @@
            bg-danger text-surface font-semibold text-small no-underline border-0
            shadow-card cursor-pointer transition-colors duration-150
            hover:bg-danger/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
+  }
+  /* Phase 3/c — disabled state for the four canonical buttons.
+   * Applies to both `:disabled` (form elements) and the literal
+   * `[disabled]` attribute (so a `<span disabled>` would also dim,
+   * though browsers ignore the attribute on non-form elements —
+   * the visual still picks up). pointer-events-none kills any
+   * accidental hover / click feedback on a disabled control. */
+  .btn-primary:disabled, .btn-primary[disabled],
+  .btn-secondary:disabled, .btn-secondary[disabled],
+  .btn-ghost:disabled, .btn-ghost[disabled],
+  .btn-danger:disabled, .btn-danger[disabled] {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
   }
 
   /* --- Input (components.input: height 42px, radius md) ----------- */
