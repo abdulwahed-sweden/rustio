@@ -55,8 +55,8 @@
                         {% if bulk_actions_enabled %}
                         <th class="action-checkbox"><input type="checkbox" id="action-toggle"></th>
                         {% endif %}
-                        {% for col in columns %}
-                        <th scope="col">{{ col }}</th>
+                        {% for field in fields %}
+                        <th scope="col">{{ field.label }}</th>
                         {% endfor %}
                     </tr>
                 </thead>
@@ -66,12 +66,12 @@
                         {% if bulk_actions_enabled %}
                         <td class="action-checkbox"><input type="checkbox" name="_selected_action" value="{{ row.id }}"></td>
                         {% endif %}
-                        {% for cell in row.cells %}
+                        {% for field in fields %}
                         <td>
                             {% if loop.index0 == 0 %}
-                            <a href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ cell }}</a>
+                            <a href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
                             {% else %}
-                            {{ cell }}
+                            {{ row[field.name] }}
                             {% endif %}
                         </td>
                         {% endfor %}

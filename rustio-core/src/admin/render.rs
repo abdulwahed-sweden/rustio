@@ -10,6 +10,8 @@
 //! plumbing. `identity` is `Option<…>` because the login page renders
 //! before authentication.
 
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use super::audit::AdminAction;
@@ -268,6 +270,16 @@ fn relative_time(ts: chrono::DateTime<chrono::Utc>) -> String {
 // Changelist
 // ---------------------------------------------------------------------------
 
+/// Phase 5/a — describes one column of the changelist table. Replaces
+/// the previous `columns: Vec<String>` shape on `ListCtx` so templates
+/// can drive both the header label AND the row-cell key from a single
+/// loop (`{% for field in fields %}<td>{{ row[field.name] }}</td>{% endfor %}`).
+#[derive(Serialize)]
+pub(crate) struct ListField {
+    pub name: String,
+    pub label: String,
+}
+
 #[derive(Serialize)]
 pub(crate) struct ListCtx {
     #[serde(flatten)]
@@ -277,7 +289,7 @@ pub(crate) struct ListCtx {
     pub admin_name: &'static str,
     pub display_name: &'static str,
     pub singular_name: &'static str,
-    pub columns: Vec<String>,
+    pub fields: Vec<ListField>,
     pub rows: Vec<ListRowCtx>,
     pub search_query: String,
     pub filters: Vec<FilterGroupCtx>,
@@ -293,10 +305,17 @@ pub(crate) struct ListCtx {
     pub flash: Option<FlashCtx>,
 }
 
+/// Phase 5/a — `values` is flattened into the JSON object so template
+/// code can do `row[field.name]` (minijinja resolves dict subscript on
+/// the merged map). The explicit `id: i64` struct field stays out of
+/// the flattened map (the loader skips inserting an "id" key) so
+/// `row.id` continues to render as the integer id without colliding
+/// with any model field literally named "id".
 #[derive(Serialize)]
 pub(crate) struct ListRowCtx {
     pub id: i64,
-    pub cells: Vec<String>,
+    #[serde(flatten)]
+    pub values: HashMap<String, String>,
 }
 
 #[derive(Serialize)]
@@ -328,6 +347,19 @@ pub(crate) fn list_ctx(
     csrf_token: String,
 ) -> ListCtx {
     let total_pages = total_rows.div_ceil(per_page.max(1)).max(1);
+    let fields: Vec<ListField> = entry
+        .fields
+        .iter()
+        .map(|f| ListField {
+            name: f.name.to_string(),
+            label: f.label.to_string(),
+        })
+        .collect();
+    // Field-name positions used to convert each row's positional cells
+    // (Vec<String>) into a name-keyed values map. Stays in lockstep with
+    // `entry.fields` because `AdminModel::display_values` is generated
+    // in the same field order as `FIELDS`.
+    let field_names: Vec<&'static str> = entry.fields.iter().map(|f| f.name).collect();
     ListCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: entry.display_name.to_string(),
@@ -335,12 +367,23 @@ pub(crate) fn list_ctx(
         admin_name: entry.admin_name,
         display_name: entry.display_name,
         singular_name: entry.singular_name,
-        columns: entry.fields.iter().map(|f| f.label.to_string()).collect(),
+        fields,
         rows: rows
             .into_iter()
-            .map(|r| ListRowCtx {
-                id: r.id,
-                cells: r.cells,
+            .map(|r| {
+                let mut values: HashMap<String, String> =
+                    HashMap::with_capacity(field_names.len().saturating_sub(1));
+                for (i, cell) in r.cells.into_iter().enumerate() {
+                    if let Some(name) = field_names.get(i) {
+                        // Skip the "id" key so the explicit `id: i64`
+                        // struct field wins on serialization (otherwise
+                        // a flatten-map "id" string would shadow it).
+                        if *name != "id" {
+                            values.insert((*name).to_string(), cell);
+                        }
+                    }
+                }
+                ListRowCtx { id: r.id, values }
             })
             .collect(),
         search_query,
@@ -944,7 +987,9 @@ mod tests {
     /// Phase 1/c — shared list-page context fixture. Returns a JSON
     /// value with the empty-state shape (`rows: []`, `total_rows: 0`).
     /// Callers patch `search_query` / `filters` to flip between the
-    /// true-empty and filtered-empty branches.
+    /// true-empty and filtered-empty branches. Phase 5/a — `fields`
+    /// replaces the old `columns` shape; row iteration in the template
+    /// now uses `row[field.name]` to read each cell.
     fn empty_list_ctx_skeleton() -> serde_json::Value {
         serde_json::json!({
             "site_title": "RustIO administration",
@@ -959,7 +1004,11 @@ mod tests {
             "admin_name": "posts",
             "display_name": "Posts",
             "singular_name": "Post",
-            "columns": ["title", "body", "author"],
+            "fields": [
+                { "name": "title",  "label": "title"  },
+                { "name": "body",   "label": "body"   },
+                { "name": "author", "label": "author" },
+            ],
             "rows": [],
             "search_query": "",
             "filters": [],
@@ -970,6 +1019,69 @@ mod tests {
             "bulk_actions_enabled": false,
             "identity": { "email": "admin@example.com", "is_admin": true, "is_developer": false },
         })
+    }
+
+    /// Phase 5/a — exercises the dynamic-row path: headers are driven
+    /// by `fields[].label`, cells by `row[field.name]`. The empty-state
+    /// tests above all hit the `{% else %}` branch and never iterate
+    /// rows; this one renders a row so the new lookup path is locked
+    /// in. Regression target: a future change that mistakenly drops
+    /// the `flatten` on `ListRowCtx.values` would fail the cell
+    /// assertions below.
+    #[test]
+    fn list_renders_rows_via_field_keyed_lookup() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let mut ctx = empty_list_ctx_skeleton();
+        ctx["rows"] = serde_json::json!([
+            {
+                "id": 7,
+                "title": "Alpha",
+                "body": "first body",
+                "author": "alice",
+            },
+            {
+                "id": 9,
+                "title": "Beta",
+                "body": "second body",
+                "author": "bob",
+            },
+        ]);
+        ctx["total_rows"] = serde_json::json!(2);
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+
+        // Header row: one <th> per field, label rendered.
+        assert!(body.contains(">title</th>"), "title header missing");
+        assert!(body.contains(">body</th>"),  "body header missing");
+        assert!(body.contains(">author</th>"),"author header missing");
+
+        // Row 7: first column wrapped in the edit anchor; subsequent
+        // cells render as plain text.
+        assert!(
+            body.contains("href=\"/admin/posts/7/edit\">Alpha</a>"),
+            "row 7 first-column edit-link missing"
+        );
+        assert!(body.contains("first body"), "row 7 body cell missing");
+        assert!(body.contains("alice"),      "row 7 author cell missing");
+
+        // Row 9 same.
+        assert!(
+            body.contains("href=\"/admin/posts/9/edit\">Beta</a>"),
+            "row 9 first-column edit-link missing"
+        );
+        assert!(body.contains("second body"), "row 9 body cell missing");
+        assert!(body.contains("bob"),         "row 9 author cell missing");
+
+        // Empty-state copy must NOT appear when rows are present.
+        assert!(
+            !body.contains("No posts yet"),
+            "true-empty copy must not render when rows present"
+        );
+        assert!(
+            !body.contains("No results match your search"),
+            "filtered-empty copy must not render when rows present"
+        );
     }
 
     #[test]
