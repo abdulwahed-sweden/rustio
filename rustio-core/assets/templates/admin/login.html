@@ -25,14 +25,16 @@
                 {% if error %}
                 <div class="errornote">{{ error }}</div>
                 {% endif %}
-                <div class="form-row">
-                    <label for="id_email">Email</label>
-                    <input type="email" id="id_email" name="email" autocomplete="username" autofocus required>
-                </div>
-                <div class="form-row">
-                    <label for="id_password">Password</label>
-                    <input type="password" id="id_password" name="password" autocomplete="current-password" required>
-                </div>
+                {# Phase 6.2 — fields rendered through the shared
+                   FormField include. Login card is 400px wide so a
+                   single-column stack is the layout regardless of
+                   viewport (the generic form's `md:grid-cols-2` only
+                   helps in wider containers). #}
+                {% for section in sections %}
+                    {% for field in section.fields %}
+                        {% include "admin/includes/_form_field.html" %}
+                    {% endfor %}
+                {% endfor %}
                 <div class="submit-row">
                     <button type="submit" class="btn-primary">Sign in</button>
                 </div>

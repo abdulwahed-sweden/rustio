@@ -1,0 +1,64 @@
+{# Phase 6.2 — shared FormField renderer.
+
+   Renders one row for one FormField object. Caller iterates `fields`
+   (or `section.fields`) and includes this for each item; the include
+   inherits the parent context's `field` loop variable.
+
+   Supports the FormField shape from rustio-core/src/admin/render.rs:
+     name, label, widget ("input"|"checkbox"|"textarea"|"select"),
+     input_type, value, hint, placeholder, required, options, multiple,
+     span (caller wraps with col-span-2 if span==2; this include is
+     scope-agnostic), autocomplete, autofocus, disabled, maxlength.
+
+   Used by the generic admin form (form.html) and by every bespoke
+   form (login, password_change, user_new, user_edit, group_new,
+   group_edit) so all standard inputs share one rendering path. #}
+<div class="form-row field-{{ field.name }}">
+    <label for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}{% if field.input_type != "checkbox" %}:{% endif %}</label>
+    <div class="field-input">
+        {% if field.widget == "checkbox" %}
+            <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
+                value="true"{% if field.value == "true" %} checked{% endif %}
+                {% if field.required %}required{% endif %}
+                {% if field.autofocus %}autofocus{% endif %}
+                {% if field.disabled %}disabled{% endif %}
+                class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
+        {% elif field.widget == "textarea" %}
+            <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
+                {% if field.required %}required{% endif %}
+                {% if field.autofocus %}autofocus{% endif %}
+                {% if field.disabled %}disabled{% endif %}
+                {% if field.maxlength %}maxlength="{{ field.maxlength }}"{% endif %}
+                {% if field.autocomplete %}autocomplete="{{ field.autocomplete }}"{% endif %}
+                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
+        {% elif field.widget == "select" %}
+            <select
+                name="{{ field.name }}"
+                id="id_{{ field.name }}"
+                class="input"
+                {% if field.multiple %}multiple{% endif %}
+                {% if field.required %}required{% endif %}
+                {% if field.autofocus %}autofocus{% endif %}
+                {% if field.disabled %}disabled{% endif %}
+            >
+                {% for opt in field.options %}
+                    <option value="{{ opt.value }}"
+                        {% if opt.value == field.value %}selected{% endif %}
+                    >
+                        {{ opt.label }}
+                    </option>
+                {% endfor %}
+            </select>
+        {% else %}
+            <input type="{{ field.input_type }}" id="id_{{ field.name }}" name="{{ field.name }}"
+                value="{{ field.value }}"
+                {% if field.required %}required{% endif %}
+                {% if field.autofocus %}autofocus{% endif %}
+                {% if field.disabled %}disabled{% endif %}
+                {% if field.maxlength %}maxlength="{{ field.maxlength }}"{% endif %}
+                {% if field.autocomplete %}autocomplete="{{ field.autocomplete }}"{% endif %}
+                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+        {% endif %}
+        {% if field.hint %}<p class="form-help mt-xs">{{ field.hint }}</p>{% endif %}
+    </div>
+</div>

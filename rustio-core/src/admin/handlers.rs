@@ -74,6 +74,7 @@ pub(crate) async fn show_login(ctx: &AdminCtx, req: Request) -> Result<Response>
         &render::LoginCtx {
             base: BaseContext::new(None, csrf_token(&req), &ctx.admin),
             error: None,
+            sections: render::login_form_sections(),
         },
     )?;
     Ok(Response::html(body))
@@ -98,6 +99,7 @@ pub(crate) async fn do_login(ctx: &AdminCtx, req: Request) -> Result<Response> {
                 &render::LoginCtx {
                     base: BaseContext::new(None, csrf_token(&req), &ctx.admin),
                     error: Some("Invalid email or password.".into()),
+                    sections: render::login_form_sections(),
                 },
             )?;
             Ok(Response::html(body).with_status(hyper::StatusCode::UNAUTHORIZED))
@@ -466,6 +468,7 @@ pub(crate) async fn show_password_change(
         page_title: "Change password",
         errors: Vec::new(),
         success: false,
+        sections: render::password_change_form_sections(),
     };
     let body = ctx.templates.render("admin/password_change.html", &view)?;
     Ok(Response::html(body))
@@ -510,6 +513,9 @@ pub(crate) async fn do_password_change(
             page_title: "Password changed",
             errors: Vec::new(),
             success: true,
+            // Success page doesn't render the form, but PasswordChangeCtx
+            // requires the field; an empty section list serialises fine.
+            sections: Vec::new(),
         };
         let body = ctx.templates.render("admin/password_change.html", &view)?;
         return Ok(Response::html(body));
@@ -520,6 +526,7 @@ pub(crate) async fn do_password_change(
         page_title: "Change password",
         errors,
         success: false,
+        sections: render::password_change_form_sections(),
     };
     let body = ctx.templates.render("admin/password_change.html", &view)?;
     Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))

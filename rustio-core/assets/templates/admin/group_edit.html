@@ -29,45 +29,42 @@
 <form method="post" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-    <fieldset class="module aligned">
-        <h2>General</h2>
-        <div class="form-row">
-            <label for="id_name">Name:</label>
-            <div class="field-input">
-                <input type="text" id="id_name" name="name" value="{{ name }}" required>
-            </div>
-        </div>
-        <div class="form-row">
-            <label for="id_description">Description:</label>
-            <div class="field-input">
-                <textarea id="id_description" name="description" rows="3">{{ description }}</textarea>
-            </div>
-        </div>
-    </fieldset>
-
-    <fieldset class="module aligned">
-        <h2>Permissions</h2>
-        {% if all_permissions %}
-        <div class="form-row">
-            <label>Granted:</label>
-            <div class="field-input">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                    {% for p in all_permissions %}
-                    <label class="inline-flex items-center gap-sm px-2.5 py-1.5 rounded border border-border hover:border-rust hover:bg-rust/5 transition cursor-pointer">
-                        <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
-                        <code class="text-caption font-mono">{{ p.name }}</code>
-                    </label>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        {% else %}
-        <div class="form-row">
-            <label>&nbsp;</label>
-            <div class="field-input"><p class="form-help">No permissions registered yet. They appear after a model with <code class="code-pill">#[derive(RustioAdmin)]</code> boots and emits its own.</p></div>
-        </div>
+    {# Phase 6.2 — General (name + description) via the shared
+       FormField include. #}
+    {% for section in sections %}
+        {% if section.title %}
+        <h3 class="mt-lg mb-sm">{{ section.title }}</h3>
         {% endif %}
-    </fieldset>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+            {% for field in section.fields %}
+            <div class="{% if field.span == 2 %}col-span-2{% endif %}">
+                {% include "admin/includes/_form_field.html" %}
+            </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
+
+    {# Phase 6.2 — Permissions grid stays as a custom block per spec
+       correction #2 (sanctioned domain-specific layout). Each
+       permission posts as `perm_<id>=on` so the do_group_edit handler
+       reads the existing form-data shape unchanged. #}
+    <h3 class="mt-lg mb-sm">Permissions</h3>
+    {% if all_permissions %}
+    <div class="form-row">
+        <div class="field-input">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {% for p in all_permissions %}
+                <label class="inline-flex items-center gap-sm px-2.5 py-1.5 rounded border border-border hover:border-rust hover:bg-rust/5 transition cursor-pointer">
+                    <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
+                    <code class="text-caption font-mono">{{ p.name }}</code>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <p class="form-help">No permissions registered yet. They appear after a model with <code class="code-pill">#[derive(RustioAdmin)]</code> boots and emits its own.</p>
+    {% endif %}
 
     <div class="submit-row">
         <button type="submit" name="_save" class="btn-primary">Save</button>

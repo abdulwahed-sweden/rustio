@@ -162,6 +162,7 @@ const EMBEDDED_TEMPLATES: &[(&str, &str)] = &[
     ("admin/forbidden.html", include_str!("../assets/templates/admin/forbidden.html")),
     ("admin/coming_soon.html", include_str!("../assets/templates/admin/coming_soon.html")),
     ("admin/includes/_field_errors.html", include_str!("../assets/templates/admin/includes/_field_errors.html")),
+    ("admin/includes/_form_field.html", include_str!("../assets/templates/admin/includes/_form_field.html")),
     ("search.html", include_str!("../assets/templates/search.html")),
 ];
 

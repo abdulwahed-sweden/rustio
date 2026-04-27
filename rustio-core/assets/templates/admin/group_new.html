@@ -23,23 +23,22 @@
 <form method="post" action="/admin/groups/new" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-    <fieldset class="module aligned">
-        <h2>General</h2>
-        <div class="form-row">
-            <label for="id_name">Name:</label>
-            <div class="field-input">
-                <input type="text" id="id_name" name="name" value="{{ name }}" required maxlength="150" autofocus>
-                <p class="form-help mt-xs">A short identifier — letters, digits, dots and dashes only. Example: <code class="code-pill">editors</code>.</p>
+    {# Phase 6.2 — fields rendered through the shared FormField
+       include. `sections` carries the General (name + description)
+       grouping; the `editors` example pill that lived in the inline
+       hint is preserved verbatim in the FormField hint copy. #}
+    {% for section in sections %}
+        {% if section.title %}
+        <h3 class="mt-lg mb-sm">{{ section.title }}</h3>
+        {% endif %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+            {% for field in section.fields %}
+            <div class="{% if field.span == 2 %}col-span-2{% endif %}">
+                {% include "admin/includes/_form_field.html" %}
             </div>
+            {% endfor %}
         </div>
-        <div class="form-row">
-            <label for="id_description">Description:</label>
-            <div class="field-input">
-                <textarea id="id_description" name="description" rows="3">{{ description }}</textarea>
-                <p class="form-help mt-xs">Optional. What this group is for.</p>
-            </div>
-        </div>
-    </fieldset>
+    {% endfor %}
 
     <p class="form-help mt-sm">After saving you'll be sent to the group's edit page where you can grant permissions.</p>
 

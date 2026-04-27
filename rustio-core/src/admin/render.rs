@@ -109,6 +109,55 @@ pub(crate) struct LoginCtx {
     #[serde(flatten)]
     pub base: BaseContext,
     pub error: Option<String>,
+    /// Phase 6.2 — login form fields (email + password) rendered via
+    /// the shared `_form_field.html` include. Page chrome (card,
+    /// hidden sidebar/breadcrumbs) stays bespoke.
+    pub sections: Vec<FormSection>,
+}
+
+/// Phase 6.2 — pre-built FormField list for the login form. Static
+/// because the values never change between requests; built once and
+/// cloned into LoginCtx.sections.
+pub(crate) fn login_form_sections() -> Vec<FormSection> {
+    vec![FormSection {
+        title: None,
+        fields: vec![
+            FormField {
+                name: "email",
+                label: "Email".to_string(),
+                widget: "input",
+                input_type: "email",
+                value: String::new(),
+                hint: None,
+                placeholder: None,
+                required: true,
+                options: None,
+                multiple: false,
+                span: 1,
+                autocomplete: Some("username"),
+                autofocus: true,
+                disabled: false,
+                maxlength: None,
+            },
+            FormField {
+                name: "password",
+                label: "Password".to_string(),
+                widget: "input",
+                input_type: "password",
+                value: String::new(),
+                hint: None,
+                placeholder: None,
+                required: true,
+                options: None,
+                multiple: false,
+                span: 1,
+                autocomplete: Some("current-password"),
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
+            },
+        ],
+    }]
 }
 
 // ---------------------------------------------------------------------------
@@ -466,6 +515,23 @@ pub(crate) struct FormField {
     /// `1` everywhere else; the form template branches on this with
     /// `{% if field.span == 2 %}col-span-2{% endif %}`.
     pub span: u8,
+    /// Phase 6.2 — HTML5 `autocomplete` token. `Some("current-password")`
+    /// / `Some("new-password")` / `Some("username")` / `Some("email")` /
+    /// `Some("off")`. `None` skips the attribute. Surfaced for password
+    /// manager hints on bespoke forms (login / password-change /
+    /// user-new); generic AdminEntry-driven forms default to `None`.
+    pub autocomplete: Option<&'static str>,
+    /// Phase 6.2 — `true` emits the HTML5 `autofocus` attribute. Set on
+    /// the first user-editable field of a bespoke form so the cursor
+    /// lands there; defaults to `false` for AdminEntry-driven forms.
+    pub autofocus: bool,
+    /// Phase 6.2 — `true` emits HTML5 `disabled`. Used for read-only
+    /// displays inside edit forms (user_edit's email field).
+    pub disabled: bool,
+    /// Phase 6.2 — HTML5 `maxlength` attribute. `Some(150)` for group
+    /// names; `None` skips. Surfaced for length-limited free-text fields
+    /// on bespoke forms.
+    pub maxlength: Option<u16>,
 }
 
 /// Phase 6 — one logical group of fields on a form. `title: None`
@@ -586,6 +652,15 @@ pub(crate) fn form_ctx(
                 options,
                 multiple,
                 span,
+                // Phase 6.2 — UX attributes are surfaced only by
+                // bespoke handlers that hand-build FormField. The
+                // AdminEntry-driven path defaults them off; the
+                // template's `{% if field.autofocus %}` etc. checks
+                // produce no markup.
+                autocomplete: None,
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
             }
         })
         .collect::<Vec<FormField>>();
@@ -911,6 +986,318 @@ pub(crate) struct PasswordChangeCtx {
     pub page_title: &'static str,
     pub errors: Vec<String>,
     pub success: bool,
+    /// Phase 6.2 — three password fields rendered through the shared
+    /// FormField include. Page chrome (the success branch, the page
+    /// header card) stays bespoke.
+    pub sections: Vec<FormSection>,
+}
+
+/// Phase 6.2 — role options for user_new / user_edit. Labels carry the
+/// privilege descriptions shown in the existing dropdowns; values are
+/// the role slugs the auth layer expects.
+pub(crate) fn role_select_options() -> Vec<SelectOption> {
+    vec![
+        SelectOption {
+            value: "user".to_string(),
+            label: "User (no admin access)".to_string(),
+        },
+        SelectOption {
+            value: "staff".to_string(),
+            label: "Staff (admin access; per-model group permissions)".to_string(),
+        },
+        SelectOption {
+            value: "supervisor".to_string(),
+            label: "Supervisor (view + edit; no destructive ops)".to_string(),
+        },
+        SelectOption {
+            value: "administrator".to_string(),
+            label: "Administrator (full coverage; bypasses group checks)".to_string(),
+        },
+        SelectOption {
+            value: "developer".to_string(),
+            label: "Developer (schema browser + execution logs + SQL console)".to_string(),
+        },
+    ]
+}
+
+/// Phase 6.2 — FormField list for the user_new form. Two sections:
+/// Identity (email + password) and Role (the 5-option select). The
+/// caller passes the current values so re-render after validation
+/// failure preserves them; new-form callers pass empty/staff defaults.
+pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection> {
+    vec![
+        FormSection {
+            title: Some("Identity"),
+            fields: vec![
+                FormField {
+                    name: "email",
+                    label: "Email".to_string(),
+                    widget: "input",
+                    input_type: "email",
+                    value: email.to_string(),
+                    hint: Some("Must be unique across all users.".to_string()),
+                    placeholder: None,
+                    required: true,
+                    options: None,
+                    multiple: false,
+                    span: 2,
+                    autocomplete: Some("off"),
+                    autofocus: true,
+                    disabled: false,
+                    maxlength: None,
+                },
+                FormField {
+                    name: "password",
+                    label: "Password".to_string(),
+                    widget: "input",
+                    input_type: "password",
+                    value: String::new(),
+                    hint: Some(
+                        "At least 8 characters. The user can change it later via Change password."
+                            .to_string(),
+                    ),
+                    placeholder: None,
+                    required: true,
+                    options: None,
+                    multiple: false,
+                    span: 2,
+                    autocomplete: Some("new-password"),
+                    autofocus: false,
+                    disabled: false,
+                    maxlength: None,
+                },
+            ],
+        },
+        FormSection {
+            title: Some("Role"),
+            fields: vec![FormField {
+                name: "role",
+                label: "Role".to_string(),
+                widget: "select",
+                input_type: "select",
+                value: role.to_string(),
+                hint: Some(
+                    "Higher roles include all lower-role capabilities. Group memberships are assigned on the next page after save."
+                        .to_string(),
+                ),
+                placeholder: None,
+                required: true,
+                options: Some(role_select_options()),
+                multiple: false,
+                span: 2,
+                autocomplete: None,
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
+            }],
+        },
+    ]
+}
+
+/// Phase 6.2 — General section for group_new / group_edit. Two
+/// fields: name (text, required, 150-char max) and description
+/// (textarea). Caller passes the current values so re-render after
+/// validation failure preserves them.
+pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSection> {
+    vec![FormSection {
+        title: Some("General"),
+        fields: vec![
+            FormField {
+                name: "name",
+                label: "Name".to_string(),
+                widget: "input",
+                input_type: "text",
+                value: name.to_string(),
+                hint: Some(
+                    "A short identifier — letters, digits, dots and dashes only. Example: editors."
+                        .to_string(),
+                ),
+                placeholder: None,
+                required: true,
+                options: None,
+                multiple: false,
+                span: 2,
+                autocomplete: Some("off"),
+                autofocus: true,
+                disabled: false,
+                maxlength: Some(150),
+            },
+            FormField {
+                name: "description",
+                label: "Description".to_string(),
+                widget: "textarea",
+                input_type: "text",
+                value: description.to_string(),
+                hint: Some("Optional. What this group is for.".to_string()),
+                placeholder: None,
+                required: false,
+                options: None,
+                multiple: false,
+                span: 2,
+                autocomplete: None,
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
+            },
+        ],
+    }]
+}
+
+/// Phase 6.2 — Identity section for user_edit. Email is disabled
+/// (read-only display); role is the select; is_active is the checkbox.
+/// Built per render so values reflect the current row.
+pub(crate) fn user_edit_identity_sections(
+    email: &str,
+    role: &str,
+    is_active: bool,
+) -> Vec<FormSection> {
+    vec![FormSection {
+        title: Some("Identity"),
+        fields: vec![
+            FormField {
+                name: "email",
+                label: "Email".to_string(),
+                widget: "input",
+                input_type: "email",
+                value: email.to_string(),
+                hint: Some(
+                    "Email changes aren't exposed here — they require a full user update."
+                        .to_string(),
+                ),
+                placeholder: None,
+                required: false,
+                options: None,
+                multiple: false,
+                span: 2,
+                autocomplete: None,
+                autofocus: false,
+                disabled: true,
+                maxlength: None,
+            },
+            FormField {
+                name: "role",
+                label: "Role".to_string(),
+                widget: "select",
+                input_type: "select",
+                value: role.to_string(),
+                hint: None,
+                placeholder: None,
+                required: true,
+                options: Some(role_select_options()),
+                multiple: false,
+                span: 2,
+                autocomplete: None,
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
+            },
+            FormField {
+                name: "is_active",
+                label: "Active".to_string(),
+                widget: "checkbox",
+                input_type: "checkbox",
+                value: if is_active { "true".to_string() } else { "false".to_string() },
+                hint: Some("Inactive users cannot sign in or hold sessions.".to_string()),
+                placeholder: None,
+                required: false,
+                options: None,
+                multiple: false,
+                span: 2,
+                autocomplete: None,
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
+            },
+        ],
+    }]
+}
+
+/// Phase 6.2 — Reset password section for user_edit. Single optional
+/// field; leaving it blank keeps the existing password.
+pub(crate) fn user_edit_password_sections() -> Vec<FormSection> {
+    vec![FormSection {
+        title: Some("Reset password (optional)"),
+        fields: vec![FormField {
+            name: "new_password",
+            label: "New password".to_string(),
+            widget: "input",
+            input_type: "password",
+            value: String::new(),
+            hint: Some(
+                "Leave blank to keep the current password unchanged.".to_string(),
+            ),
+            placeholder: None,
+            required: false,
+            options: None,
+            multiple: false,
+            span: 2,
+            autocomplete: Some("new-password"),
+            autofocus: false,
+            disabled: false,
+            maxlength: None,
+        }],
+    }]
+}
+
+/// Phase 6.2 — pre-built FormField list for the password-change form.
+/// Static; the values are always empty (we never echo passwords back).
+pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
+    vec![FormSection {
+        title: None,
+        fields: vec![
+            FormField {
+                name: "old_password",
+                label: "Old password".to_string(),
+                widget: "input",
+                input_type: "password",
+                value: String::new(),
+                hint: None,
+                placeholder: None,
+                required: true,
+                options: None,
+                multiple: false,
+                span: 2,
+                autocomplete: Some("current-password"),
+                autofocus: true,
+                disabled: false,
+                maxlength: None,
+            },
+            FormField {
+                name: "new_password1",
+                label: "New password".to_string(),
+                widget: "input",
+                input_type: "password",
+                value: String::new(),
+                hint: Some("Your password must contain at least 8 characters.".to_string()),
+                placeholder: None,
+                required: true,
+                options: None,
+                multiple: false,
+                span: 2,
+                autocomplete: Some("new-password"),
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
+            },
+            FormField {
+                name: "new_password2",
+                label: "Confirm".to_string(),
+                widget: "input",
+                input_type: "password",
+                value: String::new(),
+                hint: None,
+                placeholder: None,
+                required: true,
+                options: None,
+                multiple: false,
+                span: 2,
+                autocomplete: Some("new-password"),
+                autofocus: false,
+                disabled: false,
+                maxlength: None,
+            },
+        ],
+    }]
 }
 
 // ---------------------------------------------------------------------------
@@ -1046,13 +1433,127 @@ mod tests {
         assert!(body.contains("test@example.com"), "user-tools email missing");
     }
 
+    /// Phase 6.2 — `user_edit.html` now renders its Identity and
+    /// Reset-password sections through the shared FormField include,
+    /// while keeping the group-membership checkbox list as a custom
+    /// block (per Phase 6.2 spec correction #1: groups stay as
+    /// checkbox-list, NOT multi-select). This locks all three sides:
+    ///   - role select renders with its 5 options
+    ///   - is_active checkbox renders with the right name + checked state
+    ///   - group_<id> checkbox list renders with all_groups + user_groups
+    ///     (custom block, not a `<select multiple>`)
+    #[test]
+    fn user_edit_renders_dynamic_form() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let identity_sections = user_edit_identity_sections(
+            "alice@example.com",
+            "staff",
+            true,
+        );
+        let password_sections = user_edit_password_sections();
+        let ctx = serde_json::json!({
+            "site_title": "RustIO administration",
+            "site_header": "RustIO administration",
+            "index_title": "Site administration",
+            "footer_copyright": "RustIO test",
+            "csrf_token": "fake",
+            "is_demo_session": false,
+            "demo_label": null,
+            "page_title": "Edit user",
+            "entries": [],
+            "user_id": 42,
+            "email": "alice@example.com",
+            "role": "staff",
+            "is_active": true,
+            "errors": [],
+            "is_last_developer": false,
+            "all_groups": [
+                { "id": 1, "name": "editors", "description": "Edit posts" },
+                { "id": 2, "name": "moderators", "description": "Moderate comments" },
+            ],
+            "user_groups": [1],
+            "identity_sections": identity_sections,
+            "password_sections": password_sections,
+            "identity": { "email": "admin@example.com", "is_admin": true, "is_developer": false },
+        });
+        let body = templates
+            .render("admin/user_edit.html", &ctx)
+            .expect("user_edit renders");
+
+        // Role select with all five options.
+        assert!(body.contains("name=\"role\""), "role select missing");
+        for value in ["user", "staff", "supervisor", "administrator", "developer"] {
+            assert!(
+                body.contains(&format!("value=\"{value}\"")),
+                "role option {value:?} missing"
+            );
+        }
+        // Staff is the current role → that option carries `selected`.
+        let staff_idx = body.find("value=\"staff\"").expect("staff option");
+        let after_staff = &body[staff_idx..staff_idx.saturating_add(80)];
+        assert!(
+            after_staff.contains("selected"),
+            "Staff option should be selected; got: {after_staff:?}"
+        );
+
+        // is_active checkbox renders with name + checked (is_active=true
+        // → FormField.value="true" → template sets the checked attr).
+        assert!(
+            body.contains("name=\"is_active\""),
+            "is_active checkbox missing"
+        );
+        let active_idx = body.find("name=\"is_active\"").expect("is_active checkbox");
+        let after_active = &body[active_idx..active_idx.saturating_add(160)];
+        assert!(
+            after_active.contains("checked"),
+            "is_active should be checked when is_active=true; got: {after_active:?}"
+        );
+
+        // Group memberships render as the custom checkbox list — NOT a
+        // <select multiple>. Each enabled group shows up as
+        // `name="group_<id>"` and group #1 (in user_groups) is checked.
+        assert!(
+            !body.contains("<select multiple"),
+            "groups must NOT render as select-multiple — checkbox list is the contract"
+        );
+        assert!(body.contains("name=\"group_1\""), "group_1 checkbox missing");
+        assert!(body.contains("name=\"group_2\""), "group_2 checkbox missing");
+        let g1_idx = body.find("name=\"group_1\"").expect("group_1 checkbox");
+        let after_g1 = &body[g1_idx..g1_idx.saturating_add(100)];
+        assert!(
+            after_g1.contains("checked"),
+            "group_1 should be checked (1 ∈ user_groups); got: {after_g1:?}"
+        );
+        // The per-group description still surfaces — that's the UX
+        // feature the multi-select migration would have lost.
+        assert!(
+            body.contains("Edit posts"),
+            "group description must render alongside the checkbox label"
+        );
+
+        // Email field is disabled (read-only display).
+        assert!(
+            body.contains("name=\"email\""),
+            "email input must still be present"
+        );
+        let email_idx = body.find("name=\"email\"").expect("email input");
+        let after_email = &body[email_idx..email_idx.saturating_add(200)];
+        assert!(
+            after_email.contains("disabled"),
+            "email input must carry HTML disabled attribute; got: {after_email:?}"
+        );
+    }
+
     #[test]
     fn user_new_form_has_five_role_options() {
-        // Render `admin/user_new.html` directly with a hand-built
-        // context — the actual `UserNewCtx` struct is private to
-        // `builtin.rs`. Asserts the 5-option select replaces the
-        // pre-7a/0.5/d 2-checkbox UI.
+        // Phase 6.2 — user_new.html renders the role select via the
+        // shared FormField include. Build the JSON ctx through the
+        // public `user_new_form_sections` builder so the test exercises
+        // the same path the handler uses; assertions on the rendered
+        // markup are unchanged (5 options, Staff selected, no legacy
+        // `is_staff`/`is_superuser` checkbox names).
         let templates = Templates::new(None).expect("embedded templates");
+        let sections = user_new_form_sections("", "staff");
         let ctx = serde_json::json!({
             "site_title": "RustIO administration",
             "site_header": "RustIO administration",
@@ -1066,6 +1567,7 @@ mod tests {
             "email": "",
             "role": "staff",
             "errors": [],
+            "sections": sections,
             "identity": { "email": "admin@example.com", "is_admin": true },
         });
         let body = templates
@@ -1078,17 +1580,14 @@ mod tests {
                 "role option {value:?} missing"
             );
         }
-        // The default `role: "staff"` should make Staff the selected
-        // option. Look for `value="staff"` followed by whitespace then
-        // `selected` (template's inline `{% if role == "staff" %}` may
-        // emit variable spacing — be tolerant).
+        // Default role: "staff" → that option carries `selected`.
         let staff_idx = body.find("value=\"staff\"").expect("staff option");
         let after_staff = &body[staff_idx..staff_idx.saturating_add(80)];
         assert!(
             after_staff.contains("selected"),
             "Staff option should be selected; got: {after_staff:?}"
         );
-        // The pre-7a/0.5/d checkbox names must NOT appear.
+        // Pre-7a/0.5/d checkbox names must NOT appear.
         assert!(
             !body.contains("name=\"is_staff\""),
             "old is_staff checkbox should be gone"
@@ -1191,6 +1690,10 @@ mod tests {
                             "options": null,
                             "multiple": false,
                             "span": 1,
+                            "autocomplete": null,
+                            "autofocus": false,
+                            "disabled": false,
+                            "maxlength": null,
                         },
                         {
                             "name": "published",
@@ -1204,6 +1707,10 @@ mod tests {
                             "options": null,
                             "multiple": false,
                             "span": 1,
+                            "autocomplete": null,
+                            "autofocus": false,
+                            "disabled": false,
+                            "maxlength": null,
                         },
                     ],
                 },

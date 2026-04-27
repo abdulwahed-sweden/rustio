@@ -16,6 +16,7 @@ use crate::http::{Request, Response};
 use crate::orm::{Db, Row};
 use crate::templates::Templates;
 
+use super::render;
 use super::render::{BaseContext, FlashCtx, SidebarEntry};
 use super::types::Admin;
 
@@ -107,6 +108,15 @@ struct UserEditCtx {
     /// developer. The template renders a yellow banner so admins know
     /// a role change here will be rejected by `do_user_edit`.
     is_last_developer: bool,
+    /// Phase 6.2 — Identity section (email-disabled / role / is_active)
+    /// rendered through the shared FormField include. Built from
+    /// the existing email/role/is_active fields above so re-render on
+    /// validation failure preserves the operator's edits.
+    identity_sections: Vec<render::FormSection>,
+    /// Phase 6.2 — Reset password section (new_password optional).
+    /// Renders below the groups custom block to preserve the
+    /// pre-6.2 visual order.
+    password_sections: Vec<render::FormSection>,
 }
 
 #[derive(Serialize)]
@@ -158,14 +168,19 @@ pub(crate) async fn show_user_edit(
     let is_last_developer =
         auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
 
+    let email_str = r.get_string("email")?;
+    let role_str = r.get_string("role")?;
+    let is_active_val = r.get_bool("is_active")?;
     let view = UserEditCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
         entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         user_id,
-        email: r.get_string("email")?,
-        role: r.get_string("role")?,
-        is_active: r.get_bool("is_active")?,
+        identity_sections: render::user_edit_identity_sections(&email_str, &role_str, is_active_val),
+        password_sections: render::user_edit_password_sections(),
+        email: email_str,
+        role: role_str,
+        is_active: is_active_val,
         all_groups: load_groups(&ctx.db).await?,
         user_groups: group_ids,
         errors: vec![],
@@ -291,13 +306,17 @@ async fn render_user_edit_with_errors(
     let is_last_developer =
         auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
 
+    let email_str = r.get_string("email")?;
+    let role_str: String = role.as_str().into();
     let view = UserEditCtx {
         base: BaseContext::new(Some(identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
         entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         user_id,
-        email: r.get_string("email")?,
-        role: role.as_str().into(),
+        identity_sections: render::user_edit_identity_sections(&email_str, &role_str, is_active),
+        password_sections: render::user_edit_password_sections(),
+        email: email_str,
+        role: role_str,
         is_active,
         all_groups: load_groups(&ctx.db).await?,
         user_groups,
@@ -609,6 +628,10 @@ struct GroupEditCtx {
     group_permissions: Vec<i64>,
     errors: Vec<String>,
     flash: Option<FlashCtx>,
+    /// Phase 6.2 — General section (name + description) rendered
+    /// through the shared FormField include. Permissions grid stays
+    /// as a custom block (sanctioned per spec correction #2).
+    sections: Vec<render::FormSection>,
 }
 
 #[derive(Serialize)]
@@ -652,13 +675,16 @@ pub(crate) async fn show_group_edit(
     .fetch_all(ctx.db.pool())
     .await?;
 
+    let name_str = r.get_string("name")?;
+    let description_str = r.get_string("description")?;
     let view = GroupEditCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit group #{group_id}"),
         entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
         group_id,
-        name: r.get_string("name")?,
-        description: r.get_string("description")?,
+        sections: render::group_form_sections(&name_str, &description_str),
+        name: name_str,
+        description: description_str,
         all_permissions: all,
         group_permissions: current,
         errors: vec![],
@@ -817,6 +843,12 @@ struct UserNewCtx {
     /// Defaults to `"staff"` on a fresh form (Phase 7a/0.5/d).
     role: String,
     errors: Vec<String>,
+    /// Phase 6.2 — sections drive the shared FormField include in
+    /// user_new.html. Built from `email` + `role` via
+    /// `render::user_new_form_sections`; the bespoke fields above
+    /// remain for backward-compat with any external consumer that
+    /// reads them but the template no longer renders raw inputs.
+    sections: Vec<render::FormSection>,
 }
 
 pub(crate) async fn show_new_user(
@@ -824,12 +856,15 @@ pub(crate) async fn show_new_user(
     identity: Identity,
     csrf: String,
 ) -> Result<Response> {
+    let email = String::new();
+    let role: String = "staff".into();
     let view = UserNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
         entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
-        email: String::new(),
-        role: "staff".into(),
+        sections: render::user_new_form_sections(&email, &role),
+        email,
+        role,
         errors: Vec::new(),
     };
     let body = ctx.templates.render("admin/user_new.html", &view)?;
@@ -912,6 +947,7 @@ pub(crate) async fn do_new_user(
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
         entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        sections: render::user_new_form_sections(&email, &role_str),
         email,
         role: role_str,
         errors,
@@ -931,6 +967,9 @@ struct GroupNewCtx {
     name: String,
     description: String,
     errors: Vec<String>,
+    /// Phase 6.2 — General section (name + description) rendered
+    /// through the shared FormField include.
+    sections: Vec<render::FormSection>,
 }
 
 pub(crate) async fn show_new_group(
@@ -938,12 +977,15 @@ pub(crate) async fn show_new_group(
     identity: Identity,
     csrf: String,
 ) -> Result<Response> {
+    let name = String::new();
+    let description = String::new();
     let view = GroupNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
         entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
-        name: String::new(),
-        description: String::new(),
+        sections: render::group_form_sections(&name, &description),
+        name,
+        description,
         errors: Vec::new(),
     };
     let body = ctx.templates.render("admin/group_new.html", &view)?;
@@ -1000,6 +1042,7 @@ pub(crate) async fn do_new_group(
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
         entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        sections: render::group_form_sections(&name, &description),
         name,
         description,
         errors,

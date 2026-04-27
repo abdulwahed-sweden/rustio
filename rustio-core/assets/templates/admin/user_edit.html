@@ -44,71 +44,54 @@
 <form method="post" novalidate>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-    <fieldset class="module aligned">
-        <h2>Identity</h2>
-        <div class="form-row">
-            <label>Email:</label>
-            <div class="field-input">
-                <input type="email" value="{{ email }}" disabled class="opacity-60 cursor-not-allowed">
-                <p class="form-help mt-xs">Email changes aren't exposed here — they require a full user update.</p>
-            </div>
-        </div>
-        <div class="form-row">
-            <label for="id_role">Role:</label>
-            <div class="field-input">
-                <select id="id_role" name="role">
-                    <option value="developer"     {% if role == "developer"     %}selected{% endif %}>Developer (schema browser + execution logs + SQL console)</option>
-                    <option value="administrator" {% if role == "administrator" %}selected{% endif %}>Administrator (full coverage; bypasses group checks)</option>
-                    <option value="supervisor"    {% if role == "supervisor"    %}selected{% endif %}>Supervisor (view + edit; no destructive ops)</option>
-                    <option value="staff"         {% if role == "staff"         %}selected{% endif %}>Staff (admin access; per-model group permissions)</option>
-                    <option value="user"          {% if role == "user"          %}selected{% endif %}>User (no admin access)</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-row">
-            <label for="id_is_active">Active:</label>
-            <div class="field-input">
-                <label class="inline-flex items-center gap-sm">
-                    <input type="checkbox" id="id_is_active" name="is_active"{% if is_active %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
-                    <span>Allow this user to sign in</span>
-                </label>
-                <p class="form-help mt-xs">Inactive users cannot sign in or hold sessions.</p>
-            </div>
-        </div>
-    </fieldset>
-
-    <fieldset class="module aligned">
-        <h2>Groups</h2>
-        {% if all_groups %}
-        <div class="form-row">
-            <label>Membership:</label>
-            <div class="field-input checkbox-list">
-                {% for g in all_groups %}
-                <label class="checkbox-item">
-                    <input type="checkbox" name="group_{{ g.id }}"{% if g.id in user_groups %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
-                    <span><strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}</span>
-                </label>
-                {% endfor %}
-            </div>
-        </div>
-        {% else %}
-        <div class="form-row">
-            <label>&nbsp;</label>
-            <div class="field-input"><p class="form-help">No groups yet. Create one under <a href="/admin/groups" class="text-rust hover:underline">Groups</a>.</p></div>
-        </div>
+    {# Phase 6.2 — Identity (email-disabled / role / is_active) via the
+       shared FormField include. #}
+    {% for section in identity_sections %}
+        {% if section.title %}
+        <h3 class="mt-lg mb-sm">{{ section.title }}</h3>
         {% endif %}
-    </fieldset>
-
-    <fieldset class="module aligned">
-        <h2>Reset password (optional)</h2>
-        <div class="form-row">
-            <label for="id_new_password">New password:</label>
-            <div class="field-input">
-                <input type="password" id="id_new_password" name="new_password" autocomplete="new-password">
-                <p class="form-help mt-xs">Leave blank to keep the current password unchanged. This sets <em>this user's</em> password — to change your own, visit <a href="/admin/password_change" class="text-rust hover:underline">Change password</a>.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+            {% for field in section.fields %}
+            <div class="{% if field.span == 2 %}col-span-2{% endif %}">
+                {% include "admin/includes/_form_field.html" %}
             </div>
+            {% endfor %}
         </div>
-    </fieldset>
+    {% endfor %}
+
+    {# Phase 6.2 — Groups custom block. Stays as a checkbox list with
+       per-group descriptions; the form-data shape is `group_<id>=on`
+       so the existing `do_user_edit` handler reads it unchanged. NOT
+       a multi-select — see Phase 6.2 spec correction #1. #}
+    <h3 class="mt-lg mb-sm">Groups</h3>
+    {% if all_groups %}
+    <div class="form-row">
+        <div class="field-input checkbox-list">
+            {% for g in all_groups %}
+            <label class="checkbox-item">
+                <input type="checkbox" name="group_{{ g.id }}"{% if g.id in user_groups %} checked{% endif %} class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
+                <span><strong>{{ g.name }}</strong>{% if g.description %} <span class="help">— {{ g.description }}</span>{% endif %}</span>
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <p class="form-help">No groups yet. Create one under <a href="/admin/groups" class="text-rust hover:underline">Groups</a>.</p>
+    {% endif %}
+
+    {# Phase 6.2 — Reset password section (optional new_password). #}
+    {% for section in password_sections %}
+        {% if section.title %}
+        <h3 class="mt-lg mb-sm">{{ section.title }}</h3>
+        {% endif %}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
+            {% for field in section.fields %}
+            <div class="{% if field.span == 2 %}col-span-2{% endif %}">
+                {% include "admin/includes/_form_field.html" %}
+            </div>
+            {% endfor %}
+        </div>
+    {% endfor %}
 
     <div class="submit-row">
         <button type="submit" name="_save" class="btn-primary">Save</button>
