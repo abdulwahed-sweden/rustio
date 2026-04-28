@@ -202,6 +202,21 @@ enum AiAction {
         #[arg(long)]
         yes: bool,
     },
+    /// Phase 8.0 — call an LLM to translate a prose system
+    /// description into a `Schema` JSON. Validated before write;
+    /// never executed. The operator runs the result through
+    /// `rustio ai plan / review / apply` afterwards.
+    Generate {
+        /// Free-form description of the system to model.
+        prompt: String,
+        /// Output path for the generated schema JSON. Refuses to
+        /// overwrite an existing file unless `--force` is set.
+        #[arg(long, default_value = "schema.json")]
+        out: PathBuf,
+        /// Allow overwriting an existing output file.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -227,6 +242,9 @@ fn main() -> ExitCode {
             AiAction::Plan { prompt } => ai_plan(&prompt),
             AiAction::Review { plan_file, schema } => ai_review(&plan_file, &schema),
             AiAction::Apply { plan_file, dir, yes } => ai_apply(&plan_file, &dir, yes),
+            AiAction::Generate { prompt, out, force } => {
+                tokio_run(ai_generate(prompt, out, force))
+            }
         },
         Command::Schema { path } => print_schema(&path),
     };
@@ -577,6 +595,83 @@ fn load_schema(path: &Path) -> Result<Schema, String> {
     }
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+// Phase 8.0 — `rustio ai generate <prompt> --out <path> [--force]`.
+//
+// Calls the LLM via `ai_gen::generate`, validates the response,
+// writes the schema JSON atomically. Refuses to overwrite an existing
+// file unless `--force` is set. Owns the file I/O so the LLM-facing
+// module stays I/O-free and unit-testable.
+async fn ai_generate(prompt: String, out: PathBuf, force: bool) -> Result<(), String> {
+    check_overwrite_allowed(&out, force)?;
+    let schema = rustio_core::ai_gen::generate(&prompt)
+        .await
+        .map_err(|e| e.to_string())?;
+    schema.write_to(&out).map_err(|e| e.to_string())?;
+    eprintln!("wrote {}", out.display());
+    Ok(())
+}
+
+/// Phase 8.0 — overwrite guard for `rustio ai generate`. Extracted so
+/// it can be unit-tested without a network call. `Ok(())` means it's
+/// safe to write; `Err(_)` carries the message the CLI surfaces.
+fn check_overwrite_allowed(out: &Path, force: bool) -> Result<(), String> {
+    if out.exists() && !force {
+        return Err(format!(
+            "{} already exists; pass --force to overwrite",
+            out.display()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Phase 8.0 — `rustio ai generate --out <path>` MUST refuse to
+    /// overwrite an existing file unless `--force` is set. The
+    /// overwrite-guard runs before the LLM call so a sloppy invocation
+    /// can never burn API credits and clobber a hand-edited schema.
+    #[test]
+    fn ai_generate_refuses_overwrite_without_force() {
+        let dir = tempdir_path();
+        let target = dir.join("schema.json");
+        std::fs::write(&target, "{}").unwrap();
+
+        // Without --force: guard rejects.
+        let err = check_overwrite_allowed(&target, false)
+            .expect_err("must refuse when target exists and force is false");
+        assert!(err.contains("already exists"));
+        assert!(err.contains("--force"));
+
+        // With --force: guard passes.
+        check_overwrite_allowed(&target, true)
+            .expect("must allow when --force is set");
+
+        // Non-existent target: guard passes regardless of --force.
+        let fresh = dir.join("does-not-exist.json");
+        check_overwrite_allowed(&fresh, false).expect("missing target is always writable");
+        check_overwrite_allowed(&fresh, true).expect("missing target is always writable");
+
+        let _ = std::fs::remove_file(&target);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    fn tempdir_path() -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "rustio-cli-ai-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
 }
 
 // ---- scaffold ----------------------------------------------------------

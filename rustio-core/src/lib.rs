@@ -13,6 +13,7 @@
 
 pub mod admin;
 pub mod ai;
+pub mod ai_gen;
 pub mod auth;
 pub mod background;
 pub mod cache;
