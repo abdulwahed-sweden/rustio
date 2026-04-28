@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "A",
+      "table": "as",
+      "admin_name": "as",
+      "display_name": "As",
+      "singular_name": "A",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}

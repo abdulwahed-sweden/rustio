@@ -1,0 +1,288 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "Patient",
+      "table": "patients",
+      "admin_name": "patients",
+      "display_name": "Patients",
+      "singular_name": "Patient",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "first_name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "last_name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "date_of_birth",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "address",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "medical_notes",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Dentist",
+      "table": "dentists",
+      "admin_name": "dentists",
+      "display_name": "Dentists",
+      "singular_name": "Dentist",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "first_name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "last_name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "specialization",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "license_number",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Appointment",
+      "table": "appointments",
+      "admin_name": "appointments",
+      "display_name": "Appointments",
+      "singular_name": "Appointment",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "patient_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Patient",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "dentist_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Dentist",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "appointment_date",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "duration_minutes",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "treatment_type",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Treatment",
+      "table": "treatments",
+      "admin_name": "treatments",
+      "display_name": "Treatments",
+      "singular_name": "Treatment",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "default_duration_minutes",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "default_cost",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}

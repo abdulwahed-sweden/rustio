@@ -1,0 +1,325 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "User",
+      "table": "users",
+      "admin_name": "users",
+      "display_name": "Users",
+      "singular_name": "User",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "role",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Team",
+      "table": "teams",
+      "admin_name": "teams",
+      "display_name": "Teams",
+      "singular_name": "Team",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Project",
+      "table": "projects",
+      "admin_name": "projects",
+      "display_name": "Projects",
+      "singular_name": "Project",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "team_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Team",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "start_date",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "end_date",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Task",
+      "table": "tasks",
+      "admin_name": "tasks",
+      "display_name": "Tasks",
+      "singular_name": "Task",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "title",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "project_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Project",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "assignee_id",
+          "type": "i64",
+          "nullable": true,
+          "editable": true,
+          "relation": {
+            "model": "User",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "reporter_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "User",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "priority",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "due_date",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "completed_at",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Comment",
+      "table": "comments",
+      "admin_name": "comments",
+      "display_name": "Comments",
+      "singular_name": "Comment",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "task_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Task",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "user_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "User",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "content",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}

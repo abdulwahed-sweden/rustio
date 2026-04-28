@@ -1,0 +1,403 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "Category",
+      "table": "categories",
+      "admin_name": "categories",
+      "display_name": "Categories",
+      "singular_name": "Category",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Supplier",
+      "table": "suppliers",
+      "admin_name": "suppliers",
+      "display_name": "Suppliers",
+      "singular_name": "Supplier",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "contact_person",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "address",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Product",
+      "table": "products",
+      "admin_name": "products",
+      "display_name": "Products",
+      "singular_name": "Product",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "generic_name",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "barcode",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "dosage",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "unit_price",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "requires_prescription",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "category_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Category",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "supplier_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Supplier",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Inventory",
+      "table": "inventories",
+      "admin_name": "inventories",
+      "display_name": "Inventories",
+      "singular_name": "Inventory",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "product_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Product",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "batch_number",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "quantity",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "reorder_level",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "expiry_date",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "manufactured_date",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Sale",
+      "table": "sales",
+      "admin_name": "sales",
+      "display_name": "Sales",
+      "singular_name": "Sale",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "customer_name",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "customer_phone",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "total_amount",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "payment_method",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "prescription_number",
+          "type": "String",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "SaleItem",
+      "table": "sale_items",
+      "admin_name": "sale_items",
+      "display_name": "Sale Items",
+      "singular_name": "Sale Item",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "sale_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Sale",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "product_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Product",
+            "field": "id",
+            "kind": "belongs_to"
+          }
+        },
+        {
+          "name": "quantity",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "unit_price",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "total_price",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}
