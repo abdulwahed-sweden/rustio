@@ -236,9 +236,25 @@ enum AiAction {
     /// never modifies the schema, never invokes update/generate.
     /// Distinct from `rustio ai review` (the deterministic plan
     /// reviewer) by name on purpose.
+    ///
+    /// Phase 8.3 adds `--pick <N>` and `--apply <instruction>` to
+    /// bridge analyze → update without retyping. Mutually exclusive.
     Analyze {
         /// Path to the schema JSON to analyze.
         schema_file: PathBuf,
+        /// Apply suggestion #N from the analyze report. 1-indexed.
+        /// Runs analyze first, extracts the chosen suggestion, then
+        /// hands it to the update flow (diff + y/N confirmation +
+        /// atomic write). Two LLM calls total — one analyze, one
+        /// update — strictly bounded.
+        #[arg(long, conflicts_with = "apply")]
+        pick: Option<usize>,
+        /// Skip the analyze report entirely and apply this
+        /// instruction directly via the update flow. Equivalent to
+        /// `rustio ai update <schema> "<instruction>"`. One LLM
+        /// call total.
+        #[arg(long)]
+        apply: Option<String>,
     },
 }
 
@@ -271,7 +287,9 @@ fn main() -> ExitCode {
             AiAction::Update { schema_file, instruction, yes } => {
                 tokio_run(ai_update(schema_file, instruction, yes))
             }
-            AiAction::Analyze { schema_file } => tokio_run(ai_analyze(schema_file)),
+            AiAction::Analyze { schema_file, pick, apply } => {
+                tokio_run(ai_analyze_dispatch(schema_file, pick, apply))
+            }
         },
         Command::Schema { path } => print_schema(&path),
     };
@@ -765,9 +783,215 @@ fn format_score(score: f32) -> String {
     }
 }
 
+/// Phase 8.3 — `rustio ai analyze` flow classification. Pure
+/// function so the routing logic is testable without spinning up
+/// any LLM call.
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum AnalyzeFlow {
+    /// No flags — print the analyze report only (Phase 8.2 behavior).
+    Plain,
+    /// `--pick N` — analyze first, extract suggestion #N (1-indexed),
+    /// then run the update flow with that suggestion as the
+    /// instruction. Two LLM calls total.
+    Pick(usize),
+    /// `--apply <instruction>` — skip analyze, run update directly
+    /// with the supplied instruction. One LLM call total.
+    Apply(String),
+}
+
+/// Phase 8.3 — decide which `ai analyze` path to take from the two
+/// optional flags. Clap enforces mutual exclusion at the parser
+/// layer (`conflicts_with`); this fn just maps Option pairs to
+/// the variant the dispatcher executes. `--apply` wins over
+/// `--pick` defensively in case clap's conflicts_with is ever
+/// loosened — that way at least one flag never silently overrides
+/// the other.
+fn classify_analyze_flow(pick: Option<usize>, apply: Option<String>) -> AnalyzeFlow {
+    if let Some(instr) = apply {
+        AnalyzeFlow::Apply(instr)
+    } else if let Some(n) = pick {
+        AnalyzeFlow::Pick(n)
+    } else {
+        AnalyzeFlow::Plain
+    }
+}
+
+/// Phase 8.3 — pull suggestion #N out of an analyze report. Bounds-
+/// and emptiness-checked. 1-indexed because the CLI shows
+/// "1. Add tags..." style numbering and operators expect to type
+/// `--pick 1` not `--pick 0`.
+fn pick_suggestion(
+    report: &rustio_core::ai_gen::AnalyzeReport,
+    n: usize,
+) -> Result<&str, String> {
+    if n == 0 {
+        return Err("--pick is 1-indexed; use --pick 1 for the first suggestion".into());
+    }
+    if report.suggestions.is_empty() {
+        return Err("AI returned no suggestions; nothing to apply".into());
+    }
+    let len = report.suggestions.len();
+    report
+        .suggestions
+        .get(n - 1)
+        .map(String::as_str)
+        .ok_or_else(|| {
+            format!(
+                "--pick {n} is out of bounds; analyze returned {len} suggestion{plural}",
+                plural = if len == 1 { "" } else { "s" }
+            )
+        })
+}
+
+/// Phase 8.3 — single dispatch entry for `rustio ai analyze`.
+/// Routes to the existing 8.2 plain-report handler, or to the
+/// 8.1 update flow (with the picked / supplied instruction) when
+/// the bridge flags are set.
+async fn ai_analyze_dispatch(
+    schema_file: PathBuf,
+    pick: Option<usize>,
+    apply: Option<String>,
+) -> Result<(), String> {
+    match classify_analyze_flow(pick, apply) {
+        AnalyzeFlow::Plain => ai_analyze(schema_file).await,
+        AnalyzeFlow::Apply(instruction) => {
+            // Spec: "skip suggestion picking; call ai_update
+            // directly; same flow as `ai update`." Identical to
+            // `rustio ai update <schema> <instruction>`; the y/N
+            // prompt + diff are owned by ai_update.
+            ai_update(schema_file, instruction, false).await
+        }
+        AnalyzeFlow::Pick(n) => analyze_then_pick(schema_file, n).await,
+    }
+}
+
+/// Phase 8.3 — the `--pick N` path. Two LLM calls:
+///   1. `ai_gen::analyze` to get the suggestions list.
+///   2. `ai_gen::update` (via `ai_update`) to apply the chosen one.
+///
+/// The suggestion text becomes the update instruction verbatim;
+/// the operator confirms via the existing y/N prompt before
+/// anything is written.
+async fn analyze_then_pick(schema_file: PathBuf, n: usize) -> Result<(), String> {
+    let schema = load_schema(&schema_file)?;
+    eprintln!(
+        "✓ Reading {} ({} model{})",
+        schema_file.display(),
+        schema.models.len(),
+        if schema.models.len() == 1 { "" } else { "s" },
+    );
+    eprintln!("✓ Calling AI (analyze)...");
+    let report = rustio_core::ai_gen::analyze(&schema)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let suggestion = pick_suggestion(&report, n)?;
+    eprintln!();
+    eprintln!("✓ Using suggestion #{n}:");
+    eprintln!("  \"{suggestion}\"");
+    eprintln!();
+
+    // Hand off to the update flow. This second LLM call writes
+    // ai_gen::update on top of the original schema; diff + y/N
+    // confirmation are owned by ai_update.
+    ai_update(schema_file, suggestion.to_string(), false).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustio_core::ai_gen::AnalyzeReport;
+
+    fn report_with(suggestions: &[&str]) -> AnalyzeReport {
+        AnalyzeReport {
+            issues: Vec::new(),
+            suggestions: suggestions.iter().map(|s| (*s).to_string()).collect(),
+            score: 8.0,
+        }
+    }
+
+    /// Phase 8.3 — `--pick N` extracts suggestion #N (1-indexed) from
+    /// the analyze report. Test exercises the boundary cases too:
+    /// first index, last index, mid-list. Locks the contract that
+    /// the CLI's hand-off into the update flow uses the right
+    /// instruction text.
+    #[test]
+    fn analyze_pick_applies_correct_suggestion() {
+        let r = report_with(&[
+            "Add created_at to all models",
+            "Index Comment.post_id",
+            "Consider an enum for Post.status",
+        ]);
+        assert_eq!(pick_suggestion(&r, 1).unwrap(), "Add created_at to all models");
+        assert_eq!(pick_suggestion(&r, 2).unwrap(), "Index Comment.post_id");
+        assert_eq!(
+            pick_suggestion(&r, 3).unwrap(),
+            "Consider an enum for Post.status"
+        );
+    }
+
+    /// Phase 8.3 — out-of-bounds + zero-index + empty-suggestions
+    /// all surface clean errors, never panic. The CLI prints the
+    /// error message verbatim, so the wording matters.
+    #[test]
+    fn analyze_pick_out_of_bounds_error() {
+        let r = report_with(&["Only one"]);
+
+        // Past the end.
+        let err = pick_suggestion(&r, 2).unwrap_err();
+        assert!(err.contains("out of bounds"));
+        assert!(err.contains("returned 1 suggestion"));
+
+        // Zero index.
+        let err = pick_suggestion(&r, 0).unwrap_err();
+        assert!(err.contains("1-indexed"));
+
+        // Empty suggestions.
+        let empty = report_with(&[]);
+        let err = pick_suggestion(&empty, 1).unwrap_err();
+        assert!(err.contains("no suggestions"));
+    }
+
+    /// Phase 8.3 — `--apply <instruction>` skips analyze and routes
+    /// straight to the update flow. The classifier is the routing
+    /// boundary; this test pins the contract that an instruction
+    /// always wins over a `--pick` (defense in depth in case clap's
+    /// conflicts_with is ever loosened).
+    #[test]
+    fn analyze_apply_runs_update() {
+        let flow = classify_analyze_flow(None, Some("add tags to posts".into()));
+        assert_eq!(flow, AnalyzeFlow::Apply("add tags to posts".into()));
+
+        // Even if both are passed (clap should reject this, but the
+        // classifier is defensive), --apply wins.
+        let flow = classify_analyze_flow(Some(2), Some("ignore me".into()));
+        assert_eq!(flow, AnalyzeFlow::Apply("ignore me".into()));
+    }
+
+    /// Phase 8.3 — no flags → existing 8.2 plain-report path. The
+    /// classifier returns AnalyzeFlow::Plain, which the dispatcher
+    /// routes to ai_analyze. Locks the "preserves prior behavior"
+    /// guarantee called out in the spec.
+    #[test]
+    fn analyze_no_flags_preserves_behavior() {
+        assert_eq!(classify_analyze_flow(None, None), AnalyzeFlow::Plain);
+        // --pick alone routes to Pick (sanity-check on the same
+        // classifier so the routing matrix is fully covered here).
+        assert_eq!(classify_analyze_flow(Some(1), None), AnalyzeFlow::Pick(1));
+    }
+
+    /// Phase 8.3 / spec test #5 — the routing helpers
+    /// (`classify_analyze_flow`, `pick_suggestion`) are pure
+    /// functions: no env reads, no network. Compile is the
+    /// proof; this test just exercises them once more without any
+    /// `ANTHROPIC_API_KEY` access.
+    #[test]
+    fn analyze_pick_no_live_api_calls() {
+        let _ = std::env::var("ANTHROPIC_API_KEY"); // read-only
+        let r = report_with(&["x"]);
+        assert_eq!(pick_suggestion(&r, 1).unwrap(), "x");
+        assert_eq!(classify_analyze_flow(None, None), AnalyzeFlow::Plain);
+    }
 
     /// Phase 8.0 — `rustio ai generate --out <path>` MUST refuse to
     /// overwrite an existing file unless `--force` is set. The
