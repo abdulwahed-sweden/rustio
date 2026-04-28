@@ -94,6 +94,90 @@ Reply with ONLY the JSON document. No fences, no prose, no commentary."
     )
 }
 
+/// Phase 8.1 — system prompt for the **update** path. Distinct from
+/// the generator system prompt because the contract is different:
+/// here we hand the model an existing schema and ask it to evolve it
+/// minimally, NOT to redesign from scratch. The "preserve by default"
+/// rule is the load-bearing one — without it the model tends to
+/// rewrite naming or drop fields it doesn't see referenced in the
+/// instruction.
+pub fn system_prompt_update() -> String {
+    let valid_types = VALID_TYPE_NAMES.join(", ");
+    format!(
+        "You are RustIO's schema editor. The user gives you an existing \
+`Schema` JSON document and a free-form instruction. Your job is to \
+return the FULL updated `Schema` JSON, applying the requested change \
+and PRESERVING everything else byte-for-byte.
+
+PRESERVE-BY-DEFAULT — this is the most important rule:
+
+1. NEVER remove a model unless the instruction explicitly says to.
+2. NEVER remove a field unless the instruction explicitly says to.
+3. NEVER rename a model or field unless the instruction explicitly says to.
+4. NEVER change a field's `type`, `nullable`, or `editable` unless \
+the instruction explicitly says to.
+5. NEVER reorder fields or models for cosmetic reasons.
+
+When in doubt, leave the existing structure as-is.
+
+OUTPUT CONTRACT — same as the generator path:
+
+1. Reply with ONE valid JSON object and nothing else. No markdown \
+fences, no prose, no comments, no leading or trailing text.
+
+2. The top-level shape MUST stay:
+   {{
+     \"version\": {version},
+     \"rustio_version\": \"1.0.0\",
+     \"models\": [ ... ]
+   }}
+
+3. Each model in `models` MUST have:
+   - name (PascalCase), table (snake_case plural),
+   - admin_name, display_name, singular_name,
+   - fields (array), relations (empty array []).
+
+4. Every model's first field MUST be:
+   {{ \"name\": \"id\", \"type\": \"i64\", \"nullable\": false, \"editable\": true }}
+
+5. Field types MUST be one of [{valid_types}]. Do NOT invent types.
+
+6. Audit fields convention: keep `created_at` / `updated_at` of type \
+`DateTime` with `editable: false` on every model that already has them.
+
+7. Foreign keys: declare an `<other>_id` field of type `i64`, then add \
+a `relation` object on it:
+   {{ \"name\": \"author_id\", \"type\": \"i64\", \"nullable\": false, \"editable\": true,
+      \"relation\": {{ \"model\": \"User\", \"field\": \"id\", \"kind\": \"belongs_to\" }} }}
+
+8. Do NOT emit `core: true` on any model.
+
+The output MUST be parseable by `serde_json::from_str` AND pass \
+RustIO's `Schema::validate()`. If the requested change would violate \
+any of these constraints, apply the closest variant that does pass — \
+do NOT refuse and do NOT explain.",
+        version = SCHEMA_VERSION,
+        valid_types = valid_types,
+    )
+}
+
+/// Phase 8.1 — wraps the existing schema JSON + the operator's
+/// instruction. Closing reminder mirrors the generator path so the
+/// model produces the same shape regardless of which prompt path
+/// fires.
+pub fn build_user_update_prompt(existing_json: &str, instruction: &str) -> String {
+    format!(
+        "Here is an existing schema:\n\
+<JSON>\n\
+{existing_json}\n\
+</JSON>\n\n\
+Apply the following change:\n\
+{instruction}\n\n\
+Return the FULL updated schema JSON only. No fences, no prose, no commentary. \
+Preserve every model and field that the change does not explicitly affect."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +228,50 @@ mod tests {
         assert!(
             p.contains("ONLY the JSON document"),
             "user prompt missing the closing reminder"
+        );
+    }
+
+    /// Phase 8.1 — the update system prompt's load-bearing rule is
+    /// "preserve by default". Without it the model rewrites or drops
+    /// fields that weren't mentioned in the instruction. Snapshot
+    /// the rule + the type list + the version pin.
+    #[test]
+    fn update_system_prompt_carries_preserve_contract() {
+        let p = system_prompt_update();
+        assert!(
+            p.contains("PRESERVE-BY-DEFAULT"),
+            "update prompt missing the preserve-by-default contract"
+        );
+        assert!(
+            p.contains("NEVER remove a model"),
+            "update prompt missing the no-remove-model rule"
+        );
+        assert!(
+            p.contains("NEVER remove a field"),
+            "update prompt missing the no-remove-field rule"
+        );
+        assert!(
+            p.contains(&format!("\"version\": {SCHEMA_VERSION}")),
+            "update prompt missing schema version pin"
+        );
+        for ty in VALID_TYPE_NAMES {
+            assert!(p.contains(ty), "update prompt missing allowed type {ty:?}");
+        }
+    }
+
+    /// Phase 8.1 — the user-update prompt must include the existing
+    /// schema verbatim AND the instruction. The closing reminder
+    /// re-states preserve-by-default at the last position the model
+    /// reads.
+    #[test]
+    fn user_update_prompt_includes_schema_instruction_and_reminder() {
+        let existing = r#"{"version":2,"models":[]}"#;
+        let p = build_user_update_prompt(existing, "add tags");
+        assert!(p.contains(existing), "existing schema must be embedded verbatim");
+        assert!(p.contains("add tags"), "instruction must be embedded verbatim");
+        assert!(
+            p.contains("Preserve every model and field"),
+            "closing reminder missing"
         );
     }
 }

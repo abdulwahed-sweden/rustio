@@ -217,6 +217,20 @@ enum AiAction {
         #[arg(long)]
         force: bool,
     },
+    /// Phase 8.1 — evolve an existing schema with a free-form
+    /// instruction. Single LLM call; the result is validated, diffed
+    /// against the current schema, and the operator confirms the
+    /// write interactively. `--yes` skips the confirmation for
+    /// scripted use; the file is rewritten in place.
+    Update {
+        /// Path to the existing schema JSON to evolve.
+        schema_file: PathBuf,
+        /// Free-form description of the change to apply.
+        instruction: String,
+        /// Skip the y/N confirmation prompt and write immediately.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -244,6 +258,9 @@ fn main() -> ExitCode {
             AiAction::Apply { plan_file, dir, yes } => ai_apply(&plan_file, &dir, yes),
             AiAction::Generate { prompt, out, force } => {
                 tokio_run(ai_generate(prompt, out, force))
+            }
+            AiAction::Update { schema_file, instruction, yes } => {
+                tokio_run(ai_update(schema_file, instruction, yes))
             }
         },
         Command::Schema { path } => print_schema(&path),
@@ -624,6 +641,60 @@ fn check_overwrite_allowed(out: &Path, force: bool) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+// Phase 8.1 — `rustio ai update <schema.json> "<instruction>" [--yes]`.
+//
+// Reads the existing schema, validates it, calls the LLM through
+// `ai_gen::update`, computes a diff against the existing schema,
+// prints the diff, and asks the operator to confirm before
+// rewriting the file in place. `--yes` skips the prompt for
+// scripted use.
+async fn ai_update(
+    schema_file: PathBuf,
+    instruction: String,
+    yes: bool,
+) -> Result<(), String> {
+    let existing = load_schema(&schema_file)?;
+    eprintln!(
+        "✓ Reading {} ({} model{})",
+        schema_file.display(),
+        existing.models.len(),
+        if existing.models.len() == 1 { "" } else { "s" },
+    );
+    eprintln!("✓ Calling AI...");
+
+    let updated = rustio_core::ai_gen::update(&existing, &instruction)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let changes = rustio_core::ai_gen::diff::diff(&existing, &updated);
+    eprintln!();
+    eprintln!("Changes:");
+    eprintln!("{}", rustio_core::ai_gen::diff::render(&changes));
+    eprintln!();
+
+    if !yes && !confirm_save_changes()? {
+        eprintln!("aborted; {} unchanged", schema_file.display());
+        return Ok(());
+    }
+
+    updated.write_to(&schema_file).map_err(|e| e.to_string())?;
+    eprintln!("wrote {}", schema_file.display());
+    Ok(())
+}
+
+/// Phase 8.1 — y/N confirmation for `ai update`. Returns true on
+/// `y` / `Y` / `yes`; false on anything else (including EOF /
+/// empty). Mirrors `confirm_orphan`'s stdin pattern.
+fn confirm_save_changes() -> Result<bool, String> {
+    use std::io::{self, Write};
+    eprint!("Save changes? (y/N) ");
+    io::stderr().flush().map_err(|e| e.to_string())?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line).map_err(|e| e.to_string())?;
+    let trimmed = line.trim().to_ascii_lowercase();
+    Ok(matches!(trimmed.as_str(), "y" | "yes"))
 }
 
 #[cfg(test)]

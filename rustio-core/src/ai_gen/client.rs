@@ -63,17 +63,46 @@ struct ContentBlock {
 /// into `parse_response`. Errors are stringified at this boundary —
 /// the upper layer wraps them in `GenerateError::Transport`.
 pub async fn request(api_key: &str, prose: &str) -> Result<String, String> {
-    let base = std::env::var("ANTHROPIC_API_BASE")
-        .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+    send(
+        api_key,
+        prompts::system_prompt(),
+        prompts::build_user_prompt(prose),
+    )
+    .await
+}
+
+/// Phase 8.1 — sibling to `request` for the update path. Same wire
+/// contract; different prompt template. Kept as a separate entry
+/// point so `ai_gen::update` doesn't have to know which prompt to
+/// pick.
+pub async fn request_update(
+    api_key: &str,
+    existing_json: &str,
+    instruction: &str,
+) -> Result<String, String> {
+    send(
+        api_key,
+        prompts::system_prompt_update(),
+        prompts::build_user_update_prompt(existing_json, instruction),
+    )
+    .await
+}
+
+/// Shared HTTP plumbing for both `request` and `request_update`.
+/// Mirrors the original `request` body line-for-line; lifted here so
+/// the two callers stay narrow.
+async fn send(api_key: &str, system: String, user: String) -> Result<String, String> {
+    let base =
+        std::env::var("ANTHROPIC_API_BASE").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
     let model = std::env::var("RUSTIO_AI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
 
     let body = MessagesRequest {
         model: &model,
         max_tokens: MAX_TOKENS,
-        system: prompts::system_prompt(),
+        system,
         messages: vec![Message {
             role: "user",
-            content: prompts::build_user_prompt(prose),
+            content: user,
         }],
     };
 
