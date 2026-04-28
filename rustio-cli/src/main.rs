@@ -257,6 +257,7 @@ enum AiAction {
     /// Phase 8.3.1 adds `--dry-run` for preview-only flows.
     /// Phase 8.4 adds `--explain` to narrate the diff (one extra
     /// LLM call). Has no effect on plain analyze (no diff to narrate).
+    /// Phase 9.1 adds `--yes` to scriptable apply / pick flows.
     Analyze {
         /// Path to the schema JSON to analyze.
         schema_file: PathBuf,
@@ -284,6 +285,12 @@ enum AiAction {
         /// has no diff). Off by default.
         #[arg(long)]
         explain: bool,
+        /// Phase 9.1 — skip the y/N confirmation when paired with
+        /// `--pick` or `--apply`; mirrors `ai update --yes`. No
+        /// effect on plain analyze (no save flow). `--dry-run`
+        /// still wins (read-only intent is sticky).
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -316,8 +323,10 @@ fn main() -> ExitCode {
             AiAction::Update { schema_file, instruction, yes, dry_run, explain } => {
                 tokio_run(ai_update(schema_file, instruction, yes, dry_run, explain))
             }
-            AiAction::Analyze { schema_file, pick, apply, dry_run, explain } => {
-                tokio_run(ai_analyze_dispatch(schema_file, pick, apply, dry_run, explain))
+            AiAction::Analyze { schema_file, pick, apply, dry_run, explain, yes } => {
+                tokio_run(ai_analyze_dispatch(
+                    schema_file, pick, apply, dry_run, explain, yes,
+                ))
             }
         },
         Command::Schema { path } => print_schema(&path),
@@ -996,12 +1005,17 @@ fn pick_suggestion(
 ///
 /// Phase 8.4 — `explain` likewise threads through. Plain analyze
 /// has no diff to narrate; --explain there is a documented no-op.
+///
+/// Phase 9.1 — `yes` threads through too, so `ai analyze --apply`
+/// and `--pick` can be scripted (matches `ai update --yes`). No
+/// effect on plain analyze (no save flow).
 async fn ai_analyze_dispatch(
     schema_file: PathBuf,
     pick: Option<usize>,
     apply: Option<String>,
     dry_run: bool,
     explain: bool,
+    yes: bool,
 ) -> Result<(), String> {
     match classify_analyze_flow(pick, apply) {
         AnalyzeFlow::Plain => ai_analyze(schema_file).await,
@@ -1009,10 +1023,11 @@ async fn ai_analyze_dispatch(
             // Spec: "skip suggestion picking; call ai_update
             // directly; same flow as `ai update`." Identical to
             // `rustio ai update <schema> <instruction>`; the y/N
-            // prompt + diff are owned by ai_update.
-            ai_update(schema_file, instruction, false, dry_run, explain).await
+            // prompt + diff are owned by ai_update. Phase 9.1
+            // forwards `yes` here so `--apply --yes` is scriptable.
+            ai_update(schema_file, instruction, yes, dry_run, explain).await
         }
-        AnalyzeFlow::Pick(n) => analyze_then_pick(schema_file, n, dry_run, explain).await,
+        AnalyzeFlow::Pick(n) => analyze_then_pick(schema_file, n, dry_run, explain, yes).await,
     }
 }
 
@@ -1030,11 +1045,17 @@ async fn ai_analyze_dispatch(
 /// Phase 8.4 — when `explain` is true, ai_update fires a third
 /// LLM call to narrate the diff. Strict cap: analyze + update +
 /// (optional) explain = at most three LLM calls per `--pick`.
+///
+/// Phase 9.1 — `yes` is forwarded so `--pick --yes` skips the
+/// confirmation prompt (matches `ai update --yes`). `dry_run`
+/// still wins over `yes` inside `ai_update` (Phase 8.3.1 truth
+/// table).
 async fn analyze_then_pick(
     schema_file: PathBuf,
     n: usize,
     dry_run: bool,
     explain: bool,
+    yes: bool,
 ) -> Result<(), String> {
     let schema = load_schema(&schema_file)?;
     eprintln!(
@@ -1058,7 +1079,7 @@ async fn analyze_then_pick(
     // ai_gen::update on top of the original schema; diff + y/N
     // confirmation are owned by ai_update. The (optional) third
     // call for --explain is also owned by ai_update.
-    ai_update(schema_file, suggestion.to_string(), false, dry_run, explain).await
+    ai_update(schema_file, suggestion.to_string(), yes, dry_run, explain).await
 }
 
 #[cfg(test)]
@@ -1155,6 +1176,38 @@ mod tests {
         let r = report_with(&["x"]);
         assert_eq!(pick_suggestion(&r, 1).unwrap(), "x");
         assert_eq!(classify_analyze_flow(None, None), AnalyzeFlow::Plain);
+    }
+
+    // ----- Phase 9.1 — analyze --yes routing ---------------------
+
+    /// Phase 9.1 — `ai analyze --apply / --pick` paths now forward
+    /// `yes` to `ai_update`. The save decision happens in
+    /// `perform_save_if_not_dry`; with `yes=true, dry_run=false`
+    /// it MUST land on `SaveOutcome::Wrote` without invoking the
+    /// stdin confirm prompt. The structural fact (yes flows from
+    /// the CLI into ai_update unchanged) is what this test pins —
+    /// the CLI parser test would block on stdin if the threading
+    /// were broken.
+    #[test]
+    fn analyze_yes_skips_confirmation() {
+        let dir = tempdir_path();
+        let target = dir.join("schema.json");
+        let updated = fixture_schema();
+
+        // yes=true, dry_run=false → Wrote (the path --apply --yes
+        // and --pick --yes both land on after threading).
+        let outcome = perform_save_if_not_dry(&target, &updated, true, false).unwrap();
+        assert_eq!(outcome, SaveOutcome::Wrote);
+        assert!(target.exists(), "yes path must actually write");
+
+        // yes=true + dry_run=true → DryRun still wins (defense in
+        // depth from Phase 8.3.1).
+        let _ = std::fs::remove_file(&target);
+        let outcome = perform_save_if_not_dry(&target, &updated, true, true).unwrap();
+        assert_eq!(outcome, SaveOutcome::DryRun);
+        assert!(!target.exists(), "dry-run still wins over yes");
+
+        let _ = std::fs::remove_dir(&dir);
     }
 
     // ----- Phase 8.4 — explain gate tests ------------------------

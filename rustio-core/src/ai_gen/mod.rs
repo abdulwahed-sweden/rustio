@@ -49,6 +49,11 @@ pub enum GenerateError {
     /// The provider replied but the body wasn't a parseable `Schema`
     /// JSON document. Wraps the underlying parse / validation error.
     Schema(SchemaError),
+    /// Phase 9.1 — the model returned a syntactically valid schema
+    /// with zero models, while the input had at least one. Hard
+    /// safety rule for `update`: a "remove everything" instruction
+    /// must NOT clear the schema. No bypass flag; never overridable.
+    EmptyResult,
 }
 
 impl std::fmt::Display for GenerateError {
@@ -60,6 +65,9 @@ impl std::fmt::Display for GenerateError {
             ),
             Self::Transport(msg) => write!(f, "anthropic API transport error: {msg}"),
             Self::Schema(err) => write!(f, "anthropic API returned invalid schema: {err}"),
+            Self::EmptyResult => f.write_str(
+                "Refusing to apply update: schema would become empty",
+            ),
         }
     }
 }
@@ -90,6 +98,9 @@ pub async fn generate(prompt: &str) -> Result<Schema, GenerateError> {
 /// schema + an instruction, get back a validated full `Schema` with
 /// the change applied. Single LLM call. The CLI is responsible for
 /// computing + showing the diff and for the y/N confirmation.
+///
+/// Phase 9.1 — empty-schema safety guard. After parsing, if the
+/// model emptied the schema, refuse the result. No bypass flag.
 pub async fn update(existing: &Schema, instruction: &str) -> Result<Schema, GenerateError> {
     let api_key = api_key()?;
     let existing_json = existing
@@ -98,7 +109,25 @@ pub async fn update(existing: &Schema, instruction: &str) -> Result<Schema, Gene
     let body = client::request_update(&api_key, &existing_json, instruction)
         .await
         .map_err(|e| GenerateError::Transport(e.to_string()))?;
-    parse_response(&body)
+    let updated = parse_response(&body)?;
+    check_not_empty(existing, &updated)?;
+    Ok(updated)
+}
+
+/// Phase 9.1 — hard safety guard: an `update` MUST NOT clear a
+/// non-empty schema. Returns `Err(GenerateError::EmptyResult)`
+/// when:
+///   - input had >= 1 model AND
+///   - output has 0 models.
+///
+/// Empty → empty (genuinely-empty input) and any → non-empty paths
+/// pass through. Extracted as a free function so tests can pin the
+/// truth table without standing up a fake LLM flow.
+pub(crate) fn check_not_empty(old: &Schema, new: &Schema) -> Result<(), GenerateError> {
+    if new.models.is_empty() && !old.models.is_empty() {
+        return Err(GenerateError::EmptyResult);
+    }
+    Ok(())
 }
 
 /// Read + validate the API key once for both entry points. Empty /
@@ -862,6 +891,54 @@ This concludes the explanation. Hope it helps!\n";
         assert_eq!(report.why.len(), 3);
         assert_eq!(report.why[0], "Tags help categorize posts.");
         assert_eq!(report.why[1], "New table is added.");
+    }
+
+    /// Phase 9.1 — `update` MUST refuse a result that empties a
+    /// non-empty schema. Truth table:
+    ///   non-empty → empty   → Err(EmptyResult)   (the dangerous case)
+    ///   non-empty → non-empty → Ok(())
+    ///   empty     → empty   → Ok(())            (no-op, fine)
+    ///   empty     → non-empty → Ok(())          (genuine first-time fill)
+    #[test]
+    fn update_refuses_empty_result() {
+        let one_model = crate::schema::Schema {
+            version: crate::schema::SCHEMA_VERSION,
+            rustio_version: "1.0.0".into(),
+            models: vec![crate::schema::SchemaModel {
+                name: "Post".into(),
+                table: "posts".into(),
+                admin_name: "posts".into(),
+                display_name: "Posts".into(),
+                singular_name: "Post".into(),
+                fields: vec![],
+                relations: vec![],
+                core: false,
+            }],
+        };
+        let empty = crate::schema::Schema {
+            version: crate::schema::SCHEMA_VERSION,
+            rustio_version: "1.0.0".into(),
+            models: vec![],
+        };
+
+        // The dangerous case — must reject.
+        let err = check_not_empty(&one_model, &empty)
+            .expect_err("non-empty → empty must reject");
+        assert!(
+            matches!(err, GenerateError::EmptyResult),
+            "expected EmptyResult, got {err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "Refusing to apply update: schema would become empty"
+        );
+
+        // Other paths must pass.
+        check_not_empty(&one_model, &one_model)
+            .expect("non-empty preservation must pass");
+        check_not_empty(&empty, &empty).expect("empty no-op must pass");
+        check_not_empty(&empty, &one_model)
+            .expect("first-time fill must pass");
     }
 
     /// Phase 8.0 — invalid Schema (here: unknown field type
