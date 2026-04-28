@@ -6,6 +6,7 @@
 //! custom actions like "set password"), so they don't use the
 //! `AdminModel` trait — they're rendered by bespoke handlers.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -80,7 +81,13 @@ pub(crate) async fn list_users(
     let view = UsersListCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Users",
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         users,
         flash: None,
     };
@@ -127,10 +134,9 @@ struct GroupRow {
 }
 
 async fn load_groups(db: &Db) -> Result<Vec<GroupRow>> {
-    let rows =
-        sqlx::query("SELECT id, name, description FROM rustio_groups ORDER BY name ASC")
-            .fetch_all(db.pool())
-            .await?;
+    let rows = sqlx::query("SELECT id, name, description FROM rustio_groups ORDER BY name ASC")
+        .fetch_all(db.pool())
+        .await?;
     rows.iter()
         .map(|r| {
             let r = Row::from_pg(r);
@@ -149,21 +155,18 @@ pub(crate) async fn show_user_edit(
     user_id: i64,
     csrf: String,
 ) -> Result<Response> {
-    let row = sqlx::query(
-        "SELECT id, email, role, is_active FROM rustio_users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(ctx.db.pool())
-    .await?;
+    let row = sqlx::query("SELECT id, email, role, is_active FROM rustio_users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(ctx.db.pool())
+        .await?;
     let row = row.ok_or_else(|| Error::NotFound(format!("user #{user_id}")))?;
     let r = Row::from_pg(&row);
 
-    let group_ids: Vec<i64> = sqlx::query_scalar::<_, i64>(
-        "SELECT group_id FROM rustio_user_groups WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_all(ctx.db.pool())
-    .await?;
+    let group_ids: Vec<i64> =
+        sqlx::query_scalar::<_, i64>("SELECT group_id FROM rustio_user_groups WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_all(ctx.db.pool())
+            .await?;
 
     let is_last_developer =
         auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
@@ -174,9 +177,19 @@ pub(crate) async fn show_user_edit(
     let view = UserEditCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         user_id,
-        identity_sections: render::user_edit_identity_sections(&email_str, &role_str, is_active_val),
+        identity_sections: render::user_edit_identity_sections(
+            &email_str,
+            &role_str,
+            is_active_val,
+        ),
         password_sections: render::user_edit_password_sections(),
         email: email_str,
         role: role_str,
@@ -240,11 +253,9 @@ pub(crate) async fn do_user_edit(
             is_active,
             wanted,
             csrf,
-            vec![
-                "Cannot demote or deactivate the last active developer. \
+            vec!["Cannot demote or deactivate the last active developer. \
                  Use rustio-cli to promote a backup developer first."
-                    .into(),
-            ],
+                .into()],
         )
         .await;
     }
@@ -308,12 +319,34 @@ async fn render_user_edit_with_errors(
 
     let email_str = r.get_string("email")?;
     let role_str: String = role.as_str().into();
+
+    // Phase 7.5 — the only error this fn produces is the
+    // last-developer orphan guard, which is a property of the role
+    // change. Key it onto `role` so the inline error renders next to
+    // the role select. If callers later widen the scope, they should
+    // pass a `field_errors` argument explicitly.
+    let mut field_errors: HashMap<String, Vec<String>> = HashMap::new();
+    for msg in &errors {
+        field_errors
+            .entry("role".into())
+            .or_default()
+            .push(msg.clone());
+    }
+    let mut identity_sections =
+        render::user_edit_identity_sections(&email_str, &role_str, is_active);
+    render::apply_field_errors(&mut identity_sections, &field_errors);
     let view = UserEditCtx {
         base: BaseContext::new(Some(identity), csrf, &ctx.admin),
         page_title: format!("Edit user #{user_id}"),
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         user_id,
-        identity_sections: render::user_edit_identity_sections(&email_str, &role_str, is_active),
+        identity_sections,
         password_sections: render::user_edit_password_sections(),
         email: email_str,
         role: role_str,
@@ -440,7 +473,13 @@ pub(crate) async fn show_user_view(
     let view = UserViewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("User: {target_email}"),
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         target_id: user_id,
         target_email,
         target_role: r.get_string("role")?,
@@ -532,7 +571,13 @@ pub(crate) async fn show_user_delete(
     let view = UserDeleteCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Delete user: {email}"),
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         user_id,
         email,
         role: r.get_string("role")?,
@@ -542,7 +587,9 @@ pub(crate) async fn show_user_delete(
         is_self,
         is_last_developer,
     };
-    let body = ctx.templates.render("admin/user_confirm_delete.html", &view)?;
+    let body = ctx
+        .templates
+        .render("admin/user_confirm_delete.html", &view)?;
     Ok(Response::html(body))
 }
 
@@ -607,7 +654,13 @@ pub(crate) async fn list_groups(
     let view = GroupsListCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Groups",
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         groups: load_groups(&ctx.db).await?,
         flash: None,
     };
@@ -680,7 +733,13 @@ pub(crate) async fn show_group_edit(
     let view = GroupEditCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Edit group #{group_id}"),
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         group_id,
         sections: render::group_form_sections(&name_str, &description_str),
         name: name_str,
@@ -704,14 +763,12 @@ pub(crate) async fn do_group_edit(
     let name = form.required("name")?;
     let description = form.get("description").unwrap_or("");
 
-    sqlx::query(
-        "UPDATE rustio_groups SET name = $1, description = $2 WHERE id = $3",
-    )
-    .bind(name)
-    .bind(description)
-    .bind(group_id)
-    .execute(ctx.db.pool())
-    .await?;
+    sqlx::query("UPDATE rustio_groups SET name = $1, description = $2 WHERE id = $3")
+        .bind(name)
+        .bind(description)
+        .bind(group_id)
+        .execute(ctx.db.pool())
+        .await?;
 
     // Rewrite permission assignment.
     sqlx::query("DELETE FROM rustio_group_permissions WHERE group_id = $1")
@@ -787,14 +844,22 @@ pub(crate) async fn show_group_delete(
     let view = GroupDeleteCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: format!("Delete group: {name}"),
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         group_id,
         name,
         description: r.get_string("description")?,
         user_count,
         perm_count,
     };
-    let body = ctx.templates.render("admin/group_confirm_delete.html", &view)?;
+    let body = ctx
+        .templates
+        .render("admin/group_confirm_delete.html", &view)?;
     Ok(Response::html(body))
 }
 
@@ -807,12 +872,11 @@ pub(crate) async fn do_group_delete(
     // Capture every user that's losing this group BEFORE the cascade
     // wipes the M2M table — we need the ids to invalidate the perm
     // cache once their membership drops.
-    let user_ids: Vec<i64> = sqlx::query_scalar(
-        "SELECT user_id FROM rustio_user_groups WHERE group_id = $1",
-    )
-    .bind(group_id)
-    .fetch_all(ctx.db.pool())
-    .await?;
+    let user_ids: Vec<i64> =
+        sqlx::query_scalar("SELECT user_id FROM rustio_user_groups WHERE group_id = $1")
+            .bind(group_id)
+            .fetch_all(ctx.db.pool())
+            .await?;
 
     // The FKs on rustio_user_groups + rustio_group_permissions are
     // ON DELETE CASCADE, so this single DELETE clears all M2M rows.
@@ -861,7 +925,13 @@ pub(crate) async fn show_new_user(
     let view = UserNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         sections: render::user_new_form_sections(&email, &role),
         email,
         role,
@@ -902,32 +972,53 @@ pub(crate) async fn do_new_user(
     let password = form.get("password").unwrap_or("");
     let role_str = form.get("role").unwrap_or("staff").to_string();
 
+    // Phase 7.5 — push every error twice: once into the global Vec
+    // (catch-all banner) and once into the field-keyed map. Both
+    // views render from the same source of truth; `apply_field_errors`
+    // copies the keyed entries onto each FormField at re-render time.
     let mut errors: Vec<String> = Vec::new();
+    let mut field_errors: HashMap<String, Vec<String>> = HashMap::new();
 
     // Parse role first so we can preserve the user's selection on
     // re-render even if other fields fail.
     let role_parsed = Role::parse(&role_str).ok();
     if role_parsed.is_none() {
-        errors.push(format!("Unknown role: \"{role_str}\"."));
+        let msg = format!("Unknown role: \"{role_str}\".");
+        errors.push(msg.clone());
+        field_errors.entry("role".into()).or_default().push(msg);
     }
 
     if email.is_empty() {
-        errors.push("Email is required.".into());
+        let msg = "Email is required.";
+        errors.push(msg.into());
+        field_errors
+            .entry("email".into())
+            .or_default()
+            .push(msg.into());
     } else if !looks_like_email(&email) {
-        errors.push("Enter a valid email address.".into());
+        let msg = "Enter a valid email address.";
+        errors.push(msg.into());
+        field_errors
+            .entry("email".into())
+            .or_default()
+            .push(msg.into());
     } else {
         // Pre-check uniqueness for a clean message — the unique
         // constraint would otherwise surface as a Postgres error.
         let existing = auth::find_user_by_email(&ctx.db, &email).await?;
         if existing.is_some() {
-            errors.push(format!("A user with email \"{email}\" already exists."));
+            let msg = format!("A user with email \"{email}\" already exists.");
+            errors.push(msg.clone());
+            field_errors.entry("email".into()).or_default().push(msg);
         }
     }
 
     if password.len() < MIN_NEW_USER_PASSWORD_LEN {
-        errors.push(format!(
+        let msg = format!(
             "This password is too short. It must contain at least {MIN_NEW_USER_PASSWORD_LEN} characters."
-        ));
+        );
+        errors.push(msg.clone());
+        field_errors.entry("password".into()).or_default().push(msg);
     }
 
     if errors.is_empty() {
@@ -943,11 +1034,19 @@ pub(crate) async fn do_new_user(
         .get::<crate::middleware::CsrfGuard>()
         .map(|g| g.token.clone())
         .unwrap_or_default();
+    let mut sections = render::user_new_form_sections(&email, &role_str);
+    render::apply_field_errors(&mut sections, &field_errors);
     let view = UserNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add user",
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
-        sections: render::user_new_form_sections(&email, &role_str),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
+        sections,
         email,
         role: role_str,
         errors,
@@ -982,7 +1081,13 @@ pub(crate) async fn show_new_group(
     let view = GroupNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         sections: render::group_form_sections(&name, &description),
         name,
         description,
@@ -1001,11 +1106,25 @@ pub(crate) async fn do_new_group(
     let name = form.get("name").unwrap_or("").trim().to_string();
     let description = form.get("description").unwrap_or("").to_string();
 
+    // Phase 7.5 — global Vec + field-keyed map, both populated in
+    // lockstep. Only `name` has validators here; the description is
+    // free-form.
     let mut errors: Vec<String> = Vec::new();
+    let mut field_errors: HashMap<String, Vec<String>> = HashMap::new();
     if name.is_empty() {
-        errors.push("Name is required.".into());
+        let msg = "Name is required.";
+        errors.push(msg.into());
+        field_errors
+            .entry("name".into())
+            .or_default()
+            .push(msg.into());
     } else if name.len() > 150 {
-        errors.push("Name must be 150 characters or fewer.".into());
+        let msg = "Name must be 150 characters or fewer.";
+        errors.push(msg.into());
+        field_errors
+            .entry("name".into())
+            .or_default()
+            .push(msg.into());
     }
 
     if errors.is_empty() {
@@ -1027,7 +1146,9 @@ pub(crate) async fn do_new_group(
                 return Ok(Response::redirect(format!("/admin/groups/{new_id}/edit")));
             }
             Err(sqlx::Error::Database(db_err)) if db_err.constraint().is_some() => {
-                errors.push(format!("A group named \"{name}\" already exists."));
+                let msg = format!("A group named \"{name}\" already exists.");
+                errors.push(msg.clone());
+                field_errors.entry("name".into()).or_default().push(msg);
             }
             Err(e) => return Err(e.into()),
         }
@@ -1038,11 +1159,19 @@ pub(crate) async fn do_new_group(
         .get::<crate::middleware::CsrfGuard>()
         .map(|g| g.token.clone())
         .unwrap_or_default();
+    let mut sections = render::group_form_sections(&name, &description);
+    render::apply_field_errors(&mut sections, &field_errors);
     let view = GroupNewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
         page_title: "Add group",
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
-        sections: render::group_form_sections(&name, &description),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
+        sections,
         name,
         description,
         errors,

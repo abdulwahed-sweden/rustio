@@ -2,6 +2,7 @@
 //! check identity → load what you need from the DB → build a typed
 //! context → hand it to `Templates::render`.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use tokio::sync::OnceCell;
@@ -40,7 +41,10 @@ async fn ensure_audit_ready(db: &Db) {
 /// have bespoke admin pages — the generic `/admin/<model>/new` family
 /// of routes routes through `CoreUserOps`, which is schema-only and
 /// 500s on every CRUD call. Refusing here gives a clean 404 instead.
-fn find_project_entry<'a>(admin: &'a Admin, admin_name: &str) -> Result<&'a super::types::AdminEntry> {
+fn find_project_entry<'a>(
+    admin: &'a Admin,
+    admin_name: &str,
+) -> Result<&'a super::types::AdminEntry> {
     admin
         .find(admin_name)
         .filter(|e| !e.core)
@@ -55,7 +59,11 @@ pub(crate) struct AdminCtx {
 
 impl AdminCtx {
     pub fn new(admin: Arc<Admin>, db: Db, templates: Arc<Templates>) -> Self {
-        Self { admin, db, templates }
+        Self {
+            admin,
+            db,
+            templates,
+        }
     }
 }
 
@@ -113,13 +121,20 @@ pub(crate) async fn do_logout(ctx: &AdminCtx, req: Request) -> Result<Response> 
             auth::delete_session(&ctx.db, &token).await?;
         }
     }
-    let clear = format!("{}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0", auth::SESSION_COOKIE);
+    let clear = format!(
+        "{}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
+        auth::SESSION_COOKIE
+    );
     Ok(Response::redirect("/admin/login").with_header("set-cookie", clear))
 }
 
 // ---- Dashboard -----------------------------------------------------------
 
-pub(crate) async fn dashboard(ctx: &AdminCtx, identity: Identity, req: &Request) -> Result<Response> {
+pub(crate) async fn dashboard(
+    ctx: &AdminCtx,
+    identity: Identity,
+    req: &Request,
+) -> Result<Response> {
     // Phase 6b/2: lazy table init on first audit-touching request.
     ensure_audit_ready(&ctx.db).await;
     let recent_actions = audit::recent(&ctx.db, 10, None, None)
@@ -199,11 +214,7 @@ pub(crate) async fn list_model(
 
     let total_rows = rows.len();
     let per_page = 100usize;
-    let page: usize = qs
-        .get("p")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1)
-        .max(1);
+    let page: usize = qs.get("p").and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
     let start = (page - 1) * per_page;
     let page_rows: Vec<_> = rows.into_iter().skip(start).take(per_page).collect();
 
@@ -246,6 +257,7 @@ pub(crate) async fn show_new_form(
         vec![],
         csrf_token(req),
         relation_options,
+        HashMap::new(),
     );
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
@@ -265,7 +277,9 @@ pub(crate) async fn do_create(
             if let Some(hook) = &entry.search_hook {
                 hook.on_upsert(&ctx.db, id).await;
             }
-            Ok(Response::redirect(redirect_after_save(intent, admin_name, id)))
+            Ok(Response::redirect(redirect_after_save(
+                intent, admin_name, id,
+            )))
         }
         Err(errors) => {
             let token = csrf_token(&req);
@@ -281,6 +295,7 @@ pub(crate) async fn do_create(
                 errors,
                 token,
                 relation_options,
+                HashMap::new(),
             );
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
@@ -343,6 +358,7 @@ pub(crate) async fn show_edit_form(
         vec![],
         csrf_token(req),
         relation_options,
+        HashMap::new(),
     );
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
@@ -363,7 +379,9 @@ pub(crate) async fn do_update(
             if let Some(hook) = &entry.search_hook {
                 hook.on_upsert(&ctx.db, id).await;
             }
-            Ok(Response::redirect(redirect_after_save(intent, admin_name, id)))
+            Ok(Response::redirect(redirect_after_save(
+                intent, admin_name, id,
+            )))
         }
         Err(errors) => {
             let existing = entry.ops.find_row(&ctx.db, id).await?;
@@ -380,6 +398,7 @@ pub(crate) async fn do_update(
                 errors,
                 token,
                 relation_options,
+                HashMap::new(),
             );
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
@@ -524,17 +543,38 @@ pub(crate) async fn do_password_change(
             ))
         })?;
 
+    // Phase 7.5 — push every error twice: once into the global Vec
+    // (catch-all banner at the top) and once into the field-keyed map
+    // (`apply_field_errors` walks the FormFields and copies the
+    // matching entry onto each `FormField.errors`). Both views render
+    // from the same source of truth.
     let mut errors: Vec<String> = Vec::new();
+    let mut field_errors: HashMap<String, Vec<String>> = HashMap::new();
     if !auth::verify_password(old, &user.password_hash) {
-        errors.push("Your old password was entered incorrectly. Please enter it again.".into());
+        let msg = "Your old password was entered incorrectly. Please enter it again.";
+        errors.push(msg.into());
+        field_errors
+            .entry("old_password".into())
+            .or_default()
+            .push(msg.into());
     }
     if new1 != new2 {
-        errors.push("The two password fields didn't match.".into());
+        let msg = "The two password fields didn't match.";
+        errors.push(msg.into());
+        field_errors
+            .entry("new_password2".into())
+            .or_default()
+            .push(msg.into());
     }
     if new1.len() < MIN_PASSWORD_LEN {
-        errors.push(format!(
+        let msg = format!(
             "This password is too short. It must contain at least {MIN_PASSWORD_LEN} characters."
-        ));
+        );
+        errors.push(msg.clone());
+        field_errors
+            .entry("new_password1".into())
+            .or_default()
+            .push(msg);
     }
 
     if errors.is_empty() {
@@ -552,12 +592,14 @@ pub(crate) async fn do_password_change(
         return Ok(Response::html(body));
     }
 
+    let mut sections = render::password_change_form_sections();
+    render::apply_field_errors(&mut sections, &field_errors);
     let view = render::PasswordChangeCtx {
         base: BaseContext::new(Some(&identity), csrf_token(&req), &ctx.admin),
         page_title: "Change password",
         errors,
         success: false,
-        sections: render::password_change_form_sections(),
+        sections,
     };
     let body = ctx.templates.render("admin/password_change.html", &view)?;
     Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
@@ -613,9 +655,8 @@ pub(crate) async fn show_search(
         return Ok(Response::json_raw("[]"));
     }
     let opts = render::search_options(&ctx.admin, &ctx.db, model, &q).await?;
-    let body = serde_json::to_string(&opts).map_err(|e| {
-        Error::Internal(format!("search response serialization failed: {e}"))
-    })?;
+    let body = serde_json::to_string(&opts)
+        .map_err(|e| Error::Internal(format!("search response serialization failed: {e}")))?;
     Ok(Response::json_raw(body))
 }
 
@@ -633,7 +674,13 @@ async fn render_coming_soon(
 ) -> Result<Response> {
     let view = render::ComingSoonCtx {
         base: BaseContext::new(Some(&identity), csrf_token(req), &ctx.admin),
-        entries: ctx.admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: ctx
+            .admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         page_title: feature.to_string(),
         feature_name: feature.to_string(),
         description: description.to_string(),

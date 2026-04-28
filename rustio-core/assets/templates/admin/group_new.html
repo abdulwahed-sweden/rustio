@@ -20,7 +20,7 @@
 {% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
-<form method="post" action="/admin/groups/new" novalidate>
+<form method="post" action="/admin/groups/new" novalidate data-form>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
     {# Phase 6.2 — fields rendered through the shared FormField
@@ -42,11 +42,11 @@
 
     <p class="form-help mt-sm">After saving you'll be sent to the group's edit page where you can grant permissions.</p>
 
-    <div class="submit-row">
+    <div class="submit-row sticky bottom-0 bg-bg border-t border-border py-sm">
         <button type="submit" name="_save" class="btn-primary">
             {{ icon("plus", class="w-4 h-4") }} Save and continue
         </button>
-        <a href="/admin/groups" class="btn-ghost">Cancel</a>
+        <a href="/admin/groups" class="btn-ghost" data-cancel>Cancel</a>
     </div>
 </form>
 {% endblock %}

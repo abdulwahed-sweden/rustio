@@ -20,7 +20,7 @@
                 {{ icon("key", class="w-4 h-4") }}
                 Sign in
             </h2>
-            <form method="post" action="/admin/login">
+            <form method="post" action="/admin/login" data-form>
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 {% if error %}
                 <div class="errornote">{{ error }}</div>

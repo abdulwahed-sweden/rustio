@@ -26,7 +26,7 @@
 {% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
-<form method="post" novalidate>
+<form method="post" novalidate data-form>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
     {% for section in sections %}
@@ -42,7 +42,7 @@
         </div>
     {% endfor %}
 
-    <div class="submit-row">
+    <div class="submit-row sticky bottom-0 bg-bg border-t border-border py-sm">
         <button type="submit" name="_save" value="Save" class="btn-primary">
             Save
         </button>
@@ -52,7 +52,7 @@
         <button type="submit" name="_addanother" value="Save and add another" class="btn-secondary">
             Save and add another
         </button>
-        <a href="/admin/{{ admin_name }}/" class="btn-ghost">
+        <a href="/admin/{{ admin_name }}/" class="btn-ghost" data-cancel>
             Cancel
         </a>
         {% if mode == "edit" and object_id %}

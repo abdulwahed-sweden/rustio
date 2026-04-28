@@ -13,7 +13,7 @@
 
 {% block content %}
 <div class="page-actions">
-    <a href="/admin/users/{{ user_id }}/" class="btn-ghost">
+    <a href="/admin/users/{{ user_id }}/" class="btn-ghost" data-cancel>
         {{ icon("arrow-left", class="w-4 h-4") }} Back to profile
     </a>
 </div>
@@ -41,7 +41,7 @@
 </div>
 {% endif %}
 
-<form method="post" novalidate>
+<form method="post" novalidate data-form>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
     {# Phase 6.2 — Identity (email-disabled / role / is_active) via the
@@ -93,7 +93,7 @@
         </div>
     {% endfor %}
 
-    <div class="submit-row">
+    <div class="submit-row sticky bottom-0 bg-bg border-t border-border py-sm">
         <button type="submit" name="_save" class="btn-primary">Save</button>
     </div>
 </form>

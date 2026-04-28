@@ -152,6 +152,21 @@
   ::selection { @apply bg-rust text-white; }
 }
 
+/* --- Phase 7.5: focus visibility --------------------------------------
+ * Hide the default browser focus ring globally; restore via
+ * `:focus-visible` so it only shows for keyboard navigation, not for
+ * mouse clicks. Matches the brand's accent halo (1px ring + 20%
+ * opacity) used elsewhere by .form-row input:focus etc.
+ *
+ * Lives in @layer base so it applies before component utilities and
+ * can be overridden by per-component focus rules (buttons, inputs)
+ * that need a different halo strength.
+ */
+@layer base {
+  :focus { outline: none; }
+  :focus-visible { @apply ring-2 ring-accent/30 outline-none; }
+}
+
 /* --- Component classes (the public API contract) --------------------- */
 @layer components {
 

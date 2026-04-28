@@ -8,29 +8,59 @@
      name, label, widget ("input"|"checkbox"|"textarea"|"select"),
      input_type, value, hint, placeholder, required, options, multiple,
      span (caller wraps with col-span-2 if span==2; this include is
-     scope-agnostic), autocomplete, autofocus, disabled, maxlength.
+     scope-agnostic), autocomplete, autofocus, disabled, maxlength,
+     searchable, has_more, search_url, errors.
 
    Used by the generic admin form (form.html) and by every bespoke
    form (login, password_change, user_new, user_edit, group_new,
-   group_edit) so all standard inputs share one rendering path. #}
+   group_edit) so all standard inputs share one rendering path.
+
+   Phase 7.5 — per-field validation errors. When `field.errors` is
+   non-empty, the input gets `aria-invalid="true"` + `aria-describedby`
+   pointing to a sibling error block. Empty `field.errors` keeps
+   `aria-invalid="false"` and skips `aria-describedby` (no element to
+   reference). Bespoke validators populate the keyed errors via
+   `apply_field_errors`; the generic AdminEntry path passes the empty
+   map and renders the global error banner only. #}
 <div class="form-row field-{{ field.name }}">
-    <label for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}{% if field.input_type != "checkbox" %}:{% endif %}</label>
-    <div class="field-input">
-        {% if field.widget == "checkbox" %}
+    {% if field.widget == "checkbox" %}
+        {# Phase 7.5 — checkbox layout: input + label inline in a
+           single <label>, so click-on-text toggles AND the visual
+           reads as a checkbox row instead of label-above-input.
+           `for=` is redundant when the input is inside the label,
+           but kept for tests + screen readers that prefer explicit
+           association. #}
+        <label for="id_{{ field.name }}" class="flex items-center gap-sm">
             <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
                 value="true"{% if field.value == "true" %} checked{% endif %}
                 {% if field.required %}required{% endif %}
                 {% if field.autofocus %}autofocus{% endif %}
                 {% if field.disabled %}disabled{% endif %}
+                aria-invalid="{% if field.errors %}true{% else %}false{% endif %}"
+                {% if field.errors %}aria-describedby="error_{{ field.name }}"{% endif %}
                 class="w-4 h-4 rounded border-border text-accent focus:ring-accent">
-        {% elif field.widget == "textarea" %}
+            <span>{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}</span>
+        </label>
+        {% if field.errors %}
+        <p id="error_{{ field.name }}" class="form-error mt-xs text-danger" role="alert">
+            {{ field.errors | join(", ") }}
+        </p>
+        {% endif %}
+        {% if field.hint %}<p class="form-help mt-xs">{{ field.hint }}</p>{% endif %}
+    {% else %}
+    <label for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}:</label>
+    <div class="field-input">
+        {% if field.widget == "textarea" %}
             <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
                 {% if field.required %}required{% endif %}
                 {% if field.autofocus %}autofocus{% endif %}
                 {% if field.disabled %}disabled{% endif %}
                 {% if field.maxlength %}maxlength="{{ field.maxlength }}"{% endif %}
                 {% if field.autocomplete %}autocomplete="{{ field.autocomplete }}"{% endif %}
-                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>{{ field.value }}</textarea>
+                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
+                aria-invalid="{% if field.errors %}true{% else %}false{% endif %}"
+                {% if field.errors %}aria-describedby="error_{{ field.name }}"{% endif %}
+                class="{% if field.errors %}border-danger{% endif %}">{{ field.value }}</textarea>
         {% elif field.widget == "select" %}
             {# Phase 7.2 — searchable selects (FK / M2M, large lists)
                wrap the <select> with a sibling text input that filters
@@ -43,21 +73,30 @@
                     type="text"
                     placeholder="Search…"
                     class="input mb-xs"
+                    role="searchbox"
                     data-search-input
                     data-target="id_{{ field.name }}"
                     {% if field.search_url %}data-search-url="{{ field.search_url }}"{% endif %}
                     aria-controls="id_{{ field.name }}"
                     aria-label="Filter {{ field.label }} options"
                 >
+                {# Phase 7.5 — search hints. JS toggles the `hidden`
+                   class on these while a remote-search request is in
+                   flight or when zero options match. Server renders
+                   them hidden by default; never visible without JS. #}
+                <p class="form-help mt-xs hidden" data-search-loading>Searching…</p>
+                <p class="form-help mt-xs hidden" data-search-empty>No results found.</p>
             {% endif %}
                 <select
                     name="{{ field.name }}"
                     id="id_{{ field.name }}"
-                    class="input"
+                    class="input {% if field.errors %}border-danger{% endif %}"
                     {% if field.multiple %}multiple{% endif %}
                     {% if field.required %}required{% endif %}
                     {% if field.autofocus %}autofocus{% endif %}
                     {% if field.disabled %}disabled{% endif %}
+                    aria-invalid="{% if field.errors %}true{% else %}false{% endif %}"
+                    {% if field.errors %}aria-describedby="error_{{ field.name }}"{% endif %}
                 >
                     {% for opt in field.options %}
                         <option value="{{ opt.value }}"
@@ -81,8 +120,17 @@
                 {% if field.disabled %}disabled{% endif %}
                 {% if field.maxlength %}maxlength="{{ field.maxlength }}"{% endif %}
                 {% if field.autocomplete %}autocomplete="{{ field.autocomplete }}"{% endif %}
-                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}>
+                {% if field.placeholder %}placeholder="{{ field.placeholder }}"{% endif %}
+                aria-invalid="{% if field.errors %}true{% else %}false{% endif %}"
+                {% if field.errors %}aria-describedby="error_{{ field.name }}"{% endif %}
+                class="{% if field.errors %}border-danger{% endif %}">
+        {% endif %}
+        {% if field.errors %}
+        <p id="error_{{ field.name }}" class="form-error mt-xs text-danger" role="alert">
+            {{ field.errors | join(", ") }}
+        </p>
         {% endif %}
         {% if field.hint %}<p class="form-help mt-xs">{{ field.hint }}</p>{% endif %}
     </div>
+    {% endif %}
 </div>

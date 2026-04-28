@@ -114,13 +114,13 @@
     </footer>
 </div>
 
-{# Sidebar wiring — two small jobs:
-   1. Highlight the active link based on window.location.pathname (saves
-      threading current_path through 25 BaseContext::new sites).
-   2. Mobile drawer toggle for the hamburger button in the top bar.
-   No external JS, no framework, ~30 lines. #}
+{# Sidebar wiring + Phase 7.5 keyboard / a11y / power UX. Vanilla
+   JS, ES5, no framework, no bundler. ~150 lines. #}
 <script>
 (function () {
+    // ------------------------------------------------------------
+    // Sidebar active link + mobile drawer
+    // ------------------------------------------------------------
     var path = window.location.pathname;
     document.querySelectorAll(".sidebar-link").forEach(function (a) {
         var prefix = a.getAttribute("data-active-prefix");
@@ -144,7 +144,21 @@
         });
     }
 
-    // Phase 7.2 / 7.3 — searchable FK selects.
+    // ------------------------------------------------------------
+    // Phase 7.5 — debounce helper. Used by remote-search to avoid
+    // hammering the endpoint on stray keystrokes.
+    // ------------------------------------------------------------
+    function debounce(fn, delay) {
+        var t;
+        return function () {
+            clearTimeout(t);
+            var args = arguments, ctx = this;
+            t = setTimeout(function () { fn.apply(ctx, args); }, delay);
+        };
+    }
+
+    // ------------------------------------------------------------
+    // Phase 7.2 / 7.3 / 7.5 — searchable FK selects.
     //
     //   Phase 7.2 (no data-search-url): client-side filter — hide
     //   <option> children of the target select that don't match the
@@ -156,74 +170,213 @@
     //   option is preserved (re-prepended if absent from results) so
     //   the form posts the same FK value the user picked earlier.
     //
+    //   Phase 7.5: 200ms debounce, loading + empty hints, ArrowDown
+    //   jumps focus into the <select>, Esc clears the input
+    //   (stopPropagation so the global Esc-to-cancel doesn't fire).
+    //
     // Progressive enhancement: the plain <select> is fully functional
     // with JS disabled OR if fetch errors out (errors are swallowed,
     // existing options remain).
+    // ------------------------------------------------------------
     document.querySelectorAll("[data-search-input]").forEach(function (input) {
         var targetId = input.getAttribute("data-target");
         var select = document.getElementById(targetId);
         if (!select) return;
         var searchUrl = input.getAttribute("data-search-url");
+        var wrap = input.parentElement;
+        var loadingEl = wrap ? wrap.querySelector("[data-search-loading]") : null;
+        var emptyEl   = wrap ? wrap.querySelector("[data-search-empty]")   : null;
+
+        function setHidden(el, hide) {
+            if (!el) return;
+            if (hide) el.classList.add("hidden");
+            else      el.classList.remove("hidden");
+        }
+        function visibleOptionCount() {
+            var n = 0;
+            for (var i = 0; i < select.options.length; i++) {
+                if (!select.options[i].hidden) n++;
+            }
+            return n;
+        }
+
+        function runRemote(raw) {
+            var q = raw.trim();
+            if (q.length < 2) {
+                setHidden(loadingEl, true);
+                setHidden(emptyEl,   true);
+                return;
+            }
+            setHidden(loadingEl, false);
+            setHidden(emptyEl,   true);
+            fetch(searchUrl + "?q=" + encodeURIComponent(q), {
+                headers: { "Accept": "application/json" },
+                credentials: "same-origin"
+            })
+                .then(function (r) {
+                    if (!r.ok) throw new Error("search failed");
+                    return r.json();
+                })
+                .then(function (data) {
+                    var idx = select.selectedIndex;
+                    var keepValue = idx >= 0 ? select.options[idx].value : "";
+                    var keepLabel = idx >= 0 ? select.options[idx].textContent : "";
+                    select.innerHTML = "";
+                    var foundKept = false;
+                    for (var i = 0; i < data.length; i++) {
+                        var item = data[i];
+                        var opt = document.createElement("option");
+                        opt.value = item.value;
+                        opt.textContent = item.label;
+                        if (keepValue && item.value === keepValue) {
+                            opt.selected = true;
+                            foundKept = true;
+                        }
+                        select.appendChild(opt);
+                    }
+                    if (keepValue && !foundKept) {
+                        var keep = document.createElement("option");
+                        keep.value = keepValue;
+                        keep.textContent = keepLabel;
+                        keep.selected = true;
+                        select.insertBefore(keep, select.firstChild);
+                    }
+                    setHidden(loadingEl, true);
+                    setHidden(emptyEl, data.length === 0);
+                })
+                .catch(function () {
+                    setHidden(loadingEl, true);
+                });
+        }
+
+        function runLocal(raw) {
+            var q = raw.toLowerCase();
+            for (var i = 0; i < select.options.length; i++) {
+                var opt = select.options[i];
+                var match = opt.textContent.toLowerCase().indexOf(q) !== -1;
+                opt.hidden = !match && !opt.selected;
+            }
+            setHidden(emptyEl, visibleOptionCount() > 0);
+        }
+
+        var debouncedRemote = debounce(function (v) { runRemote(v); }, 200);
+
         input.addEventListener("input", function () {
             var raw = input.value;
-            if (searchUrl) {
-                // Remote-search path. Skip <2 chars to avoid hammering
-                // the endpoint on stray keystrokes.
-                var q = raw.trim();
-                if (q.length < 2) return;
-                fetch(searchUrl + "?q=" + encodeURIComponent(q), {
-                    headers: { "Accept": "application/json" },
-                    credentials: "same-origin"
-                })
-                    .then(function (r) {
-                        if (!r.ok) throw new Error("search failed");
-                        return r.json();
-                    })
-                    .then(function (data) {
-                        // Capture the currently-selected option so we can
-                        // re-add it if the search results don't include it.
-                        var idx = select.selectedIndex;
-                        var keepValue = idx >= 0 ? select.options[idx].value : "";
-                        var keepLabel = idx >= 0 ? select.options[idx].textContent : "";
-                        select.innerHTML = "";
-                        var foundKept = false;
-                        for (var i = 0; i < data.length; i++) {
-                            var item = data[i];
-                            var opt = document.createElement("option");
-                            opt.value = item.value;
-                            opt.textContent = item.label;
-                            if (keepValue && item.value === keepValue) {
-                                opt.selected = true;
-                                foundKept = true;
-                            }
-                            select.appendChild(opt);
-                        }
-                        if (keepValue && !foundKept) {
-                            // Selected value not in results — prepend it
-                            // so the form still posts the operator's prior
-                            // pick if they don't change it.
-                            var keep = document.createElement("option");
-                            keep.value = keepValue;
-                            keep.textContent = keepLabel;
-                            keep.selected = true;
-                            select.insertBefore(keep, select.firstChild);
-                        }
-                    })
-                    .catch(function () {
-                        // Swallow — leave existing options in place so
-                        // the form remains submittable.
-                    });
-            } else {
-                // Phase 7.2 client-side filter — hide non-matches,
-                // exempt the selected option.
-                var q = raw.toLowerCase();
-                for (var i = 0; i < select.options.length; i++) {
-                    var opt = select.options[i];
-                    var match = opt.textContent.toLowerCase().indexOf(q) !== -1;
-                    opt.hidden = !match && !opt.selected;
-                }
+            if (searchUrl) debouncedRemote(raw);
+            else           runLocal(raw);
+        });
+
+        // ArrowDown jumps from input into the <select>; Esc clears
+        // (stopPropagation prevents the global Esc-to-cancel below).
+        input.addEventListener("keydown", function (e) {
+            if (e.key === "ArrowDown") {
+                e.preventDefault();
+                select.focus();
+            } else if (e.key === "Escape") {
+                e.stopPropagation();
+                input.value = "";
+                input.dispatchEvent(new Event("input"));
             }
         });
+    });
+
+    // ------------------------------------------------------------
+    // Phase 7.5 — Enter inside a <select> closes the dropdown.
+    // Native browsers vary (some submit the form); blurring is the
+    // least-surprising option.
+    // ------------------------------------------------------------
+    document.querySelectorAll("select").forEach(function (sel) {
+        sel.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                sel.blur();
+            }
+        });
+    });
+
+    // ------------------------------------------------------------
+    // Phase 7.5 — auto-select text on focus for power users.
+    // Limits to text/number; passwords + emails + datetimes left
+    // alone so paste / step buttons / partial edits still work.
+    // ------------------------------------------------------------
+    document.querySelectorAll("input[type=text], input[type=number]").forEach(function (i) {
+        i.addEventListener("focus", function () { i.select(); });
+    });
+
+    // ------------------------------------------------------------
+    // Phase 7.5 — table keyboard navigation. Each result row gets
+    // tabIndex=0; ArrowUp/Down move focus between rows.
+    // preventDefault() so the page doesn't scroll past the row.
+    // ------------------------------------------------------------
+    var rows = document.querySelectorAll(".results tbody tr");
+    rows.forEach(function (row, i) {
+        row.tabIndex = 0;
+        row.addEventListener("keydown", function (e) {
+            if (e.key === "ArrowDown" && rows[i + 1]) {
+                e.preventDefault();
+                rows[i + 1].focus();
+            } else if (e.key === "ArrowUp" && rows[i - 1]) {
+                e.preventDefault();
+                rows[i - 1].focus();
+            }
+        });
+    });
+
+    // ------------------------------------------------------------
+    // Phase 7.5 — focus first invalid field on page load. Uses the
+    // .form-error class added by _form_field.html when errors are
+    // populated; no-op if no errors.
+    // ------------------------------------------------------------
+    var firstError = document.querySelector(".form-error");
+    if (firstError) {
+        var row = firstError.closest(".form-row");
+        var fld = row ? row.querySelector("input, textarea, select") : null;
+        if (fld) fld.focus();
+    }
+
+    // ------------------------------------------------------------
+    // Phase 7.5 — prevent double submit. data-form opts forms in;
+    // form.html and the bespoke forms set the attribute. The submit
+    // button gets disabled and re-labelled while the request is in
+    // flight. Cmd/Ctrl+S below calls form.submit() which bypasses
+    // this listener — fine, because that path doesn't double-fire.
+    // ------------------------------------------------------------
+    document.querySelectorAll("form[data-form]").forEach(function (form) {
+        form.addEventListener("submit", function () {
+            var btn = form.querySelector("button[type=submit]");
+            if (!btn) return;
+            btn.disabled = true;
+            btn.textContent = "Saving…";
+        });
+    });
+
+    // ------------------------------------------------------------
+    // Phase 7.5 — global keyboard shortcuts.
+    //   /              → focus first input/textarea (skipped if
+    //                    cursor already in one)
+    //   Cmd/Ctrl + S   → submit the first form on the page
+    //   Esc            → navigate to the page's [data-cancel] anchor
+    //                    (skipped when target is an input/textarea
+    //                    so individual element listeners can act
+    //                    first via stopPropagation, e.g. the search
+    //                    input's clear-on-Esc).
+    // ------------------------------------------------------------
+    document.addEventListener("keydown", function (e) {
+        if (e.key === "/" && !e.target.matches("input, textarea")) {
+            e.preventDefault();
+            var i = document.querySelector("input, textarea");
+            if (i) i.focus();
+        }
+        if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+            e.preventDefault();
+            var f = document.querySelector("form");
+            if (f) f.submit();
+        }
+        if (e.key === "Escape" && !e.target.matches("input, textarea")) {
+            var cancel = document.querySelector("[data-cancel]");
+            if (cancel) window.location = cancel.href;
+        }
     });
 })();
 </script>

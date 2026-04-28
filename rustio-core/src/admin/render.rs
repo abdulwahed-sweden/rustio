@@ -143,6 +143,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
             FormField {
                 name: "password",
@@ -163,6 +164,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
         ],
     }]
@@ -282,7 +284,12 @@ pub(crate) fn dashboard_ctx(
 
     DashboardCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
-        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         apps: group_entries_by_app(admin.entries()),
         recent_actions: recent,
         flash: None,
@@ -420,7 +427,12 @@ pub(crate) fn list_ctx(
     ListCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: entry.display_name.to_string(),
-        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         admin_name: entry.admin_name,
         display_name: entry.display_name,
         singular_name: entry.singular_name,
@@ -558,6 +570,14 @@ pub(crate) struct FormField {
     /// plain `<select>` keeps working with the truncated 50-row
     /// initial set when JS is disabled or the URL is `None`.
     pub search_url: Option<String>,
+    /// Phase 7.5 — per-field validation errors. Default empty. The
+    /// generic admin path (`do_create` / `do_update`) leaves this
+    /// untouched because `AdminOps::create / update` returns flat
+    /// `Vec<String>`; those errors stay in `FormCtx.errors`. Bespoke
+    /// handlers (user_new / user_edit / group_new / password_change)
+    /// build a parallel `HashMap<String, Vec<String>>` while pushing
+    /// global errors and pass it through `apply_field_errors`.
+    pub errors: Vec<String>,
 }
 
 /// Phase 6 — one logical group of fields on a form. `title: None`
@@ -586,6 +606,13 @@ pub(crate) fn form_ctx(
     // A missing entry or empty Vec produces an empty `<select>` — the
     // pre-Phase-7 mock pair is gone.
     relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)>,
+    // Phase 7.5 — per-field validation errors keyed by field name.
+    // Populated by bespoke validators that already know which field a
+    // given error belongs to. The generic AdminEntry path (this fn's
+    // primary caller, `do_create` / `do_update`) passes `HashMap::new()`
+    // because `AdminOps::create / update` returns flat `Vec<String>`;
+    // those errors stay in the global block above.
+    field_errors: HashMap<String, Vec<String>>,
 ) -> FormCtx {
     let fields = entry
         .fields
@@ -630,8 +657,8 @@ pub(crate) fn form_ctx(
             // Phase 1/b — bools always submit (checked = true, absent
             // = false), so they never carry a required-asterisk; every
             // other non-nullable field does.
-            let required = !f.field_type.nullable()
-                && !matches!(f.field_type, super::types::FieldType::Bool);
+            let required =
+                !f.field_type.nullable() && !matches!(f.field_type, super::types::FieldType::Bool);
             // Phase 5/d — select options + multiple flag.
             //   - Enum (choices): one option per allowed value (raw
             //     string used as both value and label per "no
@@ -667,10 +694,7 @@ pub(crate) fn form_ctx(
                 // Phase 7.2 — `(options, has_more)` from the resolver;
                 // missing entry or empty Vec → empty select. searchable
                 // is always true for relation-backed selects.
-                let (opts, has_more) = relation_options
-                    .get(f.name)
-                    .cloned()
-                    .unwrap_or_default();
+                let (opts, has_more) = relation_options.get(f.name).cloned().unwrap_or_default();
                 (Some(opts), rel.multi, true, has_more)
             } else {
                 (None, false, false, false)
@@ -709,6 +733,10 @@ pub(crate) fn form_ctx(
                 searchable,
                 has_more,
                 search_url,
+                // Phase 7.5 — per-field errors from the caller's map.
+                // Generic do_create / do_update pass an empty map, so
+                // every field on those paths starts with an empty Vec.
+                errors: field_errors.get(f.name).cloned().unwrap_or_default(),
             }
         })
         .collect::<Vec<FormField>>();
@@ -724,7 +752,12 @@ pub(crate) fn form_ctx(
             "new" => format!("Add {}", entry.singular_name),
             _ => format!("Change {}", entry.singular_name),
         },
-        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         admin_name: entry.admin_name,
         display_name: entry.display_name,
         singular_name: entry.singular_name,
@@ -733,6 +766,27 @@ pub(crate) fn form_ctx(
         sections,
         errors,
         flash: None,
+    }
+}
+
+/// Phase 7.5 — apply a per-field error map to an existing
+/// `Vec<FormSection>` in place. Used by bespoke validators
+/// (do_new_user, do_new_group, render_user_edit_with_errors,
+/// do_password_change) that already know which field a given error
+/// belongs to: the validator builds a `HashMap<String, Vec<String>>`
+/// while pushing global errors, calls a section helper to produce
+/// the flat sections, then walks them with this fn to attach the
+/// keyed errors. Keeps the section-builder signatures unchanged.
+pub(crate) fn apply_field_errors(
+    sections: &mut [FormSection],
+    field_errors: &HashMap<String, Vec<String>>,
+) {
+    for section in sections.iter_mut() {
+        for field in section.fields.iter_mut() {
+            if let Some(errs) = field_errors.get(field.name) {
+                field.errors = errs.clone();
+            }
+        }
     }
 }
 
@@ -756,13 +810,22 @@ fn group_fields_into_sections(fields: Vec<FormField>) -> Vec<FormSection> {
 
     let mut sections: Vec<FormSection> = Vec::with_capacity(3);
     if !default_fields.is_empty() {
-        sections.push(FormSection { title: None, fields: default_fields });
+        sections.push(FormSection {
+            title: None,
+            fields: default_fields,
+        });
     }
     if !metadata_fields.is_empty() {
-        sections.push(FormSection { title: Some("Metadata"), fields: metadata_fields });
+        sections.push(FormSection {
+            title: Some("Metadata"),
+            fields: metadata_fields,
+        });
     }
     if !advanced_fields.is_empty() {
-        sections.push(FormSection { title: Some("Advanced"), fields: advanced_fields });
+        sections.push(FormSection {
+            title: Some("Advanced"),
+            fields: advanced_fields,
+        });
     }
     sections
 }
@@ -933,9 +996,10 @@ pub(crate) async fn search_options(
     model: &str,
     query: &str,
 ) -> Result<Vec<SelectOption>> {
-    let target = admin.entries().iter().find(|e| {
-        e.singular_name == model || e.admin_name == model || e.display_name == model
-    });
+    let target = admin
+        .entries()
+        .iter()
+        .find(|e| e.singular_name == model || e.admin_name == model || e.display_name == model);
     let Some(target) = target else {
         return Ok(Vec::new());
     };
@@ -1038,7 +1102,12 @@ pub(crate) fn confirm_delete_ctx(
     ConfirmDeleteCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: format!("Delete {}", entry.singular_name),
-        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         admin_name: entry.admin_name,
         singular_name: entry.singular_name,
         object_id,
@@ -1165,7 +1234,12 @@ pub(crate) fn render_forbidden_body(
 ) -> crate::error::Result<String> {
     let view = ForbiddenCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
-        entries: admin.entries().iter().filter(|e| !e.core).map(SidebarEntry::from).collect(),
+        entries: admin
+            .entries()
+            .iter()
+            .filter(|e| !e.core)
+            .map(SidebarEntry::from)
+            .collect(),
         page_title: "Permission denied",
         attempted,
         required_role,
@@ -1246,6 +1320,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     searchable: false,
                     has_more: false,
                     search_url: None,
+                    errors: vec![],
                 },
                 FormField {
                     name: "password",
@@ -1269,6 +1344,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     searchable: false,
                     has_more: false,
                     search_url: None,
+                    errors: vec![],
                 },
             ],
         },
@@ -1296,6 +1372,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             }],
         },
     ]
@@ -1331,6 +1408,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
             FormField {
                 name: "description",
@@ -1351,6 +1429,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
         ],
     }]
@@ -1389,6 +1468,7 @@ pub(crate) fn user_edit_identity_sections(
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
             FormField {
                 name: "role",
@@ -1409,13 +1489,18 @@ pub(crate) fn user_edit_identity_sections(
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
             FormField {
                 name: "is_active",
                 label: "Active".to_string(),
                 widget: "checkbox",
                 input_type: "checkbox",
-                value: if is_active { "true".to_string() } else { "false".to_string() },
+                value: if is_active {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                },
                 hint: Some("Inactive users cannot sign in or hold sessions.".to_string()),
                 placeholder: None,
                 required: false,
@@ -1429,6 +1514,7 @@ pub(crate) fn user_edit_identity_sections(
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
         ],
     }]
@@ -1445,9 +1531,7 @@ pub(crate) fn user_edit_password_sections() -> Vec<FormSection> {
             widget: "input",
             input_type: "password",
             value: String::new(),
-            hint: Some(
-                "Leave blank to keep the current password unchanged.".to_string(),
-            ),
+            hint: Some("Leave blank to keep the current password unchanged.".to_string()),
             placeholder: None,
             required: false,
             options: None,
@@ -1460,6 +1544,7 @@ pub(crate) fn user_edit_password_sections() -> Vec<FormSection> {
             searchable: false,
             has_more: false,
             search_url: None,
+            errors: vec![],
         }],
     }]
 }
@@ -1489,6 +1574,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
             FormField {
                 name: "new_password1",
@@ -1509,6 +1595,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
             FormField {
                 name: "new_password2",
@@ -1529,6 +1616,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 searchable: false,
                 has_more: false,
                 search_url: None,
+                errors: vec![],
             },
         ],
     }]
@@ -1576,14 +1664,29 @@ mod tests {
     /// "what UI does this field render as".
     #[test]
     fn maps_field_types_to_expected_widgets() {
-        assert_eq!(map_field_to_ui(&af(FieldType::Bool)),             ("checkbox", "checkbox"));
-        assert_eq!(map_field_to_ui(&af(FieldType::String)),           ("input", "text"));
-        assert_eq!(map_field_to_ui(&af(FieldType::OptionalString)),   ("input", "text"));
-        assert_eq!(map_field_to_ui(&af(FieldType::I32)),              ("input", "number"));
-        assert_eq!(map_field_to_ui(&af(FieldType::I64)),              ("input", "number"));
-        assert_eq!(map_field_to_ui(&af(FieldType::OptionalI64)),      ("input", "number"));
-        assert_eq!(map_field_to_ui(&af(FieldType::DateTime)),         ("input", "datetime-local"));
-        assert_eq!(map_field_to_ui(&af(FieldType::OptionalDateTime)), ("input", "datetime-local"));
+        assert_eq!(
+            map_field_to_ui(&af(FieldType::Bool)),
+            ("checkbox", "checkbox")
+        );
+        assert_eq!(map_field_to_ui(&af(FieldType::String)), ("input", "text"));
+        assert_eq!(
+            map_field_to_ui(&af(FieldType::OptionalString)),
+            ("input", "text")
+        );
+        assert_eq!(map_field_to_ui(&af(FieldType::I32)), ("input", "number"));
+        assert_eq!(map_field_to_ui(&af(FieldType::I64)), ("input", "number"));
+        assert_eq!(
+            map_field_to_ui(&af(FieldType::OptionalI64)),
+            ("input", "number")
+        );
+        assert_eq!(
+            map_field_to_ui(&af(FieldType::DateTime)),
+            ("input", "datetime-local")
+        );
+        assert_eq!(
+            map_field_to_ui(&af(FieldType::OptionalDateTime)),
+            ("input", "datetime-local")
+        );
     }
 
     /// Phase 5/d — a field with a non-empty `choices` slice resolves
@@ -1637,9 +1740,7 @@ mod tests {
             },
         ];
         let admin = Admin::new();
-        let entry = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
-        );
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FK_FIELDS, false);
         let ident = fake_identity(Role::Administrator);
 
         let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
@@ -1674,6 +1775,7 @@ mod tests {
             vec![],
             "csrf".into(),
             relation_options,
+            HashMap::new(),
         );
 
         // Locate the author_id field in the resolved sections — it
@@ -1696,7 +1798,9 @@ mod tests {
         assert_eq!(opts[2].label, "charlie@example.com");
         // The legacy mock label MUST NOT appear.
         assert!(
-            !opts.iter().any(|o| o.label == "Item 1" || o.label == "Item 2"),
+            !opts
+                .iter()
+                .any(|o| o.label == "Item 1" || o.label == "Item 2"),
             "Phase 7 mock pair must be gone; got: {opts:?}",
             opts = opts.iter().map(|o| &o.label).collect::<Vec<_>>()
         );
@@ -1707,9 +1811,18 @@ mod tests {
         let body = templates
             .render("admin/form.html", &ctx)
             .expect("form renders");
-        assert!(body.contains("alice@example.com"), "alice option missing in HTML");
-        assert!(body.contains("bob@example.com"),   "bob option missing in HTML");
-        assert!(body.contains("charlie@example.com"), "charlie option missing in HTML");
+        assert!(
+            body.contains("alice@example.com"),
+            "alice option missing in HTML"
+        );
+        assert!(
+            body.contains("bob@example.com"),
+            "bob option missing in HTML"
+        );
+        assert!(
+            body.contains("charlie@example.com"),
+            "charlie option missing in HTML"
+        );
         assert!(
             !body.contains("Item 1"),
             "rendered HTML must not contain the Phase 7 mock label"
@@ -1725,10 +1838,22 @@ mod tests {
     #[test]
     fn remote_search_returns_results() {
         let opts = vec![
-            SelectOption { value: "1".to_string(), label: "alice@example.com".to_string() },
-            SelectOption { value: "2".to_string(), label: "bob@example.com".to_string() },
-            SelectOption { value: "3".to_string(), label: "Alice Cooper".to_string() },
-            SelectOption { value: "4".to_string(), label: "carol@acme.io".to_string() },
+            SelectOption {
+                value: "1".to_string(),
+                label: "alice@example.com".to_string(),
+            },
+            SelectOption {
+                value: "2".to_string(),
+                label: "bob@example.com".to_string(),
+            },
+            SelectOption {
+                value: "3".to_string(),
+                label: "Alice Cooper".to_string(),
+            },
+            SelectOption {
+                value: "4".to_string(),
+                label: "carol@acme.io".to_string(),
+            },
         ];
 
         // Case-insensitive: "alice" matches alice@example.com AND
@@ -1774,15 +1899,16 @@ mod tests {
             choices: None,
         }];
         let admin = Admin::new();
-        let entry = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
-        );
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FK_FIELDS, false);
         let ident = fake_identity(Role::Administrator);
         let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
         relation_options.insert(
             "author_id",
             (
-                vec![SelectOption { value: "1".into(), label: "alice@example.com".into() }],
+                vec![SelectOption {
+                    value: "1".into(),
+                    label: "alice@example.com".into(),
+                }],
                 false,
             ),
         );
@@ -1796,6 +1922,7 @@ mod tests {
             vec![],
             "csrf".into(),
             relation_options,
+            HashMap::new(),
         );
 
         let author = ctx
@@ -1848,18 +1975,25 @@ mod tests {
             choices: None,
         }];
         let admin = Admin::new();
-        let entry = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
-        );
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FK_FIELDS, false);
         let ident = fake_identity(Role::Administrator);
         let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
         relation_options.insert(
             "author_id",
             (
                 vec![
-                    SelectOption { value: "1".to_string(), label: "alice@example.com".to_string() },
-                    SelectOption { value: "2".to_string(), label: "bob@example.com".to_string() },
-                    SelectOption { value: "3".to_string(), label: "charlie@example.com".to_string() },
+                    SelectOption {
+                        value: "1".to_string(),
+                        label: "alice@example.com".to_string(),
+                    },
+                    SelectOption {
+                        value: "2".to_string(),
+                        label: "bob@example.com".to_string(),
+                    },
+                    SelectOption {
+                        value: "3".to_string(),
+                        label: "charlie@example.com".to_string(),
+                    },
                 ],
                 false, // has_more=false (3 < 50)
             ),
@@ -1880,6 +2014,7 @@ mod tests {
             vec![],
             "csrf".into(),
             relation_options,
+            HashMap::new(),
         );
 
         let author_field = ctx
@@ -1961,9 +2096,7 @@ mod tests {
             choices: None,
         }];
         let admin = Admin::new();
-        let entry = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
-        );
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FK_FIELDS, false);
         let ident = fake_identity(Role::Administrator);
         let mut relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)> = HashMap::new();
         // Just one option for the test, but flip has_more = true to
@@ -1971,7 +2104,10 @@ mod tests {
         relation_options.insert(
             "author_id",
             (
-                vec![SelectOption { value: "1".into(), label: "first".into() }],
+                vec![SelectOption {
+                    value: "1".into(),
+                    label: "first".into(),
+                }],
                 true,
             ),
         );
@@ -1985,6 +2121,7 @@ mod tests {
             vec![],
             "csrf".into(),
             relation_options,
+            HashMap::new(),
         );
         let templates = Templates::new(None).expect("embedded templates");
         let body = templates
@@ -2014,9 +2151,7 @@ mod tests {
             choices: None,
         }];
         let admin = Admin::new();
-        let entry = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
-        );
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FK_FIELDS, false);
         let ident = fake_identity(Role::Administrator);
         let ctx = form_ctx(
             &ident,
@@ -2027,6 +2162,7 @@ mod tests {
             None,
             vec![],
             "csrf".into(),
+            HashMap::new(),
             HashMap::new(),
         );
         let author_field = ctx
@@ -2095,13 +2231,13 @@ mod tests {
             body.contains("Administrator"),
             "required_role hint should be in body"
         );
-        assert!(
-            body.contains("Return to dashboard"),
-            "back link missing"
-        );
+        assert!(body.contains("Return to dashboard"), "back link missing");
         // Identity-bearing surfaces still render: the user-tools welcome
         // line should include the test email.
-        assert!(body.contains("test@example.com"), "user-tools email missing");
+        assert!(
+            body.contains("test@example.com"),
+            "user-tools email missing"
+        );
     }
 
     /// Phase 6.2 — `user_edit.html` now renders its Identity and
@@ -2116,11 +2252,7 @@ mod tests {
     #[test]
     fn user_edit_renders_dynamic_form() {
         let templates = Templates::new(None).expect("embedded templates");
-        let identity_sections = user_edit_identity_sections(
-            "alice@example.com",
-            "staff",
-            true,
-        );
+        let identity_sections = user_edit_identity_sections("alice@example.com", "staff", true);
         let password_sections = user_edit_password_sections();
         let ctx = serde_json::json!({
             "site_title": "RustIO administration",
@@ -2187,8 +2319,14 @@ mod tests {
             !body.contains("<select multiple"),
             "groups must NOT render as select-multiple — checkbox list is the contract"
         );
-        assert!(body.contains("name=\"group_1\""), "group_1 checkbox missing");
-        assert!(body.contains("name=\"group_2\""), "group_2 checkbox missing");
+        assert!(
+            body.contains("name=\"group_1\""),
+            "group_1 checkbox missing"
+        );
+        assert!(
+            body.contains("name=\"group_2\""),
+            "group_2 checkbox missing"
+        );
         let g1_idx = body.find("name=\"group_1\"").expect("group_1 checkbox");
         let after_g1 = &body[g1_idx..g1_idx.saturating_add(100)];
         assert!(
@@ -2285,7 +2423,9 @@ mod tests {
         // Render the dashboard page (any page that extends base.html
         // works) and assert the banner is present with the label.
         let dash = dashboard_ctx(&demo_ident, &admin, vec![], "fake-csrf".into());
-        let body = templates.render("admin/index.html", &dash).expect("dashboard renders");
+        let body = templates
+            .render("admin/index.html", &dash)
+            .expect("dashboard renders");
 
         assert!(body.contains("DEMO USER"), "demo banner text missing");
         assert!(body.contains("Demo Staff"), "demo_label not in banner");
@@ -2309,7 +2449,9 @@ mod tests {
         };
 
         let dash = dashboard_ctx(&real_ident, &admin, vec![], "fake-csrf".into());
-        let body = templates.render("admin/index.html", &dash).expect("dashboard renders");
+        let body = templates
+            .render("admin/index.html", &dash)
+            .expect("dashboard renders");
 
         assert!(
             !body.contains("DEMO USER"),
@@ -2402,9 +2544,7 @@ mod tests {
 
         // Required-asterisk: present for `title`, absent for `published`.
         // The label tag for `title` should contain the marker.
-        let title_label_idx = body
-            .find("for=\"id_title\"")
-            .expect("title label present");
+        let title_label_idx = body.find("for=\"id_title\"").expect("title label present");
         let title_label_end = title_label_idx
             + body[title_label_idx..]
                 .find("</label>")
@@ -2477,22 +2617,46 @@ mod tests {
             },
         ];
         let admin = Admin::new();
-        let entry = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", MIXED_FIELDS, false,
-        );
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", MIXED_FIELDS, false);
         let ident = fake_identity(Role::Administrator);
-        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into(), HashMap::new());
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+            HashMap::new(),
+        );
 
         // Expect three sections in fixed order: Default → Metadata → Advanced.
-        assert_eq!(ctx.sections.len(), 3, "expected three sections, got {ctx_len:?}",
-            ctx_len = ctx.sections.iter().map(|s| s.title).collect::<Vec<_>>());
-        assert_eq!(ctx.sections[0].title, None,                "first section is the untitled default bucket");
+        assert_eq!(
+            ctx.sections.len(),
+            3,
+            "expected three sections, got {ctx_len:?}",
+            ctx_len = ctx.sections.iter().map(|s| s.title).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            ctx.sections[0].title, None,
+            "first section is the untitled default bucket"
+        );
         assert_eq!(ctx.sections[0].fields.len(), 1);
         assert_eq!(ctx.sections[0].fields[0].name, "title");
-        assert_eq!(ctx.sections[1].title, Some("Metadata"),    "second section is Metadata");
+        assert_eq!(
+            ctx.sections[1].title,
+            Some("Metadata"),
+            "second section is Metadata"
+        );
         assert_eq!(ctx.sections[1].fields.len(), 1);
         assert_eq!(ctx.sections[1].fields[0].name, "creation_timestamp");
-        assert_eq!(ctx.sections[2].title, Some("Advanced"),    "third section is Advanced");
+        assert_eq!(
+            ctx.sections[2].title,
+            Some("Advanced"),
+            "third section is Advanced"
+        );
         assert_eq!(ctx.sections[2].fields.len(), 1);
         assert_eq!(ctx.sections[2].fields[0].name, "uuid");
 
@@ -2516,11 +2680,24 @@ mod tests {
                 choices: None,
             },
         ];
-        let entry2 = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", FK_FIELDS, false,
+        let entry2 = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FK_FIELDS, false);
+        let ctx2 = form_ctx(
+            &ident,
+            &admin,
+            &entry2,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+            HashMap::new(),
         );
-        let ctx2 = form_ctx(&ident, &admin, &entry2, "new", None, None, vec![], "csrf".into(), HashMap::new());
-        assert_eq!(ctx2.sections.len(), 1, "FK fields must NOT go to Advanced — they're business-meaningful");
+        assert_eq!(
+            ctx2.sections.len(),
+            1,
+            "FK fields must NOT go to Advanced — they're business-meaningful"
+        );
         assert_eq!(ctx2.sections[0].fields.len(), 2);
     }
 
@@ -2552,11 +2729,21 @@ mod tests {
             },
         ];
         let admin = Admin::new();
-        let entry = AdminEntry::for_testing(
-            "posts", "Posts", "Post", "posts", TEXTAREA_FIELDS, false,
-        );
+        let entry =
+            AdminEntry::for_testing("posts", "Posts", "Post", "posts", TEXTAREA_FIELDS, false);
         let ident = fake_identity(Role::Administrator);
-        let ctx = form_ctx(&ident, &admin, &entry, "new", None, None, vec![], "csrf".into(), HashMap::new());
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+            HashMap::new(),
+        );
 
         let body_field = ctx.sections[0]
             .fields
@@ -2660,8 +2847,8 @@ mod tests {
 
         // Header row: one <th> per field, label rendered.
         assert!(body.contains(">title</th>"), "title header missing");
-        assert!(body.contains(">body</th>"),  "body header missing");
-        assert!(body.contains(">author</th>"),"author header missing");
+        assert!(body.contains(">body</th>"), "body header missing");
+        assert!(body.contains(">author</th>"), "author header missing");
 
         // Row 7: first column wrapped in the edit anchor; subsequent
         // cells render as plain text.
@@ -2670,7 +2857,7 @@ mod tests {
             "row 7 first-column edit-link missing"
         );
         assert!(body.contains("first body"), "row 7 body cell missing");
-        assert!(body.contains("alice"),      "row 7 author cell missing");
+        assert!(body.contains("alice"), "row 7 author cell missing");
 
         // Row 9 same.
         assert!(
@@ -2678,7 +2865,7 @@ mod tests {
             "row 9 first-column edit-link missing"
         );
         assert!(body.contains("second body"), "row 9 body cell missing");
-        assert!(body.contains("bob"),         "row 9 author cell missing");
+        assert!(body.contains("bob"), "row 9 author cell missing");
 
         // Empty-state copy must NOT appear when rows are present.
         assert!(
@@ -2795,6 +2982,253 @@ mod tests {
         assert!(
             !body.contains("This page requires"),
             "required_role section must be hidden when None"
+        );
+    }
+
+    /// Phase 7.5 — fixture for the inline-field-error tests. Builds a
+    /// FormCtx-shaped JSON literal with one section containing two
+    /// FormFields: `email` carries an error, `password` does not.
+    /// Both pass through the same `_form_field.html` include, so a
+    /// single render exercises the error / no-error paths together.
+    fn form_with_field_errors_ctx() -> serde_json::Value {
+        serde_json::json!({
+            "site_title": "RustIO administration",
+            "site_header": "RustIO administration",
+            "index_title": "Site administration",
+            "footer_copyright": "RustIO test",
+            "csrf_token": "fake",
+            "is_demo_session": false,
+            "demo_label": null,
+            "page_title": "Add user",
+            "entries": [],
+            "admin_name": "users",
+            "display_name": "Users",
+            "singular_name": "User",
+            "mode": "new",
+            "object_id": null,
+            "errors": ["Email is required."],
+            "flash": null,
+            "identity": { "email": "admin@example.com", "is_admin": true, "is_developer": false },
+            "sections": [
+                {
+                    "title": null,
+                    "fields": [
+                        {
+                            "name": "email",
+                            "label": "Email",
+                            "widget": "input",
+                            "input_type": "email",
+                            "value": "",
+                            "hint": null,
+                            "placeholder": null,
+                            "required": true,
+                            "options": null,
+                            "multiple": false,
+                            "span": 1,
+                            "autocomplete": null,
+                            "autofocus": false,
+                            "disabled": false,
+                            "maxlength": null,
+                            "searchable": false,
+                            "has_more": false,
+                            "search_url": null,
+                            "errors": ["Email is required."],
+                        },
+                        {
+                            "name": "password",
+                            "label": "Password",
+                            "widget": "input",
+                            "input_type": "password",
+                            "value": "",
+                            "hint": null,
+                            "placeholder": null,
+                            "required": true,
+                            "options": null,
+                            "multiple": false,
+                            "span": 1,
+                            "autocomplete": null,
+                            "autofocus": false,
+                            "disabled": false,
+                            "maxlength": null,
+                            "searchable": false,
+                            "has_more": false,
+                            "search_url": null,
+                            "errors": [],
+                        },
+                    ],
+                },
+            ],
+        })
+    }
+
+    /// Phase 7.5 — Step 1 plumbing renders inline error copy under the
+    /// field that owns it. Locks the (validator → field_errors map →
+    /// `apply_field_errors` → `FormField.errors` → `_form_field.html`
+    /// error block) end-to-end pipeline.
+    #[test]
+    fn field_errors_render_under_inputs() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &form_with_field_errors_ctx())
+            .expect("form renders");
+
+        // The error block lives under the email input with the
+        // canonical id `error_<name>`.
+        assert!(
+            body.contains(r#"id="error_email""#),
+            "expected <p id=\"error_email\"> error block, body fragment: {}",
+            &body[..body.len().min(500)]
+        );
+        assert!(
+            body.contains("Email is required."),
+            "error message must surface under the email field"
+        );
+        // `password` has no errors → no error block for it. The
+        // global error banner above the form may carry the same
+        // string, so we narrow the assertion to the per-field id.
+        assert!(
+            !body.contains(r#"id="error_password""#),
+            "no error for password → no error block expected"
+        );
+    }
+
+    /// Phase 7.5 — `aria-invalid` toggles per-field. Errors → `"true"`,
+    /// no errors → `"false"`. Locks the aria attribute the screen
+    /// reader uses to announce a field as invalid.
+    #[test]
+    fn input_has_aria_invalid_when_error() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &form_with_field_errors_ctx())
+            .expect("form renders");
+
+        // Locate the email input, slice its tag, assert
+        // aria-invalid="true".
+        let email_idx = body.find(r#"name="email""#).expect("email input present");
+        let email_start = body[..email_idx].rfind('<').expect("tag start");
+        let email_end = email_idx + body[email_idx..].find('>').expect("tag end");
+        let email_tag = &body[email_start..email_end];
+        assert!(
+            email_tag.contains(r#"aria-invalid="true""#),
+            "email input must carry aria-invalid=\"true\", got: {email_tag}"
+        );
+
+        // Same slice trick for the password input — should be "false".
+        let pw_idx = body
+            .find(r#"name="password""#)
+            .expect("password input present");
+        let pw_start = body[..pw_idx].rfind('<').expect("tag start");
+        let pw_end = pw_idx + body[pw_idx..].find('>').expect("tag end");
+        let pw_tag = &body[pw_start..pw_end];
+        assert!(
+            pw_tag.contains(r#"aria-invalid="false""#),
+            "password input must carry aria-invalid=\"false\", got: {pw_tag}"
+        );
+    }
+
+    /// Phase 7.5 — `aria-describedby` on an erroring input must point
+    /// at the id of the error block under it. Renders the same
+    /// fixture and asserts both anchors exist with matching ids; if
+    /// the template ever drifts (different id prefix on one side),
+    /// screen readers stop announcing the error and this fails.
+    #[test]
+    fn aria_describedby_links_correctly() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render("admin/form.html", &form_with_field_errors_ctx())
+            .expect("form renders");
+
+        // Input side: aria-describedby="error_email" only present
+        // when errors exist.
+        assert!(
+            body.contains(r#"aria-describedby="error_email""#),
+            "email input missing aria-describedby anchor"
+        );
+        // Error block side: the id the input points at must exist.
+        assert!(
+            body.contains(r#"id="error_email""#),
+            "error block id must match aria-describedby target"
+        );
+        // No errors → no aria-describedby on the password input.
+        let pw_idx = body
+            .find(r#"name="password""#)
+            .expect("password input present");
+        let pw_end = pw_idx + body[pw_idx..].find('>').expect("tag close");
+        let pw_tag = &body[pw_idx..pw_end];
+        assert!(
+            !pw_tag.contains("aria-describedby"),
+            "password (no errors) must NOT carry aria-describedby"
+        );
+    }
+
+    /// Phase 7.5 — the FK search-input Esc handler calls
+    /// `e.stopPropagation()` so the global Esc-to-cancel listener
+    /// doesn't navigate away when the user just wants to clear the
+    /// search box. This test renders any page that extends base
+    /// (login is the smallest) and locks both contract halves: the
+    /// stopPropagation in the search-input branch AND the
+    /// `[data-cancel]` selector in the global handler. If either
+    /// drifts, Esc-to-clear regresses into Esc-to-cancel.
+    #[test]
+    fn search_escape_does_not_trigger_cancel() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let body = templates
+            .render(
+                "admin/login.html",
+                &serde_json::json!({
+                    "site_title": "RustIO administration",
+                    "site_header": "RustIO administration",
+                    "index_title": "Site administration",
+                    "footer_copyright": "RustIO test",
+                    "csrf_token": "fake",
+                    "is_demo_session": false,
+                    "demo_label": null,
+                    "page_title": "Sign in",
+                    "error": null,
+                    "identity": null,
+                    "sections": [],
+                }),
+            )
+            .expect("login renders");
+
+        assert!(
+            body.contains("e.stopPropagation()"),
+            "search-input Esc handler must call stopPropagation()"
+        );
+        assert!(
+            body.contains(r#"querySelector("[data-cancel]")"#),
+            "global Esc handler must target [data-cancel] anchors"
+        );
+        // The global handler bails out when the keystroke originates
+        // in an input/textarea, so individual element listeners
+        // (search clear, etc.) get first crack.
+        assert!(
+            body.contains(r#"!e.target.matches("input, textarea")"#),
+            "global Esc must be guarded against input/textarea targets"
+        );
+    }
+
+    /// Phase 7.5 — empty-state regression. Phase 1/c shipped the
+    /// "Create your first …" CTA on a true-empty list page; this
+    /// test pins the contract so a future template churn can't
+    /// silently drop the CTA. Pairs with
+    /// `list_true_empty_renders_friendly_cta` above (which checks
+    /// the heading copy); this one focuses on the button + href.
+    #[test]
+    fn empty_state_has_add_button() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let ctx = empty_list_ctx_skeleton();
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+
+        assert!(
+            body.contains("btn-primary"),
+            "empty-state CTA must use btn-primary"
+        );
+        assert!(
+            body.contains(r#"href="/admin/posts/new""#),
+            "empty-state CTA must link to /admin/<name>/new"
         );
     }
 }

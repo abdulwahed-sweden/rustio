@@ -12,7 +12,7 @@
 
 {% block content %}
 <div class="page-actions">
-    <a href="/admin/groups" class="btn-ghost">
+    <a href="/admin/groups" class="btn-ghost" data-cancel>
         {{ icon("arrow-left", class="w-4 h-4") }} Back to groups
     </a>
 </div>
@@ -26,7 +26,7 @@
 {% include "admin/includes/_field_errors.html" %}
 {% endif %}
 
-<form method="post" novalidate>
+<form method="post" novalidate data-form>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
     {# Phase 6.2 — General (name + description) via the shared
@@ -66,7 +66,7 @@
     <p class="form-help">No permissions registered yet. They appear after a model with <code class="code-pill">#[derive(RustioAdmin)]</code> boots and emits its own.</p>
     {% endif %}
 
-    <div class="submit-row">
+    <div class="submit-row sticky bottom-0 bg-bg border-t border-border py-sm">
         <button type="submit" name="_save" class="btn-primary">Save</button>
     </div>
 </form>
