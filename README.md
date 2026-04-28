@@ -193,6 +193,10 @@ rustio ai review <plan.json>          score risk against current schema
 rustio ai apply <plan.json>           write migration files
 ```
 
+**Safety:**
+- AI updates will refuse destructive operations that result in empty schemas.
+- Use `--dry-run` to preview changes safely.
+
 Every command that talks to the DB takes `--db` or reads `DATABASE_URL`.
 
 ## Performance notes

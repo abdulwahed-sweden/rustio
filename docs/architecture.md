@@ -198,6 +198,10 @@ The `Primitive` enum is `#[non_exhaustive]` + `deny_unknown_fields`.
 External tools that match on it must include a wildcard arm. New
 primitives can land without breaking them.
 
+**Safety Guarantees** (Phase 9.1):
+- AI-generated updates are validated and cannot produce empty schemas.
+- All mutations require explicit confirmation or `--yes` flag.
+
 ## Templates
 
 Every HTML template is compiled into the binary via `include_str!` in

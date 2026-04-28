@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.1.1 — AI Safety Hardening (Phase 9.1)
+
+Two surgical fixes from the Phase 9 real-world validation report.
+
+- **Prevent empty schema writes** (critical safety fix). `ai_gen::update`
+  now refuses any model response that would clear a non-empty schema:
+  `non-empty → empty` returns `GenerateError::EmptyResult` with the
+  message *"Refusing to apply update: schema would become empty"*. No
+  bypass flag. Empty-input → empty-output and any → non-empty paths
+  pass through unchanged. Closes the data-loss vector where
+  `ai update "remove everything"` could clobber a schema.
+- **Enable `--yes` for `ai analyze --apply` / `--pick`**. The Analyze
+  CLI variant now exposes `--yes` and threads it into the existing
+  `ai_update` save path, matching `ai update --yes`. Phase 8.3.1's
+  truth table is preserved: `--dry-run` still wins over `--yes`.
+
+No changes to AI behavior (prompts, generate, analyze, explain are
+byte-identical). No new commands, no new dependencies. `ai_update`'s
+internal logic untouched — only the literal `false` at the analyze
+dispatch sites was replaced with the threaded `yes`.
+
+Tests: `update_refuses_empty_result` (rustio-core, exercises the full
+truth table), `analyze_yes_skips_confirmation` (rustio-cli, pins the
+`SaveOutcome` mapping). 388 + 14 passing.
+
 ## Unreleased — Admin redesign + dynamic form layer
 
 Post-1.0 work on the admin surface: a design-system pass, a
