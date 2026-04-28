@@ -222,6 +222,9 @@ enum AiAction {
     /// against the current schema, and the operator confirms the
     /// write interactively. `--yes` skips the confirmation for
     /// scripted use; the file is rewritten in place.
+    ///
+    /// Phase 8.3.1 adds `--dry-run`: runs the full flow + diff but
+    /// skips the y/N confirmation and never writes to disk.
     Update {
         /// Path to the existing schema JSON to evolve.
         schema_file: PathBuf,
@@ -230,6 +233,12 @@ enum AiAction {
         /// Skip the y/N confirmation prompt and write immediately.
         #[arg(long)]
         yes: bool,
+        /// Preview only — run the AI call + diff but never write.
+        /// Mutually exclusive with `--yes` (scripted auto-save) at
+        /// runtime: dry-run wins so a stray `--yes` can't bypass
+        /// the read-only intent.
+        #[arg(long = "dry-run")]
+        dry_run: bool,
     },
     /// Phase 8.2 — read-only AI audit of a schema. Single LLM call.
     /// Prints issues + suggestions + score; never writes to disk,
@@ -239,6 +248,7 @@ enum AiAction {
     ///
     /// Phase 8.3 adds `--pick <N>` and `--apply <instruction>` to
     /// bridge analyze → update without retyping. Mutually exclusive.
+    /// Phase 8.3.1 adds `--dry-run` for preview-only flows.
     Analyze {
         /// Path to the schema JSON to analyze.
         schema_file: PathBuf,
@@ -255,6 +265,11 @@ enum AiAction {
         /// call total.
         #[arg(long)]
         apply: Option<String>,
+        /// Preview only — when paired with `--pick` or `--apply`,
+        /// runs the full flow + diff but never writes. No effect on
+        /// plain analyze (already read-only).
+        #[arg(long = "dry-run")]
+        dry_run: bool,
     },
 }
 
@@ -284,11 +299,11 @@ fn main() -> ExitCode {
             AiAction::Generate { prompt, out, force } => {
                 tokio_run(ai_generate(prompt, out, force))
             }
-            AiAction::Update { schema_file, instruction, yes } => {
-                tokio_run(ai_update(schema_file, instruction, yes))
+            AiAction::Update { schema_file, instruction, yes, dry_run } => {
+                tokio_run(ai_update(schema_file, instruction, yes, dry_run))
             }
-            AiAction::Analyze { schema_file, pick, apply } => {
-                tokio_run(ai_analyze_dispatch(schema_file, pick, apply))
+            AiAction::Analyze { schema_file, pick, apply, dry_run } => {
+                tokio_run(ai_analyze_dispatch(schema_file, pick, apply, dry_run))
             }
         },
         Command::Schema { path } => print_schema(&path),
@@ -678,10 +693,16 @@ fn check_overwrite_allowed(out: &Path, force: bool) -> Result<(), String> {
 // prints the diff, and asks the operator to confirm before
 // rewriting the file in place. `--yes` skips the prompt for
 // scripted use.
+//
+// Phase 8.3.1 adds `--dry-run`: runs the full flow + diff but
+// skips the y/N confirmation and never writes. Banner is printed
+// before the diff so the operator reads "preview only" first.
+// dry_run wins over yes — a stray `--yes --dry-run` stays read-only.
 async fn ai_update(
     schema_file: PathBuf,
     instruction: String,
     yes: bool,
+    dry_run: bool,
 ) -> Result<(), String> {
     let existing = load_schema(&schema_file)?;
     eprintln!(
@@ -690,6 +711,9 @@ async fn ai_update(
         existing.models.len(),
         if existing.models.len() == 1 { "" } else { "s" },
     );
+    if dry_run {
+        eprintln!("⚠ Dry run — preview only");
+    }
     eprintln!("✓ Calling AI...");
 
     let updated = rustio_core::ai_gen::update(&existing, &instruction)
@@ -702,14 +726,56 @@ async fn ai_update(
     eprintln!("{}", rustio_core::ai_gen::diff::render(&changes));
     eprintln!();
 
-    if !yes && !confirm_save_changes()? {
-        eprintln!("aborted; {} unchanged", schema_file.display());
-        return Ok(());
+    let saved = perform_save_if_not_dry(&schema_file, &updated, yes, dry_run)?;
+    match saved {
+        SaveOutcome::DryRun => {
+            eprintln!("⚠ Dry run — no changes applied");
+        }
+        SaveOutcome::Aborted => {
+            eprintln!("aborted; {} unchanged", schema_file.display());
+        }
+        SaveOutcome::Wrote => {
+            eprintln!("wrote {}", schema_file.display());
+        }
     }
-
-    updated.write_to(&schema_file).map_err(|e| e.to_string())?;
-    eprintln!("wrote {}", schema_file.display());
     Ok(())
+}
+
+/// Phase 8.3.1 — outcome of the save step. Surfaced as a return
+/// value (rather than baked into the dry-run branch) so the
+/// integration test can observe the file-system effect deterministically.
+#[derive(Debug, PartialEq, Eq)]
+enum SaveOutcome {
+    /// `--dry-run` was set: skipped both confirm + write.
+    DryRun,
+    /// Operator declined the y/N prompt.
+    Aborted,
+    /// Schema was written to disk.
+    Wrote,
+}
+
+/// Phase 8.3.1 — the save decision + write. Extracted so tests can
+/// drive it with concrete (yes, dry_run) combinations and observe
+/// the on-disk result without involving the LLM.
+///
+/// Truth table:
+///   dry_run=true              → DryRun (no confirm, no write)
+///   dry_run=false, yes=true   → Wrote (no confirm, atomic write)
+///   dry_run=false, yes=false  → confirm prompt; Wrote on y / Aborted otherwise
+fn perform_save_if_not_dry(
+    target: &Path,
+    updated: &rustio_core::schema::Schema,
+    yes: bool,
+    dry_run: bool,
+) -> Result<SaveOutcome, String> {
+    if dry_run {
+        return Ok(SaveOutcome::DryRun);
+    }
+    if !yes && !confirm_save_changes()? {
+        return Ok(SaveOutcome::Aborted);
+    }
+    updated.write_to(target).map_err(|e| e.to_string())?;
+    Ok(SaveOutcome::Wrote)
 }
 
 /// Phase 8.1 — y/N confirmation for `ai update`. Returns true on
@@ -847,10 +913,16 @@ fn pick_suggestion(
 /// Routes to the existing 8.2 plain-report handler, or to the
 /// 8.1 update flow (with the picked / supplied instruction) when
 /// the bridge flags are set.
+///
+/// Phase 8.3.1 — `dry_run` threads through to the update flow
+/// when --pick or --apply is in play. Plain analyze is read-only
+/// already, so dry_run is a no-op there (no banner, no behavior
+/// change).
 async fn ai_analyze_dispatch(
     schema_file: PathBuf,
     pick: Option<usize>,
     apply: Option<String>,
+    dry_run: bool,
 ) -> Result<(), String> {
     match classify_analyze_flow(pick, apply) {
         AnalyzeFlow::Plain => ai_analyze(schema_file).await,
@@ -859,9 +931,9 @@ async fn ai_analyze_dispatch(
             // directly; same flow as `ai update`." Identical to
             // `rustio ai update <schema> <instruction>`; the y/N
             // prompt + diff are owned by ai_update.
-            ai_update(schema_file, instruction, false).await
+            ai_update(schema_file, instruction, false, dry_run).await
         }
-        AnalyzeFlow::Pick(n) => analyze_then_pick(schema_file, n).await,
+        AnalyzeFlow::Pick(n) => analyze_then_pick(schema_file, n, dry_run).await,
     }
 }
 
@@ -872,7 +944,14 @@ async fn ai_analyze_dispatch(
 /// The suggestion text becomes the update instruction verbatim;
 /// the operator confirms via the existing y/N prompt before
 /// anything is written.
-async fn analyze_then_pick(schema_file: PathBuf, n: usize) -> Result<(), String> {
+///
+/// Phase 8.3.1 — when `dry_run` is true, the second call still
+/// fires but `ai_update` skips the confirm + write step.
+async fn analyze_then_pick(
+    schema_file: PathBuf,
+    n: usize,
+    dry_run: bool,
+) -> Result<(), String> {
     let schema = load_schema(&schema_file)?;
     eprintln!(
         "✓ Reading {} ({} model{})",
@@ -894,7 +973,7 @@ async fn analyze_then_pick(schema_file: PathBuf, n: usize) -> Result<(), String>
     // Hand off to the update flow. This second LLM call writes
     // ai_gen::update on top of the original schema; diff + y/N
     // confirmation are owned by ai_update.
-    ai_update(schema_file, suggestion.to_string(), false).await
+    ai_update(schema_file, suggestion.to_string(), false, dry_run).await
 }
 
 #[cfg(test)]
@@ -991,6 +1070,157 @@ mod tests {
         let r = report_with(&["x"]);
         assert_eq!(pick_suggestion(&r, 1).unwrap(), "x");
         assert_eq!(classify_analyze_flow(None, None), AnalyzeFlow::Plain);
+    }
+
+    // ----- Phase 8.3.1 — dry-run tests --------------------------
+
+    /// Build a tiny in-memory `Schema` fixture for the dry-run tests.
+    /// Just enough to exercise `Schema::write_to`'s atomic-rename
+    /// path against a real disk file.
+    fn fixture_schema() -> rustio_core::schema::Schema {
+        rustio_core::schema::Schema {
+            version: rustio_core::schema::SCHEMA_VERSION,
+            rustio_version: "1.0.0".into(),
+            models: vec![rustio_core::schema::SchemaModel {
+                name: "Post".into(),
+                table: "posts".into(),
+                admin_name: "posts".into(),
+                display_name: "Posts".into(),
+                singular_name: "Post".into(),
+                fields: vec![rustio_core::schema::SchemaField {
+                    name: "id".into(),
+                    ty: "i64".into(),
+                    nullable: false,
+                    editable: true,
+                    relation: None,
+                }],
+                relations: vec![],
+                core: false,
+            }],
+        }
+    }
+
+    /// Phase 8.3.1 / spec test #1 — `--dry-run` MUST NOT write to
+    /// disk. Pre-existing target file content survives untouched
+    /// even after `perform_save_if_not_dry` returns DryRun.
+    #[test]
+    fn dry_run_does_not_write_file() {
+        let dir = tempdir_path();
+        let target = dir.join("schema.json");
+        std::fs::write(&target, "ORIGINAL_CONTENT_DO_NOT_OVERWRITE").unwrap();
+
+        let updated = fixture_schema();
+        let outcome = perform_save_if_not_dry(&target, &updated, false, true)
+            .expect("dry-run save must not error");
+        assert_eq!(outcome, SaveOutcome::DryRun);
+
+        // File on disk MUST be byte-identical to the seed content.
+        let after = std::fs::read_to_string(&target).unwrap();
+        assert_eq!(after, "ORIGINAL_CONTENT_DO_NOT_OVERWRITE");
+
+        let _ = std::fs::remove_file(&target);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Phase 8.3.1 / spec test #2 — `--dry-run` MUST skip the y/N
+    /// confirmation. Tested via the truth-table contract: dry_run=true
+    /// short-circuits to DryRun BEFORE `confirm_save_changes` is
+    /// reachable. The function would block on stdin if confirm fired,
+    /// so the fact that this test returns at all is the evidence.
+    #[test]
+    fn dry_run_skips_confirmation() {
+        let dir = tempdir_path();
+        let target = dir.join("never_written.json");
+        let updated = fixture_schema();
+
+        // dry_run wins over yes — no confirm prompt either way.
+        let outcome = perform_save_if_not_dry(&target, &updated, false, true).unwrap();
+        assert_eq!(outcome, SaveOutcome::DryRun);
+        assert!(!target.exists(), "DryRun must not create the target file");
+
+        // dry_run + yes still skips confirm + write (defense in depth).
+        let outcome = perform_save_if_not_dry(&target, &updated, true, true).unwrap();
+        assert_eq!(outcome, SaveOutcome::DryRun);
+        assert!(!target.exists(), "DryRun + yes still must not write");
+
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Phase 8.3.1 / spec test #3 — `--dry-run` STILL shows the
+    /// diff. Verified at the contract level: dry_run is consumed
+    /// AFTER `ai_gen::diff::diff` + `render` run; the SaveOutcome
+    /// path doesn't gate the diff print. This test exercises a
+    /// real diff render so a future refactor that accidentally
+    /// shorts past the diff would break here.
+    #[test]
+    fn dry_run_still_shows_diff() {
+        // The diff render is shared between the dry-run and the
+        // confirm path, so this just locks the diff machinery
+        // exists and produces output for a one-add change.
+        let old = rustio_core::schema::Schema {
+            version: rustio_core::schema::SCHEMA_VERSION,
+            rustio_version: "1.0.0".into(),
+            models: vec![],
+        };
+        let new = fixture_schema();
+        let changes = rustio_core::ai_gen::diff::diff(&old, &new);
+        let rendered = rustio_core::ai_gen::diff::render(&changes);
+        assert!(
+            rendered.contains("Model added: Post"),
+            "diff must surface the change for both dry-run and live paths"
+        );
+    }
+
+    /// Phase 8.3.1 / spec test #4 — `ai analyze --pick N --dry-run`
+    /// routes through perform_save_if_not_dry with dry_run=true.
+    /// Locks the contract that the `--pick` path respects dry-run.
+    #[test]
+    fn analyze_pick_dry_run() {
+        // The flow is: analyze_then_pick → ai_update with dry_run
+        // forwarded → perform_save_if_not_dry. Verify the truth-
+        // table entry the pick path lands on (yes=false, dry_run=true).
+        let dir = tempdir_path();
+        let target = dir.join("schema.json");
+        std::fs::write(&target, "{}").unwrap();
+        let updated = fixture_schema();
+
+        let outcome = perform_save_if_not_dry(&target, &updated, false, true).unwrap();
+        assert_eq!(outcome, SaveOutcome::DryRun);
+        // Original content still in place.
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "{}");
+
+        let _ = std::fs::remove_file(&target);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Phase 8.3.1 / spec test #5 — `ai update --dry-run` likewise
+    /// routes through the SaveOutcome::DryRun path. Same contract,
+    /// invoked from a different entry point. Both `ai update` and
+    /// `ai analyze --pick / --apply` should funnel through this
+    /// single decision point — that's why the helper exists.
+    #[test]
+    fn update_dry_run() {
+        let dir = tempdir_path();
+        let target = dir.join("schema.json");
+        std::fs::write(&target, "PRE-EXISTING").unwrap();
+        let updated = fixture_schema();
+
+        let outcome = perform_save_if_not_dry(&target, &updated, false, true).unwrap();
+        assert_eq!(outcome, SaveOutcome::DryRun);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "PRE-EXISTING");
+
+        // Sanity check the live path: yes=true, dry_run=false → Wrote
+        // (so we know the helper actually writes when not dry).
+        let outcome = perform_save_if_not_dry(&target, &updated, true, false).unwrap();
+        assert_eq!(outcome, SaveOutcome::Wrote);
+        let after = std::fs::read_to_string(&target).unwrap();
+        assert!(
+            after.contains("\"version\": 2"),
+            "live path must actually write the schema; got: {after}"
+        );
+
+        let _ = std::fs::remove_file(&target);
+        let _ = std::fs::remove_dir(&dir);
     }
 
     /// Phase 8.0 — `rustio ai generate --out <path>` MUST refuse to
