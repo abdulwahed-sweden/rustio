@@ -647,13 +647,17 @@ pub(crate) async fn show_search(
     model: &str,
     req: &Request,
 ) -> Result<Response> {
-    let q = req.query().get("q").unwrap_or("").trim().to_string();
+    let raw = req.query().get("q").unwrap_or("").trim().to_string();
     // Empty query → return [] without hitting the DB. Saves a list()
     // round-trip when the front-end accidentally fires a 0-char
     // request (e.g. on initial focus).
-    if q.is_empty() {
+    if raw.is_empty() {
         return Ok(Response::json_raw("[]"));
     }
+    // Phase 7.6 — cap query length so a `?q=<10MB>` curl can't peg a
+    // worker. Helper lives in render so it shares its const + tests
+    // with the rest of the search machinery.
+    let q = render::truncate_query(&raw);
     let opts = render::search_options(&ctx.admin, &ctx.db, model, &q).await?;
     let body = serde_json::to_string(&opts)
         .map_err(|e| Error::Internal(format!("search response serialization failed: {e}")))?;

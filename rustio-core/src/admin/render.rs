@@ -1003,7 +1003,19 @@ pub(crate) async fn search_options(
     let Some(target) = target else {
         return Ok(Vec::new());
     };
-    let rows = target.ops.list(db).await?;
+    // Phase 7.6 — a transient DB blip during FK lookup must NOT 500
+    // the search endpoint. Swallow the error, log it, and return an
+    // empty result; the client falls back to the in-page truncated
+    // option set, which is still submittable.
+    let rows = match target.ops.list(db).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!(
+                "search_options: list({model}) failed, returning empty result: {e}"
+            );
+            return Ok(Vec::new());
+        }
+    };
     let display_idx = pick_display_index(target.fields, None);
     let opts: Vec<SelectOption> = rows
         .into_iter()
@@ -1019,6 +1031,16 @@ pub(crate) async fn search_options(
         })
         .collect();
     Ok(filter_options(opts, query, SEARCH_RESULT_LIMIT))
+}
+
+/// Phase 7.6 — cap a search query at `MAX_SEARCH_QUERY_CHARS` so a
+/// pathologically long `?q=` doesn't peg a worker. Slicing happens
+/// on char boundaries (not bytes) so multi-byte codepoints don't
+/// panic.
+pub(crate) const MAX_SEARCH_QUERY_CHARS: usize = 200;
+
+pub(crate) fn truncate_query(raw: &str) -> String {
+    raw.chars().take(MAX_SEARCH_QUERY_CHARS).collect()
 }
 
 /// Phase 7 — pick the index in `fields` whose name matches the
@@ -3230,5 +3252,88 @@ mod tests {
             body.contains(r#"href="/admin/posts/new""#),
             "empty-state CTA must link to /admin/<name>/new"
         );
+    }
+
+    /// Phase 7.6 — a transient DB blip during FK lookup must NOT 500
+    /// the search endpoint. Builds an Admin with one entry whose
+    /// `ops.list()` returns a synthetic Err and calls
+    /// `search_options`; asserts the function swallows the error and
+    /// returns an empty Vec. The endpoint stays callable; the client
+    /// falls back to its truncated in-page option set.
+    ///
+    /// `Db::for_testing_no_connection` builds a lazy pool that never
+    /// opens a real connection — `FailingOps::list` returns Err before
+    /// the db is dereferenced, so no network round-trip happens.
+    #[tokio::test]
+    async fn search_db_failure_safe() {
+        static AUTHOR_FIELDS: &[crate::admin::AdminField] = &[];
+        let mut admin = Admin::new();
+        admin
+            .entries
+            .push(crate::admin::types::AdminEntry::for_testing_failing_list(
+                "authors", "Authors", "Author", "authors", AUTHOR_FIELDS,
+            ));
+        let db = crate::orm::Db::for_testing_no_connection();
+
+        // FailingOps path: list() returns Err → search_options swallows
+        // → empty Vec.
+        let opts = search_options(&admin, &db, "Author", "alice")
+            .await
+            .expect("search_options must NOT bubble the list() Err");
+        assert!(
+            opts.is_empty(),
+            "FailingOps list() should fall through to empty Vec, got {n} options",
+            n = opts.len()
+        );
+
+        // Unknown-model fast path — early return at the top of
+        // `search_options`, never reaches list().
+        let opts = search_options(&admin, &db, "DoesNotExist", "alice")
+            .await
+            .expect("unknown model must NOT error");
+        assert!(opts.is_empty(), "unknown model should return empty Vec");
+    }
+
+    /// Phase 7.6 — a pathologically long query string (here 100KB)
+    /// must be truncated at MAX_SEARCH_QUERY_CHARS. Verifies the
+    /// helper is char-boundary-safe (multi-byte input doesn't panic)
+    /// and bounds the work `filter_options` would otherwise do on
+    /// an unbounded string.
+    #[test]
+    fn search_query_truncated() {
+        // ASCII path: 100,000 chars in, MAX_SEARCH_QUERY_CHARS chars
+        // out (`a` is 1 byte, so chars == bytes here).
+        let huge = "a".repeat(100_000);
+        let truncated = truncate_query(&huge);
+        assert_eq!(
+            truncated.chars().count(),
+            MAX_SEARCH_QUERY_CHARS,
+            "ASCII query must truncate to MAX_SEARCH_QUERY_CHARS chars"
+        );
+        assert_eq!(
+            truncated.len(),
+            MAX_SEARCH_QUERY_CHARS,
+            "ASCII path: byte count == char count"
+        );
+
+        // Multi-byte path: a 4-byte emoji repeated 1,000 times. Chars
+        // truncate at 200, bytes at 800. The slice must NOT panic on
+        // a non-char-boundary cut.
+        let emoji = "\u{1F600}".repeat(1_000); // grinning face emoji
+        let truncated = truncate_query(&emoji);
+        assert_eq!(
+            truncated.chars().count(),
+            MAX_SEARCH_QUERY_CHARS,
+            "multi-byte query must truncate by char count, not bytes"
+        );
+        assert_eq!(
+            truncated.len(),
+            MAX_SEARCH_QUERY_CHARS * 4,
+            "byte count = chars * UTF-8 width"
+        );
+
+        // Short queries pass through untouched.
+        assert_eq!(truncate_query("alice"), "alice");
+        assert_eq!(truncate_query(""), "");
     }
 }

@@ -66,6 +66,19 @@ impl From<sqlx::Error> for Error {
     fn from(e: sqlx::Error) -> Self {
         match e {
             sqlx::Error::RowNotFound => Error::NotFound("row not found".into()),
+            // Phase 7.6 — Postgres constraint violations (FK / unique
+            // / NOT NULL / check) are user-input bugs, not internal
+            // failures. Surface them as 409 Conflict so callers can
+            // distinguish "the user picked a bad value" from "the DB
+            // is on fire". `ConcreteOps::create / update` lift this
+            // back into a validation `Vec<String>` for the admin
+            // re-render path; non-admin callers see a clean 409.
+            sqlx::Error::Database(db_err) if db_err.constraint().is_some() => {
+                let constraint = db_err.constraint().unwrap_or("?").to_string();
+                Error::Conflict(format!(
+                    "constraint violation ({constraint}): {db_err}"
+                ))
+            }
             other => Error::Internal(format!("db error: {other}")),
         }
     }

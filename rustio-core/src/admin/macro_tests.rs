@@ -71,3 +71,109 @@ fn from_form_accepts_submission_without_auto_timestamps() {
         "updated_at should be defaulted to Utc::now()",
     );
 }
+
+// Phase 7.6 — fixture exercising every numeric / datetime arm of
+// `from_form` so the hardening tests below can hit each path. None of
+// these fields are FK-shaped (no `#[relation]`), but at the form-parse
+// layer that distinction doesn't exist — the rejection path is the
+// same whether the i64 is meant to be a count, a year, or a foreign
+// key id. `id` and the trailing timestamps round out the shape so the
+// derive emits.
+#[derive(Debug, RustioAdmin)]
+#[allow(dead_code)]
+pub struct HardeningFixture {
+    pub id: i64,
+    pub title: String,
+    pub author_id: i64,
+    pub edition: Option<i64>,
+    pub published_at: DateTime<Utc>,
+}
+
+/// Phase 7.6 — submitting `"abc"` to a required i64 field must
+/// surface a validation error, not silently coerce or panic. Pre-7.6
+/// already errored on the i64 path; this test pins it as a
+/// regression guard alongside the new optional path below.
+#[test]
+fn invalid_number_input() {
+    let form = FormData::from_urlencoded(
+        "title=hi&author_id=abc&edition=&published_at=2026-01-01T12:00",
+    );
+    let errs = HardeningFixture::from_form(&form)
+        .expect_err("from_form must reject invalid i64");
+    assert!(
+        errs.iter().any(|e| e.contains("Author Id") && e.contains("number")),
+        "expected an Author Id number error; got: {errs:?}"
+    );
+}
+
+/// Phase 7.6 — the headline fix: an *Optional* i64 with garbage input
+/// used to silently become None. It must now surface the same
+/// validation error as the required i64 path. Empty input still
+/// resolves to None (legitimate); only non-empty unparseable input
+/// errors.
+#[test]
+fn invalid_optional_number_input() {
+    // Garbage input → error.
+    let form = FormData::from_urlencoded(
+        "title=hi&author_id=1&edition=abc&published_at=2026-01-01T12:00",
+    );
+    let errs = HardeningFixture::from_form(&form)
+        .expect_err("from_form must reject garbage in Option<i64>");
+    assert!(
+        errs.iter().any(|e| e.contains("Edition") && e.contains("number")),
+        "expected an Edition number error; got: {errs:?}"
+    );
+
+    // Empty input → still None, no error (legitimate omission).
+    let form2 = FormData::from_urlencoded(
+        "title=hi&author_id=1&edition=&published_at=2026-01-01T12:00",
+    );
+    let model = HardeningFixture::from_form(&form2)
+        .expect("empty Option<i64> input should NOT error");
+    assert_eq!(model.edition, None);
+
+    // Missing field entirely → also None.
+    let form3 = FormData::from_urlencoded("title=hi&author_id=1&published_at=2026-01-01T12:00");
+    let model = HardeningFixture::from_form(&form3)
+        .expect("missing Option<i64> field should NOT error");
+    assert_eq!(model.edition, None);
+}
+
+/// Phase 7.6 — malformed datetime → "is not a valid date." validation
+/// error, not a panic. Pre-7.6 already handled this; pins the
+/// behaviour against future edits to the macro.
+#[test]
+fn invalid_datetime_input() {
+    let form = FormData::from_urlencoded(
+        "title=hi&author_id=1&edition=&published_at=tomorrow",
+    );
+    let errs = HardeningFixture::from_form(&form)
+        .expect_err("from_form must reject malformed datetime");
+    assert!(
+        errs.iter().any(|e| e.contains("Published At") && e.contains("not a valid date")),
+        "expected a Published At date error; got: {errs:?}"
+    );
+}
+
+/// Phase 7.6 — string fields trim leading/trailing whitespace AND
+/// treat trimmed-empty as missing. A `"   "` submission to a
+/// required String must error like an empty string would.
+#[test]
+fn whitespace_only_string_treated_as_empty() {
+    let form = FormData::from_urlencoded(
+        "title=%20%20%20&author_id=1&edition=&published_at=2026-01-01T12:00",
+    );
+    let errs = HardeningFixture::from_form(&form)
+        .expect_err("whitespace-only required String must trigger required error");
+    assert!(
+        errs.iter().any(|e| e.contains("Title") && e.contains("required")),
+        "expected a Title required error; got: {errs:?}"
+    );
+
+    // And the happy path: padded valid input is trimmed before save.
+    let form = FormData::from_urlencoded(
+        "title=%20%20hi%20%20&author_id=1&edition=&published_at=2026-01-01T12:00",
+    );
+    let model = HardeningFixture::from_form(&form).expect("trimmed String parses");
+    assert_eq!(model.title, "hi", "leading/trailing whitespace must be stripped");
+}

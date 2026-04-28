@@ -73,6 +73,25 @@ impl Db {
             .map(|_| ())
             .map_err(|e| Error::Internal(format!("health check: {e}")))
     }
+
+    /// Phase 7.6 — test-only constructor that yields a `Db` without
+    /// touching the network. Uses `connect_lazy_with` so the pool is
+    /// real but no connection is opened until something calls
+    /// `.acquire()`. Tests that exercise code paths NOT touching the
+    /// pool (e.g. `FailingOps::list` returning Err before the db is
+    /// dereferenced) can use this; tests that hit the DB still need
+    /// `RUSTIO_TEST_DB=1` and a real URL.
+    #[cfg(test)]
+    pub(crate) fn for_testing_no_connection() -> Self {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://test:test@127.0.0.1:1/never_used")
+            .expect("connect_lazy never fails on a syntactically valid URL");
+        Self {
+            pool,
+            cache: Arc::new(QueryCache::new(8)),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

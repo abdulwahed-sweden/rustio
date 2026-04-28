@@ -136,8 +136,12 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
 
         match kind {
             FieldKind::String => {
+                // Phase 7.6 — trim incoming whitespace so a `"   "`
+                // submission is treated as empty (and triggers the
+                // required-field error) instead of silently saving a
+                // whitespace-only string.
                 from_form_parses.push(quote! {
-                    let #fname = match form.get(#fname_str) {
+                    let #fname = match form.get(#fname_str).map(str::trim) {
                         Some(v) if !v.is_empty() => v.to_string(),
                         _ => { errors.push(#required_msg.to_string()); String::new() }
                     };
@@ -145,8 +149,13 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                 from_form_fields.push(quote! { #fname });
             }
             FieldKind::OptionalString => {
+                // Phase 7.6 — trim, then collapse trimmed-empty to None
+                // so the column stores NULL instead of `""`.
                 from_form_parses.push(quote! {
-                    let #fname: Option<String> = form.get(#fname_str).map(|s| s.to_string()).filter(|s| !s.is_empty());
+                    let #fname: Option<String> = form
+                        .get(#fname_str)
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty());
                 });
                 from_form_fields.push(quote! { #fname });
             }
@@ -169,8 +178,22 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                 from_form_fields.push(quote! { #fname });
             }
             FieldKind::OptionalI64 => {
+                // Phase 7.6 — distinguish "user left it blank" (None,
+                // legitimate) from "user typed garbage" (validation
+                // error, NOT silently dropped). Pre-7.6 used
+                // `.and_then(|v| v.parse().ok())` which collapsed both
+                // cases to None.
                 from_form_parses.push(quote! {
-                    let #fname: Option<i64> = form.get(#fname_str).and_then(|v| v.parse().ok());
+                    let #fname: Option<i64> = match form.get(#fname_str).map(str::trim) {
+                        None | Some("") => None,
+                        Some(raw) => match raw.parse::<i64>() {
+                            Ok(n) => Some(n),
+                            Err(_) => {
+                                errors.push(#number_msg.to_string());
+                                None
+                            }
+                        },
+                    };
                 });
                 from_form_fields.push(quote! { #fname });
             }

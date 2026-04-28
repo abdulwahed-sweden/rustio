@@ -363,10 +363,25 @@ where
     fn create<'a>(&'a self, db: &'a Db, form: &'a FormData) -> CreateResult<'a> {
         Box::pin(async move {
             match M::from_form(form) {
-                Ok(model) => {
-                    let id = crate::orm::create(db, &model).await?;
-                    Ok(Ok(id))
-                }
+                Ok(model) => match crate::orm::create(db, &model).await {
+                    Ok(id) => Ok(Ok(id)),
+                    // Phase 7.6 — `From<sqlx::Error>` (in error.rs)
+                    // routes Postgres constraint violations to
+                    // `Error::Conflict`. Catch it here so the user
+                    // sees a re-rendered form with an inline error
+                    // instead of a 500. The string is intentionally
+                    // generic — projects that want a per-field
+                    // message can validate before submit.
+                    Err(crate::error::Error::Conflict(msg)) => {
+                        log::warn!("create rejected by DB constraint: {msg}");
+                        Ok(Err(vec![
+                            "Invalid value or constraint violation. \
+                             Please check the highlighted fields and try again."
+                                .into(),
+                        ]))
+                    }
+                    Err(other) => Err(other),
+                },
                 Err(errs) => Ok(Err(errs)),
             }
         })
@@ -375,10 +390,18 @@ where
     fn update<'a>(&'a self, db: &'a Db, id: i64, form: &'a FormData) -> UpdateResult<'a> {
         Box::pin(async move {
             match M::from_form(form) {
-                Ok(model) => {
-                    crate::orm::update(db, id, &model).await?;
-                    Ok(Ok(()))
-                }
+                Ok(model) => match crate::orm::update(db, id, &model).await {
+                    Ok(()) => Ok(Ok(())),
+                    Err(crate::error::Error::Conflict(msg)) => {
+                        log::warn!("update rejected by DB constraint: {msg}");
+                        Ok(Err(vec![
+                            "Invalid value or constraint violation. \
+                             Please check the highlighted fields and try again."
+                                .into(),
+                        ]))
+                    }
+                    Err(other) => Err(other),
+                },
                 Err(errs) => Ok(Err(errs)),
             }
         })
@@ -613,6 +636,29 @@ impl AdminEntry {
             search_hook: None,
         }
     }
+
+    /// Phase 7.6 — variant of `for_testing` whose `ops.list()` returns
+    /// an `Err`. Lets tests exercise the resilience path in
+    /// `render::search_options` without spinning up Postgres.
+    #[cfg(test)]
+    pub(crate) fn for_testing_failing_list(
+        admin_name: &'static str,
+        display_name: &'static str,
+        singular_name: &'static str,
+        table: &'static str,
+        fields: &'static [AdminField],
+    ) -> Self {
+        Self {
+            admin_name,
+            display_name,
+            singular_name,
+            table,
+            fields,
+            core: false,
+            ops: Arc::new(FailingOps),
+            search_hook: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -661,5 +707,54 @@ impl AdminOps for PanicOps {
         _id: i64,
     ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
         Box::pin(async { unreachable!("{PANIC_MSG}") })
+    }
+}
+
+/// Phase 7.6 — test-only AdminOps whose `list()` returns a synthetic
+/// DB-shaped error. Used to exercise `search_options`'s catch-and-
+/// log-and-return-empty path; other methods stay unreachable since
+/// search only calls `list`.
+#[cfg(test)]
+struct FailingOps;
+
+#[cfg(test)]
+impl AdminOps for FailingOps {
+    fn list<'a>(
+        &'a self,
+        _db: &'a Db,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<ListRow>>> + Send + 'a>> {
+        Box::pin(async { Err(crate::error::Error::Internal("simulated db failure".into())) })
+    }
+
+    fn find_row<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<EditRow>>> + Send + 'a>> {
+        Box::pin(async { unreachable!("FailingOps only exercises list()") })
+    }
+
+    fn create<'a>(&'a self, _db: &'a Db, _form: &'a FormData) -> CreateResult<'a> {
+        Box::pin(async { unreachable!("FailingOps only exercises list()") })
+    }
+
+    fn update<'a>(&'a self, _db: &'a Db, _id: i64, _form: &'a FormData) -> UpdateResult<'a> {
+        Box::pin(async { unreachable!("FailingOps only exercises list()") })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async { unreachable!("FailingOps only exercises list()") })
+    }
+
+    fn object_label<'a>(
+        &'a self,
+        _db: &'a Db,
+        _id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
+        Box::pin(async { unreachable!("FailingOps only exercises list()") })
     }
 }
