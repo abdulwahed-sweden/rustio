@@ -98,6 +98,13 @@
                     aria-invalid="{% if field.errors %}true{% else %}false{% endif %}"
                     {% if field.errors %}aria-describedby="error_{{ field.name }}"{% endif %}
                 >
+                    {# Phase 10 — placeholder-as-first-option for
+                       relation selects so the empty state reads as a
+                       prompt instead of a blank line. Only emitted
+                       when the operator hasn't picked a value yet. #}
+                    {% if field.placeholder and not field.value %}
+                        <option value="" disabled selected hidden>{{ field.placeholder }}</option>
+                    {% endif %}
                     {% for opt in field.options %}
                         <option value="{{ opt.value }}"
                             {% if opt.value == field.value %}selected{% endif %}
@@ -106,6 +113,14 @@
                         </option>
                     {% endfor %}
                 </select>
+            {# Phase 10 — empty-options state for relation selects.
+               When the model has zero rows the searchable + has_more
+               machinery has nothing to filter; show the operator a
+               clear "No <Model> available" line so they don't think
+               the search box is broken. #}
+            {% if field.target_model and not field.options %}
+                <p class="form-help mt-xs">No {{ field.target_model }} available.</p>
+            {% endif %}
             {% if field.searchable %}
                 {% if field.has_more %}
                 <p class="form-help mt-xs">Showing first 50 results. Keep typing to filter.</p>

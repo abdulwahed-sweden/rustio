@@ -144,6 +144,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
             FormField {
                 name: "password",
@@ -165,6 +166,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
         ],
     }]
@@ -578,6 +580,13 @@ pub(crate) struct FormField {
     /// build a parallel `HashMap<String, Vec<String>>` while pushing
     /// global errors and pass it through `apply_field_errors`.
     pub errors: Vec<String>,
+    /// Phase 10 — display name of the target model for relation
+    /// fields. `Some("User")` when this field carries an
+    /// `AdminRelation`; `None` otherwise. The form template uses it
+    /// for the "Select <Model>…" placeholder and the
+    /// "No <Model> available" empty-options message. Mirrors
+    /// `search_url`'s relation-derived nature.
+    pub target_model: Option<String>,
 }
 
 /// Phase 6 — one logical group of fields on a form. `title: None`
@@ -674,31 +683,58 @@ pub(crate) fn form_ctx(
             //   - relation (FK / M2M): always searchable; has_more
             //     comes from the resolver's truncation flag.
             //   - other: no select, all defaults false.
-            let (options, multiple, searchable, has_more) = if let Some(values) = f.choices {
-                let mut opts: Vec<SelectOption> = Vec::with_capacity(values.len() + 1);
-                // Phase 7 / F4 — nullable enum fields prepend a leading
-                // empty option so the user can clear the selection back
-                // to NULL.
-                if f.field_type.nullable() {
-                    opts.push(SelectOption {
-                        value: String::new(),
-                        label: "—".to_string(),
-                    });
-                }
-                opts.extend(values.iter().map(|v| SelectOption {
-                    value: (*v).to_string(),
-                    label: (*v).to_string(),
-                }));
-                (Some(opts), false, false, false)
-            } else if let Some(rel) = &f.relation {
-                // Phase 7.2 — `(options, has_more)` from the resolver;
-                // missing entry or empty Vec → empty select. searchable
-                // is always true for relation-backed selects.
-                let (opts, has_more) = relation_options.get(f.name).cloned().unwrap_or_default();
-                (Some(opts), rel.multi, true, has_more)
-            } else {
-                (None, false, false, false)
-            };
+            let (mut options, multiple, mut searchable, mut has_more) =
+                if let Some(values) = f.choices {
+                    let mut opts: Vec<SelectOption> = Vec::with_capacity(values.len() + 1);
+                    // Phase 7 / F4 — nullable enum fields prepend a leading
+                    // empty option so the user can clear the selection back
+                    // to NULL.
+                    if f.field_type.nullable() {
+                        opts.push(SelectOption {
+                            value: String::new(),
+                            label: "—".to_string(),
+                        });
+                    }
+                    opts.extend(values.iter().map(|v| SelectOption {
+                        value: (*v).to_string(),
+                        label: (*v).to_string(),
+                    }));
+                    (Some(opts), false, false, false)
+                } else if let Some(rel) = &f.relation {
+                    // Phase 7.2 — `(options, has_more)` from the resolver;
+                    // missing entry or empty Vec → empty select. searchable
+                    // is always true for relation-backed selects.
+                    let (opts, has_more) =
+                        relation_options.get(f.name).cloned().unwrap_or_default();
+                    (Some(opts), rel.multi, true, has_more)
+                } else {
+                    (None, false, false, false)
+                };
+
+            // Phase 10 — synthesise a status select when no enum is
+            // declared. UI-only — the underlying field stays a String
+            // (no schema change). Triggers when:
+            //   - field.name == "status"
+            //   - no `choices` (closed enum list)
+            //   - no `relation` (would already be a select)
+            // The select is small + closed → not searchable, no
+            // truncation flag.
+            let mut widget = widget;
+            if f.name == "status" && options.is_none() {
+                options = Some(vec![
+                    SelectOption {
+                        value: "draft".to_string(),
+                        label: "draft".to_string(),
+                    },
+                    SelectOption {
+                        value: "published".to_string(),
+                        label: "published".to_string(),
+                    },
+                ]);
+                searchable = false;
+                has_more = false;
+                widget = "select";
+            }
             // Phase 6 — span hint. Long-text textareas span the full
             // grid (col-span-2); everything else takes one half.
             let span: u8 = if widget == "textarea" { 2 } else { 1 };
@@ -709,6 +745,18 @@ pub(crate) fn form_ctx(
                 .relation
                 .as_ref()
                 .map(|rel| format!("/admin/search/{}", rel.target_model));
+            // Phase 10 — relation fields gain a "Select <Model>…"
+            // placeholder so the empty-select state reads as a
+            // prompt, not a blank line. The template also uses the
+            // target_model below for the empty-options message
+            // ("No <Model> available"). For non-relation fields the
+            // placeholder + target_model come from `intelligence`.
+            let target_model = f.relation.as_ref().map(|rel| rel.target_model.to_string());
+            let placeholder = if let Some(rel) = &f.relation {
+                Some(format!("Select {}…", rel.target_model))
+            } else {
+                ui.placeholder
+            };
             FormField {
                 name: f.name,
                 label: ui.label,
@@ -716,7 +764,7 @@ pub(crate) fn form_ctx(
                 input_type,
                 value,
                 hint: ui.hint,
-                placeholder: ui.placeholder,
+                placeholder,
                 required,
                 options,
                 multiple,
@@ -737,6 +785,7 @@ pub(crate) fn form_ctx(
                 // Generic do_create / do_update pass an empty map, so
                 // every field on those paths starts with an empty Vec.
                 errors: field_errors.get(f.name).cloned().unwrap_or_default(),
+                target_model,
             }
         })
         .collect::<Vec<FormField>>();
@@ -808,16 +857,18 @@ fn group_fields_into_sections(fields: Vec<FormField>) -> Vec<FormSection> {
         }
     }
 
+    // Phase 10 — section rename: Default → "General", Metadata →
+    // "System". Advanced stays. Empty sections are still dropped.
     let mut sections: Vec<FormSection> = Vec::with_capacity(3);
     if !default_fields.is_empty() {
         sections.push(FormSection {
-            title: None,
+            title: Some("General"),
             fields: default_fields,
         });
     }
     if !metadata_fields.is_empty() {
         sections.push(FormSection {
-            title: Some("Metadata"),
+            title: Some("System"),
             fields: metadata_fields,
         });
     }
@@ -1343,6 +1394,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     has_more: false,
                     search_url: None,
                     errors: vec![],
+                    target_model: None,
                 },
                 FormField {
                     name: "password",
@@ -1367,6 +1419,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     has_more: false,
                     search_url: None,
                     errors: vec![],
+                    target_model: None,
                 },
             ],
         },
@@ -1395,6 +1448,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             }],
         },
     ]
@@ -1431,6 +1485,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
             FormField {
                 name: "description",
@@ -1452,6 +1507,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
         ],
     }]
@@ -1491,6 +1547,7 @@ pub(crate) fn user_edit_identity_sections(
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
             FormField {
                 name: "role",
@@ -1512,6 +1569,7 @@ pub(crate) fn user_edit_identity_sections(
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
             FormField {
                 name: "is_active",
@@ -1537,6 +1595,7 @@ pub(crate) fn user_edit_identity_sections(
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
         ],
     }]
@@ -1567,6 +1626,7 @@ pub(crate) fn user_edit_password_sections() -> Vec<FormSection> {
             has_more: false,
             search_url: None,
             errors: vec![],
+            target_model: None,
         }],
     }]
 }
@@ -1597,6 +1657,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
             FormField {
                 name: "new_password1",
@@ -1618,6 +1679,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
             FormField {
                 name: "new_password2",
@@ -1639,6 +1701,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 has_more: false,
                 search_url: None,
                 errors: vec![],
+                target_model: None,
             },
         ],
     }]
@@ -2654,7 +2717,9 @@ mod tests {
             HashMap::new(),
         );
 
-        // Expect three sections in fixed order: Default → Metadata → Advanced.
+        // Phase 10 — sections were renamed: Default → "General",
+        // Metadata → "System", Advanced unchanged. Order is still
+        // General → System → Advanced.
         assert_eq!(
             ctx.sections.len(),
             3,
@@ -2662,15 +2727,16 @@ mod tests {
             ctx_len = ctx.sections.iter().map(|s| s.title).collect::<Vec<_>>()
         );
         assert_eq!(
-            ctx.sections[0].title, None,
-            "first section is the untitled default bucket"
+            ctx.sections[0].title,
+            Some("General"),
+            "first section is the General (formerly default) bucket"
         );
         assert_eq!(ctx.sections[0].fields.len(), 1);
         assert_eq!(ctx.sections[0].fields[0].name, "title");
         assert_eq!(
             ctx.sections[1].title,
-            Some("Metadata"),
-            "second section is Metadata"
+            Some("System"),
+            "second section is System (formerly Metadata)"
         );
         assert_eq!(ctx.sections[1].fields.len(), 1);
         assert_eq!(ctx.sections[1].fields[0].name, "creation_timestamp");
@@ -3335,5 +3401,143 @@ mod tests {
         // Short queries pass through untouched.
         assert_eq!(truncate_query("alice"), "alice");
         assert_eq!(truncate_query(""), "");
+    }
+
+    // ----- Phase 10 — UX widget tests ----------------------------
+
+    /// Phase 10.A — `slug`-named String field gains the placeholder
+    /// "my-post-title" and the hint "URL-friendly identifier" via
+    /// `intelligence::field_ui_metadata`. Locks the name-based UI
+    /// override so it doesn't drift back to a role-classifier
+    /// default (which would emit no placeholder for a plain
+    /// `PlainText` slug).
+    #[test]
+    fn slug_field_has_placeholder_and_hint() {
+        static SLUG_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "slug",
+                label: "slug",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", SLUG_FIELDS, false);
+        let ident = fake_identity(Role::Administrator);
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let slug = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "slug")
+            .expect("slug field present");
+        assert_eq!(slug.placeholder.as_deref(), Some("my-post-title"));
+        assert_eq!(slug.hint.as_deref(), Some("URL-friendly identifier"));
+    }
+
+    /// Phase 10.B — a `status`-named String field with no `choices`
+    /// and no relation gets synthesised select options
+    /// `["draft", "published"]` and widget `"select"`. Schema is
+    /// unchanged (the underlying field stays `String`); this is a
+    /// pure UI hint.
+    #[test]
+    fn status_field_renders_select_with_synthesized_options() {
+        static STATUS_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "status",
+                label: "status",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry =
+            AdminEntry::for_testing("posts", "Posts", "Post", "posts", STATUS_FIELDS, false);
+        let ident = fake_identity(Role::Administrator);
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let status = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "status")
+            .expect("status field present");
+        assert_eq!(status.widget, "select");
+        let opts = status
+            .options
+            .as_ref()
+            .expect("status field has synthesised options");
+        let labels: Vec<&str> = opts.iter().map(|o| o.label.as_str()).collect();
+        assert_eq!(labels, vec!["draft", "published"]);
+    }
+
+    /// Phase 10.C — a relation field gains a "Select <Model>…"
+    /// placeholder and `target_model: Some("<Model>")` so the form
+    /// template can render the empty-options message
+    /// "No <Model> available". Locks the FK UX additions.
+    #[test]
+    fn fk_field_has_select_model_placeholder_and_target_model() {
+        static FK_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "author_id",
+                label: "author_id",
+                field_type: FieldType::I64,
+                editable: true,
+                relation: Some(crate::admin::AdminRelation {
+                    target_model: "User",
+                    display_field: Some("email"),
+                    multi: false,
+                }),
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FK_FIELDS, false);
+        let ident = fake_identity(Role::Administrator);
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "new",
+            None,
+            None,
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+            HashMap::new(),
+        );
+        let fk = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "author_id")
+            .expect("author_id field present");
+        assert_eq!(fk.placeholder.as_deref(), Some("Select User…"));
+        assert_eq!(fk.target_model.as_deref(), Some("User"));
     }
 }

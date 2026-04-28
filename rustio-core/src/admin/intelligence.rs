@@ -338,6 +338,15 @@ pub fn field_ui_metadata(f: &AdminField, context: Option<&ContextConfig>) -> Fie
         FieldRole::Id | FieldRole::Bool | FieldRole::NumericCount | FieldRole::PlainText => {}
     }
 
+    // Phase 10 — name-based UI hints applied AFTER role classification.
+    // These match the spec's literal field-name rules (`slug`,
+    // `status`); they override role-derived hints when the field name
+    // is unambiguous.
+    if f.name == "slug" {
+        placeholder = Some("my-post-title".into());
+        hint = Some("URL-friendly identifier".into());
+    }
+
     FieldUI {
         role,
         label,
