@@ -48,7 +48,7 @@ fences, no prose, no comments, no leading or trailing text.
    - relations: empty array []
 
 4. Every model MUST start with a primary-key field:
-   {{ \"name\": \"id\", \"type\": \"i64\", \"nullable\": false, \"editable\": true }}
+   {{ \"name\": \"id\", \"type\": \"i64\", \"nullable\": false, \"editable\": false }}
 
 5. Each field in `fields` MUST have:
    - name: snake_case identifier
@@ -138,7 +138,7 @@ fences, no prose, no comments, no leading or trailing text.
    - fields (array), relations (empty array []).
 
 4. Every model's first field MUST be:
-   {{ \"name\": \"id\", \"type\": \"i64\", \"nullable\": false, \"editable\": true }}
+   {{ \"name\": \"id\", \"type\": \"i64\", \"nullable\": false, \"editable\": false }}
 
 5. Field types MUST be one of [{valid_types}]. Do NOT invent types.
 
@@ -213,6 +213,12 @@ Rules:
 fields that violate RustIO conventions, broken patterns. Cite the \
 exact `Model.field` or `Model` in each line so the developer can \
 locate the problem.
+- SCHEMA SHAPE NOTE — DO NOT flag the following as an issue: every \
+`SchemaModel` has a top-level `relations: []` array that is \
+intentionally empty. The actual foreign-key metadata lives at the \
+field level (`field.relation`), and the per-field shape is the \
+authoritative source of truth. The empty `model.relations` array is \
+a reserved slot in the wire format, not a contradiction.
 - SUGGESTIONS are best-practice improvements: missing audit fields, \
 absent indexes, unclear naming, opportunities to introduce enums. \
 Be concrete. Cite specific models / fields.
