@@ -17,3 +17,5 @@
 # (so `cargo run` works without Node). `make css` regenerates it.
 node_modules/
 package-lock.json
+
+.env
