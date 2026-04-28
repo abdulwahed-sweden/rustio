@@ -231,6 +231,15 @@ enum AiAction {
         #[arg(long)]
         yes: bool,
     },
+    /// Phase 8.2 — read-only AI audit of a schema. Single LLM call.
+    /// Prints issues + suggestions + score; never writes to disk,
+    /// never modifies the schema, never invokes update/generate.
+    /// Distinct from `rustio ai review` (the deterministic plan
+    /// reviewer) by name on purpose.
+    Analyze {
+        /// Path to the schema JSON to analyze.
+        schema_file: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -262,6 +271,7 @@ fn main() -> ExitCode {
             AiAction::Update { schema_file, instruction, yes } => {
                 tokio_run(ai_update(schema_file, instruction, yes))
             }
+            AiAction::Analyze { schema_file } => tokio_run(ai_analyze(schema_file)),
         },
         Command::Schema { path } => print_schema(&path),
     };
@@ -695,6 +705,64 @@ fn confirm_save_changes() -> Result<bool, String> {
     io::stdin().read_line(&mut line).map_err(|e| e.to_string())?;
     let trimmed = line.trim().to_ascii_lowercase();
     Ok(matches!(trimmed.as_str(), "y" | "yes"))
+}
+
+// Phase 8.2 — `rustio ai analyze <schema.json>`.
+//
+// Reads the schema, calls `ai_gen::analyze`, prints issues +
+// suggestions + score. Read-only: never writes to disk, never
+// modifies the schema. Distinct from `rustio ai review`, which is
+// the deterministic plan-vs-schema reviewer from the rule-based
+// pipeline.
+async fn ai_analyze(schema_file: PathBuf) -> Result<(), String> {
+    let schema = load_schema(&schema_file)?;
+    eprintln!(
+        "✓ Reading {} ({} model{})",
+        schema_file.display(),
+        schema.models.len(),
+        if schema.models.len() == 1 { "" } else { "s" },
+    );
+    eprintln!("✓ Calling AI...");
+    eprintln!();
+
+    let report = rustio_core::ai_gen::analyze(&schema)
+        .await
+        .map_err(|e| e.to_string())?;
+    print_analyze_report(&report);
+    Ok(())
+}
+
+/// Phase 8.2 — render the analyze report to stderr. Skips empty
+/// sections so the output stays compact when the model has nothing
+/// to say in one bucket. Always prints the score (defaults to 0.0
+/// when the model omits it; the operator can read that as "score
+/// unknown" via the printed value).
+fn print_analyze_report(report: &rustio_core::ai_gen::AnalyzeReport) {
+    if !report.issues.is_empty() {
+        eprintln!("⚠ Issues:");
+        for i in &report.issues {
+            eprintln!("- {i}");
+        }
+        eprintln!();
+    }
+    if !report.suggestions.is_empty() {
+        eprintln!("💡 Suggestions:");
+        for s in &report.suggestions {
+            eprintln!("- {s}");
+        }
+        eprintln!();
+    }
+    eprintln!("Score: {} / 10", format_score(report.score));
+}
+
+/// Format the score as `<n>` if integral, `<n.n>` otherwise. Saves
+/// printing `8 / 10` as `8.0 / 10` when the model gave a clean int.
+fn format_score(score: f32) -> String {
+    if (score - score.round()).abs() < f32::EPSILON {
+        format!("{}", score as i32)
+    } else {
+        format!("{score:.1}")
+    }
 }
 
 #[cfg(test)]

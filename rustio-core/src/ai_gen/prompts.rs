@@ -178,6 +178,75 @@ Preserve every model and field that the change does not explicitly affect."
     )
 }
 
+/// Phase 8.2 — system prompt for the **analyze** path. Read-only: the
+/// model audits a schema and returns issues + suggestions + score in
+/// a structured-text format that the parser can split by section
+/// headers. NOT JSON because LLMs are inconsistent at producing valid
+/// JSON for free-text analyses (especially the score field — strict
+/// JSON requires a number, but models occasionally write `7.5/10` as
+/// a string and break the parse).
+pub fn system_prompt_analyze() -> String {
+    "You are RustIO's schema auditor. The user gives you an existing \
+`Schema` JSON document. Your job is to read it and return a short \
+written analysis. You DO NOT generate, modify, or rewrite the schema. \
+You DO NOT propose code. You DO NOT invent models or fields the \
+schema doesn't already declare.
+
+OUTPUT CONTRACT — read carefully:
+
+Reply with EXACTLY three sections, in this order, separated by blank \
+lines. Each section header is on its own line, followed by content.
+
+ISSUES:
+- one issue per line, prefixed with \"- \"
+- empty line OR \"(none)\" if no issues found
+
+SUGGESTIONS:
+- one suggestion per line, prefixed with \"- \"
+- empty line OR \"(none)\" if nothing to suggest
+
+SCORE: <number between 0 and 10, one decimal allowed, e.g. 7.5>
+
+Rules:
+
+- ISSUES are real problems: contradictions, missing relation targets, \
+fields that violate RustIO conventions, broken patterns. Cite the \
+exact `Model.field` or `Model` in each line so the developer can \
+locate the problem.
+- SUGGESTIONS are best-practice improvements: missing audit fields, \
+absent indexes, unclear naming, opportunities to introduce enums. \
+Be concrete. Cite specific models / fields.
+- SCORE reflects schema quality on the 0-10 scale: 10 = production-\
+ready, 5 = workable but rough, 0 = unusable.
+- DO NOT add a fourth section.
+- DO NOT use markdown fences or headings other than the three \
+section labels above.
+- DO NOT write commentary outside the three sections.
+- Be concise. Each issue / suggestion fits on one line; no \
+multi-paragraph explanations.
+
+If the schema looks empty or trivial, say so in ISSUES and give a \
+score below 5. If the schema is excellent, ISSUES can be \"(none)\" \
+and the score should be at or near 10.".to_string()
+}
+
+/// Phase 8.2 — wraps the schema JSON for the analyze path. Mirrors
+/// the closing-reminder pattern used by the generate / update prompts.
+pub fn build_user_analyze_prompt(existing_json: &str) -> String {
+    format!(
+        "Here is a schema:\n\
+<JSON>\n\
+{existing_json}\n\
+</JSON>\n\n\
+Analyze it and return:\n\
+1. Issues (errors or inconsistencies)\n\
+2. Suggestions (improvements or best practices)\n\
+3. Score (0-10)\n\n\
+Use the ISSUES / SUGGESTIONS / SCORE section format from the system \
+instructions. Do NOT modify, regenerate, or quote the schema back."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +341,42 @@ mod tests {
         assert!(
             p.contains("Preserve every model and field"),
             "closing reminder missing"
+        );
+    }
+
+    /// Phase 8.2 — the analyze system prompt's load-bearing pieces:
+    /// the read-only contract, the three-section output format, the
+    /// score range. Drift in any of these breaks the parser.
+    #[test]
+    fn analyze_system_prompt_carries_section_contract() {
+        let p = system_prompt_analyze();
+        assert!(
+            p.contains("DO NOT generate, modify, or rewrite the schema"),
+            "analyze prompt missing the read-only contract"
+        );
+        assert!(p.contains("ISSUES:"), "analyze prompt missing ISSUES header");
+        assert!(
+            p.contains("SUGGESTIONS:"),
+            "analyze prompt missing SUGGESTIONS header"
+        );
+        assert!(p.contains("SCORE:"), "analyze prompt missing SCORE header");
+        assert!(
+            p.contains("between 0 and 10"),
+            "analyze prompt missing score range"
+        );
+    }
+
+    /// Phase 8.2 — the user-analyze prompt embeds the schema verbatim
+    /// and re-states the section format at the closing position so
+    /// the model reads it last.
+    #[test]
+    fn user_analyze_prompt_includes_schema_and_format_reminder() {
+        let existing = r#"{"version":2,"models":[]}"#;
+        let p = build_user_analyze_prompt(existing);
+        assert!(p.contains(existing), "schema must be embedded verbatim");
+        assert!(
+            p.contains("ISSUES / SUGGESTIONS / SCORE"),
+            "analyze user prompt missing closing format reminder"
         );
     }
 }

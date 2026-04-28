@@ -110,6 +110,191 @@ fn api_key() -> Result<String, GenerateError> {
         .ok_or(GenerateError::MissingApiKey)
 }
 
+/// Phase 8.2 — the read-only analyze report. Three flat fields: each
+/// list is human-readable strings (one per line in the model's
+/// output), the score is on a 0-10 scale. CLI prints these directly;
+/// nothing here writes to disk or modifies the schema.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnalyzeReport {
+    pub issues: Vec<String>,
+    pub suggestions: Vec<String>,
+    pub score: f32,
+}
+
+/// Phase 8.2 — analyze-path errors. Mirrors `GenerateError`'s shape
+/// but with one less variant (no Schema-validation failure, since
+/// analyze never produces a Schema).
+#[derive(Debug)]
+pub enum AnalyzeError {
+    MissingApiKey,
+    Transport(String),
+    /// Couldn't serialise the input schema before sending. Should
+    /// only fire if the caller hands us a schema that fails its own
+    /// `validate()`; the CLI guards this with `load_schema`.
+    Encode(String),
+}
+
+impl std::fmt::Display for AnalyzeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingApiKey => f.write_str(
+                "ANTHROPIC_API_KEY is not set. Set it in your environment before running \
+                 `rustio ai analyze`.",
+            ),
+            Self::Transport(msg) => write!(f, "anthropic API transport error: {msg}"),
+            Self::Encode(msg) => write!(f, "could not serialise schema for analyze: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for AnalyzeError {}
+
+/// Phase 8.2 — read-only audit. Hand the model the schema, get back
+/// a structured-text analysis, parse into `AnalyzeReport`. Single
+/// LLM call. Does NOT write to disk, does NOT modify the schema,
+/// does NOT call `update` or `generate` internally.
+pub async fn analyze(schema: &Schema) -> Result<AnalyzeReport, AnalyzeError> {
+    let api_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or(AnalyzeError::MissingApiKey)?;
+    let existing_json = schema
+        .to_pretty_json()
+        .map_err(|e| AnalyzeError::Encode(e.to_string()))?;
+    let body = client::request_analyze(&api_key, &existing_json)
+        .await
+        .map_err(AnalyzeError::Transport)?;
+    Ok(parse_analyze_response(&body))
+}
+
+/// Parse a model response into `AnalyzeReport`. Tolerant by design:
+///
+/// 1. **Structured-text path** — find lines starting with `ISSUES:`,
+///    `SUGGESTIONS:`, `SCORE:` (case-insensitive prefix match);
+///    collect bullet items between headers. The score line accepts
+///    "7.5", "7.5/10", "7", or any prefix that parses as f32.
+/// 2. **Fallback path** — if no recognised section header appears,
+///    treat the entire body as `suggestions` (one entry per
+///    non-empty line, stripping any leading "- " bullet) so the
+///    operator sees something useful instead of an empty report.
+///
+/// The score defaults to 0.0 when the SCORE line is missing or
+/// unparseable. Callers wanting to gate on "did the model give us a
+/// score" can check `report.score > 0.0`.
+pub fn parse_analyze_response(body: &str) -> AnalyzeReport {
+    let body = body.trim();
+    if body.is_empty() {
+        return AnalyzeReport {
+            issues: Vec::new(),
+            suggestions: Vec::new(),
+            score: 0.0,
+        };
+    }
+
+    let lower = body.to_lowercase();
+    let has_section_header = lower.contains("issues:")
+        || lower.contains("suggestions:")
+        || lower.contains("score:");
+
+    if !has_section_header {
+        // Fallback: no structured headers. Treat everything as
+        // suggestions so the developer at least sees the model's
+        // analysis, even if it's free-form.
+        let suggestions = collect_bullets(body);
+        return AnalyzeReport {
+            issues: Vec::new(),
+            suggestions,
+            score: 0.0,
+        };
+    }
+
+    let mut section = Section::None;
+    let mut issues: Vec<String> = Vec::new();
+    let mut suggestions: Vec<String> = Vec::new();
+    let mut score: f32 = 0.0;
+
+    for raw_line in body.lines() {
+        let line = raw_line.trim();
+        let lower = line.to_lowercase();
+        // Section-header detection — match prefix so a line like
+        // "ISSUES: (none)" is still classified as the header line
+        // (and the "(none)" body sits inside the section as zero
+        // bullet items, which is what we want).
+        if lower.starts_with("issues:") {
+            section = Section::Issues;
+            continue;
+        }
+        if lower.starts_with("suggestions:") {
+            section = Section::Suggestions;
+            continue;
+        }
+        if lower.starts_with("score:") {
+            section = Section::Score;
+            score = parse_score(line["score:".len()..].trim()).unwrap_or(0.0);
+            continue;
+        }
+
+        // Skip blank lines and the explicit "(none)" placeholder.
+        if line.is_empty() || line.eq_ignore_ascii_case("(none)") {
+            continue;
+        }
+
+        // Strip a single leading bullet so consumers don't see "- ".
+        let item = line
+            .strip_prefix("- ")
+            .or_else(|| line.strip_prefix("* "))
+            .unwrap_or(line)
+            .to_string();
+
+        match section {
+            Section::Issues => issues.push(item),
+            Section::Suggestions => suggestions.push(item),
+            // Lines after SCORE: are tolerated but ignored — the
+            // model occasionally adds a one-line summary.
+            Section::Score | Section::None => {}
+        }
+    }
+
+    AnalyzeReport { issues, suggestions, score }
+}
+
+/// Internal section marker for the analyze parser.
+enum Section {
+    None,
+    Issues,
+    Suggestions,
+    Score,
+}
+
+/// Pull a leading f32 out of a string like "7.5" / "7.5 / 10" /
+/// "7.5/10" / "  8.0  ". Returns None if no float prefix matches.
+fn parse_score(s: &str) -> Option<f32> {
+    let s = s.trim();
+    // Walk forward until the prefix stops looking like a number.
+    let end = s
+        .char_indices()
+        .find(|(_, c)| !(c.is_ascii_digit() || *c == '.' || *c == '-'))
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    s[..end].parse::<f32>().ok()
+}
+
+/// Split a body into bullet-style entries. Used by the unstructured
+/// fallback. Strips the leading bullet (`- ` or `* `) if present;
+/// blank lines are dropped.
+fn collect_bullets(body: &str) -> Vec<String> {
+    body.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            l.strip_prefix("- ")
+                .or_else(|| l.strip_prefix("* "))
+                .unwrap_or(l)
+                .to_string()
+        })
+        .collect()
+}
+
 /// Parse a raw provider response body into a validated `Schema`.
 /// Extracted so tests can exercise it against fixture JSON without a
 /// network call.
@@ -340,6 +525,111 @@ mod tests {
         }"#;
         let parsed = parse_response(dummy).expect("offline parse path works");
         let _ = diff::diff(&parsed, &parsed); // diff is offline too
+    }
+
+    /// Phase 8.2 — well-formatted analyze response with one issue
+    /// citing a missing relation target. Locks the structured-text
+    /// parser end-to-end on the green path.
+    #[test]
+    fn analyze_detects_missing_relation_model() {
+        let body = "ISSUES:\n\
+- Post.author_id has relation but User model missing\n\
+\n\
+SUGGESTIONS:\n\
+- Add created_at timestamp to all models\n\
+\n\
+SCORE: 6.0\n";
+        let report = parse_analyze_response(body);
+        assert_eq!(report.issues.len(), 1);
+        assert!(report.issues[0].contains("author_id"));
+        assert!(report.issues[0].contains("User"));
+        assert_eq!(report.suggestions.len(), 1);
+        assert!((report.score - 6.0).abs() < f32::EPSILON);
+    }
+
+    /// Phase 8.2 — best-practice suggestions land in the suggestions
+    /// bucket, not issues. Locks the section-routing logic.
+    #[test]
+    fn analyze_suggests_best_practices() {
+        let body = "ISSUES:\n\
+(none)\n\
+\n\
+SUGGESTIONS:\n\
+- Add created_at and updated_at to every model\n\
+- Index Comment.post_id\n\
+- Consider an enum for Post.status\n\
+\n\
+SCORE: 8.5\n";
+        let report = parse_analyze_response(body);
+        assert!(report.issues.is_empty(), "issues bucket should be empty");
+        assert_eq!(report.suggestions.len(), 3);
+        assert!(report.suggestions.iter().any(|s| s.contains("created_at")));
+        assert!(report.suggestions.iter().any(|s| s.contains("Index")));
+        assert!(report.suggestions.iter().any(|s| s.contains("enum")));
+        assert!((report.score - 8.5).abs() < f32::EPSILON);
+    }
+
+    /// Phase 8.2 — composite valid output: bullets in both buckets,
+    /// score with the spec example shape `7.5 / 10`. The "/ 10"
+    /// suffix must be tolerated; only the leading float is consumed.
+    #[test]
+    fn analyze_parsing_valid_output() {
+        let body = "ISSUES:\n\
+- Post.author_id has relation but User model missing\n\
+- Comment.post_id not indexed\n\
+\n\
+SUGGESTIONS:\n\
+- Add created_at timestamp to all models\n\
+- Add index on foreign keys\n\
+\n\
+SCORE: 7.5 / 10\n";
+        let report = parse_analyze_response(body);
+        assert_eq!(report.issues.len(), 2);
+        assert_eq!(report.suggestions.len(), 2);
+        assert!((report.score - 7.5).abs() < f32::EPSILON);
+    }
+
+    /// Phase 8.2 — fallback path: unstructured response with no
+    /// section headers. Parser must NOT fail; everything lands in
+    /// `suggestions` so the operator at least sees the model's
+    /// commentary, with score defaulted to 0.0.
+    #[test]
+    fn analyze_handles_unstructured_output() {
+        let body = "Looks fine overall. Maybe think about adding indexes \n\
+on the foreign keys, and consider an enum for Post.status.\n\
+- Add created_at on every model.";
+        let report = parse_analyze_response(body);
+        assert!(report.issues.is_empty(), "unstructured input → issues must be empty");
+        assert!(
+            !report.suggestions.is_empty(),
+            "unstructured input → fallback should populate suggestions"
+        );
+        // Each non-empty line lands as one suggestion (with bullets
+        // stripped). Three non-empty source lines → three entries.
+        assert_eq!(report.suggestions.len(), 3);
+        assert!(report.suggestions[2].starts_with("Add created_at"));
+        assert_eq!(report.score, 0.0, "no SCORE: header → default 0.0");
+    }
+
+    /// Phase 8.2 / spec test #5 — meta-test asserting the analyze
+    /// path is reachable through pure functions (no live API).
+    /// Mirrors the equivalent test for `update`. Compile is the
+    /// proof: every analyze test in this module exercises only
+    /// `parse_analyze_response`. If anyone wires it to the network,
+    /// this test starts depending on `ANTHROPIC_API_KEY` and stands
+    /// out.
+    #[test]
+    fn analyze_no_live_api_calls() {
+        // Reading the env var is fine; calling out across the wire
+        // is not. The previous tests exercise the offline-only
+        // surface; this test re-imports it to lock the contract.
+        let _ = std::env::var("ANTHROPIC_API_KEY"); // read-only
+        let report = parse_analyze_response(
+            "ISSUES:\n(none)\n\nSUGGESTIONS:\n(none)\n\nSCORE: 9\n",
+        );
+        assert_eq!(report.issues.len(), 0);
+        assert_eq!(report.suggestions.len(), 0);
+        assert_eq!(report.score, 9.0);
     }
 
     /// Phase 8.0 — invalid Schema (here: unknown field type

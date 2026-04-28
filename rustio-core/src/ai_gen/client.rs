@@ -88,6 +88,19 @@ pub async fn request_update(
     .await
 }
 
+/// Phase 8.2 — sibling for the analyze (read-only) path. Output is
+/// structured plain text (ISSUES / SUGGESTIONS / SCORE), not JSON;
+/// the upper layer parses it. Wire contract is identical to the
+/// other two entry points.
+pub async fn request_analyze(api_key: &str, existing_json: &str) -> Result<String, String> {
+    send(
+        api_key,
+        prompts::system_prompt_analyze(),
+        prompts::build_user_analyze_prompt(existing_json),
+    )
+    .await
+}
+
 /// Shared HTTP plumbing for both `request` and `request_update`.
 /// Mirrors the original `request` body line-for-line; lifted here so
 /// the two callers stay narrow.
