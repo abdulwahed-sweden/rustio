@@ -857,12 +857,14 @@ fn group_fields_into_sections(fields: Vec<FormField>) -> Vec<FormSection> {
         }
     }
 
-    // Phase 10 — section rename: Default → "General", Metadata →
-    // "System". Advanced stays. Empty sections are still dropped.
+    // Phase 10 / 10.1 — section rename: Metadata → "System".
+    // Default section keeps no header (Phase 10's "General" rename
+    // was reverted in 10.1: visual noise on every form). Advanced
+    // stays. Empty sections are still dropped.
     let mut sections: Vec<FormSection> = Vec::with_capacity(3);
     if !default_fields.is_empty() {
         sections.push(FormSection {
-            title: Some("General"),
+            title: None,
             fields: default_fields,
         });
     }
@@ -2717,9 +2719,10 @@ mod tests {
             HashMap::new(),
         );
 
-        // Phase 10 — sections were renamed: Default → "General",
-        // Metadata → "System", Advanced unchanged. Order is still
-        // General → System → Advanced.
+        // Phase 10 / 10.1 — Metadata → "System" stays; the
+        // "General" rename of the default section was reverted in
+        // 10.1 (visual noise on every form). Default keeps no
+        // header; Advanced unchanged.
         assert_eq!(
             ctx.sections.len(),
             3,
@@ -2727,9 +2730,8 @@ mod tests {
             ctx_len = ctx.sections.iter().map(|s| s.title).collect::<Vec<_>>()
         );
         assert_eq!(
-            ctx.sections[0].title,
-            Some("General"),
-            "first section is the General (formerly default) bucket"
+            ctx.sections[0].title, None,
+            "first section is the default bucket — no header"
         );
         assert_eq!(ctx.sections[0].fields.len(), 1);
         assert_eq!(ctx.sections[0].fields[0].name, "title");
