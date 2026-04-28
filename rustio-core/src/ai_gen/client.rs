@@ -101,6 +101,21 @@ pub async fn request_analyze(api_key: &str, existing_json: &str) -> Result<Strin
     .await
 }
 
+/// Phase 8.4 — sibling for the explain-diff path. Takes BEFORE +
+/// AFTER schema JSON and returns the model's WHY / IMPACT text.
+pub async fn request_explain(
+    api_key: &str,
+    old_json: &str,
+    new_json: &str,
+) -> Result<String, String> {
+    send(
+        api_key,
+        prompts::system_prompt_explain(),
+        prompts::build_user_explain_prompt(old_json, new_json),
+    )
+    .await
+}
+
 /// Shared HTTP plumbing for both `request` and `request_update`.
 /// Mirrors the original `request` body line-for-line; lifted here so
 /// the two callers stay narrow.

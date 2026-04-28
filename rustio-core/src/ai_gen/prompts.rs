@@ -247,6 +247,79 @@ instructions. Do NOT modify, regenerate, or quote the schema back."
     )
 }
 
+/// Phase 8.4 — system prompt for the **explain-diff** path. The
+/// model receives the BEFORE + AFTER schemas and must explain ONLY
+/// what changed: the rationale (WHY) and the consequences (IMPACT).
+///
+/// Strict by design: no further suggestions, no invented features,
+/// no rewrites. The output is plain text in two sections so the
+/// parser can split deterministically; this is the same trade-off
+/// as `system_prompt_analyze` (LLMs are flaky at JSON for free-text
+/// content).
+pub fn system_prompt_explain() -> String {
+    "You are RustIO's diff narrator. The user gives you two schemas: a \
+BEFORE document and an AFTER document. Your job is to explain what \
+changed between them — and ONLY what changed.
+
+STRICT CONTRACT — read carefully:
+
+1. DO NOT invent features, models, or fields that aren't in the diff.
+2. DO NOT suggest further changes or improvements. Other commands \
+(`ai analyze`) handle suggestions.
+3. DO NOT echo or rewrite the schema. The user already has both.
+4. DO NOT comment on parts of the schema that did NOT change.
+5. Be concrete: cite the exact `Model` or `Model.field` each line \
+talks about.
+6. Be concise: one sentence per bullet, no multi-paragraph prose.
+
+OUTPUT CONTRACT:
+
+Reply with EXACTLY two sections, in this order, separated by a blank \
+line. Each section header is on its own line, followed by bullet \
+items.
+
+WHY:
+- one line per reason; explain why this change improves the schema
+- empty section OR \"(none)\" is acceptable when nothing meaningful \
+can be said
+
+IMPACT:
+- one line per consequence; data-model implications (new tables, \
+new joins, FK additions, nullability shifts, etc.)
+- empty section OR \"(none)\" is acceptable
+
+Rules:
+
+- Bullet lines start with \"- \" or \"* \".
+- DO NOT use markdown fences or headings other than the two section \
+labels above.
+- DO NOT add a third section.
+- DO NOT write commentary outside the two sections.
+
+If the diff is empty (BEFORE == AFTER), say so in WHY with one line \
+and leave IMPACT as \"(none)\".".to_string()
+}
+
+/// Phase 8.4 — wraps the BEFORE + AFTER schemas for the explain
+/// path. The closing reminder repeats the no-suggestions rule —
+/// load-bearing because models often slip into "and you might also
+/// want..." territory unprompted.
+pub fn build_user_explain_prompt(old_json: &str, new_json: &str) -> String {
+    format!(
+        "Here are the BEFORE and AFTER schemas. Explain ONLY what changed.\n\n\
+BEFORE:\n\
+<JSON>\n\
+{old_json}\n\
+</JSON>\n\n\
+AFTER:\n\
+<JSON>\n\
+{new_json}\n\
+</JSON>\n\n\
+Use the WHY / IMPACT section format. Do NOT suggest further changes. \
+Do NOT comment on unchanged parts. One sentence per bullet."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +450,47 @@ mod tests {
         assert!(
             p.contains("ISSUES / SUGGESTIONS / SCORE"),
             "analyze user prompt missing closing format reminder"
+        );
+    }
+
+    /// Phase 8.4 — explain system prompt's load-bearing pieces:
+    /// the explain-only-what-changed rule, the WHY/IMPACT format,
+    /// and the no-suggestions rule (so the LLM doesn't drift into
+    /// recommending further changes the user didn't ask for).
+    #[test]
+    fn explain_system_prompt_carries_strict_contract() {
+        let p = system_prompt_explain();
+        assert!(
+            p.contains("ONLY what changed"),
+            "explain prompt missing the only-what-changed rule"
+        );
+        assert!(
+            p.contains("DO NOT suggest further changes"),
+            "explain prompt missing no-suggestions rule"
+        );
+        assert!(
+            p.contains("DO NOT invent features"),
+            "explain prompt missing no-inventing rule"
+        );
+        assert!(p.contains("WHY:"), "explain prompt missing WHY header");
+        assert!(p.contains("IMPACT:"), "explain prompt missing IMPACT header");
+    }
+
+    /// Phase 8.4 — the user-explain prompt embeds BOTH schemas with
+    /// clear BEFORE / AFTER labels and re-states the no-suggestions
+    /// rule at the closing position the model reads last.
+    #[test]
+    fn user_explain_prompt_includes_both_schemas_and_reminder() {
+        let old = r#"{"models":[{"name":"Post"}]}"#;
+        let new = r#"{"models":[{"name":"Post"},{"name":"Tag"}]}"#;
+        let p = build_user_explain_prompt(old, new);
+        assert!(p.contains("BEFORE:"), "must label the before schema");
+        assert!(p.contains("AFTER:"), "must label the after schema");
+        assert!(p.contains(old), "before schema embedded verbatim");
+        assert!(p.contains(new), "after schema embedded verbatim");
+        assert!(
+            p.contains("Do NOT suggest further changes"),
+            "closing reminder missing"
         );
     }
 }

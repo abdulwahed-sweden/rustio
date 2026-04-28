@@ -295,6 +295,142 @@ fn collect_bullets(body: &str) -> Vec<String> {
         .collect()
 }
 
+/// Phase 8.4 — the explain-diff report. Two parallel bullet lists.
+/// Empty `why` AND empty `impact` is a legitimate result for an
+/// empty diff (BEFORE == AFTER); the CLI prints "(none)" in that
+/// case rather than nothing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExplainReport {
+    pub why: Vec<String>,
+    pub impact: Vec<String>,
+}
+
+/// Phase 8.4 — explain-path errors. Mirrors the analyze shape; no
+/// Schema-validation failure variant because explain doesn't
+/// produce a Schema.
+#[derive(Debug)]
+pub enum ExplainError {
+    MissingApiKey,
+    Transport(String),
+    /// Couldn't serialise one of the input schemas before sending.
+    Encode(String),
+}
+
+impl std::fmt::Display for ExplainError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingApiKey => f.write_str(
+                "ANTHROPIC_API_KEY is not set. Set it in your environment before requesting \
+                 an explanation.",
+            ),
+            Self::Transport(msg) => write!(f, "anthropic API transport error: {msg}"),
+            Self::Encode(msg) => write!(f, "could not serialise schema for explain: {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for ExplainError {}
+
+/// Phase 8.4 — narrate a diff between two schemas with one extra
+/// LLM call. Receives the `api_key` directly (rather than reading
+/// it from the env like `generate` / `update` / `analyze`) so the
+/// caller can short-circuit when the flag is off without ever
+/// touching the env. The CLI's `--explain` gate hands this in.
+///
+/// MAX 1 LLM call. NEVER mutates either schema. NEVER recurses
+/// (no follow-up calls based on the response).
+pub async fn explain_diff(
+    old: &Schema,
+    new: &Schema,
+    api_key: &str,
+) -> Result<ExplainReport, ExplainError> {
+    if api_key.trim().is_empty() {
+        return Err(ExplainError::MissingApiKey);
+    }
+    let old_json = old
+        .to_pretty_json()
+        .map_err(|e| ExplainError::Encode(e.to_string()))?;
+    let new_json = new
+        .to_pretty_json()
+        .map_err(|e| ExplainError::Encode(e.to_string()))?;
+    let body = client::request_explain(api_key, &old_json, &new_json)
+        .await
+        .map_err(ExplainError::Transport)?;
+    Ok(parse_explain_response(&body))
+}
+
+/// Parse a model response into `ExplainReport`. Same tolerance
+/// strategy as `parse_analyze_response`:
+///
+/// 1. **Structured-text path** — find lines starting with `WHY:` /
+///    `IMPACT:` (case-insensitive prefix match); collect bullets
+///    between them. The "(none)" placeholder is honoured.
+/// 2. **Fallback** — if no recognised section header appears,
+///    treat the entire body as `why` so the operator at least
+///    sees the model's commentary, with `impact` empty.
+pub fn parse_explain_response(body: &str) -> ExplainReport {
+    let body = body.trim();
+    if body.is_empty() {
+        return ExplainReport { why: Vec::new(), impact: Vec::new() };
+    }
+
+    let lower = body.to_lowercase();
+    let has_section_header = lower.contains("why:") || lower.contains("impact:");
+    if !has_section_header {
+        return ExplainReport { why: collect_bullets(body), impact: Vec::new() };
+    }
+
+    let mut section = ExplainSection::None;
+    let mut why: Vec<String> = Vec::new();
+    let mut impact: Vec<String> = Vec::new();
+
+    for raw_line in body.lines() {
+        let line = raw_line.trim();
+        let lower = line.to_lowercase();
+
+        if lower.starts_with("why:") {
+            section = ExplainSection::Why;
+            continue;
+        }
+        if lower.starts_with("impact:") {
+            section = ExplainSection::Impact;
+            continue;
+        }
+
+        if line.is_empty() || line.eq_ignore_ascii_case("(none)") {
+            continue;
+        }
+
+        // Inside a section, only bullet-shaped lines (`- ` / `* `)
+        // count as items. A non-bullet line ENDS the section; the
+        // line itself is dropped (the system prompt forbids
+        // commentary outside the two sections, so anything else is
+        // the model breaking contract). This is the load-bearing
+        // rule that makes `explain_ignores_extra_text` pass.
+        let bullet = line
+            .strip_prefix("- ")
+            .or_else(|| line.strip_prefix("* "));
+
+        match (&section, bullet) {
+            (ExplainSection::Why, Some(item)) => why.push(item.to_string()),
+            (ExplainSection::Impact, Some(item)) => impact.push(item.to_string()),
+            (ExplainSection::Why | ExplainSection::Impact, None) => {
+                section = ExplainSection::None;
+            }
+            (ExplainSection::None, _) => {}
+        }
+    }
+
+    ExplainReport { why, impact }
+}
+
+/// Internal section marker for the explain parser.
+enum ExplainSection {
+    None,
+    Why,
+    Impact,
+}
+
 /// Parse a raw provider response body into a validated `Schema`.
 /// Extracted so tests can exercise it against fixture JSON without a
 /// network call.
@@ -630,6 +766,102 @@ on the foreign keys, and consider an enum for Post.status.\n\
         assert_eq!(report.issues.len(), 0);
         assert_eq!(report.suggestions.len(), 0);
         assert_eq!(report.score, 9.0);
+    }
+
+    // ----- Phase 8.4 — explain-diff parser tests -----------------
+
+    /// Phase 8.4 / spec test #1 — green path: well-formatted
+    /// response with both sections + bullets. Locks the contract
+    /// that the parser splits the buckets correctly and strips
+    /// "- " bullets.
+    #[test]
+    fn explain_parses_valid_response() {
+        let body = "WHY:\n\
+- Tags allow flexible categorization of posts\n\
+- Decoupling from rigid categories\n\
+\n\
+IMPACT:\n\
+- Adds new table (Tag)\n\
+- Introduces many-to-many relationship\n";
+        let report = parse_explain_response(body);
+        assert_eq!(report.why.len(), 2);
+        assert!(report.why[0].starts_with("Tags allow"));
+        assert!(report.why[1].starts_with("Decoupling"));
+        assert_eq!(report.impact.len(), 2);
+        assert!(report.impact[0].starts_with("Adds new table"));
+        assert!(report.impact[1].starts_with("Introduces"));
+    }
+
+    /// Phase 8.4 / spec test #2 — IMPACT section omitted entirely
+    /// must not panic; missing section yields an empty bucket.
+    /// Symmetrical: WHY omitted does the same.
+    #[test]
+    fn explain_handles_missing_sections() {
+        // IMPACT only.
+        let body = "IMPACT:\n- Adds Tag table\n";
+        let report = parse_explain_response(body);
+        assert!(report.why.is_empty(), "WHY missing → empty bucket");
+        assert_eq!(report.impact.len(), 1);
+
+        // WHY only.
+        let body = "WHY:\n- Tags help categorize\n";
+        let report = parse_explain_response(body);
+        assert_eq!(report.why.len(), 1);
+        assert!(report.impact.is_empty(), "IMPACT missing → empty bucket");
+
+        // Both sections present but explicitly "(none)".
+        let body = "WHY:\n(none)\n\nIMPACT:\n(none)\n";
+        let report = parse_explain_response(body);
+        assert!(report.why.is_empty());
+        assert!(report.impact.is_empty());
+    }
+
+    /// Phase 8.4 / spec test #3 — extra commentary outside the two
+    /// section labels must be dropped, not folded into either
+    /// bucket. The spec forbids extra sections, but real models
+    /// occasionally add a closing line; the parser tolerates it.
+    #[test]
+    fn explain_ignores_extra_text() {
+        let body = "WHY:\n\
+- Improves categorization\n\
+\n\
+IMPACT:\n\
+- New table\n\
+\n\
+This concludes the explanation. Hope it helps!\n";
+        let report = parse_explain_response(body);
+        assert_eq!(report.why.len(), 1);
+        assert_eq!(report.impact.len(), 1);
+        assert!(report.impact[0].starts_with("New table"));
+        // Trailing prose must NOT land in either bucket.
+        assert!(
+            !report.impact.iter().any(|l| l.contains("This concludes")),
+            "trailing commentary leaked into impact: {:?}",
+            report.impact
+        );
+        assert!(
+            !report.why.iter().any(|l| l.contains("This concludes")),
+            "trailing commentary leaked into why: {:?}",
+            report.why
+        );
+    }
+
+    /// Phase 8.4 — fallback path: unstructured response (no WHY: /
+    /// IMPACT: headers). The whole body becomes `why`, `impact`
+    /// stays empty. Operator still sees the model's commentary.
+    #[test]
+    fn explain_fallback_treats_unstructured_as_why() {
+        let body = "Tags help categorize posts.\n\
+- New table is added.\n\
+- Many-to-many relationship is introduced.";
+        let report = parse_explain_response(body);
+        assert!(
+            report.impact.is_empty(),
+            "no headers → impact must be empty"
+        );
+        assert_eq!(report.why.len(), 3);
+        assert_eq!(report.why[0], "Tags help categorize posts.");
+        assert_eq!(report.why[1], "New table is added.");
     }
 
     /// Phase 8.0 — invalid Schema (here: unknown field type
