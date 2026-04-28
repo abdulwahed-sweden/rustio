@@ -78,7 +78,14 @@ files (plus four test siblings), each with one responsibility:
   input_type), `resolve_relation_options` (async, FK/M2M rows from
   `AdminOps::list`, capped at `FK_OPTIONS_LIMIT = 50`), and the
   search helpers `search_options` / `filter_options` powering the
-  `/admin/search/:model` endpoint. No HTTP, no HTML strings in Rust.
+  `/admin/search/:model` endpoint. **Phase 7.5** added
+  `FormField.errors: Vec<String>`, the `field_errors` parameter on
+  `form_ctx`, and the `apply_field_errors` walker that lets bespoke
+  validators populate per-field error messages without changing
+  AdminOps. **Phase 7.6** added `truncate_query` (200-char
+  char-boundary-safe cap) and lifted the search resilience path
+  (transient `list()` errors swallowed, return empty Vec). No HTTP,
+  no HTML strings in Rust.
 - `handlers.rs` — one `async fn` per generic admin action
   (list/new/create/edit/update/delete + login/logout/password-change
   + `show_search` for the FK lookup endpoint). No URL knowledge.
@@ -201,6 +208,42 @@ primitives can land without breaking them.
 **Safety Guarantees** (Phase 9.1):
 - AI-generated updates are validated and cannot produce empty schemas.
 - All mutations require explicit confirmation or `--yes` flag.
+
+## The ai_gen layer (Phases 8.0 → 9.1)
+
+A separate, opt-in module — `rustio-core/src/ai_gen/` — that
+provides LLM-assisted schema authoring **as a developer CLI tool**.
+Strictly distinct from the rule-based `ai/` pipeline above:
+
+- The deployed binary serving HTTP has no path into `ai_gen`. The
+  HTTP handlers in `admin/handlers.rs` never call into it.
+- `ai_gen` is reachable only through the `rustio` CLI subcommands
+  `generate / update / analyze` (run from a developer's shell).
+- LLM call count is bounded per command: 0 (plain analyze
+  short-circuit), 1 (generate / update / `--apply`), 2 (`--pick`
+  analyze+update, or update+explain), 3 (`--pick` + `--explain`).
+  Never recursive.
+
+Files:
+
+- `mod.rs` — entry points (`generate / update / analyze /
+  explain_diff`), `parse_response` family, error types, the
+  `check_not_empty` empty-schema safety guard added in Phase 9.1.
+- `client.rs` — Anthropic Messages API client (reqwest, ~1 POST
+  per call). Reads `ANTHROPIC_API_KEY` env. Configurable provider
+  base URL + model via `ANTHROPIC_API_BASE` / `RUSTIO_AI_MODEL`.
+- `prompts.rs` — system + user templates for each path.
+  Schema-version pin + allowed-type list are derived from
+  `schema.rs` constants so the prompt cannot drift from the
+  validator.
+- `diff.rs` — minimal schema-diff (`Change` enum + `diff` + `render`)
+  used by the CLI to render changes before y/N confirm.
+
+Output of every path flows through validation (`Schema::validate`
+for generate/update; tolerant text parser with section-header
+detection for analyze/explain). The CLI owns file I/O, the
+`--dry-run` decision, and the y/N confirmation; the library layer
+is I/O-free.
 
 ## Templates
 

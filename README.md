@@ -1,12 +1,20 @@
 # RustIO
 
+[![release](https://img.shields.io/badge/release-v1.1.1-brightgreen)](https://github.com/abdulwahed-sweden/rustio/releases/tag/v1.1.1)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://www.rust-lang.org)
+[![schema](https://img.shields.io/badge/schema-v2-informational)](docs/architecture.md)
+[![tests](https://img.shields.io/badge/tests-402_passing-success)](#running-the-test-suite)
+
 A production-grade, strict-by-construction web framework for Rust.
 
 Write a model struct, derive `RustioAdmin`, and you get the admin UI,
 HTTP server, Postgres ORM, migrations, full-text search, sessions, and
-granular permissions — without writing the glue.
+granular permissions — without writing the glue. Optional developer
+AI tooling on top: generate / update / analyze schemas in plain
+English, then run the deterministic plan / review / apply pipeline.
 
-## What's in 1.0
+## What's in 1.x
 
 | Layer | Implementation |
 |---|---|
@@ -47,12 +55,13 @@ cargo run
 Two modes:
 
 ```bash
-# Default: pure unit tests, no infrastructure needed
+# Sandbox: pure unit tests, no infrastructure needed.
+# 388 (rustio-core) + 14 (rustio-cli) = 402 passing as of v1.1.1.
 cargo test --workspace
 
-# Integration suite — needs `docker compose up -d` (postgres on
-# rustio_dev). Override the URL via RUSTIO_TEST_DATABASE_URL if
-# your local Postgres lives somewhere else.
+# Integration suite — 41 PG-gated tests. Needs `docker compose up
+# -d` (postgres on rustio_dev). Override the URL via
+# RUSTIO_TEST_DATABASE_URL if your local Postgres lives elsewhere.
 RUSTIO_TEST_DB=1 cargo test --workspace -- --ignored
 ```
 
@@ -218,12 +227,13 @@ Every command that talks to the DB takes `--db` or reads `DATABASE_URL`.
 ## Architecture
 
 ```
-rustio-core/                          ~14,700 LOC, 348 sandbox + 41 PG-gated tests
+rustio-core/                          ~31,700 LOC, 388 sandbox + 41 PG-gated tests
 ├── src/
 │   ├── admin/        types / render / handlers / routes / builtin /
 │   │                 audit / relations / intelligence / suggestions /
 │   │                 entry_builder / icons (16 lucide stroke icons)
-│   ├── ai/           planner, reviewer, executor (deterministic)
+│   ├── ai/           rule-based planner, reviewer, executor (deterministic)
+│   ├── ai_gen/       LLM client + prompts + diff (developer-tool only)
 │   ├── auth/         users, sessions, permissions (split files)
 │   ├── middleware/   logger, csrf, rate_limit, gzip, security
 │   ├── search/       Meilisearch client + async indexer
@@ -232,7 +242,7 @@ rustio-core/                          ~14,700 LOC, 348 sandbox + 41 PG-gated tes
 │   ├── server.rs     hyper glue + graceful shutdown
 │   └── ...
 └── assets/
-    ├── templates/    24 admin templates (22 pages + 2 includes)
+    ├── templates/    21 admin templates (19 pages + 2 includes)
     ├── css/          input.css — Tailwind source (authored)
     └── static/
         ├── css/      admin.css — minified Tailwind output (generated, ~65KB)
@@ -242,7 +252,7 @@ rustio-core/                          ~14,700 LOC, 348 sandbox + 41 PG-gated tes
 rustio-macros/                        ~400 LOC
 └── src/lib.rs        #[derive(RustioAdmin)]
 
-rustio-cli/                           ~600 LOC
+rustio-cli/                           ~900 LOC, 14 tests
 └── src/main.rs       the `rustio` binary
 
 examples/blog/                        ~150 LOC
@@ -251,7 +261,55 @@ examples/blog/                        ~150 LOC
 
 See `docs/architecture.md` for the longer version, `docs/brand.md`
 for the visual brand spec, and `docs/phases/` for the per-phase
-chronology.
+chronology. `CHANGELOG.md` rolls release-level highlights.
+
+## AI tooling (developer-only)
+
+Optional LLM-assisted schema authoring. Set `ANTHROPIC_API_KEY` and
+run any of:
+
+```bash
+# Prose → validated Schema JSON. Validated by `Schema::validate()`
+# before write; refuses to overwrite existing files without --force.
+rustio ai generate "blog system with posts, users, comments" --out schema.json
+
+# Evolve a schema: single LLM call, diff against current, y/N confirm.
+# Preserve-by-default — existing models / fields / types never silently
+# change. v1.1.1 hard-rejects results that empty the schema.
+rustio ai update schema.json "add tags and post status"
+
+# Read-only audit: issues + suggestions + score (0–10).
+rustio ai analyze schema.json
+
+# Bridge analyze → update without retyping the suggestion.
+rustio ai analyze schema.json --pick 1
+rustio ai analyze schema.json --apply "add user roles"
+
+# Preview / explain flags work on any mutating flow.
+rustio ai update schema.json "add tags" --dry-run
+rustio ai update schema.json "add tags" --explain
+```
+
+LLM exposure is strictly developer-tool: the deployed `rustio`
+binary serving HTTP has no path into `ai_gen`. The deterministic
+`plan / review / apply` pipeline runs separately and uses no LLM
+at any stage.
+
+**Safety:**
+- AI updates will refuse destructive operations that result in empty schemas.
+- Use `--dry-run` to preview changes safely.
+- Use `--yes` on `ai update` / `ai analyze --apply` / `--pick` for
+  scripted flows; `--dry-run` always wins over `--yes`.
+
+## Releases
+
+| Tag | Scope |
+|---|---|
+| `v1.0-admin` | Admin system through Phase 7.6 (production hardening) |
+| `v1.1-ai` | + AI developer tooling (generate / update / analyze / explain, Phases 8.0–8.4) |
+| `v1.1.1` | + AI safety hardening (Phase 9.1) |
+
+See `CHANGELOG.md` for per-release notes.
 
 ## Design principles (unchanged from 0.9)
 
@@ -267,10 +325,17 @@ chronology.
    No React, no SPA, no JS framework — just plain server-rendered
    HTML with ~30 lines of inline JS for the sidebar drawer and search
    keyboard shortcut.
-4. **Deterministic AI.** The planner is rule-based. No LLM at runtime.
+4. **Deterministic AI at runtime, opt-in LLM at build time.** The
+   `plan / review / apply` pipeline is rule-based and runs inside
+   the deployed binary — no LLM ever. The Phase 8 `ai_gen` layer
+   (`generate / update / analyze / explain`) is a developer CLI
+   tool that runs only when you invoke it; the deployed binary
+   has no path into it.
 5. **Strict by construction.** The AI's `Primitive` enum is
    `#[non_exhaustive]` + `deny_unknown_fields`. Destructive
-   operations refuse without `--yes`.
+   operations refuse without `--yes`. v1.1.1 adds a hard guard
+   that refuses any `ai update` result that would empty a
+   non-empty schema — no bypass flag.
 
 ## License
 

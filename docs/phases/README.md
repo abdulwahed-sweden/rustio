@@ -21,18 +21,33 @@ rule).
 | `PHASE7a-2.md` | 7a/2 | Admin redesign — Tailwind build pipeline + sidebar + Inter + lucide icons (5 commits) |
 | `PHASE1-ux.md` | 1 (UX) | Admin UX stabilization — auto timestamps, form polish, empty states |
 
-The next chronological block — Phases 2 (design system foundation),
-3 (token migration sweep, six sub-phases), 4 (UI consistency polish),
-5 (a/c/d — dynamic list + smart field-to-UI mapping + enum/relation
-selects), 6 (layout intelligence), 6.2 (unify bespoke forms onto
-`FormField`), 7 (audit fixes), 7.1 (real FK / M2M data), 7.2
-(searchable + truncated FK selects), 7.3 (remote-search endpoint) —
-ships **without** a separate `PHASE*.md` per sub-phase. Each
-sub-phase's commit message is the authoritative report; `git log
---oneline` is the index. `CHANGELOG.md`'s Unreleased section rolls
-the headlines up.
+Phases 2 → 9.1 ship **without** a separate `PHASE*.md` per
+sub-phase. Each sub-phase's commit message is the authoritative
+report; `git log --oneline` is the index. `CHANGELOG.md` rolls the
+headlines up under release tags. The chronology:
 
-Read the latest dedicated report (`PHASE7a-2.md`) plus the Unreleased
-CHANGELOG entry for the current state of the framework. Earlier
-reports stay accurate as a record of how the codebase got to where
-it is, not as live documentation of how it behaves now.
+| Block | Phases | Commits | Release |
+|---|---|---|---|
+| Design system foundation | 2 (foundation, fonts, theme alias) | 3 | v1.0-admin |
+| Token migration sweep | 3 (a / b-0 / b / c / d / e / f) | 7 | v1.0-admin |
+| UI consistency polish | 4 | 1 | v1.0-admin |
+| Dynamic UI | 5 (a / c / d) | 3 | v1.0-admin |
+| Layout intelligence | 6, 6.2 | 2 | v1.0-admin |
+| Audit fixes + FK data | 7, 7.1, 7.2, 7.3 | 4 | v1.0-admin |
+| Inline errors + a11y | 7.5 (Path A folds 7.4 plumbing) | 1 | v1.0-admin |
+| Production hardening | 7.6 | 1 | v1.0-admin |
+| AI generator | 8.0 | 1 | v1.1-ai |
+| AI updater | 8.1 | 1 | v1.1-ai |
+| AI analyzer | 8.2 | 1 | v1.1-ai |
+| Analyze ↔ update bridge | 8.3, 8.3.1, 8.4 | 3 | v1.1-ai |
+| AI safety hardening | 9.1 | 1 | v1.1.1 |
+
+Phase 9.0 was a real-world validation run (no commit; produced the
+findings that drove 9.1). Phase 7.4 was paused at the audit stage;
+its plumbing folded into 7.5/Path A.
+
+Read the latest dedicated report (`PHASE7a-2.md`) plus the
+appropriate `CHANGELOG.md` release section for the current state of
+the framework. Earlier reports stay accurate as a record of how the
+codebase got to where it is, not as live documentation of how it
+behaves now.

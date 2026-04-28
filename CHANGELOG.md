@@ -25,12 +25,78 @@ Tests: `update_refuses_empty_result` (rustio-core, exercises the full
 truth table), `analyze_yes_skips_confirmation` (rustio-cli, pins the
 `SaveOutcome` mapping). 388 + 14 passing.
 
-## Unreleased — Admin redesign + dynamic form layer
+## v1.1-ai — AI Developer Tooling (Phases 8.0–8.4)
+
+Optional `rustio ai ...` CLI surface for LLM-assisted schema
+authoring. Strictly developer-tool: the deployed binary serving
+HTTP has no path into the LLM client. Single-call-per-command
+discipline; the deterministic `plan / review / apply` pipeline
+runs separately.
+
+### Added
+
+- **`rustio ai generate`** (Phase 8.0). Prose → validated `Schema`
+  JSON. New module `rustio-core/src/ai_gen/` with `mod.rs` (entry
+  + `parse_response` + fence-strip), `client.rs` (Anthropic
+  Messages API via reqwest), `prompts.rs` (system + user
+  templates derived from `SCHEMA_VERSION` and `VALID_TYPE_NAMES`).
+  Output validated through `Schema::validate()` before write.
+  CLI refuses to overwrite without `--force`.
+- **`rustio ai update`** (Phase 8.1). Single LLM call to evolve a
+  schema with a free-form instruction. Diff vs current,
+  interactive y/N (or `--yes`), atomic write. PRESERVE-BY-DEFAULT
+  prompt contract enforced by 5 NEVER rules. New `diff` submodule
+  renders human-readable change lines (model add/remove, field
+  add/remove, relation churn). Empty diff yields `(no changes)`.
+- **`rustio ai analyze`** (Phase 8.2). Read-only audit: structured
+  text response (ISSUES / SUGGESTIONS / SCORE) parsed into
+  `AnalyzeReport`. Tolerant parser: case-insensitive section
+  headers, bullet-stripping, `(none)` placeholder, full-text
+  fallback when no headers found.
+- **`ai analyze --pick N` / `--apply <instruction>`** (Phase 8.3).
+  Bridge analyze → update without retyping. `--pick` runs analyze
+  + extracts suggestion #N + hands it to update (max 2 LLM calls).
+  `--apply` skips analyze, routes straight to update (1 LLM call).
+  Mutually exclusive at the clap parser layer.
+- **`--dry-run`** (Phase 8.3.1) on `ai update`,
+  `ai analyze --pick / --apply`. Runs the full LLM flow + diff
+  print but skips the y/N confirmation and never writes.
+  `SaveOutcome::DryRun` is the single decision point that all
+  save paths funnel through. Defense in depth: `--dry-run` wins
+  over `--yes`.
+- **`--explain`** (Phase 8.4) on `ai update`,
+  `ai analyze --pick / --apply`. ONE additional LLM call after
+  the diff to narrate `Why` + `Impact`. Strict prompt contract:
+  no inventing, no further suggestions, no echoing the schema.
+  Tolerant section-header parser; bullets-only inside sections so
+  trailing prose is dropped.
+
+### Constraints (preserved)
+
+- AdminOps trait, FormData shape, handler signatures, routes,
+  templates: all byte-identical surfaces from v1.0-admin.
+- Existing rule-based `ai/` pipeline (plan / review / apply):
+  untouched.
+- LLM call cap per command: 0 (plain analyze), 1 (generate /
+  update / `--apply`), 2 (`--pick` analyze + update; or
+  update + explain), 3 (`--pick` + `--explain`). Never recursive.
+
+### Verification snapshot (v1.1-ai)
+
+```
+cargo test --workspace                    387 (core) + 13 (cli) passed; 41 ignored
+cargo clippy --workspace --all-targets    clean
+make css-check                            clean
+```
+
+## v1.0-admin — Production Admin (Phases 0–7.6)
 
 Post-1.0 work on the admin surface: a design-system pass, a
-schema-driven form-rendering layer, foreign-key navigation, and a
-Tailwind build pipeline. The single-binary deploy invariant is
-preserved — admin.css and Inter woff2 are still `include_str!`-baked.
+schema-driven form-rendering layer, foreign-key navigation, a
+Tailwind build pipeline, inline-error UX + keyboard a11y, and
+production-readiness hardening. The single-binary deploy invariant
+is preserved — admin.css and Inter woff2 are still
+`include_str!`-baked.
 
 ### Added
 
@@ -101,6 +167,32 @@ preserved — admin.css and Inter woff2 are still `include_str!`-baked.
   `application/json` (`[{value, label}, ...]` capped at 20). With
   JS enabled the search input fetches against this endpoint; with
   JS disabled the truncated 50-row plain `<select>` still works.
+- **Inline field errors + keyboard / a11y / power UX** (Phase 7.5,
+  Path A). `FormField.errors: Vec<String>` plus a
+  `field_errors: HashMap<String, Vec<String>>` parameter on
+  `form_ctx`; bespoke validators (user_new / user_edit /
+  group_new / password_change) push errors into a parallel
+  field-keyed map alongside the global Vec, then `apply_field_errors`
+  walks the sections and attaches them per FormField. Template
+  renders `<p id="error_<name>">` blocks with `aria-invalid` and
+  `aria-describedby` wired correctly. Plus 200ms FK search
+  debounce, loading + empty hints, ArrowDown→select, Enter→blur,
+  auto-select on focus, table arrow nav, double-submit guard,
+  global keyboard shortcuts (`/` focus, Cmd/Ctrl+S submit, Esc →
+  `data-cancel` anchor), `:focus-visible` ring, sticky submit row,
+  inline checkbox layout.
+- **Production hardening** (Phase 7.6). `OptionalI64` no longer
+  silently swallows garbage input — empty stays None, non-empty
+  unparseable surfaces a validation error. String fields trim
+  whitespace; whitespace-only required input triggers the
+  required-field error. Postgres constraint violations (FK,
+  UNIQUE) lifted from `Error::Internal` (→ 500) to `Error::Conflict`
+  (→ 409) inside `From<sqlx::Error>`; `ConcreteOps::create / update`
+  catch the lifted Conflict and convert to a validation-error
+  `Vec<String>` so the form re-renders with an inline message
+  instead of crashing the request. `search_options` swallows
+  transient DB errors with `log::warn`. `show_search` caps the
+  query at 200 chars (UTF-8 char-boundary safe).
 - **Granular role ladder** (Phase 7a/0.5). The previous Admin / Staff
   / User trio expanded to a five-rung linear ladder: `User < Staff
   < Supervisor < Administrator < Developer`. `Administrator` and
@@ -142,10 +234,10 @@ preserved — admin.css and Inter woff2 are still `include_str!`-baked.
 - **Dead `error.html` + `.cancel-link` rule** (Phase 0
   stabilization).
 
-### Verification snapshot (end of Phase 7.3)
+### Verification snapshot (end of v1.0-admin / Phase 7.6)
 
 ```
-cargo test --workspace --lib              348 passed; 0 failed; 41 ignored
+cargo test --workspace --lib              359 passed; 0 failed; 41 ignored
 cargo clippy --workspace --all-targets    clean
 make css-check                            clean
 ```
