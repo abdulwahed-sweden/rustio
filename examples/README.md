@@ -24,6 +24,10 @@ migrations, seeds the default admin, and serves the admin UI at
 
 Read its `README.md` for the full wiring.
 
+Cross-cutting rules — derived fields, money handling, status
+conventions, audit responsibility, and multi-tenancy — are defined
+in `CONVENTIONS.md`.
+
 ## Real-world systems
 
 | #  | Example                            | Complexity    | Domain                                                                                                            |
