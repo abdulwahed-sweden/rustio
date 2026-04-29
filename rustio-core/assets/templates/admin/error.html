@@ -1,0 +1,34 @@
+{% extends "admin/base.html" %}
+
+{% block bodyclass %}error{% endblock %}
+
+{% block breadcrumbs %}
+{% if identity %}
+<div class="breadcrumbs">
+    <a href="/admin">Home</a> &rsaquo; {{ heading }}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+{# Phase 11.B — generic admin error page. Reuses the `forbidden-page`
+   layout class (already locked by admin/forbidden.html) so no new CSS
+   utilities are introduced. Status + heading + message come from the
+   middleware that traps `Err` for `/admin/*` paths; the dashboard
+   link only renders when the user is signed in. #}
+<div class="forbidden-page">
+    <span class="hero-icon hero-icon-lg hero-icon-danger mx-auto mb-3">
+        {{ icon("circle-x", class="w-6 h-6") }}
+    </span>
+    <h1>{{ status }} &mdash; {{ heading }}</h1>
+    <p class="text-text-muted mt-sm">{{ message }}</p>
+
+    {% if identity %}
+    <div class="mt-lg">
+        <a href="/admin" class="btn-ghost">
+            {{ icon("arrow-left", class="w-4 h-4") }} Return to dashboard
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

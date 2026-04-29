@@ -18,6 +18,7 @@ use super::audit::AdminAction;
 use super::types::{Admin, AdminEntry, AdminField, EditRow, ListRow};
 use crate::auth::Identity;
 use crate::error::Result;
+use crate::http::FormData;
 use crate::orm::Db;
 
 #[derive(Serialize)]
@@ -115,6 +116,11 @@ pub(crate) struct LoginCtx {
     /// the shared `_form_field.html` include. Page chrome (card,
     /// hidden sidebar/breadcrumbs) stays bespoke.
     pub sections: Vec<FormSection>,
+    /// Phase 11.B — contextual notice rendered above the card via the
+    /// shared `messagelist` block in `base.html`. Currently used for the
+    /// post-logout confirmation ("You've been signed out."). `kind` maps
+    /// to the existing `.message-success` / `.message-info` styles.
+    pub flash: Option<FlashCtx>,
 }
 
 /// Phase 6.2 — pre-built FormField list for the login form. Static
@@ -599,6 +605,68 @@ pub(crate) struct FormSection {
     pub fields: Vec<FormField>,
 }
 
+/// Snake-case → Title Case ("priority" → "Priority", "is_active" → "Is active").
+///
+/// Mirrors `rustio_macros::humanise_field` byte-for-byte. The macro emits
+/// validation messages prefixed with this transformed label
+/// (`"Title is required."`); `bucket_errors_by_label` reverses the mapping
+/// at runtime to route flat errors to their owning field. The two copies
+/// must stay in sync — if you edit one, edit both.
+fn humanise_field(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut next_upper = true;
+    for ch in s.chars() {
+        if ch == '_' {
+            out.push(' ');
+            next_upper = true;
+        } else if next_upper {
+            out.push(ch.to_ascii_uppercase());
+            next_upper = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Split a flat `Vec<String>` from `AdminOps::create / update` into a
+/// global vec + a per-field map by prefix-matching against each editable
+/// field's humanised label (see `humanise_field`).
+///
+/// **Brittle by design.** This depends on `rustio-macros` emitting messages
+/// of the form `"<HumanisedLabel> ..."` (currently `is required.`,
+/// `must be a number.`, `is not a valid date.`). If the macro ever changes
+/// that wording, unmatched errors fall through to the global vec — the
+/// banner still shows them; only the inline / aria attribution is lost.
+/// No crash, no wrong field. Don't tighten this into a hard contract.
+pub(crate) fn bucket_errors_by_label(
+    entry: &AdminEntry,
+    errors: Vec<String>,
+) -> (Vec<String>, HashMap<String, Vec<String>>) {
+    // Pre-compute "<Label> " once per editable field. The trailing space
+    // disambiguates `Title ` from `Title bar ` — `"Title bar is required."`
+    // must not match a field named `title`.
+    let labels: Vec<(&'static str, String)> = entry
+        .fields
+        .iter()
+        .filter(|f| f.editable)
+        .map(|f| (f.name, format!("{} ", humanise_field(f.name))))
+        .collect();
+
+    let mut global: Vec<String> = Vec::new();
+    let mut per_field: HashMap<String, Vec<String>> = HashMap::new();
+    'outer: for err in errors {
+        for (name, prefix) in &labels {
+            if err.starts_with(prefix.as_str()) {
+                per_field.entry((*name).to_string()).or_default().push(err);
+                continue 'outer;
+            }
+        }
+        global.push(err);
+    }
+    (global, per_field)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn form_ctx(
     identity: &Identity,
@@ -617,25 +685,37 @@ pub(crate) fn form_ctx(
     relation_options: HashMap<&'static str, (Vec<SelectOption>, bool)>,
     // Phase 7.5 — per-field validation errors keyed by field name.
     // Populated by bespoke validators that already know which field a
-    // given error belongs to. The generic AdminEntry path (this fn's
-    // primary caller, `do_create` / `do_update`) passes `HashMap::new()`
-    // because `AdminOps::create / update` returns flat `Vec<String>`;
-    // those errors stay in the global block above.
+    // given error belongs to. The generic AdminEntry path
+    // (`do_create` / `do_update`) builds this map by parsing the flat
+    // `Vec<String>` from `AdminOps::create / update` against each
+    // field's humanised label (see `bucket_errors_by_label`).
     field_errors: HashMap<String, Vec<String>>,
+    // When re-rendering a form after a failed submit, the user's
+    // posted values must repopulate the inputs. `Some(form)` makes the
+    // submitted value the source of truth for every field (no fallback
+    // to `existing`); `None` keeps the original behaviour (read from
+    // `existing`). HTML omits unchecked checkboxes, so the no-fallback
+    // semantics are required for booleans to render unchecked when the
+    // user unchecked them.
+    submitted: Option<&FormData>,
 ) -> FormCtx {
     let fields = entry
         .fields
         .iter()
         .filter(|f| f.editable)
         .map(|f| {
-            let value = existing
-                .and_then(|row| {
-                    row.values
-                        .iter()
-                        .find(|(col, _)| col == f.name)
-                        .map(|(_, v)| v.clone())
-                })
-                .unwrap_or_default();
+            let value = if let Some(form) = submitted {
+                form.get(f.name).map(str::to_string).unwrap_or_default()
+            } else {
+                existing
+                    .and_then(|row| {
+                        row.values
+                            .iter()
+                            .find(|(col, _)| col == f.name)
+                            .map(|(_, v)| v.clone())
+                    })
+                    .unwrap_or_default()
+            };
             // Phase 6a: pass None to the classifier (ContextConfig
             // integration deferred to Phase 7).
             let ui = super::intelligence::field_ui_metadata(f, None);
@@ -1299,6 +1379,75 @@ pub(crate) struct ForbiddenCtx {
 /// Build the 403 response body. Free function (not on `AdminCtx`)
 /// so the unit tests can render the page with just `Templates` +
 /// `Admin` — no `Db` required.
+/// Phase 11.B — context for the generic `admin/error.html` page.
+/// Carries the same `BaseContext` as every admin page so the topbar,
+/// sidebar, and footer render consistently. `identity` is `None` on
+/// the unauthenticated path (the template guards both the dashboard
+/// link and the sidebar with `{% if identity %}`).
+#[derive(Serialize)]
+pub(crate) struct ErrorCtx {
+    #[serde(flatten)]
+    pub base: BaseContext,
+    pub page_title: String,
+    pub status: u16,
+    pub heading: String,
+    pub message: String,
+}
+
+/// Phase 11.B — short heading per HTTP status. Falls back to a neutral
+/// "Error" for anything we don't have a copy for. Kept as a single-line
+/// fn (not a const map) so the compiler inlines the &'static-str
+/// branches.
+pub(crate) fn admin_error_heading(status: u16) -> &'static str {
+    match status {
+        400 => "Bad request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
+        404 => "Not found",
+        405 => "Method not allowed",
+        409 => "Conflict",
+        500 => "Server error",
+        _ => "Error",
+    }
+}
+
+/// Phase 11.B — render the styled HTML error response for an admin
+/// path. The middleware that wires this in (`register_admin_routes`)
+/// already filters for `/admin/*` requests, so this fn doesn't
+/// double-check the path. `identity` is optional because some errors
+/// (e.g. an unrouted path under `/admin/foo`) reach the middleware
+/// without a session attached.
+pub(crate) fn render_admin_error_response(
+    admin: &Admin,
+    templates: &crate::templates::Templates,
+    identity: Option<&Identity>,
+    status: u16,
+    message: String,
+) -> crate::http::Response {
+    let heading = admin_error_heading(status).to_string();
+    let view = ErrorCtx {
+        base: BaseContext::new(identity, String::new(), admin),
+        page_title: format!("{status} {heading}"),
+        status,
+        heading: heading.clone(),
+        message,
+    };
+    let html_status = hyper::StatusCode::from_u16(status)
+        .unwrap_or(hyper::StatusCode::INTERNAL_SERVER_ERROR);
+    match templates.render("admin/error.html", &view) {
+        Ok(body) => crate::http::Response::html(body).with_status(html_status),
+        // Render failure (e.g. project overrode the template with broken
+        // syntax) — degrade to plain text so the client still sees the
+        // original status and a useful message. Logged so an operator
+        // can find the underlying template error.
+        Err(e) => {
+            log::error!("admin/error.html render failed: {e}");
+            crate::http::Response::text(format!("{status} {heading}: {}", view.message))
+                .with_status(html_status)
+        }
+    }
+}
+
 pub(crate) fn render_forbidden_body(
     admin: &Admin,
     templates: &crate::templates::Templates,
@@ -1710,19 +1859,10 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
 }
 
 // ---------------------------------------------------------------------------
-// Error page (orphan render — no live caller in NEW; Phase 9 may add a 5xx
-// handler that renders this. Kept Django-shape for design consistency.)
+// (Phase 11.B replaces the orphan ErrorCtx scaffold that lived here. The
+// live struct + render fn are now defined alongside `render_forbidden_body`
+// above and wired in via the admin routes' error middleware.)
 // ---------------------------------------------------------------------------
-
-#[derive(Serialize)]
-#[allow(dead_code)]
-pub(crate) struct ErrorCtx {
-    #[serde(flatten)]
-    pub base: BaseContext,
-    pub status_code: u16,
-    pub status_message: String,
-    pub details: String,
-}
 
 #[cfg(test)]
 mod tests {
@@ -1863,6 +2003,7 @@ mod tests {
             "csrf".into(),
             relation_options,
             HashMap::new(),
+            None,
         );
 
         // Locate the author_id field in the resolved sections — it
@@ -2010,6 +2151,7 @@ mod tests {
             "csrf".into(),
             relation_options,
             HashMap::new(),
+            None,
         );
 
         let author = ctx
@@ -2102,6 +2244,7 @@ mod tests {
             "csrf".into(),
             relation_options,
             HashMap::new(),
+            None,
         );
 
         let author_field = ctx
@@ -2209,6 +2352,7 @@ mod tests {
             "csrf".into(),
             relation_options,
             HashMap::new(),
+            None,
         );
         let templates = Templates::new(None).expect("embedded templates");
         let body = templates
@@ -2251,6 +2395,7 @@ mod tests {
             "csrf".into(),
             HashMap::new(),
             HashMap::new(),
+            None,
         );
         let author_field = ctx
             .sections
@@ -2297,6 +2442,62 @@ mod tests {
         }
     }
 
+    /// Phase 11.B — post-logout confirmation. After `do_logout`
+    /// redirects to `/admin/login?logout=1`, `show_login` populates
+    /// `LoginCtx.flash` with a success message; base.html's shared
+    /// flash block surfaces it above the sign-in card. Asserts both
+    /// the template-side rendering and the with-flash-empty path.
+    #[test]
+    fn login_renders_post_logout_banner_when_flash_present() {
+        let admin = Admin::new();
+        let templates = Templates::new(None).expect("embedded templates");
+
+        // With flash → banner renders, the message and the success
+        // class are both in the body.
+        let with_flash = LoginCtx {
+            base: BaseContext::new(None, "fake-csrf".into(), &admin),
+            error: None,
+            sections: login_form_sections(),
+            flash: Some(FlashCtx {
+                kind: "success",
+                message: "You've been signed out.".to_string(),
+            }),
+        };
+        let body = templates
+            .render("admin/login.html", &with_flash)
+            .expect("login renders with flash");
+        // Auto-escape rewrites the apostrophe (`'` → `&#39;`), so assert
+        // on the apostrophe-free fragment that survives both encodings.
+        assert!(
+            body.contains("been signed out."),
+            "post-logout message must be in the rendered body — got snippet: {}",
+            &body[..body.len().min(400)]
+        );
+        assert!(
+            body.contains("message-success"),
+            "flash must use the success kind class"
+        );
+
+        // Without flash → no banner, no leftover styling artefacts.
+        let bare = LoginCtx {
+            base: BaseContext::new(None, "fake-csrf".into(), &admin),
+            error: None,
+            sections: login_form_sections(),
+            flash: None,
+        };
+        let body = templates
+            .render("admin/login.html", &bare)
+            .expect("login renders without flash");
+        assert!(
+            !body.contains("been signed out."),
+            "no flash → no leftover post-logout copy"
+        );
+        assert!(
+            !body.contains("message-success"),
+            "no flash → no message-success class"
+        );
+    }
+
     #[test]
     fn render_forbidden_body_with_required_role() {
         let admin = Admin::new();
@@ -2324,6 +2525,65 @@ mod tests {
         assert!(
             body.contains("test@example.com"),
             "user-tools email missing"
+        );
+    }
+
+    /// Phase 11.B — `admin/error.html` renders the status, heading, and
+    /// message; the dashboard return-link is conditional on identity
+    /// (signed-in users see it, the unauthenticated path doesn't).
+    /// Locks the (file, registry, render-test) triple for the new
+    /// admin error page.
+    #[test]
+    fn admin_error_page_renders_with_status_and_heading() {
+        let admin = Admin::new();
+        let templates = Templates::new(None).expect("embedded templates");
+
+        // Unauthenticated path — no Identity, no dashboard link.
+        let resp = render_admin_error_response(
+            &admin,
+            &templates,
+            None,
+            404,
+            "no admin model: blogs".into(),
+        );
+        assert_eq!(resp.status, hyper::StatusCode::NOT_FOUND);
+        let ct = resp
+            .headers
+            .iter()
+            .find(|(k, _)| k == "content-type")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("");
+        assert!(
+            ct.starts_with("text/html"),
+            "content-type must be HTML, got {ct:?}"
+        );
+        let body = std::str::from_utf8(&resp.body).expect("utf8 body");
+        assert!(body.contains("404"), "status code missing in body");
+        assert!(body.contains("Not found"), "heading missing in body");
+        assert!(
+            body.contains("no admin model: blogs"),
+            "message missing in body"
+        );
+        assert!(
+            !body.contains("Return to dashboard"),
+            "dashboard link must not render without an identity"
+        );
+
+        // Authenticated path — identity present, dashboard link shows.
+        let ident = fake_identity(Role::Staff);
+        let resp = render_admin_error_response(
+            &admin,
+            &templates,
+            Some(&ident),
+            500,
+            "Internal Server Error".into(),
+        );
+        let body = std::str::from_utf8(&resp.body).expect("utf8 body");
+        assert!(body.contains("500"), "status code missing in body");
+        assert!(body.contains("Server error"), "500 heading missing");
+        assert!(
+            body.contains("Return to dashboard"),
+            "dashboard link must render for signed-in users"
         );
     }
 
@@ -2717,6 +2977,7 @@ mod tests {
             "csrf".into(),
             HashMap::new(),
             HashMap::new(),
+            None,
         );
 
         // Phase 10 / 10.1 — Metadata → "System" stays; the
@@ -2782,6 +3043,7 @@ mod tests {
             "csrf".into(),
             HashMap::new(),
             HashMap::new(),
+            None,
         );
         assert_eq!(
             ctx2.sections.len(),
@@ -2833,6 +3095,7 @@ mod tests {
             "csrf".into(),
             HashMap::new(),
             HashMap::new(),
+            None,
         );
 
         let body_field = ctx.sections[0]
@@ -3439,6 +3702,7 @@ mod tests {
             "csrf".into(),
             HashMap::new(),
             HashMap::new(),
+            None,
         );
         let slug = ctx
             .sections
@@ -3482,6 +3746,7 @@ mod tests {
             "csrf".into(),
             HashMap::new(),
             HashMap::new(),
+            None,
         );
         let status = ctx
             .sections
@@ -3532,6 +3797,7 @@ mod tests {
             "csrf".into(),
             HashMap::new(),
             HashMap::new(),
+            None,
         );
         let fk = ctx
             .sections
@@ -3541,5 +3807,142 @@ mod tests {
             .expect("author_id field present");
         assert_eq!(fk.placeholder.as_deref(), Some("Select User…"));
         assert_eq!(fk.target_model.as_deref(), Some("User"));
+    }
+
+    /// Phase 11 — when a validation error sends the user back to the
+    /// form, their typed values must repopulate the inputs (not the DB
+    /// row, not blank). Locks the `submitted` arg's no-fallback
+    /// semantics: while `submitted` is `Some`, `existing` is ignored
+    /// even if a field is absent from the form (HTML omits unchecked
+    /// checkboxes — they should re-render unchecked, not as the DB's
+    /// `true`).
+    #[test]
+    fn form_ctx_prefers_submitted_over_existing() {
+        static POST_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "title",
+                label: "title",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "is_active",
+                label: "is_active",
+                field_type: FieldType::Bool,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", POST_FIELDS, false);
+        let ident = fake_identity(Role::Administrator);
+        let existing = EditRow {
+            id: 7,
+            values: vec![
+                ("title".into(), "DB title".into()),
+                ("is_active".into(), "true".into()),
+            ],
+        };
+        // Simulated POST: user typed a new title and unchecked is_active.
+        // Unchecked checkboxes are absent from the urlencoded body.
+        let form = FormData::from_urlencoded("title=Pending+Edit");
+
+        let ctx = form_ctx(
+            &ident,
+            &admin,
+            &entry,
+            "edit",
+            Some(7),
+            Some(&existing),
+            vec![],
+            "csrf".into(),
+            HashMap::new(),
+            HashMap::new(),
+            Some(&form),
+        );
+        let title = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "title")
+            .expect("title field present");
+        assert_eq!(
+            title.value, "Pending Edit",
+            "submitted value must override `existing` for `title`"
+        );
+        let active = ctx
+            .sections
+            .iter()
+            .flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "is_active")
+            .expect("is_active field present");
+        assert_eq!(
+            active.value, "",
+            "absent checkbox in submission must render as empty (unchecked), not the DB's `true`"
+        );
+    }
+
+    /// Phase 11 — a flat `Vec<String>` of validation messages from
+    /// `from_form` is bucketed onto fields by humanised-label prefix.
+    /// Verifies the macro contract: messages start with `"<Label> "`,
+    /// where `<Label>` is `humanise_field(field.name)`. Unparseable
+    /// strings stay in the global vec so the banner still renders them.
+    #[test]
+    fn bucket_errors_by_label_routes_by_field() {
+        static POST_FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "title",
+                label: "title",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "is_active",
+                label: "is_active",
+                field_type: FieldType::Bool,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "priority",
+                label: "priority",
+                field_type: FieldType::I32,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", POST_FIELDS, false);
+        let (global, per_field) = bucket_errors_by_label(
+            &entry,
+            vec![
+                "Title is required.".into(),
+                "Priority must be a number.".into(),
+                "Some opaque error not tied to a field.".into(),
+            ],
+        );
+        assert_eq!(
+            per_field.get("title").map(Vec::as_slice),
+            Some(&["Title is required.".to_string()][..]),
+        );
+        assert_eq!(
+            per_field.get("priority").map(Vec::as_slice),
+            Some(&["Priority must be a number.".to_string()][..]),
+        );
+        assert!(
+            !per_field.contains_key("is_active"),
+            "is_active had no error, must not appear in per_field map"
+        );
+        assert_eq!(
+            global,
+            vec!["Some opaque error not tied to a field.".to_string()],
+            "unparseable errors must fall through to the global banner"
+        );
     }
 }

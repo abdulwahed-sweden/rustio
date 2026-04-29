@@ -77,12 +77,24 @@ pub(super) fn csrf_token(req: &Request) -> String {
 }
 
 pub(crate) async fn show_login(ctx: &AdminCtx, req: Request) -> Result<Response> {
+    // Phase 11.B — when the user just signed out, `do_logout` redirects
+    // here with `?logout=1`. Surface a green confirmation banner so the
+    // click feels acknowledged. Any other query param is ignored.
+    let flash = if req.query().get("logout").is_some() {
+        Some(render::FlashCtx {
+            kind: "success",
+            message: "You've been signed out.".to_string(),
+        })
+    } else {
+        None
+    };
     let body = ctx.templates.render(
         "admin/login.html",
         &render::LoginCtx {
             base: BaseContext::new(None, csrf_token(&req), &ctx.admin),
             error: None,
             sections: render::login_form_sections(),
+            flash,
         },
     )?;
     Ok(Response::html(body))
@@ -108,6 +120,7 @@ pub(crate) async fn do_login(ctx: &AdminCtx, req: Request) -> Result<Response> {
                     base: BaseContext::new(None, csrf_token(&req), &ctx.admin),
                     error: Some("Invalid email or password.".into()),
                     sections: render::login_form_sections(),
+                    flash: None,
                 },
             )?;
             Ok(Response::html(body).with_status(hyper::StatusCode::UNAUTHORIZED))
@@ -125,7 +138,9 @@ pub(crate) async fn do_logout(ctx: &AdminCtx, req: Request) -> Result<Response> 
         "{}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",
         auth::SESSION_COOKIE
     );
-    Ok(Response::redirect("/admin/login").with_header("set-cookie", clear))
+    // Phase 11.B — `?logout=1` lets `show_login` render the
+    // post-logout confirmation banner.
+    Ok(Response::redirect("/admin/login?logout=1").with_header("set-cookie", clear))
 }
 
 // ---- Dashboard -----------------------------------------------------------
@@ -258,6 +273,7 @@ pub(crate) async fn show_new_form(
         csrf_token(req),
         relation_options,
         HashMap::new(),
+        None,
     );
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
@@ -285,6 +301,12 @@ pub(crate) async fn do_create(
             let token = csrf_token(&req);
             let relation_options =
                 render::resolve_relation_options(&ctx.admin, entry, &ctx.db).await?;
+            // Phase 11 — bucket the flat `Vec<String>` from `from_form`
+            // into (global, per-field) by humanised-label prefix so the
+            // form re-renders with inline error copy under the offending
+            // input. Unparseable errors stay in the global banner.
+            let (global_errors, field_errors) =
+                render::bucket_errors_by_label(entry, errors);
             let ctx_view = render::form_ctx(
                 &identity,
                 &ctx.admin,
@@ -292,10 +314,11 @@ pub(crate) async fn do_create(
                 "new",
                 None,
                 None,
-                errors,
+                global_errors,
                 token,
                 relation_options,
-                HashMap::new(),
+                field_errors,
+                Some(&form),
             );
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))
@@ -359,6 +382,7 @@ pub(crate) async fn show_edit_form(
         csrf_token(req),
         relation_options,
         HashMap::new(),
+        None,
     );
     let body = ctx.templates.render("admin/form.html", &form)?;
     Ok(Response::html(body))
@@ -388,6 +412,9 @@ pub(crate) async fn do_update(
             let token = csrf_token(&req);
             let relation_options =
                 render::resolve_relation_options(&ctx.admin, entry, &ctx.db).await?;
+            // Phase 11 — see `do_create` for the bucketing rationale.
+            let (global_errors, field_errors) =
+                render::bucket_errors_by_label(entry, errors);
             let ctx_view = render::form_ctx(
                 &identity,
                 &ctx.admin,
@@ -395,10 +422,11 @@ pub(crate) async fn do_update(
                 "edit",
                 Some(id),
                 existing.as_ref(),
-                errors,
+                global_errors,
                 token,
                 relation_options,
-                HashMap::new(),
+                field_errors,
+                Some(&form),
             );
             let body = ctx.templates.render("admin/form.html", &ctx_view)?;
             Ok(Response::html(body).with_status(hyper::StatusCode::BAD_REQUEST))

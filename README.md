@@ -39,16 +39,98 @@ Prereqs: PostgreSQL 14+, Meilisearch 1.10+.
 # `rustio_pg_data` and `rustio_meili_data`.
 docker compose up -d
 
-export DATABASE_URL=postgres://postgres:dev@localhost:5432/rustio_dev
-export MEILI_URL=http://localhost:7700
+# Pick up the example env (DATABASE_URL, MEILI_URL, etc.). Edit
+# `.env` afterwards if you need to point at non-default Postgres /
+# Meili instances. `.env` is gitignored — see `.env.example` for
+# the full list of variables and what each one does.
+cp .env.example .env
+set -a && source .env && set +a
 
-# Run the example
+# Run the example. First boot creates tables, applies migrations,
+# and seeds the default admin (see "What happens on first run" below).
 cd examples/blog
 cargo run
 
 # Open http://127.0.0.1:8000/admin
 # Log in with admin@example.com / admin
 ```
+
+### What happens on first run
+
+`cargo run` does the boring bootstrap for you:
+
+1. Connects to Postgres and creates the `rustio_*` system tables
+   (users, groups, sessions, permissions) if they're missing.
+2. Applies any pending migrations under `examples/blog/migrations/`.
+3. Seeds a default administrator account
+   (`admin@example.com` / `admin`) if `rustio_users` is empty —
+   confirm in the log: `seeded default admin: admin@example.com / admin`.
+4. Seeds an `editors` group with `posts.add_post` /
+   `posts.change_post` / `posts.view_post` if it doesn't exist.
+5. Connects to Meilisearch and configures the `posts` index. If
+   Meili isn't reachable, the server still starts; search routes
+   surface a "search unavailable" notice and everything else
+   keeps working.
+
+The seeded admin password is for first-run convenience only —
+sign in, open `/admin/users`, and change it before doing anything
+else. For production, also set up at least one non-demo
+administrator and unset `RUSTIO_DEMO_MODE` (see Configuration below).
+
+## Configuration
+
+Rustio reads configuration from environment variables only — there's
+no config file. `.env.example` at the repo root is the canonical list;
+copy it to `.env` for local dev. Below is the same list grouped by
+how often you'll touch it.
+
+### Required (runtime + CLI)
+
+| Variable | Notes |
+|---|---|
+| `DATABASE_URL` | Postgres connection string. Required by the server, the example crate, and every DB-touching `rustio` CLI subcommand. CLI subcommands accept `--db` as an explicit override. |
+
+### Optional (runtime)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `MEILI_URL` | `http://localhost:7700` (example crate) | Meilisearch endpoint. If unreachable, search features silently degrade — the rest of the admin keeps working. |
+| `MEILI_MASTER_KEY` | unset | Set in production. Local Meili `MEILI_ENV=development` is permissive without it. |
+| `MIGRATIONS_DIR` | `<crate>/migrations` | Override for packaged binaries that don't ship the source tree. |
+| `RUSTIO_TEMPLATE_DIR` | `templates` | Disk overrides for embedded templates. Edits land on the next request — no restart. |
+
+### Demo mode
+
+| Variable | Default | Notes |
+|---|---|---|
+| `RUSTIO_DEMO_MODE` | unset | Setting `=1` seeds five demo users with public passwords (one per role) and renders a red DEMO banner above every page. **Leave unset in production.** This is the only env switch that needs to flip between dev and prod. |
+
+### AI developer tooling (optional)
+
+These are read by the `rustio ai *` developer CLI only. The deployed
+HTTP server has no path into the AI layer.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | unset | Required for `ai generate / update / analyze`. |
+| `ANTHROPIC_API_BASE` | `https://api.anthropic.com` | Override for proxies. |
+| `RUSTIO_AI_MODEL` | (built-in default) | Override the model the CLI uses. |
+
+### Behaviour when env vars are missing
+
+- **`DATABASE_URL` missing**: the example crate falls back to the
+  local-dev default (`postgres://postgres:dev@localhost/rustio_dev`).
+  CLI subcommands fail fast with a clear error because they require
+  either `--db` or `DATABASE_URL`.
+- **`MEILI_URL` missing**: the example crate uses the local-dev
+  default. If Meilisearch isn't reachable at that URL either, search
+  routes return a friendly "unavailable" message and admin traffic
+  is unaffected.
+- **`RUSTIO_DEMO_MODE` unset**: production-default behaviour — no
+  demo users seeded, no banner.
+- **AI env vars missing**: only `rustio ai *` subcommands fail (with
+  a clear "set ANTHROPIC_API_KEY" hint). The deployed server is
+  unaffected because it never imports the AI layer.
 
 ## Running the test suite
 
@@ -176,6 +258,39 @@ rustio group grant --group editors --permission posts.add_post
 rustio group grant --group editors --permission posts.change_post
 rustio user add-to-group --email alice@x.com --group editors
 ```
+
+### Replacing default authentication
+
+The default flow is email + password against `rustio_users`, with
+argon2id-hashed passwords and DB-backed sessions. To swap in
+SSO / OIDC / LDAP / magic-link / anything else, the surface area
+is small — three named functions:
+
+- **Login form POST** — `do_login` in
+  `rustio-core/src/admin/handlers.rs`. The entry point. Reads
+  email + password from the form, calls `auth::login(&db, email,
+  password)`, and on success sets the `rustio_token` cookie
+  carrying a freshly-minted session token.
+- **Per-request identity** — `login_guard` in
+  `rustio-core/src/admin/routes.rs`. Reads the cookie, looks up
+  the session, and produces an `Identity { user_id, email, role,
+  is_active, .. }`. Every admin handler downstream consumes that
+  struct.
+- **Session storage** — `auth::create_session` /
+  `identity_from_session` / `delete_session` in
+  `rustio-core/src/auth/users.rs`. Sessions are rows in the
+  `rustio_sessions` table.
+
+The simplest swap pattern: keep the cookie + session-row machinery
+unchanged, replace just the credential check. Your provider verifies
+the user upstream, then your code calls `auth::create_session` to
+mint the same kind of token. Everything downstream — RBAC,
+permission cache, audit log, the entire admin — works unchanged
+because it operates on `Identity`, not on the credential type.
+
+For first-run user provisioning, see `seed_initial_admin` in
+`examples/blog/src/main.rs` — typical SSO swaps replace this with
+a "create user on first successful upstream login" pattern instead.
 
 ## CLI reference
 

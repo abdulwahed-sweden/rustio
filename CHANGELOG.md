@@ -1,5 +1,90 @@
 # Changelog
 
+## v1.2.0 — UX & Developer Experience Upgrade
+
+A polishing pass focused on stability, consistency, and onboarding —
+no new features, no breaking changes. Six surfaces touched: admin
+error rendering, form-validation UX, admin UI cohesion, the
+post-logout flow, configuration discoverability, and CLI output.
+
+### Added
+
+- **Inline form validation with field-level errors**. The generic
+  `do_create` / `do_update` paths bucket the flat `Vec<String>` from
+  `from_form` by humanised label via the new
+  `bucket_errors_by_label`; per-field errors flow through the
+  existing `apply_field_errors` → `_form_field.html` path with
+  `aria-invalid` and `aria-describedby` already wired. Unparseable
+  errors fall through to the global banner so nothing is lost.
+- **Post-logout success message**. `do_logout` redirects to
+  `/admin/login?logout=1`; `show_login` surfaces a green
+  "You've been signed out." banner via the existing `FlashCtx`
+  shape and `base.html`'s shared flash block. No template change
+  required.
+- **`.env.example` with documented configuration**. Repo-root file
+  listing every runtime / CLI / demo / AI variable, with one-line
+  comments per entry. The README Quick start now points at it as
+  the canonical list.
+
+### Improved
+
+- **Admin error handling** (consistent HTML responses). New
+  `admin/error.html` template plus a path-aware middleware in
+  `register_admin_routes` that traps `Err(_)` for `/admin/*` paths
+  and renders through `render_admin_error_response`. Non-admin
+  routes still bubble through `response_from_error` as `text/plain`
+  (the consistent minimal format for API consumers).
+- **Admin UI consistency**. Generic `form.html`'s Delete moved out
+  of the submit row into a `danger-zone` fieldset, mirroring
+  `user_edit.html` / `group_edit.html`. `user_edit.html` and
+  `group_edit.html` gained matching Cancel buttons. Bespoke `_new`
+  form submit buttons normalised to plain `Save` (no leading `+`
+  icon).
+- **CLI output formatting and next-step guidance**. `✓ ` prefix
+  standardised across every success line (migrate, user, group,
+  perm, scaffold, `ai apply`, `ai generate`, `ai update`). AI
+  subcommands' existing markers are now framework-wide. `WARNING:`
+  → `warning:` in `confirm_orphan`. `scaffolded` → `created project`
+  to match `created app`. `rustio new app` and `rustio migrate
+  generate` now print short next-step blocks after the success line.
+- **README clarity**. New "What happens on first run",
+  "Configuration", and "Replacing default authentication" sections.
+  Quick start updated to use `cp .env.example .env`; Configuration
+  section enumerates every runtime env var with default and
+  missing-behaviour notes.
+
+### Fixed
+
+- **Form input loss on validation errors**. `form_ctx` gained a
+  trailing `submitted: Option<&FormData>` parameter; when set,
+  field values come from the user's posted form, not from `existing`
+  and not from blank. `do_create` and `do_update` pass `Some(&form)`
+  on the validation-error branch. Unchecked checkboxes correctly
+  re-render as unchecked because the no-fallback semantics ignore
+  `existing` once `submitted` is set.
+- **Inconsistent admin error responses**. 400, 404, 405, 409, and
+  500 on `/admin/*` paths used to render as bare `text/plain`; now
+  they render styled HTML via the new error template and
+  status-specific headings (`admin_error_heading`).
+- **Cancel button UX regression**. The first-pass `<button
+  onclick="history.back()">` broke the Esc keyboard shortcut (no
+  `data-cancel.href` to read) and could send users to a foreign tab
+  on direct entry. Replaced with `<a href="..." data-cancel
+  onclick="if (history.length > 1) { history.back(); return false; }">`:
+  Esc still navigates via the href fallback, `history.back()`
+  upgrades the click when there's a prior page, and direct loads
+  land on the safe href.
+
+### Notes
+
+- No breaking changes to public APIs, the database schema, the
+  template-registry shape, or any trait surface (additive only).
+- No new commands, no new dependencies, no AI changes.
+- `Cargo.toml` workspace version unchanged at `1.0.0`, consistent
+  with the v1.1-ai / v1.1.1 release pattern.
+
+Tests: 395 (core) + 14 (cli) = 409 passing.
+
 ## v1.1.1 — AI Safety Hardening (Phase 9.1)
 
 Two surgical fixes from the Phase 9 real-world validation report.

@@ -68,6 +68,15 @@
 
     <div class="submit-row sticky bottom-0 bg-bg border-t border-border py-sm">
         <button type="submit" name="_save" class="btn-primary">Save</button>
+        {# Phase 11.B — Cancel: anchor pattern; see user_edit.html for
+           rationale. Fallback href is /admin/groups when there's no
+           prior history entry to return to. #}
+        <a href="/admin/groups"
+           class="btn-ghost"
+           data-cancel
+           onclick="if (history.length > 1) { history.back(); return false; }">
+            Cancel
+        </a>
     </div>
 </form>
 

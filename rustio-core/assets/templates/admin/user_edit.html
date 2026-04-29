@@ -95,6 +95,17 @@
 
     <div class="submit-row sticky bottom-0 bg-bg border-t border-border py-sm">
         <button type="submit" name="_save" class="btn-primary">Save</button>
+        {# Phase 11.B — Cancel: anchor with `data-cancel` keeps the
+           Esc-to-cancel keyboard shortcut working (base.html reads
+           `cancel.href`). The onclick upgrades to history.back() when
+           there's a prior page; on a fresh tab / direct link the click
+           falls through to the href fallback (/admin/users). #}
+        <a href="/admin/users"
+           class="btn-ghost"
+           data-cancel
+           onclick="if (history.length > 1) { history.back(); return false; }">
+            Cancel
+        </a>
     </div>
 </form>
 

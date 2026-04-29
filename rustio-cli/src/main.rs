@@ -306,7 +306,11 @@ fn main() -> ExitCode {
         Command::Migrate { action } => match action {
             MigrateAction::Apply { db, dir } => tokio_run(migrate_apply(db, dir)),
             MigrateAction::Generate { name, dir } => migrations::generate(&dir, &name)
-                .map(|p| println!("created {}", p.display()))
+                .map(|p| {
+                    println!("✓ created {}", p.display());
+                    println!();
+                    println!("next: edit the file, then run `rustio migrate apply`");
+                })
                 .map_err(|e| e.to_string()),
             MigrateAction::Status { db, dir } => tokio_run(migrate_status(db, dir)),
         },
@@ -359,10 +363,10 @@ async fn migrate_apply(db_url: String, dir: PathBuf) -> Result<(), String> {
     auth::init_tables(&db).await.map_err(|e| e.to_string())?;
     let applied = migrations::apply(&db, &dir).await.map_err(|e| e.to_string())?;
     if applied.is_empty() {
-        println!("no pending migrations");
+        println!("✓ no pending migrations");
     } else {
         for name in applied {
-            println!("applied {name}");
+            println!("✓ applied {name}");
         }
     }
     Ok(())
@@ -394,7 +398,7 @@ async fn user_cmd(action: UserAction) -> Result<(), String> {
             let id = auth::create_user(&db, &email, &password, role)
                 .await
                 .map_err(|e| e.to_string())?;
-            println!("created user #{id} ({email}) as {}", role.as_str());
+            println!("✓ created user #{id} ({email}) as {}", role.as_str());
             Ok(())
         }
         UserAction::SetPassword { email, password, db } => {
@@ -407,7 +411,7 @@ async fn user_cmd(action: UserAction) -> Result<(), String> {
             auth::set_password(&db, user.id, &password)
                 .await
                 .map_err(|e| e.to_string())?;
-            println!("updated password for {email}");
+            println!("✓ updated password for {email}");
             Ok(())
         }
         UserAction::AddToGroup { email, group, db } => {
@@ -420,7 +424,7 @@ async fn user_cmd(action: UserAction) -> Result<(), String> {
             auth::add_user_to_group(&db, user.id, gid)
                 .await
                 .map_err(|e| e.to_string())?;
-            println!("added {email} to group {group}");
+            println!("✓ added {email} to group {group}");
             Ok(())
         }
         UserAction::Role { action } => role_cmd(action).await,
@@ -453,7 +457,7 @@ async fn role_cmd(action: RoleAction) -> Result<(), String> {
                 .ok_or_else(|| format!("no user with email {email}"))?;
 
             if user.role == new_role {
-                println!("{email} is already {}", new_role.as_str());
+                println!("✓ {email} is already {}", new_role.as_str());
                 return Ok(());
             }
 
@@ -480,7 +484,7 @@ async fn role_cmd(action: RoleAction) -> Result<(), String> {
                 .await
                 .map_err(|e| e.to_string())?;
             println!(
-                "set role of {email} from {} to {}",
+                "✓ set role of {email} from {} to {}",
                 user.role.as_str(),
                 new_role.as_str(),
             );
@@ -496,7 +500,7 @@ async fn role_cmd(action: RoleAction) -> Result<(), String> {
 fn confirm_orphan(email: &str) -> Result<bool, String> {
     use std::io::{self, Write};
     eprintln!(
-        "WARNING: {email} is the last active developer. Demoting will \
+        "warning: {email} is the last active developer. Demoting will \
          leave the system with zero developers (no schema browser, no \
          execution logs, no SQL console)."
     );
@@ -526,7 +530,7 @@ async fn group_cmd(action: GroupAction) -> Result<(), String> {
             let id = auth::create_group(&db, &name, &description)
                 .await
                 .map_err(|e| e.to_string())?;
-            println!("created group #{id} ({name})");
+            println!("✓ created group #{id} ({name})");
             Ok(())
         }
         GroupAction::Grant { group, permission, db } => {
@@ -535,7 +539,7 @@ async fn group_cmd(action: GroupAction) -> Result<(), String> {
             auth::grant_to_group(&db, gid, &permission)
                 .await
                 .map_err(|e| e.to_string())?;
-            println!("granted {permission} to {group}");
+            println!("✓ granted {permission} to {group}");
             Ok(())
         }
     }
@@ -573,7 +577,7 @@ async fn perm_cmd(action: PermAction) -> Result<(), String> {
                 if desc.is_empty() {
                     println!("{name}");
                 } else {
-                    println!("{name}  — {desc}");
+                    println!("{name} — {desc}");
                 }
             }
             Ok(())
@@ -587,7 +591,7 @@ async fn perm_cmd(action: PermAction) -> Result<(), String> {
             auth::grant_to_user(&db, user.id, &permission)
                 .await
                 .map_err(|e| e.to_string())?;
-            println!("granted {permission} to {email}");
+            println!("✓ granted {permission} to {email}");
             Ok(())
         }
     }
@@ -653,7 +657,7 @@ fn ai_apply(plan_file: &Path, dir: &Path, allow_destructive: bool) -> Result<(),
     // 0.9.x renames `files_written` → `generated_files` and the items
     // are project-relative `String`s, not full `PathBuf`s.
     for file in outcome.generated_files {
-        println!("wrote {file}");
+        println!("✓ wrote {file}");
     }
     Ok(())
 }
@@ -692,7 +696,7 @@ async fn ai_generate(prompt: String, out: PathBuf, force: bool) -> Result<(), St
         .await
         .map_err(|e| e.to_string())?;
     schema.write_to(&out).map_err(|e| e.to_string())?;
-    eprintln!("wrote {}", out.display());
+    eprintln!("✓ wrote {}", out.display());
     Ok(())
 }
 
@@ -771,7 +775,7 @@ async fn ai_update(
             eprintln!("aborted; {} unchanged", schema_file.display());
         }
         SaveOutcome::Wrote => {
-            eprintln!("wrote {}", schema_file.display());
+            eprintln!("✓ wrote {}", schema_file.display());
         }
     }
     Ok(())
@@ -1476,7 +1480,7 @@ mod scaffold {
         fs::write(root.join(".gitignore"), GITIGNORE).map_err(|e| e.to_string())?;
         fs::write(root.join(".env.example"), ENV_EXAMPLE).map_err(|e| e.to_string())?;
 
-        println!("scaffolded {name}");
+        println!("✓ created project {name}");
         println!();
         println!("next steps:");
         println!("  cd {name}");
@@ -1493,7 +1497,11 @@ mod scaffold {
         fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
         fs::write(app_dir.join("mod.rs"), "pub mod models;\n").map_err(|e| e.to_string())?;
         fs::write(app_dir.join("models.rs"), APP_MODELS_RS).map_err(|e| e.to_string())?;
-        println!("created app {name}");
+        println!("✓ created app {name}");
+        println!();
+        println!("next steps:");
+        println!("  edit src/apps/{name}/models.rs to define your model");
+        println!("  rustio migrate generate {name}_initial");
         Ok(())
     }
 

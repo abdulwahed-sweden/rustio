@@ -181,6 +181,35 @@ pub fn register_admin_routes(
         templates,
     });
 
+    // Phase 11.B — render `Err(_)` from /admin/* handlers as styled HTML
+    // instead of the framework default `text/plain`. Non-admin paths
+    // bubble through unchanged so JSON / curl consumers still get the
+    // text body. `Error::Forbidden` (handled by `role_guard` via
+    // `admin/forbidden.html`) and login-required redirects (303 → /admin
+    // /login) come through as `Ok` responses and bypass this branch.
+    let err_admin = ctx.admin.clone();
+    let err_templates = ctx.templates.clone();
+    let router = router.middleware(move |req, next| {
+        let admin = err_admin.clone();
+        let templates = err_templates.clone();
+        Box::pin(async move {
+            // Capture the path *before* `next.run` consumes the request.
+            let is_admin_path = req.path().starts_with("/admin");
+            let result = next.run(req).await;
+            match result {
+                Ok(resp) => Ok(resp),
+                Err(err) if is_admin_path => Ok(render::render_admin_error_response(
+                    &admin,
+                    &templates,
+                    None,
+                    err.status(),
+                    err.client_message().to_string(),
+                )),
+                Err(err) => Err(err),
+            }
+        })
+    });
+
     // Embedded stylesheet used by the admin templates. Routed here so
     // every app that calls `register_admin_routes` gets a styled UI
     // without having to plumb its own static handler.

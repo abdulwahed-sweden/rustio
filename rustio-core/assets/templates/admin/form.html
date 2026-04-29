@@ -55,11 +55,25 @@
         <a href="/admin/{{ admin_name }}/" class="btn-ghost" data-cancel>
             Cancel
         </a>
-        {% if mode == "edit" and object_id %}
-        <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="btn-danger ml-auto">
-            {{ icon("trash", class="w-4 h-4") }} Delete
-        </a>
-        {% endif %}
     </div>
 </form>
+
+{# Phase 11.B — Delete moved out of the submit row into its own
+   danger-zone fieldset, mirroring user_edit / group_edit. Keeps
+   destructive actions visually separated from constructive ones,
+   and the styling already exists in the design system (no new CSS). #}
+{% if mode == "edit" and object_id %}
+<fieldset class="module aligned danger-zone">
+    <h2>Danger zone</h2>
+    <div class="form-row">
+        <label>&nbsp;</label>
+        <div class="field-input">
+            <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="deletelink-inline inline-flex items-center gap-1.5">
+                {{ icon("trash", class="w-4 h-4") }} Delete this {{ singular_name|lower }}
+            </a>
+            <p class="form-help mt-xs">This action cannot be undone. You'll be asked to confirm on the next page.</p>
+        </div>
+    </div>
+</fieldset>
+{% endif %}
 {% endblock %}
