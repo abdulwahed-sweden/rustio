@@ -18,4 +18,9 @@
 node_modules/
 package-lock.json
 
+# .env files for local development
 .env
+
+# Local experiments / scratch — playground/ holds untracked
+# scaffolds and demo schemas that shouldn't ship.
+playground/
