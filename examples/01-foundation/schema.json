@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "Category",
+      "table": "categories",
+      "admin_name": "categories",
+      "display_name": "Categories",
+      "singular_name": "Category",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        { "name": "name", "type": "String", "nullable": false, "editable": true },
+        { "name": "description", "type": "String", "nullable": true, "editable": true },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "sort_order", "type": "i32", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Item",
+      "table": "items",
+      "admin_name": "items",
+      "display_name": "Items",
+      "singular_name": "Item",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "category_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Category", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "title", "type": "String", "nullable": false, "editable": true },
+        { "name": "body", "type": "String", "nullable": true, "editable": true },
+        { "name": "is_published", "type": "bool", "nullable": false, "editable": true },
+        { "name": "view_count", "type": "i32", "nullable": false, "editable": true },
+        { "name": "published_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "Applicant",
+      "table": "applicants",
+      "admin_name": "applicants",
+      "display_name": "Applicants",
+      "singular_name": "Applicant",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        { "name": "first_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "last_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "email", "type": "String", "nullable": false, "editable": true },
+        { "name": "phone", "type": "String", "nullable": false, "editable": true },
+        { "name": "date_of_birth", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "city", "type": "String", "nullable": false, "editable": true },
+        { "name": "region", "type": "String", "nullable": false, "editable": true },
+        { "name": "household_size", "type": "i32", "nullable": false, "editable": true },
+        { "name": "employment_status", "type": "String", "nullable": false, "editable": true },
+        { "name": "monthly_income", "type": "i64", "nullable": true, "editable": true },
+        { "name": "is_verified", "type": "bool", "nullable": false, "editable": true },
+        { "name": "verified_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "registered_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Listing",
+      "table": "listings",
+      "admin_name": "listings",
+      "display_name": "Listings",
+      "singular_name": "Listing",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        { "name": "title", "type": "String", "nullable": false, "editable": true },
+        { "name": "description", "type": "String", "nullable": true, "editable": true },
+        { "name": "address", "type": "String", "nullable": false, "editable": true },
+        { "name": "city", "type": "String", "nullable": false, "editable": true },
+        { "name": "region", "type": "String", "nullable": false, "editable": true },
+        { "name": "postal_code", "type": "String", "nullable": false, "editable": true },
+        { "name": "monthly_rent", "type": "i64", "nullable": false, "editable": true },
+        { "name": "area_sqm", "type": "i32", "nullable": false, "editable": true },
+        { "name": "num_rooms", "type": "i32", "nullable": false, "editable": true },
+        { "name": "max_household_size", "type": "i32", "nullable": false, "editable": true },
+        { "name": "available_from", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "application_deadline", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "queue_category", "type": "String", "nullable": false, "editable": true },
+        { "name": "minimum_queue_days", "type": "i32", "nullable": false, "editable": true },
+        { "name": "requires_employment_verification", "type": "bool", "nullable": false, "editable": true },
+        { "name": "status", "type": "String", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Application",
+      "table": "applications",
+      "admin_name": "applications",
+      "display_name": "Applications",
+      "singular_name": "Application",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "applicant_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Applicant", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "listing_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Listing", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "submitted_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "status", "type": "String", "nullable": false, "editable": true },
+        { "name": "rank_at_submission", "type": "i32", "nullable": true, "editable": false },
+        { "name": "household_size_declared", "type": "i32", "nullable": false, "editable": true },
+        { "name": "motivation", "type": "String", "nullable": true, "editable": true },
+        { "name": "reviewed_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "decision_reason", "type": "String", "nullable": true, "editable": true },
+        { "name": "withdrawn_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "QueueEntry",
+      "table": "queue_entries",
+      "admin_name": "queue_entries",
+      "display_name": "Queue Entries",
+      "singular_name": "Queue Entry",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "applicant_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Applicant", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "listing_id",
+          "type": "i64",
+          "nullable": true,
+          "editable": true,
+          "relation": { "model": "Listing", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "category", "type": "String", "nullable": false, "editable": true },
+        { "name": "joined_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "waiting_days", "type": "i32", "nullable": false, "editable": false },
+        { "name": "boost_points", "type": "i32", "nullable": false, "editable": true },
+        { "name": "income_score", "type": "i32", "nullable": true, "editable": true },
+        { "name": "household_score", "type": "i32", "nullable": true, "editable": true },
+        { "name": "priority_score", "type": "i64", "nullable": false, "editable": false },
+        { "name": "priority_score_recomputed_at", "type": "DateTime", "nullable": true, "editable": false },
+        { "name": "is_eligible", "type": "bool", "nullable": false, "editable": true },
+        { "name": "ineligibility_reason", "type": "String", "nullable": true, "editable": true },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "frozen_until", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}

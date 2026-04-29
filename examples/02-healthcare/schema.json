@@ -1,0 +1,199 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "Patient",
+      "table": "patients",
+      "admin_name": "patients",
+      "display_name": "Patients",
+      "singular_name": "Patient",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        { "name": "first_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "last_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "email", "type": "String", "nullable": false, "editable": true },
+        { "name": "phone", "type": "String", "nullable": false, "editable": true },
+        { "name": "date_of_birth", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "address", "type": "String", "nullable": true, "editable": true },
+        { "name": "insurance_number", "type": "String", "nullable": true, "editable": true },
+        { "name": "blood_type", "type": "String", "nullable": true, "editable": true },
+        { "name": "allergies", "type": "String", "nullable": true, "editable": true },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Doctor",
+      "table": "doctors",
+      "admin_name": "doctors",
+      "display_name": "Doctors",
+      "singular_name": "Doctor",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        { "name": "first_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "last_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "email", "type": "String", "nullable": false, "editable": true },
+        { "name": "phone", "type": "String", "nullable": false, "editable": true },
+        { "name": "specialization", "type": "String", "nullable": false, "editable": true },
+        { "name": "license_number", "type": "String", "nullable": false, "editable": true },
+        { "name": "department", "type": "String", "nullable": true, "editable": true },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "DoctorAvailability",
+      "table": "doctor_availabilities",
+      "admin_name": "doctor_availabilities",
+      "display_name": "Doctor Availabilities",
+      "singular_name": "Doctor Availability",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "doctor_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Doctor", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "day_of_week", "type": "String", "nullable": false, "editable": true },
+        { "name": "start_time", "type": "String", "nullable": false, "editable": true },
+        { "name": "end_time", "type": "String", "nullable": false, "editable": true },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Appointment",
+      "table": "appointments",
+      "admin_name": "appointments",
+      "display_name": "Appointments",
+      "singular_name": "Appointment",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "patient_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Patient", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "doctor_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Doctor", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "scheduled_at", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "duration_minutes", "type": "i32", "nullable": false, "editable": true },
+        { "name": "status", "type": "String", "nullable": false, "editable": true },
+        { "name": "is_emergency", "type": "bool", "nullable": false, "editable": true },
+        { "name": "visit_reason", "type": "String", "nullable": false, "editable": true },
+        { "name": "notes", "type": "String", "nullable": true, "editable": true },
+        { "name": "checked_in_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "completed_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Prescription",
+      "table": "prescriptions",
+      "admin_name": "prescriptions",
+      "display_name": "Prescriptions",
+      "singular_name": "Prescription",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "patient_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Patient", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "prescribing_doctor_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Doctor", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "appointment_id",
+          "type": "i64",
+          "nullable": true,
+          "editable": true,
+          "relation": { "model": "Appointment", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "medication_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "dosage", "type": "String", "nullable": false, "editable": true },
+        { "name": "frequency", "type": "String", "nullable": false, "editable": true },
+        { "name": "duration_days", "type": "i32", "nullable": false, "editable": true },
+        { "name": "refills_remaining", "type": "i32", "nullable": false, "editable": true },
+        { "name": "status", "type": "String", "nullable": false, "editable": true },
+        { "name": "instructions", "type": "String", "nullable": true, "editable": true },
+        { "name": "issued_at", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "expires_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "MedicalRecord",
+      "table": "medical_records",
+      "admin_name": "medical_records",
+      "display_name": "Medical Records",
+      "singular_name": "Medical Record",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "patient_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Patient", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "author_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Doctor", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "appointment_id",
+          "type": "i64",
+          "nullable": true,
+          "editable": true,
+          "relation": { "model": "Appointment", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "record_type", "type": "String", "nullable": false, "editable": true },
+        { "name": "title", "type": "String", "nullable": false, "editable": true },
+        { "name": "summary", "type": "String", "nullable": false, "editable": true },
+        { "name": "details", "type": "String", "nullable": true, "editable": true },
+        { "name": "attachment_url", "type": "String", "nullable": true, "editable": true },
+        { "name": "is_confidential", "type": "bool", "nullable": false, "editable": true },
+        { "name": "recorded_at", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}

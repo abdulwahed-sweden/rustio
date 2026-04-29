@@ -1,0 +1,145 @@
+{
+  "version": 2,
+  "rustio_version": "1.0.0",
+  "models": [
+    {
+      "name": "Student",
+      "table": "students",
+      "admin_name": "students",
+      "display_name": "Students",
+      "singular_name": "Student",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        { "name": "student_number", "type": "String", "nullable": false, "editable": true },
+        { "name": "first_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "last_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "email", "type": "String", "nullable": false, "editable": true },
+        { "name": "phone", "type": "String", "nullable": true, "editable": true },
+        { "name": "date_of_birth", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "enrollment_year", "type": "i32", "nullable": false, "editable": true },
+        { "name": "grade_level", "type": "i32", "nullable": false, "editable": true },
+        { "name": "guardian_name", "type": "String", "nullable": true, "editable": true },
+        { "name": "guardian_phone", "type": "String", "nullable": true, "editable": true },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Teacher",
+      "table": "teachers",
+      "admin_name": "teachers",
+      "display_name": "Teachers",
+      "singular_name": "Teacher",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        { "name": "employee_number", "type": "String", "nullable": false, "editable": true },
+        { "name": "first_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "last_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "email", "type": "String", "nullable": false, "editable": true },
+        { "name": "phone", "type": "String", "nullable": true, "editable": true },
+        { "name": "department", "type": "String", "nullable": false, "editable": true },
+        { "name": "hire_date", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Course",
+      "table": "courses",
+      "admin_name": "courses",
+      "display_name": "Courses",
+      "singular_name": "Course",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "teacher_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Teacher", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "code", "type": "String", "nullable": false, "editable": true },
+        { "name": "title", "type": "String", "nullable": false, "editable": true },
+        { "name": "description", "type": "String", "nullable": true, "editable": true },
+        { "name": "credit_hours", "type": "i32", "nullable": false, "editable": true },
+        { "name": "academic_year", "type": "String", "nullable": false, "editable": true },
+        { "name": "term", "type": "String", "nullable": false, "editable": true },
+        { "name": "capacity", "type": "i32", "nullable": false, "editable": true },
+        { "name": "enrolled_count", "type": "i32", "nullable": false, "editable": false },
+        { "name": "is_active", "type": "bool", "nullable": false, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Enrollment",
+      "table": "enrollments",
+      "admin_name": "enrollments",
+      "display_name": "Enrollments",
+      "singular_name": "Enrollment",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "student_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Student", "field": "id", "kind": "belongs_to" }
+        },
+        {
+          "name": "course_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Course", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "enrolled_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "status", "type": "String", "nullable": false, "editable": true },
+        { "name": "final_letter_grade", "type": "String", "nullable": true, "editable": true },
+        { "name": "final_grade_points", "type": "i32", "nullable": true, "editable": true },
+        { "name": "completed_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "dropped_at", "type": "DateTime", "nullable": true, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Grade",
+      "table": "grades",
+      "admin_name": "grades",
+      "display_name": "Grades",
+      "singular_name": "Grade",
+      "fields": [
+        { "name": "id", "type": "i64", "nullable": false, "editable": false },
+        {
+          "name": "enrollment_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": { "model": "Enrollment", "field": "id", "kind": "belongs_to" }
+        },
+        { "name": "assignment_name", "type": "String", "nullable": false, "editable": true },
+        { "name": "grade_type", "type": "String", "nullable": false, "editable": true },
+        { "name": "points_earned", "type": "i32", "nullable": false, "editable": true },
+        { "name": "points_possible", "type": "i32", "nullable": false, "editable": true },
+        { "name": "weight_percent", "type": "i32", "nullable": false, "editable": true },
+        { "name": "graded_at", "type": "DateTime", "nullable": false, "editable": true },
+        { "name": "comments", "type": "String", "nullable": true, "editable": true },
+        { "name": "created_at", "type": "DateTime", "nullable": false, "editable": false },
+        { "name": "updated_at", "type": "DateTime", "nullable": false, "editable": false }
+      ],
+      "relations": [],
+      "core": false
+    }
+  ]
+}
