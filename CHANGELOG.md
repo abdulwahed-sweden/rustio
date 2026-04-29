@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] - 2026-04-29
+
+### Added
+
+* Full examples catalogue (6 production-style schemas)
+* examples/README.md gallery index
+* CONVENTIONS.md (shared cross-cutting rules)
+
+### Notes
+
+* First crates.io release of the v1 architecture (PostgreSQL-only, admin system, AI layer)
+
 ## v1.2.0 — UX & Developer Experience Upgrade
 
 A polishing pass focused on stability, consistency, and onboarding —
