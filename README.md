@@ -49,7 +49,7 @@ set -a && source .env && set +a
 # Run the example. First boot creates tables, applies migrations,
 # and seeds the default admin (see "What happens on first run" below).
 cd examples/blog
-cargo run
+rustio run        # convenience wrapper around `cargo run`; either works
 
 # Open http://127.0.0.1:8000/admin
 # Log in with admin@example.com / admin
@@ -57,7 +57,8 @@ cargo run
 
 ### What happens on first run
 
-`cargo run` does the boring bootstrap for you:
+`rustio run` (or `cargo run` directly — they do the same thing) does
+the boring bootstrap for you:
 
 1. Connects to Postgres and creates the `rustio_*` system tables
    (users, groups, sessions, permissions) if they're missing.

@@ -16,8 +16,8 @@ domain shapes you can scaffold from with `rustio new project ...
 Open `examples/blog/`. It's the only example with `src/`,
 `Cargo.toml`, and migrations.
 
-`cargo run` builds the project, connects to PostgreSQL using
-`DATABASE_URL` (defaulting to
+`rustio run` (a convenience wrapper around `cargo run`) builds the
+project, connects to PostgreSQL using `DATABASE_URL` (defaulting to
 `postgres://postgres:dev@localhost/rustio_dev` if unset), applies
 migrations, seeds the default admin, and serves the admin UI at
 `http://127.0.0.1:8000/admin`.

@@ -57,6 +57,10 @@ enum Command {
         #[arg(long, default_value = "rustio.schema.json")]
         path: PathBuf,
     },
+    /// Build and run the project in the current directory.
+    /// Convenience wrapper around `cargo run`. Refuses with a clear
+    /// error if no `Cargo.toml` is found.
+    Run,
 }
 
 #[derive(Subcommand)]
@@ -334,6 +338,7 @@ fn main() -> ExitCode {
             }
         },
         Command::Schema { path } => print_schema(&path),
+        Command::Run => cmd_run(&std::env::current_dir().unwrap_or_else(|_| ".".into())),
     };
 
     match out {
@@ -354,6 +359,38 @@ where
         .build()
         .map_err(|e| e.to_string())?
         .block_on(fut)
+}
+
+// ---- run ---------------------------------------------------------------
+
+/// Phase 1.3.1 — `rustio run` is a convenience wrapper around `cargo run`
+/// scoped to the current directory. Lookup is intentionally simple: if
+/// the cwd has a `Cargo.toml`, hand off to cargo; otherwise produce the
+/// actionable error the user sees today instead of cargo's terse
+/// "could not find `Cargo.toml`".
+fn cmd_run(cwd: &Path) -> Result<(), String> {
+    check_in_project(cwd)?;
+    let status = std::process::Command::new("cargo")
+        .arg("run")
+        .current_dir(cwd)
+        .status()
+        .map_err(|e| format!("failed to spawn cargo: {e}"))?;
+    if !status.success() {
+        return Err(format!("cargo run exited with status {status}"));
+    }
+    Ok(())
+}
+
+/// Extracted so tests can drive it without spawning cargo. The error
+/// copy here is the user-facing message; if you change it, update the
+/// `run_outside_project_returns_clear_error` test too.
+fn check_in_project(cwd: &Path) -> Result<(), String> {
+    if !cwd.join("Cargo.toml").exists() {
+        return Err(
+            "no Cargo.toml found. Run this inside a Rustio project.".into(),
+        );
+    }
+    Ok(())
 }
 
 // ---- migrate -----------------------------------------------------------
@@ -1457,6 +1494,75 @@ mod tests {
         std::fs::create_dir_all(&p).unwrap();
         p
     }
+
+    // ----- Phase 1.3.1 — `rustio run` -----------------------------
+
+    /// `rustio run` outside a project surfaces the actionable error
+    /// instead of cargo's terse "could not find Cargo.toml". Pure path
+    /// check, no cargo invocation.
+    #[test]
+    fn run_outside_project_returns_clear_error() {
+        let dir = tempdir_path();
+        let err = check_in_project(&dir).unwrap_err();
+        assert!(
+            err.contains("no Cargo.toml found"),
+            "missing-Cargo.toml message must surface, got: {err}"
+        );
+        assert!(
+            err.contains("Rustio project"),
+            "error must point the user back at a project context, got: {err}"
+        );
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Inside a project (Cargo.toml present), the path check passes and
+    /// the caller proceeds to spawn cargo. The actual cargo invocation
+    /// isn't tested here — that's an integration concern.
+    #[test]
+    fn run_inside_project_passes_path_check() {
+        let dir = tempdir_path();
+        std::fs::write(dir.join("Cargo.toml"), "[package]\nname=\"x\"\nversion=\"0\"").unwrap();
+        check_in_project(&dir).expect("Cargo.toml present → path check OK");
+        let _ = std::fs::remove_file(dir.join("Cargo.toml"));
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Scaffold next-steps and `.env.example` content are part of the
+    /// v1.3.1 DX contract. If these strings drift, downstream docs
+    /// (root README, examples/README) drift with them.
+    #[test]
+    fn scaffold_env_example_documents_postgres_requirement() {
+        let txt = scaffold::ENV_EXAMPLE;
+        assert!(txt.contains("DATABASE_URL=postgres://"), "must seed a Postgres URL");
+        assert!(txt.contains("PostgreSQL is required"), "must explain PG requirement");
+        assert!(txt.contains("MEILI_URL"), "must include MEILI_URL line");
+    }
+
+    #[test]
+    fn scaffold_main_rs_does_not_import_unused_duration() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            !src.contains("use std::time::Duration"),
+            "Duration import is unused — would emit a compile warning"
+        );
+    }
+
+    #[test]
+    fn scaffold_main_rs_emits_actionable_db_connect_error() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            src.contains("Database connection failed."),
+            "scaffold must surface a friendly DB-failure banner"
+        );
+        assert!(
+            src.contains("DATABASE_URL = {db_url}"),
+            "the failed URL must be echoed for the user"
+        );
+        assert!(
+            src.contains("docker compose up -d"),
+            "actionable fixes must mention the docker-compose escape hatch"
+        );
+    }
 }
 
 // ---- scaffold ----------------------------------------------------------
@@ -1485,7 +1591,7 @@ mod scaffold {
         println!("next steps:");
         println!("  cd {name}");
         println!("  cp .env.example .env    # edit DATABASE_URL, MEILI_URL");
-        println!("  cargo run");
+        println!("  rustio run");
         Ok(())
     }
 
@@ -1524,8 +1630,7 @@ log = "0.4"
         )
     }
 
-    const MAIN_RS: &str = r#"use std::net::SocketAddr;
-use std::time::Duration;
+    pub(super) const MAIN_RS: &str = r#"use std::net::SocketAddr;
 
 use rustio_core::admin::{register_admin_routes, Admin};
 use rustio_core::background;
@@ -1543,8 +1648,27 @@ mod apps;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let db_url = std::env::var("DATABASE_URL")?;
-    let db = Db::connect(&db_url).await?;
+    let db_url = std::env::var("DATABASE_URL")
+        .map_err(|_| "DATABASE_URL is not set. Copy .env.example to .env and edit it before running.")?
+        .to_string();
+
+    let db = match Db::connect(&db_url).await {
+        Ok(db) => db,
+        Err(e) => {
+            eprintln!("Database connection failed.");
+            eprintln!();
+            eprintln!("DATABASE_URL = {db_url}");
+            eprintln!();
+            eprintln!("Possible fixes:");
+            eprintln!("  * create the database");
+            eprintln!("  * update DATABASE_URL in .env");
+            eprintln!("  * start PostgreSQL");
+            eprintln!("  * run `docker compose up -d` if using the repo dev stack");
+            eprintln!();
+            eprintln!("Original error: {e}");
+            std::process::exit(1);
+        }
+    };
     auth::init_tables(&db).await?;
     migrations::apply(&db, "migrations").await?;
     background::spawn_housekeeping(db.clone());
@@ -1586,9 +1710,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     const GITIGNORE: &str = "/target\n.env\n";
 
-    const ENV_EXAMPLE: &str = r#"DATABASE_URL=postgres://postgres:dev@localhost/myapp
-MEILI_URL=http://localhost:7700
+    pub(super) const ENV_EXAMPLE: &str = r#"# PostgreSQL is required in v1.3.x.
+# Edit DATABASE_URL before running if your database name or user differs.
+DATABASE_URL=postgres://postgres:dev@localhost/rustio_dev
+
+# Meilisearch is optional — the app handles a missing search backend
+# gracefully. Set MEILI_MASTER_KEY in production.
+MEILI_URL=http://127.0.0.1:7700
 # MEILI_MASTER_KEY=your-key-if-configured
+
 RUST_LOG=info
 "#;
 }

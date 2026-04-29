@@ -1,13 +1,22 @@
 # rustio-cli
 
-The `rustio` command-line tool: scaffold projects, run migrations,
-manage users / groups / permissions, and use the AI planner against
-your schemas.
+The `rustio` command-line tool: scaffold projects, build & run them,
+apply migrations, manage users / groups / permissions, and use the
+AI planner against your schemas.
 
 Install:
 
 ```
 cargo install rustio-cli
+```
+
+Quick path from zero:
+
+```
+rustio new project myapp
+cd myapp
+cp .env.example .env       # edit DATABASE_URL if needed
+rustio run                 # convenience wrapper around `cargo run`
 ```
 
 - Framework overview: [repo README](https://github.com/abdulwahed-sweden/rustio#readme)

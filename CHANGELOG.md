@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.1] - 2026-04-29
+
+### Fixed
+
+* Added `rustio run` convenience command
+* Added missing `.env.example` to scaffolded projects
+* Fixed misleading scaffold next steps
+* Removed unused import warning from generated app
+* Improved database connection error messages
+
+### Notes
+
+* No API changes
+* Hotfix for v1.3.0 first-run DX regressions
+
 ## [1.3.0] - 2026-04-29
 
 ### Added
