@@ -114,7 +114,18 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
                 out.push((#fname_str.to_string(), if self.#fname { "true".to_string() } else { "false".to_string() }));
             },
             FieldKind::DateTime | FieldKind::DateTimeAuto => quote! {
-                out.push((#fname_str.to_string(), self.#fname.format("%Y-%m-%d %H:%M").to_string()));
+                // Phase v1.4.x — ISO-8601 form with `T` separator. This is the
+                // exact wire format `<input type="datetime-local">` expects
+                // (`%Y-%m-%dT%H:%M`); the form-render path puts this string
+                // straight into the input's `value=` attribute. The list path
+                // detects the same shape (16 chars, `T` at index 10) and
+                // splits it into the two-line time-on-top / date-below cell
+                // layout in admin/list.html.
+                //
+                // NOTE: `datetime-local` input cannot encode timezone. We
+                // currently surface UTC values directly. v1.5.0 will add
+                // user-locale conversion.
+                out.push((#fname_str.to_string(), self.#fname.format("%Y-%m-%dT%H:%M").to_string()));
             },
         };
         display_value_arms.push(display_arm);

@@ -532,6 +532,51 @@
         /* Apply tabular numerics to any code/numeric value rendered with
            the .num utility class (used in lists and meta cards). */
         .num, td.num, .v.code, .lede code { font-feature-settings: "tnum" 1, "lnum" 1; }
+
+        /* v1.4.x — Two-line DateTime cell layout in lists. Time on top
+           (bold, mono, larger), date below (muted, smaller). Cell aligns
+           top so the eye scans the time column first. */
+        .rio-cell-datetime { line-height: 1.3; }
+        .rio-cell-datetime .rio-time {
+            font-family: var(--rio-font-mono);
+            font-weight: 600;
+            font-size: 16px;
+            color: var(--rio-text);
+            font-feature-settings: "tnum" 1, "lnum" 1;
+        }
+        .rio-cell-datetime .rio-date {
+            font-size: 13px;
+            color: var(--rio-text-muted);
+            margin-top: 2px;
+            font-feature-settings: "lnum" 1;
+        }
+        td:has(> .rio-cell-datetime) { vertical-align: top; }
+
+        /* Empty / NULL cell — muted em-dash, easier to scan than blank. */
+        .rio-cell-empty { color: var(--rio-text-faint); font-weight: 600; }
+
+        /* v1.4.x — Native date / datetime-local inputs aligned with the
+           rest of the form's input visuals. Browser pickers stay native;
+           we just normalise box height + border + focus ring. The
+           `-webkit-appearance: none` guard fights Safari's grey gradient
+           on date inputs so dark text doesn't clash with the framework
+           accent ring. The calendar-icon indicator stays clickable. */
+        .field-v14 input[type="date"],
+        .field-v14 input[type="datetime-local"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background-color: var(--rio-bg-surface-1);
+            font-family: var(--rio-font-body);
+            font-feature-settings: "lnum" 1;
+        }
+        .field-v14 input[type="date"]::-webkit-calendar-picker-indicator,
+        .field-v14 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            cursor: pointer; opacity: 0.65; padding: 4px;
+        }
+        .field-v14 input[type="date"]::-webkit-calendar-picker-indicator:hover,
+        .field-v14 input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>

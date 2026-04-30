@@ -74,6 +74,17 @@
                     <span class="badge-v14 badge-yes-v14">Yes</span>
                 {% elif row[field.name] == "false" %}
                     <span class="badge-v14 badge-no-v14">No</span>
+                {% elif row[field.name]|length == 16 and row[field.name][10] == "T" %}
+                    {# v1.4.x — DateTime cell: macro emits `YYYY-MM-DDTHH:MM`
+                       (16 chars, `T` at index 10). Render as a two-line
+                       stack — bold mono time on top, muted date below.
+                       Falls through to plain text for any other shape. #}
+                    <div class="rio-cell-datetime">
+                        <div class="rio-time">{{ row[field.name][11:16] }}</div>
+                        <div class="rio-date">{{ row[field.name][:10] }}</div>
+                    </div>
+                {% elif row[field.name] == "" %}
+                    <span class="rio-cell-empty">—</span>
                 {% else %}
                     {{ row[field.name] }}
                 {% endif %}

@@ -177,3 +177,39 @@ fn whitespace_only_string_treated_as_empty() {
     let model = HardeningFixture::from_form(&form).expect("trimmed String parses");
     assert_eq!(model.title, "hi", "leading/trailing whitespace must be stripped");
 }
+
+/// Phase v1.4.x — DateTime field's display value must be ISO-8601 with
+/// the literal `T` separator (`%Y-%m-%dT%H:%M`), not space-separated.
+/// The form-render path puts this string straight into the
+/// `<input type="datetime-local" value="...">` attribute, and that
+/// element rejects anything other than `T`-separated. Pre-1.4.x the
+/// macro emitted `"2026-01-01 12:00"` and the input silently rendered
+/// as blank — a real-world bug surfaced by the bookshelf example.
+#[test]
+fn datetime_display_value_uses_iso_separator() {
+    use chrono::TimeZone;
+    use rustio_core::admin::AdminModel;
+
+    let dt = chrono::Utc.with_ymd_and_hms(2026, 1, 15, 9, 30, 0).unwrap();
+    let model = HardeningFixture {
+        id: 0,
+        title: "x".into(),
+        author_id: 1,
+        edition: None,
+        published_at: dt,
+    };
+    let pairs = model.display_values();
+    let (_, val) = pairs
+        .iter()
+        .find(|(k, _)| k == "published_at")
+        .expect("published_at value emitted");
+
+    assert_eq!(
+        val, "2026-01-15T09:30",
+        "DateTime display value must use the literal `T` separator that \
+         <input type=\"datetime-local\"> requires"
+    );
+    // Belt-and-braces: no space between date and time, length is exactly 16.
+    assert!(!val.contains(' '), "no space allowed in datetime-local value");
+    assert_eq!(val.len(), 16, "expected YYYY-MM-DDTHH:MM (16 chars)");
+}
