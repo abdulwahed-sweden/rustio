@@ -346,10 +346,19 @@ fn relative_time(ts: chrono::DateTime<chrono::Utc>) -> String {
 /// the previous `columns: Vec<String>` shape on `ListCtx` so templates
 /// can drive both the header label AND the row-cell key from a single
 /// loop (`{% for field in fields %}<td>{{ row[field.name] }}</td>{% endfor %}`).
+///
+/// Stabilization (v1.4.x): `kind` carries `FieldType.widget()` so the
+/// list template can dispatch on type ("number" / "datetime" /
+/// "checkbox" / "text") instead of duck-typing on the cell's string
+/// shape. Removes the hardcoded `field.name in ['pages',…]` numeric
+/// column list, the `row[field.name] == "true"` boolean string match,
+/// and the `length == 16 and [10] == "T"` ISO-datetime shape test
+/// from `admin/list.html`.
 #[derive(Serialize)]
 pub(crate) struct ListField {
     pub name: String,
     pub label: String,
+    pub kind: &'static str,
 }
 
 #[derive(Serialize)]
@@ -425,6 +434,12 @@ pub(crate) fn list_ctx(
         .map(|f| ListField {
             name: f.name.to_string(),
             label: f.label.to_string(),
+            // Single source of truth — `FieldType::widget()` already
+            // maps every variant to one of "text" / "number" /
+            // "checkbox" / "datetime". Carrying it on every column
+            // means the list template never inspects the cell's
+            // string value to figure out what kind of data it holds.
+            kind: f.field_type.widget(),
         })
         .collect();
     // Field-name positions used to convert each row's positional cells
@@ -3280,6 +3295,105 @@ mod tests {
         assert!(
             !body.contains("No posts yet"),
             "filtered-empty branch must not show the true-empty heading",
+        );
+    }
+
+    /// Stabilization (v1.4.x) — list cell rendering is type-driven,
+    /// not duck-typed. `field.kind` carries the FieldType widget
+    /// string ("text" / "number" / "checkbox" / "datetime"); the
+    /// template dispatches on it so that a numeric column gets
+    /// `class="num"` on th + td, a checkbox column renders as a
+    /// Yes/No badge, and a datetime column renders as the two-line
+    /// stack — without ever inspecting the cell's string value.
+    #[test]
+    fn list_dispatches_cell_renderer_by_field_kind() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let mut ctx = empty_list_ctx_skeleton();
+        // Override the fields with explicit `kind` values mirroring
+        // the four FieldType::widget() outputs.
+        ctx["fields"] = serde_json::json!([
+            { "name": "title",         "label": "Title",         "kind": "text" },
+            { "name": "pages",         "label": "Pages",         "kind": "number" },
+            { "name": "is_available",  "label": "Available",     "kind": "checkbox" },
+            { "name": "published_at",  "label": "Published at",  "kind": "datetime" },
+        ]);
+        ctx["rows"] = serde_json::json!([
+            {
+                "id": 1,
+                "title": "Sample",
+                "pages": "180",
+                "is_available": "true",
+                "published_at": "1925-04-10T00:00",
+            },
+            {
+                "id": 2,
+                "title": "Other",
+                "pages": "311",
+                "is_available": "false",
+                "published_at": "1932-09-05T00:00",
+            },
+        ]);
+        ctx["total_rows"] = serde_json::json!(2);
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+
+        // Numeric column: th + td gain class="num" purely from kind.
+        assert!(
+            body.contains(r#"<th scope="col" class="num">Pages</th>"#),
+            "numeric column header must carry class=\"num\" via field.kind, got fragment: {}",
+            &body[..body.len().min(800)]
+        );
+        // Boolean column: badge dispatch.
+        assert!(
+            body.contains(r#"<span class="badge-v14 badge-yes-v14">Yes</span>"#),
+            "checkbox column with value \"true\" must render the Yes badge"
+        );
+        assert!(
+            body.contains(r#"<span class="badge-v14 badge-no-v14">No</span>"#),
+            "checkbox column with value \"false\" must render the No badge"
+        );
+        // Datetime column: two-line stack with time on top, date below.
+        assert!(
+            body.contains(r#"<div class="rio-time">00:00</div>"#),
+            "datetime cell must render time in .rio-time"
+        );
+        assert!(
+            body.contains(r#"<div class="rio-date">1925-04-10</div>"#),
+            "datetime cell must render date in .rio-date"
+        );
+        // First column (text) keeps the row-link convention untouched.
+        assert!(
+            body.contains(r#"href="/admin/posts/1/edit">Sample</a>"#),
+            "first-column row-link convention must still apply for text columns"
+        );
+    }
+
+    /// Stabilization (v1.4.x) — guard against regression: there must
+    /// be no hardcoded list of numeric field names in the template.
+    /// If anyone re-introduces `field.name in ['pages', …]`, this
+    /// test fails because a numeric column not in the list won't get
+    /// `class="num"` even though its kind is "number".
+    #[test]
+    fn list_numeric_dispatch_is_kind_driven_not_name_driven() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let mut ctx = empty_list_ctx_skeleton();
+        // Field name `score` is NOT in the legacy hardcoded list —
+        // before stabilization, this would render without class="num".
+        ctx["fields"] = serde_json::json!([
+            { "name": "title", "label": "Title", "kind": "text" },
+            { "name": "score", "label": "Score", "kind": "number" },
+        ]);
+        ctx["rows"] = serde_json::json!([
+            { "id": 1, "title": "x", "score": "42" },
+        ]);
+        ctx["total_rows"] = serde_json::json!(1);
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+        assert!(
+            body.contains(r#"<th scope="col" class="num">Score</th>"#),
+            "numeric column with arbitrary name must still get class=\"num\""
         );
     }
 

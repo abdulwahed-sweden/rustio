@@ -55,10 +55,15 @@
 {% if rows %}
 <div class="table-v14-wrap">
 <table class="table-v14">
+    {# Stabilization (v1.4.x) — every cell rendered below dispatches on
+       `field.kind` (carries FieldType::widget(): "text" / "number" /
+       "checkbox" / "datetime"). No hardcoded column-name lists, no
+       string-shape detection. The `loop.index0 == 0` link convention
+       stays — it's explicit, not a hack. #}
     <thead>
         <tr>
             {% for field in fields %}
-            <th scope="col"{% if field.name == 'id' or field.name in ['pages','price','quantity','count','priority_score','year_published','views','view_count','stock_quantity'] %} class="num"{% endif %}>{{ field.label }}</th>
+            <th scope="col"{% if field.kind == "number" %} class="num"{% endif %}>{{ field.label }}</th>
             {% endfor %}
             <th scope="col" style="width:100px;text-align:right">Actions</th>
         </tr>
@@ -67,22 +72,24 @@
     {% for row in rows %}
         <tr>
             {% for field in fields %}
-            <td{% if field.name == 'id' or field.name in ['pages','price','quantity','count','priority_score','year_published','views','view_count','stock_quantity'] %} class="num"{% endif %}>
+            <td{% if field.kind == "number" %} class="num"{% endif %}>
                 {% if loop.index0 == 0 %}
                     <a class="row-link" href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
-                {% elif row[field.name] == "true" %}
-                    <span class="badge-v14 badge-yes-v14">Yes</span>
-                {% elif row[field.name] == "false" %}
-                    <span class="badge-v14 badge-no-v14">No</span>
-                {% elif row[field.name]|length == 16 and row[field.name][10] == "T" %}
-                    {# v1.4.x — DateTime cell: macro emits `YYYY-MM-DDTHH:MM`
-                       (16 chars, `T` at index 10). Render as a two-line
-                       stack — bold mono time on top, muted date below.
-                       Falls through to plain text for any other shape. #}
-                    <div class="rio-cell-datetime">
-                        <div class="rio-time">{{ row[field.name][11:16] }}</div>
-                        <div class="rio-date">{{ row[field.name][:10] }}</div>
-                    </div>
+                {% elif field.kind == "checkbox" %}
+                    {% if row[field.name] == "true" %}
+                        <span class="badge-v14 badge-yes-v14">Yes</span>
+                    {% else %}
+                        <span class="badge-v14 badge-no-v14">No</span>
+                    {% endif %}
+                {% elif field.kind == "datetime" %}
+                    {% if row[field.name]|length >= 16 and row[field.name][10] == "T" %}
+                        <div class="rio-cell-datetime">
+                            <div class="rio-time">{{ row[field.name][11:16] }}</div>
+                            <div class="rio-date">{{ row[field.name][:10] }}</div>
+                        </div>
+                    {% else %}
+                        <span class="rio-cell-empty">—</span>
+                    {% endif %}
                 {% elif row[field.name] == "" %}
                     <span class="rio-cell-empty">—</span>
                 {% else %}
