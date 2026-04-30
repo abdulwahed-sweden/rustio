@@ -3,161 +3,147 @@
 {% block bodyclass %}change-list{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
-    <a href="/admin">Home</a> &rsaquo; {{ display_name }}
+<div class="crumbs-v14">
+    <a href="/admin">Home</a>
+    <span class="sep">›</span>
+    <span class="current">{{ display_name }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
+<div class="page-head-v14">
     <div>
-        <h1 class="text-h1 font-heading tracking-tight">{{ display_name }}</h1>
-        <p class="subhead-note">{{ total_rows }} {{ display_name|lower }} in total</p>
+        <h1>{{ display_name }}</h1>
+        <p class="lede">
+            <span class="num">{{ total_rows }}</span>
+            {{ display_name|lower }} in total
+        </p>
     </div>
-    <a href="/admin/{{ admin_name }}/new" class="btn-primary">
-        {{ icon("plus", class="w-4 h-4") }}
-        Add {{ singular_name|lower }}
+    <div class="actions">
+        <a href="/admin/{{ admin_name }}/new" class="btn-primary-v14">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add {{ singular_name|lower }}
+        </a>
+    </div>
+</div>
+
+<div class="toolbar-v14">
+    <form method="get" class="search-v14" style="display:contents">
+        <div class="search-v14">
+            <svg class="icon-search" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="search" name="q" value="{{ search_query }}" placeholder="Search {{ display_name|lower }}…">
+        </div>
+        <button type="submit" class="btn-primary-v14">Search</button>
+        {% if search_query %}<a href="?" class="btn-text-v14">Clear</a>{% endif %}
+    </form>
+</div>
+
+{% if filters %}
+<div class="toolbar-v14" style="margin-top:-4px">
+    <div class="filters-v14">
+        {% for group in filters %}
+            <span class="label">{{ group.label|upper }}:</span>
+            <a href="?" class="pill{% if not group.current %} is-active{% endif %}">All</a>
+            {% for opt in group.options %}
+            <a href="?{{ group.field }}={{ opt.value }}" class="pill{% if opt.selected %} is-active{% endif %}">{{ opt.label }}</a>
+            {% endfor %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if rows %}
+<div class="table-v14-wrap">
+<table class="table-v14">
+    <thead>
+        <tr>
+            {% for field in fields %}
+            <th scope="col"{% if field.name == 'id' or field.name in ['pages','price','quantity','count','priority_score','year_published','views','view_count','stock_quantity'] %} class="num"{% endif %}>{{ field.label }}</th>
+            {% endfor %}
+            <th scope="col" style="width:100px;text-align:right">Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for row in rows %}
+        <tr>
+            {% for field in fields %}
+            <td{% if field.name == 'id' or field.name in ['pages','price','quantity','count','priority_score','year_published','views','view_count','stock_quantity'] %} class="num"{% endif %}>
+                {% if field.name == row.label_field|default('title') and field.name != 'id' %}
+                    <a href="/admin/{{ admin_name }}/{{ row.id }}/edit" class="row-link">{{ row[field.name] }}</a>
+                {% elif loop.index0 == 1 and not row.label_field %}
+                    <a href="/admin/{{ admin_name }}/{{ row.id }}/edit" class="row-link">{{ row[field.name] }}</a>
+                {% elif row[field.name] == "true" %}
+                    <span class="badge-v14 badge-yes-v14">Yes</span>
+                {% elif row[field.name] == "false" %}
+                    <span class="badge-v14 badge-no-v14">No</span>
+                {% else %}
+                    {{ row[field.name] }}
+                {% endif %}
+            </td>
+            {% endfor %}
+            <td class="actions-cell">
+                <a href="/admin/{{ admin_name }}/{{ row.id }}/edit" class="icon-btn" title="Edit" aria-label="Edit">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </a>
+                <a href="/admin/{{ admin_name }}/{{ row.id }}/delete" class="icon-btn danger" title="Delete" aria-label="Delete">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </a>
+            </td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+{% if total_pages > 1 %}
+<div class="pager-v14">
+    <span class="info">
+        Showing <b>{{ ((page - 1) * per_page) + 1 }}</b>–<b>{{ ((page - 1) * per_page) + (rows|length) }}</b> of <b>{{ total_rows }}</b>
+    </span>
+    <div class="nav">
+        {% if page > 1 %}
+            <a href="?p={{ page - 1 }}{% if search_query %}&q={{ search_query }}{% endif %}">Previous</a>
+        {% endif %}
+        {% for n in range(1, total_pages + 1) %}
+            {% if n == page %}
+            <span class="this">{{ n }}</span>
+            {% else %}
+            <a href="?p={{ n }}{% if search_query %}&q={{ search_query }}{% endif %}">{{ n }}</a>
+            {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+            <a href="?p={{ page + 1 }}{% if search_query %}&q={{ search_query }}{% endif %}">Next</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+</div>
+
+{% elif search_query or (filters|selectattr("current")|list|length) %}
+<div class="empty-v14">
+    <h3>No results match your search</h3>
+    <p>Try widening the filters above, or clear the search.</p>
+    <a href="?" class="btn-secondary-v14">Clear filters</a>
+</div>
+
+{% else %}
+<div class="empty-v14">
+    <h3>No {{ display_name|lower }} yet.</h3>
+    <p>Get started by creating your first {{ singular_name|lower }}.</p>
+    <a href="/admin/{{ admin_name }}/new" class="btn-primary-v14">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Create your first {{ singular_name|lower }}
     </a>
 </div>
-
-<div id="changelist">
-    <div id="changelist-main">
-        <div id="toolbar">
-            <form method="get" class="search">
-                <input type="search" name="q" value="{{ search_query }}" placeholder="Search {{ display_name|lower }}">
-                <button type="submit">Search</button>
-            </form>
-        </div>
-
-        {# Bulk-action form is gated on `bulk_actions_enabled` (always
-           false in Phase 6a — the POST handler isn't wired). When the
-           flag is off we drop the surrounding <form> + checkboxes
-           entirely so the page never renders a Submit that 404s. #}
-        {% if bulk_actions_enabled %}
-        <form method="post" action="/admin/{{ admin_name }}/_action">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <div class="actions">
-                <label>Action:
-                    <select name="action">
-                        <option value="">---------</option>
-                        <option value="delete_selected">Delete selected {{ display_name|lower }}</option>
-                    </select>
-                </label>
-                <button type="submit">Go</button>
-                <span class="action-counter">{{ rows|length }} of {{ total_rows }} selected</span>
-            </div>
-        {% endif %}
-
-            {% if rows %}
-            <table class="results">
-                <thead>
-                    <tr>
-                        {% if bulk_actions_enabled %}
-                        <th class="action-checkbox"><input type="checkbox" id="action-toggle"></th>
-                        {% endif %}
-                        {% for field in fields %}
-                        <th scope="col">{{ field.label }}</th>
-                        {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in rows %}
-                    <tr>
-                        {% if bulk_actions_enabled %}
-                        <td class="action-checkbox"><input type="checkbox" name="_selected_action" value="{{ row.id }}"></td>
-                        {% endif %}
-                        {% for field in fields %}
-                        <td>
-                            {% if loop.index0 == 0 %}
-                            <a href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
-                            {% else %}
-                            {{ row[field.name] }}
-                            {% endif %}
-                        </td>
-                        {% endfor %}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% elif search_query or (filters|selectattr("current")|list|length) %}
-            {# Phase 1/c — filtered empty: search box has a value or at
-               least one filter group has a `current` selection. The
-               table is empty *because* of the user's input, so don't
-               offer a "create first" CTA; just say nothing matched. #}
-            <p class="empty-list">No results match your search.</p>
-            {% else %}
-            {# Phase 1/c — true empty: no rows, no search, no active
-               filter. Offer the primary CTA so a fresh user can act
-               immediately without hunting for the Add button in the
-               toolbar above. #}
-            <div class="empty-list">
-                <p class="text-base font-semibold text-metal mb-xs">No {{ display_name|lower }} yet.</p>
-                <p class="text-small text-gray-600 mb-md">Get started by creating your first {{ singular_name|lower }}.</p>
-                <a class="btn-primary" href="/admin/{{ admin_name }}/new">
-                    {{ icon("plus", class="w-4 h-4") }}
-                    Create your first {{ singular_name|lower }}
-                </a>
-            </div>
-            {% endif %}
-        {% if bulk_actions_enabled %}
-        </form>
-        {% endif %}
-
-        {% if total_pages > 1 %}
-        <p class="paginator">
-            {% for n in range(1, total_pages + 1) %}
-                {% if n == page %}
-                <span class="this-page">{{ n }}</span>
-                {% else %}
-                <a href="?p={{ n }}{% if search_query %}&q={{ search_query }}{% endif %}">{{ n }}</a>
-                {% endif %}
-            {% endfor %}
-            <span>{{ total_rows }} {{ display_name|lower }}</span>
-        </p>
-        {% endif %}
-    </div>
-
-    <div id="changelist-filter">
-        <h2>Filter</h2>
-        {% if filters %}
-            {% for group in filters %}
-            <h3>By {{ group.label|lower }}</h3>
-            <ul>
-                <li{% if not group.current %} class="selected"{% endif %}>
-                    <a href="?">All</a>
-                </li>
-                {% for opt in group.options %}
-                <li{% if opt.selected %} class="selected"{% endif %}>
-                    <a href="?{{ group.field }}={{ opt.value }}">{{ opt.label }}</a>
-                </li>
-                {% endfor %}
-            </ul>
-            {% endfor %}
-        {% else %}
-        <p class="help p-md">No filters available.</p>
-        {% endif %}
-    </div>
-</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // Select-all checkbox toggles every row checkbox.
-    document.addEventListener("DOMContentLoaded", function () {
-        var toggle = document.getElementById("action-toggle");
-        if (!toggle) return;
-        toggle.addEventListener("change", function () {
-            document.querySelectorAll("input[name=_selected_action]")
-                .forEach(function (b) { b.checked = toggle.checked; });
-        });
-
-        // "/" focuses the search box (Django convention).
-        document.addEventListener("keydown", function (e) {
-            if (e.key === "/" && document.activeElement.tagName !== "INPUT") {
-                var s = document.querySelector("input[name=q]");
-                if (s) { s.focus(); e.preventDefault(); }
-            }
-        });
-    });
+document.addEventListener("keydown", function (e) {
+    if (e.key === "/" && !e.target.matches("input, textarea")) {
+        var s = document.querySelector("input[name=q]");
+        if (s) { s.focus(); e.preventDefault(); }
+    }
+});
 </script>
 {% endblock %}

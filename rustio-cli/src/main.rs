@@ -1632,7 +1632,7 @@ log = "0.4"
 
     pub(super) const MAIN_RS: &str = r#"use std::net::SocketAddr;
 
-use rustio_core::admin::{register_admin_routes, Admin};
+use rustio_core::admin::{register_admin_routes, Admin, SiteBranding};
 use rustio_core::background;
 use rustio_core::middleware::{self, RateLimiter};
 use rustio_core::migrations;
@@ -1641,6 +1641,31 @@ use rustio_core::router::Router;
 use rustio_core::server::Server;
 use rustio_core::templates::Templates;
 use rustio_core::auth;
+
+/// Project branding — `env!("CARGO_PKG_NAME")` resolves at compile time
+/// to this project's package name, so the admin chrome shows your
+/// project name instead of the framework default. Edit freely.
+fn branding() -> SiteBranding {
+    let pkg = env!("CARGO_PKG_NAME");
+    let title_cased: String = pkg
+        .split(|c: char| c == '-' || c == '_')
+        .map(|w| {
+            let mut chars = w.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    SiteBranding {
+        site_title: format!("{} administration", title_cased),
+        site_header: title_cased.clone(),
+        index_title: "Dashboard".into(),
+        footer_copyright: format!("RustIO {}", env!("CARGO_PKG_VERSION")),
+        domain: format!("{}.local", pkg),
+    }
+}
 
 mod apps;
 
@@ -1676,7 +1701,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let template_dir = std::env::var("RUSTIO_TEMPLATE_DIR").unwrap_or_else(|_| "templates".into());
     let templates = Templates::new(Some(template_dir.into()))?;
 
-    let admin = Admin::new();
+    let admin = Admin::new()
+        .site_branding(branding());
     admin.seed_permissions(&db).await?;
 
     let router = Router::new()
