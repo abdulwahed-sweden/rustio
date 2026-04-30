@@ -62,6 +62,13 @@
        stays — it's explicit, not a hack. #}
     <thead>
         <tr>
+            {# `<th scope="col" class="num">…</th>` is asserted literally by
+               `list_dispatches_cell_renderer_by_field_kind` and
+               `list_numeric_dispatch_is_kind_driven_not_name_driven`
+               in render.rs. The `data-kind` attribute lives on `<td>`
+               only (below); browsers propagate column widths from the
+               <td> width hint up to the <th>, so the v1.4.1 column
+               sizing still works without touching the test contract. #}
             {% for field in fields %}
             <th scope="col"{% if field.kind == "number" %} class="num"{% endif %}>{{ field.label }}</th>
             {% endfor %}
@@ -72,7 +79,7 @@
     {% for row in rows %}
         <tr>
             {% for field in fields %}
-            <td{% if field.kind == "number" %} class="num"{% endif %}>
+            <td data-kind="{{ field.kind }}"{% if field.kind == "number" %} class="num"{% endif %}>
                 {% if loop.index0 == 0 %}
                     <a class="row-link" href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
                 {% elif field.kind == "checkbox" %}
