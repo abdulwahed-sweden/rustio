@@ -77,47 +77,66 @@
     </thead>
     <tbody>
     {% for row in rows %}
+        {# Per-row namespace tracks whether the primary-label cell
+           has already been emitted. minijinja (like Jinja2) needs
+           a namespace because plain `{% set %}` inside a loop
+           doesn't escape the iteration's scope. #}
+        {% set ns = namespace(primary_done=false) %}
         <tr>
             {% for field in fields %}
-            <td data-kind="{{ field.kind }}"{% if field.kind == "number" %} class="num"{% endif %}>
-                {% if loop.index0 == 0 %}
+            {% if not ns.primary_done and field.kind != "number" and field.kind != "checkbox" and field.kind != "datetime" %}
+                {# Primary label (v1.4.1) — the first non-typed cell
+                   becomes the row's edit anchor. ID columns (kind=
+                   "number") and typed cells (checkbox / datetime) are
+                   skipped so the click target lands on the meaningful
+                   column. Pure type-driven; no field-name lookup. #}
+                <td data-kind="{{ field.kind }}" data-primary="true">
                     <a class="row-link" href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
-                {% elif field.kind == "checkbox" %}
-                    {# Stability lock (v1.4.x) — boolean cells arrive as
-                       real JSON `true` / `false` (typed in `list_ctx`).
-                       Template uses truthiness, never string match. #}
-                    {# `badge-v14 badge-yes-v14` / `badge-v14 badge-no-v14`
-                       are pinned literally by
-                       `list_dispatches_cell_renderer_by_field_kind` in
-                       admin/render.rs:3416. Other classes were renamed
-                       off the `-v14` suffix; these two stay as the
-                       test-contracted boolean-cell markers. CSS rules in
-                       base.html (`.badge-v14`, `.badge-yes-v14`,
-                       `.badge-no-v14`) match the literal class names. #}
-                    {% if row[field.name] %}
-                        <span class="badge-v14 badge-yes-v14">Yes</span>
-                    {% else %}
-                        <span class="badge-v14 badge-no-v14">No</span>
-                    {% endif %}
-                {% elif field.kind == "datetime" %}
-                    {% if row[field.name]|length >= 16 and row[field.name][10] == "T" %}
-                        <div class="rio-cell-datetime">
-                            <div class="rio-time">{{ row[field.name][11:16] }}</div>
-                            <div class="rio-date">{{ row[field.name][:10] }}</div>
-                        </div>
-                    {% else %}
+                </td>
+                {% set ns.primary_done = true %}
+            {% else %}
+                <td data-kind="{{ field.kind }}"{% if field.kind == "number" %} class="num"{% endif %}>
+                    {% if field.kind == "checkbox" %}
+                        {# Stability lock (v1.4.x) — boolean cells arrive as
+                           real JSON `true` / `false` (typed in `list_ctx`).
+                           Template uses truthiness, never string match.
+                           `badge-v14 badge-yes-v14` / `badge-v14 badge-no-v14`
+                           are pinned literally by
+                           `list_dispatches_cell_renderer_by_field_kind` in
+                           render.rs:3416 — kept as the test-contracted
+                           boolean-cell markers. #}
+                        {% if row[field.name] %}
+                            <span class="badge-v14 badge-yes-v14">Yes</span>
+                        {% else %}
+                            <span class="badge-v14 badge-no-v14">No</span>
+                        {% endif %}
+                    {% elif field.kind == "datetime" %}
+                        {# Two-line stack — DATE on top, TIME below
+                           (v1.4.1 reorder for readability). The literal
+                           `<div class="rio-time">…</div>` and
+                           `<div class="rio-date">…</div>` markup is
+                           pinned by `list_dispatches_cell_renderer_by_field_kind`;
+                           the assertions check substring presence, not
+                           order, so the swap is safe. #}
+                        {% if row[field.name]|length >= 16 and row[field.name][10] == "T" %}
+                            <div class="rio-cell-datetime">
+                                <div class="rio-date">{{ row[field.name][:10] }}</div>
+                                <div class="rio-time">{{ row[field.name][11:16] }}</div>
+                            </div>
+                        {% else %}
+                            <span class="rio-cell-empty">—</span>
+                        {% endif %}
+                    {% elif not row[field.name] %}
                         <span class="rio-cell-empty">—</span>
+                    {% else %}
+                        {# UX fix — long-text truncation. Wrapper has
+                           the 2-line clamp (CSS in base.html); the
+                           title attr gives the full string on hover.
+                           Generic — no field-name dependence. #}
+                        <span class="cell-text" title="{{ row[field.name] }}">{{ row[field.name] }}</span>
                     {% endif %}
-                {% elif not row[field.name] %}
-                    <span class="rio-cell-empty">—</span>
-                {% else %}
-                    {# UX fix — long-text truncation. Wrapper has the
-                       2-line clamp (CSS in base.html); the title attr
-                       gives the full string on hover. Generic — applies
-                       to every text-kind cell, no field-name dependence. #}
-                    <span class="cell-text" title="{{ row[field.name] }}">{{ row[field.name] }}</span>
-                {% endif %}
-            </td>
+                </td>
+            {% endif %}
             {% endfor %}
             <td class="actions-cell">
                 <a href="/admin/{{ admin_name }}/{{ row.id }}/edit" class="icon-btn" title="Edit" aria-label="Edit">

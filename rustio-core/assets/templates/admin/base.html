@@ -560,8 +560,16 @@
         .table thead th.num { text-align: right; }
         .table .row-link {
             color: var(--rio-text); font-weight: 600; text-decoration: none;
+            cursor: pointer;
         }
         .table .row-link:hover { color: var(--rio-accent); text-decoration: underline; }
+        /* Primary-label cell marker (v1.4.1). list.html flags the
+           first non-typed cell with `data-primary="true"`; that cell
+           hosts the row-link `<a>` to the edit page. The bold weight
+           on the cell pairs with the row-link's own font-weight so
+           the click target reads the same whether the user notices
+           the link or just the cell. */
+        .table td[data-primary="true"] { font-weight: 600; }
         /* Action cell ALWAYS visible — touch-friendly, scannable, not hover-only.
            Width is fixed on the `th` so the column doesn't shift when
            icons appear or rows have different action sets. */
@@ -647,22 +655,28 @@
            the .num utility class (used in lists and meta cards). */
         .num, td.num, .v.code, .lede code { font-feature-settings: "tnum" 1, "lnum" 1; }
 
-        /* v1.4.x — Two-line DateTime cell layout in lists. Time on top
-           (bold, mono, larger), date below (muted, smaller). Cell aligns
-           top so the eye scans the time column first. */
-        .rio-cell-datetime { line-height: 1.3; }
-        .rio-cell-datetime .rio-time {
-            font-family: var(--rio-font-mono);
-            font-weight: 600;
-            font-size: 16px;
-            color: var(--rio-text);
-            font-feature-settings: "tnum" 1, "lnum" 1;
+        /* Two-line DateTime cell layout in lists. v1.4.1 reorder —
+           DATE reads on top (the calendar is the primary anchor),
+           TIME sits below in a secondary tone. The template already
+           emits `<div class="rio-date">` before `<div class="rio-time">`;
+           this CSS makes the visual match. Tests pin the literal
+           `<div class="rio-time">…</div>` and `<div class="rio-date">…</div>`
+           tags but not their order, so the swap is contract-safe. */
+        .rio-cell-datetime {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.2;
         }
         .rio-cell-datetime .rio-date {
-            font-size: 13px;
-            color: var(--rio-text-muted);
-            margin-top: 2px;
+            font-weight: 500;
+            color: var(--rio-text);
             font-feature-settings: "lnum" 1;
+        }
+        .rio-cell-datetime .rio-time {
+            font-size: 12px;
+            color: var(--rio-text-muted);
+            font-family: var(--rio-font-mono);
+            font-feature-settings: "tnum" 1, "lnum" 1;
         }
         td:has(> .rio-cell-datetime) { vertical-align: top; }
 
