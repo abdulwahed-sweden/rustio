@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="/static/admin.css">
     <style>
         /* =====================================================================
-         * RustIO admin design system — v1.4.x
+         * RustIO admin design system
          * =====================================================================
          *
          * This <style> block is the runtime UI contract for the admin. It is
@@ -22,56 +22,55 @@
          * cascade resolves correctly even if a template overrides
          * /static/admin.css.
          *
-         * Two-tier CSS pipeline
-         * ---------------------
-         *   /static/admin.css   ←  legacy / Tailwind utilities. Compiled from
-         *                          rustio-core/assets/css/input.css. Loaded
-         *                          first via <link>. Powers templates that
-         *                          haven't been migrated to v14 yet
-         *                          (coming_soon, index, user_new,
-         *                          user_confirm_delete, group_new, group_edit,
-         *                          group_confirm_delete, _form_field include).
-         *   inline <style>      ←  v14 design system below. Loaded after
-         *                          admin.css so equal-specificity rules win
-         *                          on cascade order. Class names carry the
-         *                          `-v14` suffix to coexist with legacy
-         *                          rules of the same base name (`.card`,
-         *                          `.btn-primary`, `.topbar`, `.table`).
-         *                          The suffix will be retired once the eight
-         *                          legacy-using templates are migrated and
-         *                          the colliding rules are pruned from
-         *                          input.css.
+         * Architecture
+         * ------------
+         *   /static/admin.css   ←  Tailwind base + utility classes,
+         *                          compiled from rustio-core/assets/css/
+         *                          input.css. Component rules previously
+         *                          hosted there have been pruned — the
+         *                          inline block below is the single source
+         *                          of truth for component visuals. A small
+         *                          set of legacy classes survive in
+         *                          admin.css (see §6 below); each is
+         *                          documented at the rule itself.
+         *   inline <style>      ←  the design system. Class names are bare
+         *                          (no suffix). Tokens, layout shell, and
+         *                          every component live here.
          *
          * Section map
          * -----------
-         *   §1  Design tokens          — :root variables (colours, typography,
-         *                                 spacing, shadows). Single source of
-         *                                 truth for every component below.
-         *   §2  Base / reset           — body, html, font baseline, focus.
-         *   §3  Layout shell           — topbar, sidebar, main, footer, demo
-         *                                 banner.
-         *   §4  Components             — cards, fields, buttons, tables,
-         *                                 badges, alerts, status card,
-         *                                 navigation chips, login card.
-         *   §5  Utilities              — `.muted`, `.sr-only`, etc. Tiny
-         *                                 cross-component helpers.
+         *   §1  Design tokens   — :root variables (colours, typography,
+         *                         spacing, shadows). Single source of
+         *                         truth for every component below.
+         *   §2  Base / reset    — body, html, font baseline, focus.
+         *   §3  Layout shell    — topbar, sidebar, main, footer, demo
+         *                         banner.
+         *   §4  Components      — cards, fields, buttons, tables,
+         *                         badges, alerts, status card, login
+         *                         card, dashboard tiles, etc.
+         *   §5  Utilities       — `.muted`, `.sr-only`, etc. Cross-
+         *                         component helpers.
          *
-         * Test-pinned classnames
-         * ----------------------
-         *   `<table class="results row-clickable">` on users_list.html
+         * Test-pinned classnames (kept for contract reasons)
+         * --------------------------------------------------
+         *   `<table class="results row-clickable">`  on users_list.html
          *     — pinned by templates.rs:476.
-         *   `<span class="btn-danger">` on user_view.html disabled-Delete
-         *     — pinned by templates.rs:415 (asserted via
-         *       `assert_delete_is_disabled_span`).
-         *   These two literals are deliberately kept; the v14 visual is
-         *   layered on top via `.btn-disabled-v14` and the existing
-         *   `.results` rule (which `table-layout: fixed` from the
-         *   truncation commit already styles correctly).
+         *   `<span class="btn-danger">`              on user_view.html
+         *     — pinned by templates.rs:415 (`assert_delete_is_disabled_span`).
+         *   `<button class="btn-danger">`            on user_confirm_delete.html
+         *     — pinned by user_confirm_delete_renders_with_last_developer_banner
+         *       and user_confirm_delete_submit_enabled_for_normal_user.
+         *   `<span class="required">`                in includes/_form_field.html
+         *     — pinned by form_renders_required_marker_humanised_label_and_cancel.
+         *
+         *   For the first three: `.btn-danger` is the v14 component class
+         *   below; `.results` and `.row-clickable` are legacy bridges in
+         *   admin.css that supply the table chrome. They render correctly
+         *   without inline overrides.
          *
          * Add a new component
          * -------------------
-         *   1. Drop the rule into §4 alongside its siblings (button rules
-         *      stay together, card rules stay together, etc.).
+         *   1. Drop the rule into §4 alongside its siblings.
          *   2. Drive every value from a `--rio-*` token if one exists.
          *   3. Reference the consumer template(s) in a one-line comment
          *      above the rule — orphaned components rot.
@@ -79,9 +78,9 @@
          */
 
         /* §1 — Design tokens =================================================
-         * Single source of truth for the entire v14 layer. Every component
-         * rule below should resolve through these variables; a one-line
-         * change here is meant to ripple through the whole admin.
+         * Single source of truth for the entire design system. Every
+         * component rule below should resolve through these variables; a
+         * one-line change here is meant to ripple through the whole admin.
          */
         :root {
             /* Typography (v1.4.x polish) */
@@ -140,12 +139,12 @@
         a { color: var(--rio-text); }
 
         /* Skip-to-content (a11y improvement #1) */
-        .skip-v14 {
+        .skip {
             position: absolute; top: -200px; left: 0; z-index: 9999;
             padding: 12px 18px; background: var(--rio-text); color: #fff;
             text-decoration: none; font-weight: 600; border-radius: 0 0 8px 0;
         }
-        .skip-v14:focus { top: 0; }
+        .skip:focus { top: 0; }
 
         /* §3 — Layout shell =================================================
          * Topbar + sidebar + main + footer. These rules define the page
@@ -154,28 +153,28 @@
          */
 
         /* Topbar */
-        .topbar-v14 {
+        .topbar {
             background: var(--rio-bg-surface-1);
             border-bottom: 1px solid var(--rio-border);
             padding: 16px 24px;
             display: flex; align-items: center; justify-content: space-between; gap: 16px;
         }
-        .topbar-v14 .brand {
+        .topbar .brand {
             display: inline-flex; align-items: center; gap: 12px;
             color: var(--rio-text); text-decoration: none;
         }
-        .topbar-v14 .mark {
+        .topbar .mark {
             width: 36px; height: 36px; flex-shrink: 0;
             background: var(--rio-accent); border-radius: 8px;
             display: inline-flex; align-items: center; justify-content: center;
             color: #fff; font-weight: 700; font-size: 18px;
             font-family: var(--rio-font-heading);
         }
-        .topbar-v14 .title { font-weight: 600; font-size: 18px; color: var(--rio-text); font-family: var(--rio-font-heading); }
-        .topbar-v14 .tools { display: inline-flex; align-items: center; gap: 12px; font-size: 15px; flex-wrap: wrap; }
-        .topbar-v14 .tools form { margin: 0; }
-        .topbar-v14 .who { color: var(--rio-text-muted); }
-        .btn-pill-v14 {
+        .topbar .title { font-weight: 600; font-size: 18px; color: var(--rio-text); font-family: var(--rio-font-heading); }
+        .topbar .tools { display: inline-flex; align-items: center; gap: 12px; font-size: 15px; flex-wrap: wrap; }
+        .topbar .tools form { margin: 0; }
+        .topbar .who { color: var(--rio-text-muted); }
+        .btn-pill {
             display: inline-flex; align-items: center; gap: 6px;
             padding: 8px 14px; background: var(--rio-bg-surface-2);
             border: 1px solid var(--rio-border); border-radius: 6px;
@@ -184,49 +183,49 @@
             box-shadow: var(--rio-shadow-card);
             font-family: inherit;
         }
-        .btn-pill-v14:hover { background: var(--rio-bg); }
+        .btn-pill:hover { background: var(--rio-bg); }
 
         /* Demo banner */
-        .demo-banner-v14 {
+        .demo-banner {
             background: #fef2f2; border-bottom: 1px solid #fecaca;
             color: #991b1b; padding: 12px 24px; font-size: 14px; font-weight: 500;
         }
-        .demo-banner-v14 code { background: #fff; padding: 1px 6px; border-radius: 4px; font-family: var(--rio-font-mono); }
+        .demo-banner code { background: #fff; padding: 1px 6px; border-radius: 4px; font-family: var(--rio-font-mono); }
 
         /* Shell */
-        .shell-v14 { display: flex; min-height: calc(100vh - 64px - 50px); }
+        .shell { display: flex; min-height: calc(100vh - 64px - 50px); }
 
         /* Sidebar */
-        .sidebar-v14 {
+        .sidebar {
             width: 248px; flex-shrink: 0;
             background: var(--rio-bg-surface-2);
             border-right: 1px solid var(--rio-border);
             padding: 24px 14px;
             font-family: var(--rio-font-heading);
         }
-        .sidebar-v14 .section {
+        .sidebar .section {
             font-size: 12px; font-weight: 600; color: var(--rio-text-faint);
             letter-spacing: 0.08em; padding: 12px 12px 10px; text-transform: uppercase;
         }
-        .sidebar-v14 .section + .section,
-        .sidebar-v14 .section:not(:first-child) { margin-top: 14px; }
-        .sidebar-v14 a.link {
+        .sidebar .section + .section,
+        .sidebar .section:not(:first-child) { margin-top: 14px; }
+        .sidebar a.link {
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 14px; color: var(--rio-text-secondary); border-radius: 8px;
             font-size: var(--rio-text-base); font-weight: 500; text-decoration: none;
             margin-bottom: 6px; gap: 10px;
             border: 1px solid transparent;
         }
-        .sidebar-v14 a.link .label { display: inline-flex; align-items: center; gap: 12px; }
-        .sidebar-v14 a.link .badge {
+        .sidebar a.link .label { display: inline-flex; align-items: center; gap: 12px; }
+        .sidebar a.link .badge {
             background: var(--rio-bg-surface-1); color: var(--rio-text-secondary);
             font-size: 13px; padding: 2px 10px; border-radius: 10px; font-weight: 600;
             border: 1px solid var(--rio-border);
             font-feature-settings: "tnum" 1, "lnum" 1;
         }
-        .sidebar-v14 a.link:hover { background: var(--rio-bg-surface-1); }
+        .sidebar a.link:hover { background: var(--rio-bg-surface-1); }
         /* Active item — KEEP the 3px rust left-stripe (improvement #2) */
-        .sidebar-v14 a.link.is-active {
+        .sidebar a.link.is-active {
             background: var(--rio-accent-bg);
             color: var(--rio-accent);
             border-color: var(--rio-accent-border);
@@ -234,34 +233,34 @@
             box-shadow: var(--rio-shadow-card), inset 3px 0 0 var(--rio-accent);
             padding-left: 16px;
         }
-        .sidebar-v14 a.link.is-active .badge { color: var(--rio-accent); border-color: var(--rio-accent-border); }
-        .sidebar-v14 .powered {
+        .sidebar a.link.is-active .badge { color: var(--rio-accent); border-color: var(--rio-accent-border); }
+        .sidebar .powered {
             margin-top: 24px; padding: 14px 16px;
             background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border);
             border-radius: 8px;
             box-shadow: var(--rio-shadow-card);
         }
-        .sidebar-v14 .powered .k { font-size: 13px; color: var(--rio-text-muted); font-weight: 500; }
-        .sidebar-v14 .powered .v { font-size: 15px; font-weight: 600; color: var(--rio-text); margin-top: 2px; }
+        .sidebar .powered .k { font-size: 13px; color: var(--rio-text-muted); font-weight: 500; }
+        .sidebar .powered .v { font-size: 15px; font-weight: 600; color: var(--rio-text); margin-top: 2px; }
 
         /* Main */
-        .main-v14 {
+        .main {
             flex: 1; padding: 32px 24px; background: var(--rio-bg); overflow-y: auto;
             display: flex; justify-content: center;
         }
-        .main-v14 .inner { width: 100%; max-width: 1200px; }
+        .main .inner { width: 100%; max-width: 1200px; }
 
         /* Breadcrumbs */
-        .crumbs-v14 {
+        .crumbs {
             display: flex; align-items: center; gap: 6px;
             font-size: 14px; color: var(--rio-text-muted); font-weight: 500;
             margin-bottom: 10px;
         }
-        .crumbs-v14 a { color: var(--rio-text-muted); text-decoration: none; }
-        .crumbs-v14 a:hover { color: var(--rio-text); text-decoration: underline; }
-        .crumbs-v14 .current { color: var(--rio-text); font-weight: 600; }
-        .crumbs-v14 .sep { color: var(--rio-text-faint); }
+        .crumbs a { color: var(--rio-text-muted); text-decoration: none; }
+        .crumbs a:hover { color: var(--rio-text); text-decoration: underline; }
+        .crumbs .current { color: var(--rio-text); font-weight: 600; }
+        .crumbs .sep { color: var(--rio-text-faint); }
 
         /* §4 — Components ==================================================
          * Reusable UI building blocks. Each subsection is one component
@@ -294,27 +293,27 @@
          */
 
         /* Page header */
-        .page-head-v14 {
+        .page-head {
             display: flex; align-items: flex-end; justify-content: space-between;
             gap: 18px; margin-bottom: 28px; flex-wrap: wrap;
         }
-        .page-head-v14 h1 {
+        .page-head h1 {
             font-size: 32px; font-weight: var(--rio-weight-heading); margin: 0 0 8px;
             color: var(--rio-text); letter-spacing: -0.02em; line-height: 1.15;
             font-family: var(--rio-font-heading);
         }
-        .page-head-v14 .lede {
+        .page-head .lede {
             margin: 0; font-size: 16px; color: var(--rio-text-muted); font-weight: 400;
         }
-        .page-head-v14 .lede code {
+        .page-head .lede code {
             font-family: var(--rio-font-mono);
             color: var(--rio-text); font-weight: 500; font-size: 14px;
             font-feature-settings: "tnum" 1, "lnum" 1;
         }
-        .page-head-v14 .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .page-head .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
         /* Cards */
-        .card-v14 {
+        .card {
             background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border);
             border-radius: 10px;
@@ -322,26 +321,26 @@
             overflow: hidden;
             margin-bottom: 24px;
         }
-        .card-v14:last-child { margin-bottom: 0; }
-        .card-v14-head {
+        .card:last-child { margin-bottom: 0; }
+        .card-head {
             padding: 16px 24px;
             background: var(--rio-bg-surface-2);
             border-bottom: 1px solid var(--rio-border);
         }
-        .card-v14-head h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--rio-text); font-family: var(--rio-font-heading); }
-        .card-v14-head .sub { font-size: 14px; color: var(--rio-text-muted); margin: 4px 0 0; font-weight: 400; }
-        .card-v14-body { padding: 24px; }
-        .card-v14-body.tight { padding: 8px 0; }
+        .card-head h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--rio-text); font-family: var(--rio-font-heading); }
+        .card-head .sub { font-size: 14px; color: var(--rio-text-muted); margin: 4px 0 0; font-weight: 400; }
+        .card-body { padding: 24px; }
+        .card-body.tight { padding: 8px 0; }
 
         /* Field */
-        .field-v14 .label-v14 { display: block; font-size: 14px; font-weight: 600; color: var(--rio-text); margin-bottom: 7px; }
-        .field-v14 .label-v14 .req { color: var(--rio-accent); }
-        .field-v14 input[type="text"], .field-v14 input[type="email"],
-        .field-v14 input[type="password"], .field-v14 input[type="number"],
-        .field-v14 input[type="tel"], .field-v14 input[type="url"],
-        .field-v14 input[type="search"], .field-v14 input[type="date"],
-        .field-v14 input[type="datetime-local"],
-        .field-v14 textarea, .field-v14 select {
+        .field .label { display: block; font-size: 14px; font-weight: 600; color: var(--rio-text); margin-bottom: 7px; }
+        .field .label .req { color: var(--rio-accent); }
+        .field input[type="text"], .field input[type="email"],
+        .field input[type="password"], .field input[type="number"],
+        .field input[type="tel"], .field input[type="url"],
+        .field input[type="search"], .field input[type="date"],
+        .field input[type="datetime-local"],
+        .field textarea, .field select {
             width: 100%; height: 44px; padding: 0 14px;
             background: var(--rio-bg-surface-1);
             border: 1.5px solid var(--rio-border); border-radius: 8px;
@@ -349,54 +348,54 @@
             font-family: inherit; outline: none; box-sizing: border-box;
             font-feature-settings: "lnum" 1;
         }
-        .field-v14 textarea {
+        .field textarea {
             min-height: 110px; height: auto; padding: 12px 14px; line-height: 1.55; resize: vertical;
         }
-        .field-v14 input:focus, .field-v14 textarea:focus, .field-v14 select:focus {
+        .field input:focus, .field textarea:focus, .field select:focus {
             border-color: var(--rio-accent); box-shadow: var(--rio-ring);
         }
-        .field-v14 .help { margin: 7px 0 0; font-size: 13px; color: var(--rio-text-muted); font-weight: 400; }
-        .field-v14 .err {
+        .field .help { margin: 7px 0 0; font-size: 13px; color: var(--rio-text-muted); font-weight: 400; }
+        .field .err {
             margin: 7px 0 0; font-size: 13px; color: #b91c1c; font-weight: 500;
         }
 
         /* Field grid — 24px gaps for breathing room */
-        .field-grid-v14 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
-        .field-grid-v14 > .span-2 { grid-column: span 2; }
+        .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+        .field-grid > .span-2 { grid-column: span 2; }
         @media (max-width: 768px) {
-            .field-grid-v14 { grid-template-columns: 1fr; }
-            .field-grid-v14 > .span-2 { grid-column: span 1; }
+            .field-grid { grid-template-columns: 1fr; }
+            .field-grid > .span-2 { grid-column: span 1; }
         }
 
         /* Toggle row (boolean fields) */
-        .toggle-row-v14 {
+        .toggle-row {
             padding: 18px 20px; background: var(--rio-bg-surface-2);
             border: 1px solid var(--rio-border); border-radius: 8px;
             display: flex; align-items: center; justify-content: space-between; gap: 14px;
         }
-        .toggle-row-v14 .copy strong { display: block; font-size: 15px; font-weight: 600; color: var(--rio-text); margin-bottom: 2px; }
-        .toggle-row-v14 .copy small { font-size: 13px; color: var(--rio-text-muted); }
-        .toggle-v14 { position: relative; display: inline-block; flex-shrink: 0; }
-        .toggle-v14 input { position: absolute; opacity: 0; width: 0; height: 0; }
-        .toggle-v14 .track {
+        .toggle-row .copy strong { display: block; font-size: 15px; font-weight: 600; color: var(--rio-text); margin-bottom: 2px; }
+        .toggle-row .copy small { font-size: 13px; color: var(--rio-text-muted); }
+        .toggle { position: relative; display: inline-block; flex-shrink: 0; }
+        .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+        .toggle .track {
             position: relative; display: block; width: 46px; height: 26px;
             background: var(--rio-border); border-radius: 13px; cursor: pointer;
             transition: background 0.15s;
         }
-        .toggle-v14 .track::after {
+        .toggle .track::after {
             content: ""; position: absolute; top: 3px; left: 3px;
             width: 20px; height: 20px; background: #fff; border-radius: 50%;
             box-shadow: 0 1px 3px rgba(0,0,0,0.15);
             transition: transform 0.15s;
         }
-        .toggle-v14 input:checked + .track { background: var(--rio-text); }
-        .toggle-v14 input:checked + .track::after { transform: translateX(20px); }
-        .toggle-v14 input:focus-visible + .track { outline: 3px solid rgba(184,67,26,0.25); outline-offset: 2px; }
+        .toggle input:checked + .track { background: var(--rio-text); }
+        .toggle input:checked + .track::after { transform: translateX(20px); }
+        .toggle input:focus-visible + .track { outline: 3px solid rgba(184,67,26,0.25); outline-offset: 2px; }
 
         /* Buttons — primary now uses rust accent (was solid black).
            In an 8-hour-a-day admin, the rust anchor on Save/Add gives
            the eye a faster scan target than black-on-white. */
-        .btn-primary-v14 {
+        .btn-primary {
             display: inline-flex; align-items: center; gap: 8px;
             padding: 11px 18px; background: var(--rio-accent);
             border: 1px solid var(--rio-accent); border-radius: 8px;
@@ -404,87 +403,87 @@
             cursor: pointer; box-shadow: 0 1px 2px rgba(184,67,26,0.18);
             font-family: inherit; text-decoration: none;
         }
-        .btn-primary-v14:hover { background: #9c3815; border-color: #9c3815; }
-        .btn-primary-v14:focus-visible { outline: 3px solid rgba(184,67,26,0.30); outline-offset: 2px; }
-        .btn-secondary-v14 {
+        .btn-primary:hover { background: #9c3815; border-color: #9c3815; }
+        .btn-primary:focus-visible { outline: 3px solid rgba(184,67,26,0.30); outline-offset: 2px; }
+        .btn-secondary {
             display: inline-flex; align-items: center; gap: 7px;
             padding: 11px 16px; background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border); border-radius: 8px;
             color: var(--rio-text-secondary); font-size: 15px; font-weight: 500;
             cursor: pointer; font-family: inherit; text-decoration: none;
         }
-        .btn-secondary-v14:hover { background: var(--rio-bg-surface-2); border-color: var(--rio-text-faint); }
-        .btn-text-v14 {
+        .btn-secondary:hover { background: var(--rio-bg-surface-2); border-color: var(--rio-text-faint); }
+        .btn-text {
             display: inline-flex; align-items: center; gap: 6px;
             font-size: 15px; color: var(--rio-text-muted);
             text-decoration: none; font-weight: 500; padding: 11px 14px;
             background: transparent; border: 1px solid transparent; border-radius: 8px;
             cursor: pointer; font-family: inherit;
         }
-        .btn-text-v14:hover { color: var(--rio-text); background: var(--rio-bg-surface-2); }
-        .btn-danger-v14 {
+        .btn-text:hover { color: var(--rio-text); background: var(--rio-bg-surface-2); }
+        .btn-danger {
             display: inline-flex; align-items: center; gap: 7px;
             padding: 11px 16px; background: var(--rio-bg-surface-1);
             border: 1px solid #fca5a5; border-radius: 8px;
             color: #b91c1c; font-size: 15px; font-weight: 600;
             cursor: pointer; font-family: inherit; text-decoration: none;
         }
-        .btn-danger-v14:hover { background: #fef2f2; }
+        .btn-danger:hover { background: #fef2f2; }
 
         /* Save row */
-        .save-row-v14 {
+        .save-row {
             background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border); border-radius: 10px;
             padding: 16px 20px; box-shadow: var(--rio-shadow-card);
             display: flex; align-items: center; justify-content: space-between;
             flex-wrap: wrap; gap: 12px; margin-top: 24px;
         }
-        .save-row-v14 .group { display: flex; gap: 10px; flex-wrap: wrap; }
+        .save-row .group { display: flex; gap: 10px; flex-wrap: wrap; }
 
         /* Danger zone strip */
-        .danger-zone-v14 {
+        .danger-zone {
             margin-top: 24px; background: var(--rio-bg-surface-1);
             border: 1px solid #fecaca; border-radius: 10px; overflow: hidden;
             box-shadow: var(--rio-shadow-card);
         }
-        .danger-zone-v14 .head {
+        .danger-zone .head {
             padding: 12px 20px; background: #fef2f2; border-bottom: 1px solid #fecaca;
             display: flex; align-items: center; gap: 8px;
             font-size: 14px; font-weight: 600; color: #991b1b;
         }
-        .danger-zone-v14 .body {
+        .danger-zone .body {
             padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
         }
-        .danger-zone-v14 .body .copy strong { display: block; font-size: 15px; font-weight: 600; color: var(--rio-text); margin-bottom: 3px; }
-        .danger-zone-v14 .body .copy small { font-size: 14px; color: var(--rio-text-muted); }
+        .danger-zone .body .copy strong { display: block; font-size: 15px; font-weight: 600; color: var(--rio-text); margin-bottom: 3px; }
+        .danger-zone .body .copy small { font-size: 14px; color: var(--rio-text-muted); }
 
         /* Metadata side card */
-        .meta-v14 {
+        .meta {
             background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border); border-radius: 10px;
             box-shadow: var(--rio-shadow-card); overflow: hidden; margin-bottom: 14px;
         }
-        .meta-v14 .row {
+        .meta .row {
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 20px;
         }
-        .meta-v14 .row + .row { border-top: 1px solid var(--rio-border-faint); }
-        .meta-v14 .row .k { font-size: 14px; color: var(--rio-text-muted); font-weight: 400; }
-        .meta-v14 .row .v { font-size: 14px; color: var(--rio-text); font-weight: 500; }
-        .meta-v14 .row .v.code { font-family: var(--rio-font-mono); font-weight: 600; font-feature-settings: "tnum" 1, "lnum" 1; }
+        .meta .row + .row { border-top: 1px solid var(--rio-border-faint); }
+        .meta .row .k { font-size: 14px; color: var(--rio-text-muted); font-weight: 400; }
+        .meta .row .v { font-size: 14px; color: var(--rio-text); font-weight: 500; }
+        .meta .row .v.code { font-family: var(--rio-font-mono); font-weight: 600; font-feature-settings: "tnum" 1, "lnum" 1; }
 
         /* Tip card */
-        .tip-v14 {
+        .tip {
             background: var(--rio-bg-surface-2);
             border: 1px solid var(--rio-border); border-radius: 10px; padding: 18px;
         }
-        .tip-v14 .tip-head {
+        .tip .tip-head {
             display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
             font-size: 15px; font-weight: 600; color: var(--rio-text);
         }
-        .tip-v14 .tip-head svg { color: var(--rio-accent); }
-        .tip-v14 p { margin: 0; font-size: 14px; color: var(--rio-text-muted); line-height: 1.55; font-weight: 400; }
-        .tip-v14 kbd {
+        .tip .tip-head svg { color: var(--rio-accent); }
+        .tip p { margin: 0; font-size: 14px; color: var(--rio-text-muted); line-height: 1.55; font-weight: 400; }
+        .tip kbd {
             background: var(--rio-bg-surface-1); padding: 2px 7px; border-radius: 4px;
             font-size: 12px; color: var(--rio-text);
             font-family: var(--rio-font-mono);
@@ -492,11 +491,11 @@
         }
 
         /* Edit-page grid (form left + meta right) */
-        .edit-grid-v14 { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
-        @media (max-width: 1024px) { .edit-grid-v14 { grid-template-columns: 1fr; } }
+        .edit-grid { display: grid; grid-template-columns: 1fr 320px; gap: 24px; align-items: start; }
+        @media (max-width: 1024px) { .edit-grid { grid-template-columns: 1fr; } }
 
         /* Toolbar above lists (search + filters) */
-        .toolbar-v14 {
+        .toolbar {
             background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border); border-radius: 10px;
             padding: 16px 18px; box-shadow: var(--rio-shadow-card); margin-bottom: 18px;
@@ -504,86 +503,93 @@
         }
         /* When a filters toolbar follows the search toolbar, tighten the
            gap so the two read as a connected control strip. */
-        .toolbar-v14 + .toolbar-v14 { margin-top: -8px; }
+        .toolbar + .toolbar { margin-top: -8px; }
         /* `<form>` wrapping the search + button + clear lets its children
            participate in the parent toolbar's flex layout directly. */
         .toolbar-form { display: contents; }
-        .search-v14 { flex: 1; min-width: 220px; position: relative; }
-        .search-v14 input {
+        .search { flex: 1; min-width: 220px; position: relative; }
+        .search input {
             width: 100%; height: 44px; padding: 0 14px 0 40px;
             background: var(--rio-bg-surface-2);
             border: 1.5px solid var(--rio-border); border-radius: 8px;
             font-size: 15px; color: var(--rio-text); outline: none; box-sizing: border-box;
             font-family: inherit;
         }
-        .search-v14 input::placeholder { color: var(--rio-text-faint); }
-        .search-v14 input:focus {
+        .search input::placeholder { color: var(--rio-text-faint); }
+        .search input:focus {
             border-color: var(--rio-accent); box-shadow: var(--rio-ring); background: var(--rio-bg-surface-1);
         }
-        .search-v14 svg.icon-search {
+        .search svg.icon-search {
             position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
             color: var(--rio-text-faint); pointer-events: none;
         }
 
         /* Filter pills */
-        .filters-v14 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-        .filters-v14 .label { font-size: 12px; font-weight: 600; color: var(--rio-text-muted); letter-spacing: 0.08em; text-transform: uppercase; padding-right: 4px; }
-        .filters-v14 .pill {
+        .filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .filters .label { font-size: 12px; font-weight: 600; color: var(--rio-text-muted); letter-spacing: 0.08em; text-transform: uppercase; padding-right: 4px; }
+        .filters .pill {
             display: inline-flex; align-items: center; gap: 5px;
             padding: 7px 13px; border: 1px solid var(--rio-border); border-radius: 18px;
             font-size: 14px; font-weight: 500; color: var(--rio-text-secondary);
             background: var(--rio-bg-surface-1); text-decoration: none; cursor: pointer;
             font-family: inherit;
         }
-        .filters-v14 .pill:hover { background: var(--rio-bg-surface-2); }
-        .filters-v14 .pill.is-active {
+        .filters .pill:hover { background: var(--rio-bg-surface-2); }
+        .filters .pill.is-active {
             background: var(--rio-accent); color: #fff; border-color: var(--rio-accent);
         }
 
         /* Table */
-        .table-v14-wrap {
+        .table-wrap {
             background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border); border-radius: 10px;
             box-shadow: var(--rio-shadow-card); overflow: hidden;
         }
-        .table-v14 { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .table-v14 thead th {
+        .table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .table thead th {
             background: #f3f4f6; font-size: 12px; font-weight: 600;
             color: var(--rio-text-secondary); text-align: left; padding: 14px 18px;
             border-bottom: 1px solid var(--rio-border);
             letter-spacing: 0.04em; text-transform: uppercase;
             position: sticky; top: 0; z-index: 1;
         }
-        .table-v14 tbody td {
+        .table tbody td {
             padding: 18px 18px; border-bottom: 1px solid var(--rio-border-faint);
             font-size: 15px; color: var(--rio-text-secondary); vertical-align: middle;
         }
-        .table-v14 tbody tr:nth-child(even) td { background: var(--rio-bg-surface-2); }
-        .table-v14 tbody tr:hover td { background: var(--rio-bg-surface-2); }
-        .table-v14 tbody tr:last-child td { border-bottom: 0; }
+        .table tbody tr:nth-child(even) td { background: var(--rio-bg-surface-2); }
+        .table tbody tr:hover td { background: var(--rio-bg-surface-2); }
+        .table tbody tr:last-child td { border-bottom: 0; }
         /* Tabular figures + lining numerals + right-align on numeric cols */
-        .table-v14 .num { font-feature-settings: "tnum" 1, "lnum" 1; text-align: right; }
-        .table-v14 thead th.num { text-align: right; }
-        .table-v14 .row-link {
+        .table .num { font-feature-settings: "tnum" 1, "lnum" 1; text-align: right; }
+        .table thead th.num { text-align: right; }
+        .table .row-link {
             color: var(--rio-text); font-weight: 600; text-decoration: none;
         }
-        .table-v14 .row-link:hover { color: var(--rio-accent); text-decoration: underline; }
+        .table .row-link:hover { color: var(--rio-accent); text-decoration: underline; }
         /* Action cell ALWAYS visible — touch-friendly, scannable, not hover-only.
            Width is fixed on the `th` so the column doesn't shift when
            icons appear or rows have different action sets. */
-        .table-v14 .actions-cell { text-align: right; white-space: nowrap; opacity: 1; }
-        .table-v14 thead th.actions-cell { width: 100px; }
-        .table-v14 .icon-btn {
+        .table .actions-cell { text-align: right; white-space: nowrap; opacity: 1; }
+        .table thead th.actions-cell { width: 100px; }
+        .table .icon-btn {
             display: inline-flex; align-items: center; justify-content: center;
             width: 32px; height: 32px; border-radius: 6px;
             background: transparent; border: 1px solid var(--rio-border); color: var(--rio-text-muted);
             cursor: pointer; text-decoration: none; margin-left: 6px;
         }
-        .table-v14 .icon-btn:hover { background: var(--rio-bg-surface-2); color: var(--rio-text); border-color: var(--rio-text-faint); }
-        .table-v14 .icon-btn.danger { color: #b91c1c; border-color: #fecaca; }
-        .table-v14 .icon-btn.danger:hover { background: #fef2f2; border-color: #fca5a5; }
+        .table .icon-btn:hover { background: var(--rio-bg-surface-2); color: var(--rio-text); border-color: var(--rio-text-faint); }
+        .table .icon-btn.danger { color: #b91c1c; border-color: #fecaca; }
+        .table .icon-btn.danger:hover { background: #fef2f2; border-color: #fca5a5; }
 
         /* Boolean badges */
+        /* Boolean badges — used by list.html for checkbox-kind cells.
+           The `-v14` suffix is intentionally preserved here: the test
+           `list_dispatches_cell_renderer_by_field_kind` in
+           admin/render.rs:3416 asserts the literal classnames
+           `badge-v14 badge-yes-v14` and `badge-v14 badge-no-v14` in
+           the rendered HTML. Cleanest path is to keep both the
+           template and the rules on the suffixed names. */
         .badge-v14 {
             display: inline-flex; align-items: center; gap: 5px;
             padding: 4px 11px; border-radius: 16px;
@@ -597,44 +603,44 @@
         .badge-no-v14::before { background: var(--rio-text-faint); }
 
         /* Empty state */
-        .empty-v14 {
+        .empty {
             background: var(--rio-bg-surface-1); border: 1px solid var(--rio-border);
             border-radius: 10px; padding: 56px 36px; text-align: center;
             box-shadow: var(--rio-shadow-card);
         }
-        .empty-v14 h3 { margin: 0 0 10px; font-size: 19px; color: var(--rio-text); font-weight: 600; font-family: var(--rio-font-heading); }
-        .empty-v14 p { margin: 0 0 22px; color: var(--rio-text-muted); font-size: 15px; }
+        .empty h3 { margin: 0 0 10px; font-size: 19px; color: var(--rio-text); font-weight: 600; font-family: var(--rio-font-heading); }
+        .empty p { margin: 0 0 22px; color: var(--rio-text-muted); font-size: 15px; }
 
         /* Footer */
-        .footer-v14 {
+        .footer {
             background: var(--rio-bg-surface-2);
             border-top: 1px solid var(--rio-border);
             padding: 16px 24px;
             display: flex; align-items: center; justify-content: space-between;
             font-size: 14px; color: var(--rio-text-muted); gap: 12px; flex-wrap: wrap;
         }
-        .footer-v14 a { color: var(--rio-text-secondary); text-decoration: none; font-weight: 500; }
-        .footer-v14 a:hover { color: var(--rio-text); }
-        .footer-v14 .links { display: flex; gap: 20px; }
+        .footer a { color: var(--rio-text-secondary); text-decoration: none; font-weight: 500; }
+        .footer a:hover { color: var(--rio-text); }
+        .footer .links { display: flex; gap: 20px; }
 
         /* Pagination */
-        .pager-v14 {
+        .pager {
             display: flex; align-items: center; justify-content: space-between;
             padding: 14px 20px; background: var(--rio-bg-surface-2);
             border-top: 1px solid var(--rio-border); gap: 8px;
         }
-        .pager-v14 .info { font-size: 14px; color: var(--rio-text-muted); font-weight: 500; }
-        .pager-v14 .info b { color: var(--rio-text); font-weight: 600; }
-        .pager-v14 .nav { display: flex; gap: 4px; align-items: center; }
-        .pager-v14 .nav a, .pager-v14 .nav span.this {
+        .pager .info { font-size: 14px; color: var(--rio-text-muted); font-weight: 500; }
+        .pager .info b { color: var(--rio-text); font-weight: 600; }
+        .pager .nav { display: flex; gap: 4px; align-items: center; }
+        .pager .nav a, .pager .nav span.this {
             padding: 7px 12px; background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border); border-radius: 6px;
             color: var(--rio-text-secondary); font-size: 14px; font-weight: 500;
             min-width: 34px; text-align: center; text-decoration: none;
             font-feature-settings: "tnum" 1, "lnum" 1;
         }
-        .pager-v14 .nav span.this { background: var(--rio-accent); color: #fff; border-color: var(--rio-accent); font-weight: 600; }
-        .pager-v14 .nav a:hover { background: var(--rio-bg); }
+        .pager .nav span.this { background: var(--rio-accent); color: #fff; border-color: var(--rio-accent); font-weight: 600; }
+        .pager .nav a:hover { background: var(--rio-bg); }
 
         /* §5 — Utilities & legacy bridges ==================================
          * Cross-component helpers (`.muted`, `.sr-only` defined later
@@ -682,30 +688,30 @@
         /* Generic v14 alert — used by user_edit.html for the
            last-developer notice and by any page that needs a
            contextual banner. Three kinds: success / warning / danger.
-           Same shape as the bespoke `.login-error-v14` (which is
+           Same shape as the bespoke `.login-error` (which is
            danger-flavoured); kept side-by-side rather than merging so
            the login card's specific copy/layout doesn't drift. */
-        .alert-v14 {
+        .alert {
             display: flex; align-items: flex-start; gap: 10px;
             padding: 12px 16px; border-radius: 8px;
             font-size: 14px; font-weight: 500; line-height: 1.5;
             margin-bottom: 16px;
         }
-        .alert-v14 .icon { flex-shrink: 0; margin-top: 2px; }
-        .alert-v14 strong { font-weight: 600; }
-        .alert-v14 code {
+        .alert .icon { flex-shrink: 0; margin-top: 2px; }
+        .alert strong { font-weight: 600; }
+        .alert code {
             background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 4px;
             font-family: var(--rio-font-mono); font-size: 13px;
         }
-        .alert-v14--success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
-        .alert-v14--warning { background: #fffbeb; border: 1px solid #fde68a; color: #854d0e; }
-        .alert-v14--danger  { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .alert--success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+        .alert--warning { background: #fffbeb; border: 1px solid #fde68a; color: #854d0e; }
+        .alert--danger  { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
 
         /* Centered status card — used by error.html and forbidden.html
            when the page IS the message (no surrounding admin chrome).
-           Compositionally a `.card-v14` with extra centering padding
+           Compositionally a `.card` with extra centering padding
            and a hero icon slot. */
-        .status-card-v14 {
+        .status-card {
             max-width: 520px; margin: 64px auto;
             background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border);
@@ -714,22 +720,22 @@
             padding: 40px 32px;
             text-align: center;
         }
-        .status-card-v14 .hero {
+        .status-card .hero {
             display: inline-flex; align-items: center; justify-content: center;
             width: 56px; height: 56px; border-radius: 50%;
             background: #fef2f2; color: #b91c1c; margin-bottom: 16px;
         }
-        .status-card-v14 h1 {
+        .status-card h1 {
             margin: 0 0 8px; font-size: 22px; font-weight: 700;
             color: var(--rio-text); line-height: 1.25; font-family: var(--rio-font-heading);
         }
-        .status-card-v14 p {
+        .status-card p {
             margin: 0 auto; max-width: 380px;
             font-size: 15px; color: var(--rio-text-muted); line-height: 1.55;
         }
-        .status-card-v14 p + p { margin-top: 8px; }
-        .status-card-v14 .actions { margin-top: 24px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
-        .status-card-v14 code {
+        .status-card p + p { margin-top: 8px; }
+        .status-card .actions { margin-top: 24px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .status-card code {
             background: var(--rio-bg-surface-2);
             padding: 2px 8px; border-radius: 4px;
             font-family: var(--rio-font-mono); font-size: 13px; font-weight: 500;
@@ -740,12 +746,12 @@
            action(s) on the right. Used by user_view.html so the same
            horizontal control strip from form.html appears on read-only
            detail pages too. */
-        .page-tools-v14 {
+        .page-tools {
             display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
             margin-bottom: 24px;
         }
-        .page-tools-v14 .spacer { flex: 1; }
-        .page-tools-v14 .btn-disabled-v14 {
+        .page-tools .spacer { flex: 1; }
+        .page-tools .btn-disabled {
             display: inline-flex; align-items: center; gap: 7px;
             padding: 11px 16px; background: var(--rio-bg-surface-1);
             border: 1px solid var(--rio-border); border-radius: 8px;
@@ -755,7 +761,7 @@
 
         /* Avatar disc — first letter of an email/identifier on a
            rust-tinted circle. Used on user_view.html. */
-        .avatar-v14 {
+        .avatar {
             display: inline-flex; align-items: center; justify-content: center;
             width: 56px; height: 56px; border-radius: 50%;
             background: var(--rio-accent-bg); color: var(--rio-accent);
@@ -764,55 +770,55 @@
         }
 
         /* Read-only key/value rows inside a card — matches the
-           `.meta-v14` shape but reusable inside any card body, not
+           `.meta` shape but reusable inside any card body, not
            tied to the right-rail metadata block. */
-        .kv-v14 { display: flex; flex-direction: column; }
-        .kv-v14 .kv-row {
+        .kv { display: flex; flex-direction: column; }
+        .kv .kv-row {
             display: flex; align-items: flex-start; justify-content: space-between;
             gap: 16px; padding: 14px 0;
             border-bottom: 1px solid var(--rio-border-faint);
         }
-        .kv-v14 .kv-row:last-child { border-bottom: 0; }
-        .kv-v14 .kv-row .k {
+        .kv .kv-row:last-child { border-bottom: 0; }
+        .kv .kv-row .k {
             font-size: 14px; color: var(--rio-text-muted);
             font-weight: 500; min-width: 110px;
         }
-        .kv-v14 .kv-row .v { font-size: 15px; color: var(--rio-text); font-weight: 500; }
+        .kv .kv-row .v { font-size: 15px; color: var(--rio-text); font-weight: 500; }
 
         /* Tag / chip cluster — used by user_view's group-membership
            list. Just gap + flex-wrap; chip visuals come from
-           `.badge-v14` family. The `--spaced` modifier adds bottom
+           `.badge` family. The `--spaced` modifier adds bottom
            breathing room when followed by sibling copy. */
-        .chips-v14 { display: flex; flex-wrap: wrap; gap: 8px; }
-        .chips-v14.chips-v14--spaced { margin-bottom: 12px; }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chips.chips--spaced { margin-bottom: 12px; }
 
         /* Permission tiles — used by group_edit.html. A 2-column
            responsive grid of checkbox tiles, each carrying a
            permission name in monospace. Tile hover/active state
            uses the rust accent so it reads as the same affordance
-           as `.dashboard-model-v14`. */
-        .perm-grid-v14 {
+           as `.dashboard-model`. */
+        .perm-grid {
             display: grid; gap: 8px; grid-template-columns: 1fr;
         }
         @media (min-width: 640px) {
-            .perm-grid-v14 { grid-template-columns: repeat(2, 1fr); }
+            .perm-grid { grid-template-columns: repeat(2, 1fr); }
         }
-        .perm-tile-v14 {
+        .perm-tile {
             display: inline-flex; align-items: center; gap: 10px;
             padding: 8px 12px; border: 1px solid var(--rio-border);
             border-radius: 6px; background: var(--rio-bg-surface-1);
             cursor: pointer; font-size: 13px;
             transition: border-color 0.12s ease, background 0.12s ease;
         }
-        .perm-tile-v14:hover {
+        .perm-tile:hover {
             border-color: var(--rio-accent-border);
             background: var(--rio-accent-bg);
         }
-        .perm-tile-v14 input[type="checkbox"] {
+        .perm-tile input[type="checkbox"] {
             width: 16px; height: 16px; flex-shrink: 0; cursor: pointer;
             accent-color: var(--rio-accent);
         }
-        .perm-tile-v14 code {
+        .perm-tile code {
             font-family: var(--rio-font-mono); font-size: 13px;
             color: var(--rio-text); font-weight: 500;
         }
@@ -820,52 +826,52 @@
         /* Dashboard model rows — used by index.html. A model row is
            a clickable model-name link on the left and small +Add /
            Change shortcuts on the right. Two-column grid at sm+. */
-        .dashboard-models-v14 {
+        .dashboard-models {
             display: grid; grid-template-columns: 1fr; gap: 8px;
         }
         @media (min-width: 640px) {
-            .dashboard-models-v14 { grid-template-columns: repeat(2, 1fr); }
+            .dashboard-models { grid-template-columns: repeat(2, 1fr); }
         }
-        .dashboard-model-v14 {
+        .dashboard-model {
             display: flex; align-items: center; justify-content: space-between;
             border: 1px solid var(--rio-border); border-radius: 8px;
             padding: 10px 14px; background: var(--rio-bg-surface-1);
             transition: border-color 0.12s ease, background 0.12s ease;
         }
-        .dashboard-model-v14:hover {
+        .dashboard-model:hover {
             border-color: var(--rio-accent-border); background: var(--rio-accent-bg);
         }
-        .dashboard-model-v14-link {
+        .dashboard-model-link {
             display: inline-flex; align-items: center; gap: 10px;
             color: var(--rio-text); font-weight: 600; text-decoration: none;
             font-size: 15px;
         }
-        .dashboard-model-v14-link:hover { color: var(--rio-accent); }
-        .dashboard-model-v14-link svg { color: var(--rio-text-faint); }
-        .dashboard-model-v14:hover .dashboard-model-v14-link svg { color: var(--rio-accent); }
-        .dashboard-model-v14-actions {
+        .dashboard-model-link:hover { color: var(--rio-accent); }
+        .dashboard-model-link svg { color: var(--rio-text-faint); }
+        .dashboard-model:hover .dashboard-model-link svg { color: var(--rio-accent); }
+        .dashboard-model-actions {
             display: inline-flex; gap: 12px; font-size: 13px;
         }
-        .dashboard-model-v14-actions a {
+        .dashboard-model-actions a {
             color: var(--rio-text-muted); text-decoration: none; font-weight: 500;
         }
-        .dashboard-model-v14-actions a:hover { color: var(--rio-accent); }
+        .dashboard-model-actions a:hover { color: var(--rio-accent); }
 
         /* Recent-activity feed — used by the dashboard right rail.
            Tight stack of audit-log lines; the per-line `pill_class`
            comes from the server side and pulls one of the existing
            `badge-success/-warning/-danger/-neutral` chips. */
-        .dashboard-recent-v14 {
+        .dashboard-recent {
             list-style: none; margin: 0; padding: 0;
             display: flex; flex-direction: column; gap: 14px;
         }
-        .dashboard-recent-v14 li { font-size: 14px; line-height: 1.5; }
-        .dashboard-recent-v14 li a {
+        .dashboard-recent li { font-size: 14px; line-height: 1.5; }
+        .dashboard-recent li a {
             color: var(--rio-text); font-weight: 500;
             text-decoration: none; margin-left: 6px;
         }
-        .dashboard-recent-v14 li a:hover { color: var(--rio-accent); }
-        .dashboard-recent-v14 li .meta {
+        .dashboard-recent li a:hover { color: var(--rio-accent); }
+        .dashboard-recent li .meta {
             margin-top: 3px; font-size: 12px; color: var(--rio-text-muted);
         }
         /* Inline muted helper text — used inside cards where
@@ -878,7 +884,7 @@
            design language. Replaces the legacy `#login-form` /
            `.module` / `.btn-primary` styling from admin.css that
            rendered a dark-navy card disconnected from the v14 admin. */
-        .login-card-v14 {
+        .login-card {
             width: 100%; max-width: 420px;
             margin: 48px auto;
             background: var(--rio-bg-surface-1);
@@ -887,60 +893,60 @@
             box-shadow: var(--rio-shadow-card);
             overflow: hidden;
         }
-        .login-head-v14 {
+        .login-head {
             padding: 24px 28px 20px;
             border-bottom: 1px solid var(--rio-border-soft);
         }
-        .login-head-v14 h2 {
+        .login-head h2 {
             margin: 0 0 6px; font-size: 22px; font-weight: 700;
             color: var(--rio-text); letter-spacing: -0.01em;
             font-family: var(--rio-font-heading); line-height: 1.25;
         }
-        .login-head-v14 p {
+        .login-head p {
             margin: 0; font-size: 14px; color: var(--rio-text-muted); font-weight: 400;
         }
-        .login-body-v14 {
+        .login-body {
             padding: 22px 28px 26px;
             display: flex; flex-direction: column; gap: 16px;
         }
-        .login-error-v14 {
+        .login-error {
             background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
             padding: 10px 14px; border-radius: 8px;
             font-size: 14px; font-weight: 500;
         }
-        .login-submit-v14 {
+        .login-submit {
             width: 100%; justify-content: center; margin-top: 6px;
             padding: 12px 18px; font-size: 15px;
         }
         /* `.req` is used by the inline label markup on the login card;
-           mirrors the existing `.label-v14 .req` colour but applies one
-           level higher so it works without the .label-v14 nesting too.
+           mirrors the existing `.label .req` colour but applies one
+           level higher so it works without the .label nesting too.
            `.required` is the same marker but with the legacy classname
            preserved for `form_renders_required_marker_humanised_label_and_cancel`
            which asserts `class="required"` literally. Same visual. */
-        .field-v14 .req,
-        .field-v14 .required { color: var(--rio-accent); margin-left: 2px; font-weight: 600; }
-        /* Checkbox row inside a `.field-v14` wrapper — replaces the
+        .field .req,
+        .field .required { color: var(--rio-accent); margin-left: 2px; font-weight: 600; }
+        /* Checkbox row inside a `.field` wrapper — replaces the
            Tailwind-utility `flex items-center gap-sm` pattern that the
            shared _form_field used to inline. Single component class,
-           semantic name. The base `.field-v14 input[type=...]` rule
+           semantic name. The base `.field input[type=...]` rule
            DOESN'T match `input[type=checkbox]`, so the checkbox keeps
            its native browser metrics; we just add the right size +
            accent colour. */
-        .field-v14 .checkbox-row-v14 {
+        .field .checkbox-row {
             display: inline-flex; align-items: center; gap: 10px;
             font-size: 15px; color: var(--rio-text); font-weight: 500;
             cursor: pointer;
         }
-        .field-v14 .checkbox-row-v14 input[type="checkbox"] {
+        .field .checkbox-row input[type="checkbox"] {
             width: 16px; height: 16px; flex-shrink: 0; cursor: pointer;
             accent-color: var(--rio-accent);
         }
         /* Search-box inside a searchable-select field. The standard
-           `.field-v14 input[type="text"]` rule above already supplies
+           `.field input[type="text"]` rule above already supplies
            the chrome; this only adds bottom breathing-room before the
            sibling <select>. */
-        .field-v14 .search-input-v14 { margin-bottom: 8px; }
+        .field .search-input { margin-bottom: 8px; }
         /* `.sr-only` for the hidden "(required)" suffix that screen
            readers announce while the asterisk handles sighted users. */
         .sr-only {
@@ -949,18 +955,17 @@
         }
 
         /* UX fix — long-text truncation in admin tables. The pairing of
-           `table-layout: fixed` (above on .table-v14, plus .results
-           below) and `.cell-text` clamps every text-kind cell to two
-           lines with ellipsis. Without `table-layout: fixed`, the TD
-           expands to its content's natural width and pushes neighbour
-           columns off-screen — a max-width on the inner span alone is
-           NOT enough. The full text is preserved on hover via the
-           `title=` attribute on the wrapper. Generic — applies to
+           `table-layout: fixed` (set on `.table` above and on `.results`
+           in input.css) and `.cell-text` clamps every text-kind cell
+           to two lines with ellipsis. Without `table-layout: fixed`,
+           the TD expands to its content's natural width and pushes
+           neighbour columns off-screen — a max-width on the inner span
+           alone is NOT enough. The full text is preserved on hover via
+           the `title=` attribute on the wrapper. Generic — applies to
            every text cell, no field-name dependence.
            `-webkit-line-clamp` works in WebKit, Chromium and Firefox 68+;
            the `max-height: calc(1.4em * 2)` belt-and-braces line cap
            keeps fallback browsers from running away. */
-        .results { table-layout: fixed; width: 100%; }
         .cell-text {
             display: -webkit-box;
             -webkit-line-clamp: 2;
@@ -978,20 +983,20 @@
            `-webkit-appearance: none` guard fights Safari's grey gradient
            on date inputs so dark text doesn't clash with the framework
            accent ring. The calendar-icon indicator stays clickable. */
-        .field-v14 input[type="date"],
-        .field-v14 input[type="datetime-local"] {
+        .field input[type="date"],
+        .field input[type="datetime-local"] {
             -webkit-appearance: none;
             appearance: none;
             background-color: var(--rio-bg-surface-1);
             font-family: var(--rio-font-body);
             font-feature-settings: "lnum" 1;
         }
-        .field-v14 input[type="date"]::-webkit-calendar-picker-indicator,
-        .field-v14 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+        .field input[type="date"]::-webkit-calendar-picker-indicator,
+        .field input[type="datetime-local"]::-webkit-calendar-picker-indicator {
             cursor: pointer; opacity: 0.65; padding: 4px;
         }
-        .field-v14 input[type="date"]::-webkit-calendar-picker-indicator:hover,
-        .field-v14 input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+        .field input[type="date"]::-webkit-calendar-picker-indicator:hover,
+        .field input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
             opacity: 1;
         }
     </style>
@@ -999,9 +1004,9 @@
 </head>
 <body>
 
-<a href="#content-main" class="skip-v14">Skip to content</a>
+<a href="#content-main" class="skip">Skip to content</a>
 
-<header class="topbar-v14">
+<header class="topbar">
     {% block topbar_brand %}
     <a href="/admin" class="brand">
         <span class="mark">{{ site_header[:1]|upper }}</span>
@@ -1011,26 +1016,26 @@
     {% if identity %}
     <div class="tools">
         <span class="who">{{ identity.email }}</span>
-        <a href="/admin/password_change" class="btn-pill-v14">Change password</a>
+        <a href="/admin/password_change" class="btn-pill">Change password</a>
         <form method="post" action="/admin/logout">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit" class="btn-pill-v14">Log out</button>
+            <button type="submit" class="btn-pill">Log out</button>
         </form>
     </div>
     {% endif %}
 </header>
 
 {% if is_demo_session %}
-<div class="demo-banner-v14" role="alert">
+<div class="demo-banner" role="alert">
     <strong>⚠ DEMO USER</strong>{% if demo_label %} ({{ demo_label }}){% endif %}
     — passwords are public. Disable <code>RUSTIO_DEMO_MODE</code> in production.
 </div>
 {% endif %}
 
-<div class="shell-v14">
+<div class="shell">
 
 {% if identity %}
-<aside class="sidebar-v14" id="sidebar" aria-label="Admin navigation">
+<aside class="sidebar" id="sidebar" aria-label="Admin navigation">
     <div class="section">Manage</div>
     <a href="/admin" class="link" data-active-prefix="/admin" data-active-exact="/admin">
         <span class="label">
@@ -1082,11 +1087,11 @@
 </aside>
 {% endif %}
 
-<main class="main-v14" id="content-main">
+<main class="main" id="content-main">
     <div class="inner">
         {% block breadcrumbs %}
         {% if identity %}
-        <div class="crumbs-v14">
+        <div class="crumbs">
             <a href="/admin">Home</a>
         </div>
         {% endif %}
@@ -1102,7 +1107,7 @@
 
 </div>
 
-<footer class="footer-v14">
+<footer class="footer">
     <div>{{ site_header }} · powered by RustIO {{ footer_copyright|replace('RustIO ', '')|replace('rustio ', '') }}</div>
     <div class="links">
         <a href="https://github.com/abdulwahed-sweden/rustio#readme" target="_blank" rel="noopener">Documentation</a>
@@ -1115,7 +1120,7 @@
 (function () {
     // Sidebar active link — mark by URL prefix.
     var path = window.location.pathname;
-    document.querySelectorAll(".sidebar-v14 a.link").forEach(function (a) {
+    document.querySelectorAll(".sidebar a.link").forEach(function (a) {
         var prefix = a.getAttribute("data-active-prefix");
         var exact  = a.getAttribute("data-active-exact");
         var hit = false;

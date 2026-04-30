@@ -3,7 +3,7 @@
 {% block bodyclass %}change-form user-edit{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <a href="/admin/users">Users</a>
@@ -15,13 +15,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-tools-v14">
-    <a href="/admin/users/{{ user_id }}/" class="btn-secondary-v14" data-cancel>
+<div class="page-tools">
+    <a href="/admin/users/{{ user_id }}/" class="btn-secondary" data-cancel>
         {{ icon("arrow-left", class="w-4 h-4") }} Back to profile
     </a>
 </div>
 
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>Edit user</h1>
         <p class="lede">Editing <code>{{ email }}</code></p>
@@ -33,7 +33,7 @@
 {% endif %}
 
 {% if is_last_developer %}
-<div class="alert-v14 alert-v14--warning" role="alert">
+<div class="alert alert--warning" role="alert">
     <span class="icon">{{ icon("circle-alert", class="w-4 h-4") }}</span>
     <div>
         <strong>Heads up:</strong> {{ email }} is the last active developer.
@@ -50,12 +50,12 @@
     {# Phase 6.2 — Identity (email-disabled / role / is_active) via the
        shared FormField include. #}
     {% for section in identity_sections %}
-    <div class="card-v14">
-        <div class="card-v14-head">
+    <div class="card">
+        <div class="card-head">
             <h2>{{ section.title or "Identity" }}</h2>
         </div>
-        <div class="card-v14-body">
-            <div class="field-grid-v14">
+        <div class="card-body">
+            <div class="field-grid">
                 {% for field in section.fields %}
                 <div class="{% if field.span == 2 %}span-2{% endif %}">
                     {% include "admin/includes/_form_field.html" %}
@@ -70,12 +70,12 @@
        per-group descriptions; the form-data shape is `group_<id>=on`
        so the existing `do_user_edit` handler reads it unchanged. NOT
        a multi-select — see Phase 6.2 spec correction #1. #}
-    <div class="card-v14">
-        <div class="card-v14-head">
+    <div class="card">
+        <div class="card-head">
             <h2>Groups</h2>
             <p class="sub">Tick every group this user should belong to.</p>
         </div>
-        <div class="card-v14-body">
+        <div class="card-body">
             {% if all_groups %}
             <div class="checkbox-list">
                 {% for g in all_groups %}
@@ -93,13 +93,13 @@
 
     {# Phase 6.2 — Reset password section (optional new_password). #}
     {% for section in password_sections %}
-    <div class="card-v14">
-        <div class="card-v14-head">
+    <div class="card">
+        <div class="card-head">
             <h2>{{ section.title or "Reset password" }}</h2>
             <p class="sub">Leave blank to keep the current password.</p>
         </div>
-        <div class="card-v14-body">
-            <div class="field-grid-v14">
+        <div class="card-body">
+            <div class="field-grid">
                 {% for field in section.fields %}
                 <div class="{% if field.span == 2 %}span-2{% endif %}">
                     {% include "admin/includes/_form_field.html" %}
@@ -110,9 +110,9 @@
     </div>
     {% endfor %}
 
-    <div class="save-row-v14">
+    <div class="save-row">
         <div class="group">
-            <button type="submit" name="_save" class="btn-primary-v14">
+            <button type="submit" name="_save" class="btn-primary">
                 {{ icon("check", class="w-4 h-4") }} Save
             </button>
         </div>
@@ -122,7 +122,7 @@
            there's a prior page; on a fresh tab / direct link the click
            falls through to the href fallback (/admin/users). #}
         <a href="/admin/users"
-           class="btn-text-v14"
+           class="btn-text"
            data-cancel
            onclick="if (history.length > 1) { history.back(); return false; }">
             Cancel
@@ -130,7 +130,7 @@
     </div>
 </form>
 
-<div class="danger-zone-v14">
+<div class="danger-zone">
     <div class="head">
         {{ icon("circle-alert", class="w-4 h-4") }}
         Danger zone
@@ -140,7 +140,7 @@
             <strong>Delete this user</strong>
             <small>Group memberships, direct permission grants, and active sessions all cascade away.</small>
         </div>
-        <a href="/admin/users/{{ user_id }}/delete" class="btn-danger-v14">
+        <a href="/admin/users/{{ user_id }}/delete" class="btn-danger">
             {{ icon("trash", class="w-4 h-4") }} Delete user
         </a>
     </div>

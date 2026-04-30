@@ -3,7 +3,7 @@
 {% block bodyclass %}user-view{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <a href="/admin/users">Users</a>
@@ -13,18 +13,18 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-tools-v14">
-    <a href="/admin/users" class="btn-secondary-v14">
+<div class="page-tools">
+    <a href="/admin/users" class="btn-secondary">
         {{ icon("arrow-left", class="w-4 h-4") }} Back to users
     </a>
     <span class="spacer"></span>
     {% if can_edit %}
-    <a href="/admin/users/{{ target_id }}/edit" class="btn-primary-v14">
+    <a href="/admin/users/{{ target_id }}/edit" class="btn-primary">
         {{ icon("pencil", class="w-4 h-4") }} Edit
     </a>
     {% endif %}
     {% if can_delete %}
-    <a href="/admin/users/{{ target_id }}/delete" class="btn-danger-v14">
+    <a href="/admin/users/{{ target_id }}/delete" class="btn-danger">
         {{ icon("trash", class="w-4 h-4") }} Delete
     </a>
     {% else %}
@@ -32,17 +32,17 @@
        `user_view_is_self_disables_delete_as_span` and
        `user_view_last_developer_disables_delete` render tests in
        templates.rs — keep it here as the contract marker. The
-       `.btn-disabled-v14` rule (defined later in base.html, so it
+       `.btn-disabled` rule (defined later in base.html, so it
        wins on cascade order) supplies the muted v14 visual on top. #}
-    <span class="btn-danger btn-disabled-v14" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
+    <span class="btn-danger btn-disabled" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
         {{ icon("trash", class="w-4 h-4") }} Delete
     </span>
     {% endif %}
 </div>
 
-<div class="page-head-v14">
+<div class="page-head">
     <div class="flex items-center gap-3">
-        <span class="avatar-v14">{{ target_email[0:1]|upper }}</span>
+        <span class="avatar">{{ target_email[0:1]|upper }}</span>
         <div>
             <h1>{{ target_email }}</h1>
             <p class="lede">User profile</p>
@@ -50,13 +50,13 @@
     </div>
 </div>
 
-<div class="edit-grid-v14">
+<div class="edit-grid">
 <div>
 
-<div class="card-v14">
-    <div class="card-v14-head"><h2>Identity</h2></div>
-    <div class="card-v14-body">
-        <div class="kv-v14">
+<div class="card">
+    <div class="card-head"><h2>Identity</h2></div>
+    <div class="card-body">
+        <div class="kv">
             <div class="kv-row">
                 <span class="k">Email</span>
                 <span class="v">{{ target_email }}</span>
@@ -85,11 +85,11 @@
     </div>
 </div>
 
-<div class="card-v14">
-    <div class="card-v14-head"><h2>Group memberships ({{ groups|length }})</h2></div>
-    <div class="card-v14-body">
+<div class="card">
+    <div class="card-head"><h2>Group memberships ({{ groups|length }})</h2></div>
+    <div class="card-body">
         {% if groups %}
-        <div class="chips-v14">
+        <div class="chips">
             {% for g in groups %}
             <span class="badge-neutral" title="{{ g.description }}">{{ g.name }}</span>
             {% endfor %}
@@ -101,13 +101,13 @@
 </div>
 
 {% if direct_perms %}
-<div class="card-v14">
-    <div class="card-v14-head">
+<div class="card">
+    <div class="card-head">
         <h2>Direct permissions ({{ direct_perms|length }})</h2>
         <p class="sub">Permissions granted directly to this user, outside of group memberships.</p>
     </div>
-    <div class="card-v14-body">
-        <div class="chips-v14 chips-v14--spaced">
+    <div class="card-body">
+        <div class="chips chips--spaced">
             {% for p in direct_perms %}
             <code class="code-pill">{{ p }}</code>
             {% endfor %}
@@ -120,8 +120,8 @@
 </div>
 
 <aside>
-    <div class="meta-v14">
-        <div class="card-v14-head"><h2>Timeline</h2></div>
+    <div class="meta">
+        <div class="card-head"><h2>Timeline</h2></div>
         <div class="row"><span class="k">Created</span><span class="v">{{ target_created_at }}</span></div>
         <div class="row"><span class="k">Updated</span><span class="v">{{ target_updated_at }}</span></div>
     </div>

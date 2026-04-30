@@ -3,7 +3,7 @@
 {% block bodyclass %}change-list users-list{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <span class="current">Users</span>
@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>Users</h1>
         <p class="lede">
@@ -19,14 +19,14 @@
         </p>
     </div>
     <div class="actions">
-        <a href="/admin/users/new" class="btn-primary-v14">
+        <a href="/admin/users/new" class="btn-primary">
             {{ icon("plus", class="w-4 h-4") }} Add user
         </a>
     </div>
 </div>
 
 {% if users %}
-<div class="table-v14-wrap">
+<div class="table-wrap">
 {# `class="results row-clickable"` is asserted by the
    `users_list_renders_row_clickable_links` render test in
    templates.rs — keep both literal classnames. The legacy
@@ -59,10 +59,10 @@
 </table>
 </div>
 {% else %}
-<div class="empty-v14">
+<div class="empty">
     <h3>No users yet.</h3>
     <p>Add one to get started.</p>
-    <a href="/admin/users/new" class="btn-primary-v14">
+    <a href="/admin/users/new" class="btn-primary">
         {{ icon("plus", class="w-4 h-4") }} Add user
     </a>
 </div>

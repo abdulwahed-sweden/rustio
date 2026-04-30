@@ -4,56 +4,57 @@
  * `rustio-core/assets/static/css/admin.css` and is baked into the
  * binary via `include_str!`. Run `make css` to rebuild after editing.
  *
- * Hybrid class strategy: semantic component classes live in
- * `@layer components` so projects overriding admin templates by class
- * name don't silently break. Utility classes are used directly inside
- * templates for one-offs.
+ * Architecture (post-finalization)
+ * --------------------------------
+ * The component layer that used to live here has been pruned. The
+ * single source of truth for component visuals is now the inline
+ * `<style>` block in `rustio-core/assets/templates/admin/base.html`
+ * — every card / button / field / table / alert / etc. is defined
+ * there, keyed off `--rio-*` tokens.
  *
- * Phase 2 — Design system foundation. Source of truth:
- * `docs/design-system.json`. Mirrored in `tailwind.config.js`.
- * Semantic colour tokens are CSS custom properties so the same
- * Tailwind utility (`bg-surface`, `text-accent`) adapts to the active
- * theme (default light / `<html class="dark">` / `<html class="theme-rust">`).
- * Templates haven't been refactored yet — Phase 7a/2 component
- * classes still reference `bg-rust`, `bg-paper`, `bg-metal-*`. Those
- * legacy colour names live alongside the semantic tokens until the
- * template-refactor sub-phase ships.
+ * What still lives here
+ * ---------------------
+ *   1. `@tailwind base/components/utilities`  ← the Tailwind reset +
+ *      the utility-class catalogue (`.flex`, `.gap-md`, `.w-4`, …)
+ *      that every template uses for one-off layout.
+ *   2. `@layer base` token blocks (`--ds-color-*` for light / dark /
+ *      brand themes), `@font-face` Inter, `<html>` / `<body>` /
+ *      `<h1-h3>` baseline, focus visibility.
+ *   3. `@layer components` survivors — the small set of legacy
+ *      classes still consumed by templates that haven't gained a
+ *      v14 equivalent OR are pinned by tests:
+ *        .results / .row-clickable    audit views + users_list
+ *        .user-row                    users_list public-API hook
+ *        .actions / .action-*         bulk-action UI (gated)
+ *        .errornote                   _field_errors include
+ *        .messagelist / .message-*    base.html flash banner
+ *        .empty-list                  log_entries / object_history
+ *        .checkbox-list / -item       user_edit Groups panel
+ *        .cascade-list                confirm-delete pages
+ *        .code-pill                   inline `<code>` chips
+ *        .required                    test-pinned required marker
+ *        .breadcrumbs                 audit views
+ *        .badge-success / -warning /
+ *          -danger / -neutral         user_view, users_list,
+ *                                     user_confirm_delete role chips
+ *        .btn-*:disabled              disabled-state for buttons
+ *                                     (test-pinned `<button class=
+ *                                     "btn-danger" disabled>`)
  *
- * --- LEGACY RULES SCHEDULED FOR REMOVAL ------------------------------
- * The base.html inline <style> block defines the v14 design system
- * with the `-v14` suffix to coexist with these legacy component
- * classes. When the eight templates listed below are migrated to v14
- * vocabulary, the duplicate rules in this file (`.btn-primary`,
- * `.btn-secondary`, `.btn-ghost`, `.btn-danger`, `.card`, `.topbar`,
- * `.table`, `.form-row`, `.field-input`, `.module`, `.results`,
- * `.empty-list`, `.paginator`, `.badge-success/-warning/-danger
- * /-neutral`, `.errornote`, `.warningnote`, `.messagelist`,
- * `.deletelink-inline`, `.forbidden-page`, `.hero-icon*`,
- * `.code-pill`, `.checkbox-list`, `.checkbox-item`, `.cascade-list`)
- * become orphans and should be deleted; the `-v14` suffix in
- * base.html is then renamed to bare names without collision.
- *
- * Templates still using legacy classes (must be migrated first):
- *   coming_soon.html           index.html
- *   user_new.html              user_confirm_delete.html
- *   group_new.html             group_edit.html
- *   group_confirm_delete.html  includes/_form_field.html
- *
- * Removal checklist when those land:
- *   1. Migrate each template above to v14 vocabulary (model on the
- *      changes in commits 6c9e28c + 8c8d3dd).
- *   2. Remove this entire `@layer components` body's legacy rules
- *      (keep only the `body.login` / dark-mode / `--ds-color-*`
- *      tokens that the v14 layer reads through).
- *   3. Run a global rename: `-v14` → bare names in base.html and
- *      every template that still references the suffixed class.
- *   4. Run `make css` and `cargo test --workspace --lib`. The
- *      `users_list_renders_row_clickable_links` and
- *      `assert_delete_is_disabled_span` tests require the literal
- *      class names `results row-clickable` and `btn-danger` (on
- *      the disabled <span>) — preserve those as test-pinned
- *      contracts even after the rename.
- * --------------------------------------------------------------------
+ * Removed in this commit
+ * ----------------------
+ *   .admin-shell, .topbar*, .admin-body, .sidebar*, .content-shell,
+ *   .content-area, .demo-banner*, .btn-primary, .btn-secondary,
+ *   .btn-ghost, .btn-back, .btn-edit, .btn-danger (rule body),
+ *   .deletelink-inline, .card, .card-compact, .module*,
+ *   .object-tools*, #toolbar*, .form-row*, .form-input,
+ *   .field-input, fieldset.module*, .submit-row*, .warningnote,
+ *   .paginator*, #changelist*, body.login, #login-form*,
+ *   .forbidden-page, .coming-soon-body, .danger-zone (legacy),
+ *   .user-view*, .confirm-form .submit-row, .input, .table,
+ *   .table-compact, .page-header, .page-actions, .subhead-note,
+ *   .hero-icon*. Every removed rule had zero template consumers
+ *   after the finalization migration.
  */
 
 @tailwind base;
@@ -80,7 +81,7 @@
     --ds-color-success:         22 163  74; /* #16A34A */
     --ds-color-warning:        217 119   6; /* #D97706 */
     --ds-color-danger:         220  38  38; /* #DC2626 */
-    --ds-color-layer-1:        255 255 255; /* unused on light, fallback to surface */
+    --ds-color-layer-1:        255 255 255;
     --ds-color-layer-2:        255 255 255;
     --ds-color-layer-3:        255 255 255;
     --ds-color-layer-4:        255 255 255;
@@ -106,13 +107,10 @@
   }
 
   /* `.theme-brand` is the official activation class for the optional
-   * brand-accented theme (Phase 2 cleanup). `.theme-rust` is kept as a
-   * backward-compatible alias so any caller still toggling that class
-   * keeps working. Combined selector means single CSS rule — no value
-   * duplication, no chance of the two drifting. */
+   * brand-accented theme. `.theme-rust` is kept as a backward-compatible
+   * alias so any caller still toggling that class keeps working. */
   .theme-brand,
   .theme-rust {
-    /* themes.rust from docs/design-system.json */
     --ds-color-bg:             255 250 248; /* #FFFAF8 */
     --ds-color-surface:        255 255 255; /* #FFFFFF */
     --ds-color-surface-muted:  255 245 241; /* #FFF5F1 */
@@ -127,13 +125,7 @@
   }
 }
 
-/* --- @font-face: legacy Inter ----------------------------------------- *
- * Phase 7a/2 self-hosted Inter. Phase 2 design-system.json declares
- * Roboto / Space Grotesk / JetBrains Mono as the canonical families;
- * those font files aren't on disk yet. Keeping Inter loaded so any
- * caller still requesting `font-family: "Inter"` resolves until the
- * font-loading sub-phase replaces these with the JSON families.
- * --------------------------------------------------------------------- */
+/* --- @font-face: Inter ------------------------------------------------ */
 @layer base {
   @font-face {
     font-family: "Inter";
@@ -166,20 +158,13 @@
 
   html { @apply text-body; }
   body {
-    /* Phase 4 — light theme keeps the legacy bg-paper / text-metal
-     * brand pair; <html class="dark"> swaps to the JSON `bg` / `text`
-     * tokens so the whole page actually goes dark instead of staying
-     * warm-cream. This is the most-visible dark-mode contrast fix in
-     * the polish pass. */
+    /* Light theme keeps the legacy bg-paper / text-metal brand pair;
+     * <html class="dark"> swaps to the JSON `bg` / `text` tokens. */
     @apply bg-paper text-metal antialiased font-sans dark:bg-bg dark:text-text;
     font-feature-settings: "ss01", "tnum";
     line-height: 1.6;
   }
 
-  /* Phase 3/f — heading scale aligns with the JSON typography ramp.
-   * font-heading is Space Grotesk; font-bold and font-semibold come
-   * from the base layer so any unstyled <h1>/<h2>/<h3> renders at the
-   * correct weight without per-template repetition. */
   h1 { @apply text-h1 font-heading font-bold tracking-tight text-metal leading-tight; }
   h2 { @apply text-h2 font-heading font-semibold tracking-tight text-metal; }
   h3 { @apply text-h3 font-heading font-semibold text-metal; }
@@ -188,155 +173,38 @@
   ::selection { @apply bg-rust text-white; }
 }
 
-/* --- Phase 7.5: focus visibility --------------------------------------
+/* --- Focus visibility -------------------------------------------------
  * Hide the default browser focus ring globally; restore via
- * `:focus-visible` so it only shows for keyboard navigation, not for
- * mouse clicks. Matches the brand's accent halo (1px ring + 20%
- * opacity) used elsewhere by .form-row input:focus etc.
- *
- * Lives in @layer base so it applies before component utilities and
- * can be overridden by per-component focus rules (buttons, inputs)
- * that need a different halo strength.
+ * `:focus-visible` so it only shows for keyboard navigation.
  */
 @layer base {
   :focus { outline: none; }
   :focus-visible { @apply ring-2 ring-accent/30 outline-none; }
 }
 
-/* --- Component classes (the public API contract) --------------------- */
+/* --- Component layer survivors --------------------------------------- *
+ * Only rules with at least one template consumer (or a test pin) live
+ * here. The full design system is in base.html's inline <style>.
+ * Each rule below carries a one-line "Used by:" note so a future
+ * audit can spot orphans.
+ * --------------------------------------------------------------------- */
 @layer components {
 
-  /* Layout shell */
-  .admin-shell { @apply min-h-screen flex flex-col; }
-
-  /* Topbar — 64px (was 56) for proper presence; brand + tools both
-     bumped a notch in size for legibility. */
-  .topbar      { @apply h-16 px-6 flex items-center justify-between bg-metal-surface text-white border-b border-metal-dark; }
-  .topbar-brand { @apply flex items-center gap-3 font-bold text-body tracking-tight; }
-  .topbar-mark  { @apply w-8 h-8 rounded-md bg-rust text-white text-small font-bold inline-flex items-center justify-center shadow-mark; }
-  .topbar-tools { @apply flex items-center gap-5 text-body text-gray-300; }
-  .topbar-tools a { @apply text-gray-300 hover:text-white no-underline transition-colors; }
-  .topbar-tools .link-button {
-    @apply bg-transparent border-0 text-gray-300 hover:text-white cursor-pointer p-0 text-body transition-colors;
-    font-family: inherit;
-  }
-  .topbar-tools .inline-form { @apply inline; }
-
-  .admin-body  { @apply flex-1 flex; }
-
-  /* Sidebar — 240px wide. Links pad more generously for click area
-     (py-2.5) and read at 14.5px so they're not eye-strain. Active
-     state combines a rust tint with a 2px left accent rule for a
-     refined look that's instantly scannable. */
-  .sidebar     { @apply hidden md:flex flex-col w-60 shrink-0 bg-surface border-r border-border py-5 px-3 gap-0.5; }
-  .sidebar-section { @apply text-caption uppercase tracking-wider text-text-muted font-semibold px-3 py-2 mt-3 first:mt-0; }
-  .sidebar-link {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-body font-medium text-metal hover:bg-gray-100 no-underline transition-colors duration-150;
-  }
-  .sidebar-link svg { @apply w-[17px] h-[17px] shrink-0 text-text-muted; }
-  .sidebar-link-active {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-body font-semibold text-rust bg-rust/10 no-underline relative;
-    box-shadow: inset 3px 0 0 0 theme("colors.rust.DEFAULT");
-  }
-  .sidebar-link-active svg { @apply w-[17px] h-[17px] shrink-0 text-rust; }
-
-  .content-shell { @apply flex-1 min-w-0 flex flex-col; }
-  .content-area  { @apply flex-1 px-6 md:px-8 py-6 md:py-8 max-w-7xl w-full; }
-
-  /* Demo banner — louder so it can't be missed in a screenshot. */
-  .demo-banner {
-    @apply px-5 py-3 bg-amber-50 text-amber-900 border-b border-amber-200 text-body font-medium;
-  }
-  .demo-banner code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-small font-mono; }
-
-  /* Breadcrumbs */
+  /* Used by: log_entries.html, object_history.html breadcrumbs.
+   * Other admin templates use the v14 `.crumbs` component instead. */
   .breadcrumbs {
     @apply text-small text-gray-600 mb-4;
   }
   .breadcrumbs a { @apply text-gray-600 hover:text-rust no-underline transition-colors; }
 
-  /* --- Buttons (Phase 7a/2 visual contract) ------------------------ */
-  /* Phase 7a/2 .btn-primary / .btn-ghost remain here for templates
-   * that haven't been migrated to the Phase 2 design-system block at
-   * the bottom of this file. Cascade picks the design-system block
-   * because it's defined later — these declarations are the
-   * fallback contract for any third-party template still bundled
-   * with the framework. .btn-delete and .deletelink-button were
-   * removed in Phase 3/c (every caller migrated to .btn-danger). */
-  .btn-primary {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-rust text-white font-semibold text-body shadow-btn hover:bg-rust-hover hover:shadow-btn-hover hover:-translate-y-px transition-all duration-150 no-underline cursor-pointer border-0;
-  }
-  .btn-ghost {
-    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-surface text-metal font-semibold text-body border border-border hover:border-gray-400 hover:bg-surface-muted transition-colors duration-150 no-underline cursor-pointer;
-  }
-  .btn-back { @apply btn-ghost; }
-  .btn-edit { @apply btn-primary; }
-
-  /* Inline destructive link inside lists / danger zones. Kept in
-   * Phase 3/c — the inline-link → button migration is deferred to a
-   * later UX pass (3 callers: groups_list, user_edit, group_edit). */
-  .deletelink-inline {
-    @apply text-red-700 font-medium hover:text-red-800 hover:underline transition-colors text-small;
-  }
-
-  /* --- Cards / modules --------------------------------------------- */
-  .card {
-    @apply bg-surface border border-border rounded-xl p-6 transition-shadow duration-150;
-  }
-  .module {
-    @apply bg-surface border border-border rounded-xl mb-4 overflow-hidden;
-  }
-  .module h2, .module caption {
-    @apply bg-surface-muted text-gray-700 px-5 py-3 text-caption font-semibold uppercase tracking-wider border-b border-border;
-  }
-  .module table { @apply w-full border-collapse; }
-  .module td, .module th {
-    @apply px-4 py-3.5 border-b border-gray-100 text-left text-body;
-  }
-  .module tr:last-child td { @apply border-b-0; }
-
-  /* --- Object-tools row (heading + add link) ----------------------- */
-  .object-tools {
-    @apply flex items-center justify-between gap-4 mb-5 list-none p-0;
-  }
-  .object-tools h1 { @apply m-0; }
-  .object-tools-actions {
-    @apply flex gap-3 list-none m-0 p-0 items-center;
-  }
-  .object-tools-actions a { @apply text-small font-medium text-emerald-700 no-underline hover:underline; }
-  .object-tools-actions .historylink { @apply text-rust no-underline; }
-  .object-tools-actions .historylink::before { content: "↻ "; }
-  .object-tools-actions .addlink { @apply text-emerald-700; }
-  .object-tools-actions .addlink::before { content: "+ "; }
-
-  .object-tools-row { @apply flex items-center gap-2 mb-5 flex-wrap; }
-
-  /* --- Toolbar with search ----------------------------------------- */
-  #toolbar {
-    @apply bg-surface-muted border border-border rounded-md p-3.5 mb-5;
-    border-left: 3px solid theme("colors.rust.DEFAULT");
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-  }
-  #toolbar .search { @apply flex gap-2.5 items-center; }
-  #toolbar .search input {
-    @apply flex-1 pl-10 pr-3 py-2.5 rounded-md border border-border bg-surface text-body font-sans;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%238B949E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>");
-    background-repeat: no-repeat;
-    background-position: 12px center;
-    background-size: 15px 15px;
-  }
-  #toolbar .search input:focus {
-    @apply outline-none border-accent ring-2 ring-accent/10;
-  }
-  #toolbar .search input::placeholder { @apply text-text-muted; }
-  #toolbar .search button {
-    @apply px-4 py-2.5 rounded-md bg-metal text-white text-small font-semibold hover:bg-metal-dark border-0 cursor-pointer transition-colors;
-  }
-
-  /* --- Results table ----------------------------------------------- */
+  /* Used by: users_list.html (test-pinned `class="results row-clickable"`),
+   * log_entries.html, object_history.html.
+   * `table-layout: fixed` was previously layered in base.html's inline
+   * <style> (post-truncation-fix); folded in here so `.results` has
+   * exactly one definition site. */
   .results {
     @apply w-full border-collapse bg-surface border border-border rounded-md text-body overflow-hidden;
+    table-layout: fixed;
   }
   .results th, .results td {
     @apply px-4 py-3.5 text-left border-b border-gray-100;
@@ -354,17 +222,11 @@
   .results.row-clickable td:first-child .row-link { @apply font-semibold; }
   .results.row-clickable .row-link.help { @apply text-gray-600 text-small; }
 
-  /* --- User rows (Phase 7a/0.5/h) ---------------------------------- */
-  /* The .user-row class on each <tr> is preserved as a public-API
-     hook so projects can target it from CSS. The visual hover is
-     already handled by .results tr:hover; this rule just gives the
-     class a defined-but-no-op so it isn't a dangling attribute. */
+  /* Used by: users_list.html (`<tr class="user-row">`). Public-API
+   * hook so projects can target users_list rows from CSS. */
   .user-row { @apply transition-colors; }
 
-  /* --- Bulk-action UI (Phase 6a, gated until Phase 8) -------------- */
-  /* Rendered only when `bulk_actions_enabled = true` is passed to
-     list.html. The handler isn't wired yet, so for now this CSS
-     describes the eventual visual; safe to keep here. */
+  /* Bulk-action UI — gated until the handler is wired (Phase 8). */
   .actions {
     @apply px-3.5 py-2.5 mb-3 bg-surface-muted border border-border rounded-md flex items-center gap-3 text-small text-gray-700;
   }
@@ -378,274 +240,45 @@
   .action-checkbox { @apply w-10 text-center pr-0; }
   .action-checkbox input[type=checkbox] { @apply w-4 h-4 rounded border-gray-300 text-rust focus:ring-accent; }
 
-  /* --- Pills / badges ----------------------------------------------
-   * Phase 3/d removed the legacy `.rio-pill*` and the Phase 7a/2
-   * `.badge` + `.badge-rust/teal/muted` family. The four canonical
-   * `.badge-success / -warning / -danger / -neutral` tokens at the
-   * bottom of this file are the single chip system. Every callsite
-   * was migrated. */
+  /* Used by: includes/_form_field.html — required-field marker.
+   * The literal classname is asserted by
+   * `form_renders_required_marker_humanised_label_and_cancel`. */
+  .required { @apply text-rust font-semibold ml-0.5; }
 
-  /* --- Forms ------------------------------------------------------- */
-  .form-row { @apply mb-4; }
-  .form-row-grid { @apply grid grid-cols-1 md:grid-cols-2 gap-4; }
-  .form-row label, .form-label {
-    @apply block text-small font-semibold text-metal mb-1.5;
-  }
-  .form-input,
-  .form-row input[type=text],
-  .form-row input[type=email],
-  .form-row input[type=password],
-  .form-row input[type=search],
-  .form-row input[type=number],
-  .form-row input[type=url],
-  .form-row input[type=tel],
-  .form-row input[type=date],
-  .form-row input[type=time],
-  .form-row input[type=datetime-local],
-  .form-row select,
-  .form-row textarea {
-    @apply w-full px-3.5 py-2.5 rounded-md border border-border bg-surface text-body font-sans transition-colors;
-  }
-  /* Phase 1/b — textareas get a consistent baseline so a one-line draft
-     and a long body both feel deliberate. The `rows="5"` attribute on
-     the form template is the upper bound; min-height is the floor. */
-  .form-row textarea { @apply min-h-32 leading-relaxed; }
-  .form-input:focus,
-  .form-row input:focus,
-  .form-row select:focus,
-  .form-row textarea:focus {
-    @apply outline-none border-accent ring-2 ring-accent/10;
-  }
-  /* Phase 1/b — required-field marker. Small, muted-rust asterisk
-     beside the label so the visual weight stays on the label text. */
-  .form-row label .required { @apply text-rust font-semibold ml-0.5; }
-  .form-help, .help { @apply text-small text-gray-600 leading-snug; }
-  .field-input { @apply w-full; }
-
-  fieldset.module {
-    @apply bg-surface border border-border rounded-xl p-0 mb-5;
-  }
-  fieldset.module h2 {
-    @apply bg-surface-muted text-gray-700 px-5 py-3 text-caption font-semibold uppercase tracking-wider border-b border-border m-0 rounded-t-xl;
-  }
-  fieldset.module .form-row {
-    @apply px-5 py-4 border-b border-gray-100;
-  }
-  fieldset.module .form-row:last-child { @apply border-b-0; }
-  fieldset.module.aligned .form-row { @apply md:grid md:grid-cols-[200px_1fr] md:gap-4 md:items-start; }
-
-  .submit-row { @apply flex gap-2.5 items-center mt-6 flex-wrap; }
-  .submit-row input[type=submit], .submit-row button {
-    @apply btn-primary;
-  }
-
-  .checkbox-list { @apply flex flex-col gap-2.5; }
-  .checkbox-list label.checkbox-item { @apply flex items-center gap-2.5 text-body font-normal m-0; }
-
-  /* --- Notices ----------------------------------------------------- */
+  /* Used by: includes/_field_errors.html — global error banner above
+   * forms (the per-field error block lives in `_form_field.html` and
+   * uses the `.field .err` rule from base.html). */
   .errornote {
     @apply px-4 py-3.5 mb-4 bg-red-50 text-red-800 border border-red-200 rounded-md text-body;
   }
-  .warningnote {
-    @apply px-4 py-3.5 mb-4 bg-amber-50 text-amber-900 border border-amber-200 rounded-md text-body;
-  }
-  .warningnote code { @apply bg-amber-100 px-1.5 py-0.5 rounded text-small font-mono; }
 
+  /* Used by: base.html flash banner (`<div class="messagelist message-{kind}">`). */
   .messagelist { @apply px-4 py-3.5 mb-4 rounded-md text-body border; }
   .message-success { @apply bg-emerald-50 text-emerald-800 border-emerald-200; }
   .message-warning { @apply bg-amber-50 text-amber-900 border-amber-200; }
   .message-error   { @apply bg-red-50 text-red-800 border-red-200; }
 
+  /* Used by: log_entries.html, object_history.html empty-state copy. */
   .empty-list {
     @apply px-7 py-12 text-center text-gray-600 bg-surface-muted border border-dashed border-gray-300 rounded-md text-body;
   }
 
-  /* --- Paginator --------------------------------------------------- */
-  .paginator { @apply mt-6 text-small text-gray-600 flex flex-wrap items-center gap-1.5; }
-  .paginator .this-page {
-    @apply bg-rust text-white px-2.5 py-1 rounded-md font-semibold;
-  }
-  .paginator a {
-    @apply px-2.5 py-1 rounded-md border border-border text-rust no-underline hover:bg-surface-muted transition-colors;
-  }
+  /* Used by: user_edit.html Groups panel. */
+  .checkbox-list { @apply flex flex-col gap-2.5; }
+  .checkbox-list label.checkbox-item { @apply flex items-center gap-2.5 text-body font-normal m-0; }
 
-  /* --- Filter sidebar (changelist right rail) ---------------------- */
-  #changelist {
-    @apply grid gap-5 mt-2;
-    grid-template-columns: minmax(0, 1fr) 230px;
-  }
-  #changelist-filter {
-    @apply bg-surface border border-border rounded-xl p-4 self-start;
-  }
-  #changelist-filter h2 { @apply text-caption uppercase tracking-wider text-gray-700 m-0 mb-2; }
-  #changelist-filter h3 { @apply text-caption text-gray-600 mt-3 mb-1.5 uppercase tracking-wider; }
-  #changelist-filter ul { @apply list-none m-0 p-0 flex flex-col gap-1; }
-  #changelist-filter li { @apply text-small; }
-  #changelist-filter li.selected a { @apply text-rust font-semibold; }
-  #changelist-filter li a { @apply text-metal hover:text-rust no-underline transition-colors; }
-  @media (max-width: 768px) {
-    #changelist { grid-template-columns: 1fr; }
-  }
-
-  /* --- Login ------------------------------------------------------- */
-  body.login { @apply bg-paper; }
-  #login-form {
-    @apply w-[400px] max-w-[92vw] mx-auto mt-16 bg-surface border border-border rounded-xl overflow-hidden shadow-md;
-  }
-  #login-form .module h2 {
-    @apply bg-metal-surface text-rust px-6 py-5 text-body font-semibold normal-case tracking-normal border-0;
-  }
-  #login-form form { @apply p-6; }
-  #login-form .form-row { @apply mb-5; }
-  #login-form button { @apply w-full uppercase tracking-wide py-3; }
-
-  /* --- Forbidden / coming-soon ------------------------------------- */
-  .forbidden-page,
-  .coming-soon-body {
-    @apply max-w-xl mx-auto my-16 text-center py-10 px-6 bg-surface border border-border rounded-xl;
-  }
-  .forbidden-page h1 { @apply text-rust mb-3; }
-  .coming-soon-body h1 { @apply mb-3; }
-
-  /* --- Danger zone (user_edit, group_edit) -------------------------- */
-  .danger-zone {
-    @apply mt-6 border-red-200;
-  }
-  .danger-zone h2 {
-    @apply bg-red-50 text-red-800;
-  }
-
-  /* --- View page (Phase 7a/0.5/h) ----------------------------------- */
-  .user-view .profile-group-list,
-  .user-view .profile-perm-list {
-    @apply list-disc pl-5 my-1.5 text-body;
-  }
-  .user-view .muted { @apply text-gray-600 italic m-0 text-small; }
-
-  /* Cascade list on confirm-delete pages */
+  /* Used by: confirm_delete.html, user_confirm_delete.html, group_confirm_delete.html. */
   .cascade-list { @apply list-disc pl-5 my-3 space-y-1.5 text-body; }
 
-  /* --- Confirm-form layout ----------------------------------------- */
-  .confirm-form .submit-row { @apply justify-start; }
-
-  /* =====================================================================
-   * Phase 2 — Design-system token layer.
-   * Source of truth: docs/design-system.json (theme.components.*).
-   *
-   * Rules of engagement:
-   *   - Every value below is JSON-derived (no invented dimensions).
-   *   - These rules sit AFTER the Phase 7a/2 component classes above,
-   *     so where names collide (`.btn-primary`, `.btn-ghost`, `.card`,
-   *     `.badge`) the cascade picks the design-system version. The
-   *     legacy Phase 7a/2 declarations remain as a transitional safety
-   *     net — the next sub-phase prunes them once every template has
-   *     been refactored onto semantic tokens.
-   *   - No template HTML changes in this commit. Templates inherit
-   *     the new visuals on next render.
-   * =================================================================== */
-
-  /* --- Buttons (components.button: height 40px, radius md) -------- */
-  /* Primary: filled with the JSON `primary` colour (light: near-black,
-   * dark: near-white, rust: near-black). The brand-orange CTA the
-   * Phase 7a/2 admin used is a rust-theme behaviour now — switch via
-   * `<html class="theme-rust">`. */
-  .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
-           bg-primary text-surface font-semibold text-small no-underline border-0
-           shadow-card cursor-pointer transition-colors duration-150
-           hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
-  }
-  /* Secondary: outline button keyed to the JSON `border` + `text`
-   * tokens. Lower-prominence sibling to primary. */
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
-           bg-surface text-text font-semibold text-small no-underline border border-border
-           cursor-pointer transition-colors duration-150
-           hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
-  }
-  /* Ghost: transparent, text-only. Used for cancel / back / dismiss. */
-  .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
-           bg-transparent text-text font-semibold text-small no-underline border-0
-           cursor-pointer transition-colors duration-150
-           hover:bg-surface-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
-  }
-  /* Danger: filled with the JSON `danger` colour. Destructive intent. */
-  .btn-danger {
-    @apply inline-flex items-center justify-center gap-2 h-[40px] px-md rounded-md
-           bg-danger text-surface font-semibold text-small no-underline border-0
-           shadow-card cursor-pointer transition-colors duration-150
-           hover:bg-danger/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent;
-  }
-  /* Phase 3/c — disabled state for the four canonical buttons.
-   * Applies to both `:disabled` (form elements) and the literal
-   * `[disabled]` attribute (so a `<span disabled>` would also dim,
-   * though browsers ignore the attribute on non-form elements —
-   * the visual still picks up). pointer-events-none kills any
-   * accidental hover / click feedback on a disabled control. */
-  .btn-primary:disabled, .btn-primary[disabled],
-  .btn-secondary:disabled, .btn-secondary[disabled],
-  .btn-ghost:disabled, .btn-ghost[disabled],
-  .btn-danger:disabled, .btn-danger[disabled] {
-    @apply opacity-50 cursor-not-allowed pointer-events-none;
+  /* Used widely: inline `<code>` chip in confirm-delete pages, hints,
+   * dashboard, user_view, group_edit. */
+  .code-pill {
+    @apply bg-paper px-1.5 py-0.5 rounded text-small font-mono;
   }
 
-  /* --- Input (components.input: height 42px, radius md) ----------- */
-  /* Standalone — works outside the .form-row scope so a stray input on
-   * the login card or a search bar gets the same treatment as a
-   * fieldset child. Templates that already match `.form-row input[…]`
-   * will receive both rules; the cascade and identical declarations
-   * resolve to the same visual. */
-  .input {
-    @apply w-full h-[42px] px-sm rounded-md bg-surface text-text text-body
-           border border-border font-sans transition-colors
-           placeholder:text-text-muted
-           focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20;
-  }
-
-  /* --- Cards (components.card: radius lg, shadow card, padding lg) - */
-  .card {
-    @apply bg-surface text-text border border-border rounded-lg shadow-card p-lg
-           transition-shadow duration-150;
-  }
-  /* Compact card — same surface contract, denser padding for sidebars
-   * / inline panels. JSON doesn't define a compact step, so this uses
-   * the next-down spacing token (md) — still inside the JSON scale. */
-  .card-compact {
-    @apply bg-surface text-text border border-border rounded-md shadow-card p-md;
-  }
-
-  /* --- Tables (components.table: rowHeight 48px) ------------------- */
-  .table {
-    @apply w-full border-collapse bg-surface text-text rounded-md overflow-hidden border border-border;
-  }
-  .table th, .table td {
-    @apply px-md text-left border-b border-border;
-    height: 48px;
-  }
-  .table th {
-    @apply bg-surface-muted text-text-muted font-semibold text-caption uppercase tracking-wider;
-  }
-  .table tbody tr:last-child td { @apply border-b-0; }
-  /* Compact variant — drops to 36px rows for chronologies / log
-   * tables. Below the JSON `48px` floor; flagged as deviation. */
-  .table-compact th, .table-compact td {
-    @apply px-sm text-small;
-    height: 36px;
-  }
-
-  /* --- Badges (single token; replaces split rio-pill / badge) ------
-   * Phase 3/d-0 retune — shape matches the legacy `.rio-pill` chip
-   * (compact, uppercase, tracking-wider, rounded-md, no border, no
-   * dot prefix) so the role-pill migration in 3/d is shape-identical
-   * to the previous rendering. Status / group badges that came from
-   * the dot-prefixed `.badge` legacy shrink + go uppercase as part
-   * of the unification — sanctioned visual change per phase spec.
-   *
-   * Colours come from the JSON semantic palette. Exact shade differs
-   * from the previous emerald-100/800 etc. pairs (since the JSON uses
-   * the 600-tier value at /10 opacity), but the colour FAMILY is
-   * preserved on light theme and adapts on dark. */
+  /* Used by: user_view.html, users_list.html, user_confirm_delete.html
+   * for role / status chips. The v14 `.badge` (boolean cells in
+   * list.html) is a different component. */
   .badge-success {
     @apply inline-flex items-center px-2.5 py-1 rounded-md
            bg-success/10 text-success
@@ -667,74 +300,17 @@
            text-caption font-semibold uppercase tracking-wider;
   }
 
-  /* --- Layout helpers from the audit ------------------------------- */
-  /* Repeated 4× in the audit: h1 + subline on the left, primary
-   * action on the right, mb-5 below. Single token replaces the inline
-   * `flex items-end justify-between gap-4 mb-5 flex-wrap`. */
-  .page-header {
-    @apply flex items-end justify-between gap-md mb-lg flex-wrap;
-  }
-  /* Hero-icon disc — Phase 3/b-0 retune for exact visual parity with
-   * the inline patterns that live in 7 templates today.
-   *
-   * Base: 40×40 perfect circle, no colour. Variants are the only
-   * source of bg / text colour, so a hero-icon without a variant
-   * is invisible — by design (matches the inline patterns, all of
-   * which set both bg and text on the same span).
-   *
-   * Modifiers, all at-most-Tailwind-default values (no invented
-   * tokens):
-   *   .hero-icon-lg     → w-12 h-12 (forbidden, coming_soon, user_view)
-   *   .hero-icon-avatar → font-bold text-lg, used on the letter
-   *                       avatar in user_view
-   *   .hero-icon-accent → JSON semantic accent (blue on light theme,
-   *                       rust under <html class="theme-brand">).
-   *                       Not used by the 3/b refactor sweep itself,
-   *                       provided for new call sites.
-   *   .hero-icon-rust   → legacy `bg-rust/10 text-rust` pair so the
-   *                       password_change, coming_soon, user_view
-   *                       sites keep their orange under the default
-   *                       light theme.
-   *   .hero-icon-danger → legacy `bg-red-100 text-red-700` pair
-   *                       matching the inline confirm-delete /
-   *                       forbidden chrome 1-for-1.
-   */
-  .hero-icon {
-    @apply inline-flex items-center justify-center w-10 h-10 rounded-full;
-  }
-  .hero-icon-lg     { @apply w-12 h-12; }
-  .hero-icon-avatar { @apply font-bold text-lg; }
-  .hero-icon-accent { @apply bg-accent/10 text-accent; }
-  .hero-icon-rust   { @apply bg-rust/10 text-rust; }
-  .hero-icon-danger { @apply bg-red-100 text-red-700; }
-
-  /* Inline `<code>` chip — Phase 3/b-0 retune for exact visual parity
-   * with the inline pattern that lives in 8 templates today
-   * (`bg-paper px-1.5 py-0.5 rounded text-small font-mono`).
-   *
-   * Display stays inline (no `inline-block`) so the chip flows with
-   * surrounding sentence text. Padding + radius use Tailwind
-   * defaults. No border. `bg-paper` is the legacy warm-paper neutral,
-   * kept here so the chip matches existing card/module backgrounds.
-   *
-   * Note: `text-small` matches 5 of 8 inline occurrences. The three
-   * sites that currently use `text-caption` will shift +0.5px on
-   * the refactor sweep — imperceptible at chip scale. Documented as
-   * an explicit, accepted deviation per the user spec ("13px
-   * equivalent"). */
-  .code-pill {
-    @apply bg-paper px-1.5 py-0.5 rounded text-small font-mono;
-  }
-
-  /* Page-action row — back button + flex-1 + primary/secondary, used
-   * on user_view, user_edit, group_edit, group_new etc. */
-  .page-actions {
-    @apply flex items-center gap-sm mb-lg flex-wrap;
-  }
-
-  /* "Small note under heading" pattern — 17 occurrences of `text-text-muted
-   * text-small mt-1` in the audit. */
-  .subhead-note {
-    @apply text-text-muted text-small mt-xs;
+  /* Disabled-state sibling for the v14 button rules in base.html.
+   * Lives here because it pairs with the test-pinned
+   * `<button class="btn-danger" disabled>` markup in
+   * user_confirm_delete.html — the button's enabled colour comes
+   * from base.html's `.btn-danger`, the disabled visual comes from
+   * this rule. Same key works for any v14 button that ever needs
+   * to render disabled. */
+  .btn-primary:disabled, .btn-primary[disabled],
+  .btn-secondary:disabled, .btn-secondary[disabled],
+  .btn-text:disabled, .btn-text[disabled],
+  .btn-danger:disabled, .btn-danger[disabled] {
+    @apply opacity-50 cursor-not-allowed pointer-events-none;
   }
 }

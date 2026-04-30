@@ -4,7 +4,7 @@
 
 {% block breadcrumbs %}
 {% if identity %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <span class="current">{{ heading }}</span>
@@ -17,14 +17,14 @@
    design language; status + heading + message come from the
    middleware that traps `Err` for `/admin/*` paths. The dashboard
    link only renders when the user is signed in. #}
-<div class="status-card-v14">
+<div class="status-card">
     <span class="hero">{{ icon("circle-x", class="w-6 h-6") }}</span>
     <h1>{{ status }} &mdash; {{ heading }}</h1>
     <p>{{ message }}</p>
 
     {% if identity %}
     <div class="actions">
-        <a href="/admin" class="btn-secondary-v14">
+        <a href="/admin" class="btn-secondary">
             {{ icon("arrow-left", class="w-4 h-4") }} Return to dashboard
         </a>
     </div>

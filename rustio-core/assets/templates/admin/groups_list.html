@@ -3,7 +3,7 @@
 {% block bodyclass %}change-list groups-list{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <span class="current">Groups</span>
@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>Groups</h1>
         <p class="lede">
@@ -19,15 +19,15 @@
         </p>
     </div>
     <div class="actions">
-        <a href="/admin/groups/new" class="btn-primary-v14">
+        <a href="/admin/groups/new" class="btn-primary">
             {{ icon("plus", class="w-4 h-4") }} Add group
         </a>
     </div>
 </div>
 
 {% if groups %}
-<div class="table-v14-wrap">
-<table class="table-v14">
+<div class="table-wrap">
+<table class="table">
     <thead>
         <tr>
             <th scope="col">Name</th>
@@ -54,10 +54,10 @@
 </table>
 </div>
 {% else %}
-<div class="empty-v14">
+<div class="empty">
     <h3>No groups yet.</h3>
     <p>Create one above, or from the CLI: <code class="code-pill">rustio group create &lt;name&gt;</code></p>
-    <a href="/admin/groups/new" class="btn-primary-v14">
+    <a href="/admin/groups/new" class="btn-primary">
         {{ icon("plus", class="w-4 h-4") }} Add group
     </a>
 </div>

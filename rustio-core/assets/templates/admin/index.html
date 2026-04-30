@@ -3,31 +3,31 @@
 {% block bodyclass %}dashboard{% endblock %}
 
 {% block content %}
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>{{ index_title }}</h1>
         <p class="lede">Welcome back. Pick a model to manage or jump to a recent change.</p>
     </div>
 </div>
 
-<div class="edit-grid-v14">
+<div class="edit-grid">
     <div>
 
     {% if apps %}
     {% for app in apps %}
-    <div class="card-v14">
-        <div class="card-v14-head">
+    <div class="card">
+        <div class="card-head">
             <h2>{{ app.label }}</h2>
         </div>
-        <div class="card-v14-body">
-            <div class="dashboard-models-v14">
+        <div class="card-body">
+            <div class="dashboard-models">
                 {% for model in app.models %}
-                <div class="dashboard-model-v14">
-                    <a href="/admin/{{ model.admin_name }}/" class="dashboard-model-v14-link">
+                <div class="dashboard-model">
+                    <a href="/admin/{{ model.admin_name }}/" class="dashboard-model-link">
                         {{ icon("table", class="w-4 h-4") }}
                         {{ model.display_name }}
                     </a>
-                    <div class="dashboard-model-v14-actions">
+                    <div class="dashboard-model-actions">
                         <a href="/admin/{{ model.admin_name }}/new">+ Add</a>
                         <a href="/admin/{{ model.admin_name }}/">Change</a>
                     </div>
@@ -38,33 +38,33 @@
     </div>
     {% endfor %}
     {% else %}
-    <div class="empty-v14">
+    <div class="empty">
         <h3>No models registered.</h3>
         <p>Add one with <code class="code-pill">#[derive(RustioAdmin)]</code>.</p>
     </div>
     {% endif %}
 
     {% if identity and identity.is_admin %}
-    <div class="card-v14" id="auth-app">
-        <div class="card-v14-head">
+    <div class="card" id="auth-app">
+        <div class="card-head">
             <h2>Authentication &amp; authorization</h2>
         </div>
-        <div class="card-v14-body">
-            <div class="dashboard-models-v14">
-                <div class="dashboard-model-v14">
-                    <a href="/admin/users" class="dashboard-model-v14-link">
+        <div class="card-body">
+            <div class="dashboard-models">
+                <div class="dashboard-model">
+                    <a href="/admin/users" class="dashboard-model-link">
                         {{ icon("users", class="w-4 h-4") }} Users
                     </a>
-                    <div class="dashboard-model-v14-actions">
+                    <div class="dashboard-model-actions">
                         <a href="/admin/users/new">+ Add</a>
                         <a href="/admin/users">Change</a>
                     </div>
                 </div>
-                <div class="dashboard-model-v14">
-                    <a href="/admin/groups" class="dashboard-model-v14-link">
+                <div class="dashboard-model">
+                    <a href="/admin/groups" class="dashboard-model-link">
                         {{ icon("users-2", class="w-4 h-4") }} Groups
                     </a>
-                    <div class="dashboard-model-v14-actions">
+                    <div class="dashboard-model-actions">
                         <a href="/admin/groups/new">+ Add</a>
                         <a href="/admin/groups">Change</a>
                     </div>
@@ -77,13 +77,13 @@
     </div>
 
     <aside>
-        <div class="card-v14">
-            <div class="card-v14-head">
+        <div class="card">
+            <div class="card-head">
                 <h2>Recent activity</h2>
             </div>
-            <div class="card-v14-body">
+            <div class="card-body">
                 {% if recent_actions %}
-                <ul class="dashboard-recent-v14">
+                <ul class="dashboard-recent">
                     {% for entry in recent_actions %}
                     <li>
                         <span class="{{ entry.pill_class }}">{{ entry.label }}</span>

@@ -3,7 +3,7 @@
 {% block bodyclass %}change-form{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <a href="/admin/{{ admin_name }}/">{{ display_name }}</a>
@@ -13,7 +13,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>{{ mode == "new" and "Add" or "Edit" }} {{ singular_name|lower }}</h1>
         {% if mode == "edit" and object_id %}
@@ -24,7 +24,7 @@
     </div>
     <div class="actions">
         {% if mode == "edit" and object_id %}
-        <a href="/admin/{{ admin_name }}/{{ object_id }}/history" class="btn-secondary-v14">
+        <a href="/admin/{{ admin_name }}/{{ object_id }}/history" class="btn-secondary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             History
         </a>
@@ -39,24 +39,24 @@
 <form method="post" novalidate data-form>
 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
 
-<div class="edit-grid-v14">
+<div class="edit-grid">
 <div>
 
 {% for section in sections %}
-<div class="card-v14">
+<div class="card">
     {% if section.title %}
-    <div class="card-v14-head">
+    <div class="card-head">
         <h2>{{ section.title }}</h2>
         <p class="sub">Required fields are marked with an asterisk</p>
     </div>
     {% else %}
-    <div class="card-v14-head">
+    <div class="card-head">
         <h2>{{ singular_name }} details</h2>
         <p class="sub">Required fields are marked with an asterisk</p>
     </div>
     {% endif %}
-    <div class="card-v14-body">
-        <div class="field-grid-v14">
+    <div class="card-body">
+        <div class="field-grid">
         {% for field in section.fields %}
         <div class="{% if field.span == 2 %}span-2{% endif %}">
             {% include "admin/includes/_form_field.html" %}
@@ -67,22 +67,22 @@
 </div>
 {% endfor %}
 
-<div class="save-row-v14">
+<div class="save-row">
     <div class="group">
-        <button type="submit" name="_save" value="Save" class="btn-primary-v14">
+        <button type="submit" name="_save" value="Save" class="btn-primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             {{ mode == "new" and "Save" or "Save changes" }}
         </button>
-        <button type="submit" name="_continue" value="Save and continue editing" class="btn-secondary-v14">Save and continue editing</button>
-        <button type="submit" name="_addanother" value="Save and add another" class="btn-secondary-v14">Save and add another</button>
+        <button type="submit" name="_continue" value="Save and continue editing" class="btn-secondary">Save and continue editing</button>
+        <button type="submit" name="_addanother" value="Save and add another" class="btn-secondary">Save and add another</button>
     </div>
-    <a href="/admin/{{ admin_name }}/" class="btn-text-v14" data-cancel>
+    <a href="/admin/{{ admin_name }}/" class="btn-text" data-cancel>
             Cancel
     </a>
 </div>
 
 {% if mode == "edit" and object_id %}
-<div class="danger-zone-v14">
+<div class="danger-zone">
     <div class="head">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         Danger zone
@@ -92,7 +92,7 @@
             <strong>Delete this {{ singular_name|lower }}</strong>
             <small>This action cannot be undone. You'll be asked to confirm on the next page.</small>
         </div>
-        <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="btn-danger-v14">
+        <a href="/admin/{{ admin_name }}/{{ object_id }}/delete" class="btn-danger">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             Delete {{ singular_name|lower }}
         </a>
@@ -104,14 +104,14 @@
 
 <aside>
     {% if mode == "edit" and object_id %}
-    <div class="meta-v14">
-        <div class="card-v14-head"><h2>Metadata</h2></div>
+    <div class="meta">
+        <div class="card-head"><h2>Metadata</h2></div>
         <div class="row"><span class="k">Record ID</span><span class="v code">#{{ object_id }}</span></div>
         <div class="row"><span class="k">Status</span><span class="v">Editable</span></div>
     </div>
     {% endif %}
 
-    <div class="tip-v14">
+    <div class="tip">
         <div class="tip-head">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
             Quick tip

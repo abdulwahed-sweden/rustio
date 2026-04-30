@@ -3,7 +3,7 @@
 {% block bodyclass %}delete-confirmation{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <a href="/admin/{{ admin_name }}/">{{ singular_name }}</a>
@@ -15,20 +15,20 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>Delete {{ singular_name|lower }}</h1>
         <p class="lede">Confirm before this {{ singular_name|lower }} is removed permanently.</p>
     </div>
 </div>
 
-<div class="card-v14">
-    <div class="card-v14-head">
+<div class="card">
+    <div class="card-head">
         <h2>Are you sure?</h2>
         <p class="sub">This action cannot be undone.</p>
     </div>
-    <div class="card-v14-body">
-        <div class="alert-v14 alert-v14--danger" role="alert">
+    <div class="card-body">
+        <div class="alert alert--danger" role="alert">
             <span class="icon">{{ icon("circle-alert", class="w-4 h-4") }}</span>
             <div>
                 Delete the {{ singular_name|lower }} <strong>"{{ object_label }}"</strong>?
@@ -55,12 +55,12 @@
 
         <form method="post" action="/admin/{{ admin_name }}/{{ object_id }}/delete" class="confirm-form">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <div class="save-row-v14">
+            <div class="save-row">
                 <div class="group">
-                    <button type="submit" class="btn-danger-v14">
+                    <button type="submit" class="btn-danger">
                         {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
                     </button>
-                    <a href="/admin/{{ admin_name }}/" class="btn-secondary-v14">
+                    <a href="/admin/{{ admin_name }}/" class="btn-secondary">
                         {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
                     </a>
                 </div>

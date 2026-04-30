@@ -3,7 +3,7 @@
 {% block bodyclass %}delete-confirmation user-delete{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <a href="/admin/users">Users</a>
@@ -15,7 +15,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>Delete user</h1>
         <p class="lede">Confirm before this account is removed permanently.</p>
@@ -23,14 +23,14 @@
 </div>
 
 {% if is_self %}
-<div class="alert-v14 alert-v14--danger" role="alert">
+<div class="alert alert--danger" role="alert">
     <span class="icon">{{ icon("circle-x", class="w-4 h-4") }}</span>
     <div>
         You cannot delete <strong>your own account</strong> while signed in. Sign in as another administrator to remove this user.
     </div>
 </div>
 {% elif is_last_developer %}
-<div class="alert-v14 alert-v14--danger" role="alert">
+<div class="alert alert--danger" role="alert">
     <span class="icon">{{ icon("circle-x", class="w-4 h-4") }}</span>
     <div>
         <strong>{{ email }}</strong> is the last active developer. Promote another user to <em>Developer</em> via <code>rustio-cli user role set</code> before deleting this account.
@@ -38,13 +38,13 @@
 </div>
 {% endif %}
 
-<div class="card-v14">
-    <div class="card-v14-head">
+<div class="card">
+    <div class="card-head">
         <h2>Are you sure?</h2>
         <p class="sub">This action cannot be undone.</p>
     </div>
-    <div class="card-v14-body">
-        <div class="alert-v14 alert-v14--warning" role="alert">
+    <div class="card-body">
+        <div class="alert alert--warning" role="alert">
             <span class="icon">{{ icon("circle-alert", class="w-4 h-4") }}</span>
             <div>
                 Delete the user <strong>"{{ email }}"</strong> (<span class="badge-{{ role == 'developer' and 'danger' or (role == 'administrator' and 'danger' or (role == 'supervisor' and 'warning' or (role == 'staff' and 'neutral' or 'success'))) }}">{{ role }}</span>)?
@@ -77,11 +77,11 @@
            and `user_confirm_delete_submit_enabled_for_normal_user` in
            templates.rs. The legacy `.btn-danger` rule from admin.css
            supplies the red colour; that's enough for a working
-           destructive button. The cancel anchor uses `.btn-secondary-v14`
+           destructive button. The cancel anchor uses `.btn-secondary`
            so the cancel and submit read as a v14 pair visually. #}
         <form method="post" action="/admin/users/{{ user_id }}/delete" class="confirm-form">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <div class="save-row-v14">
+            <div class="save-row">
                 <div class="group">
                     {% if is_self or is_last_developer %}
                     <button type="submit" class="btn-danger" disabled>
@@ -92,7 +92,7 @@
                         {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
                     </button>
                     {% endif %}
-                    <a href="/admin/users" class="btn-secondary-v14">
+                    <a href="/admin/users" class="btn-secondary">
                         {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
                     </a>
                 </div>

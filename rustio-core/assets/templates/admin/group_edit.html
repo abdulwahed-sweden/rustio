@@ -3,7 +3,7 @@
 {% block bodyclass %}change-form group-edit{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <a href="/admin/groups">Groups</a>
@@ -13,13 +13,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-tools-v14">
-    <a href="/admin/groups" class="btn-secondary-v14" data-cancel>
+<div class="page-tools">
+    <a href="/admin/groups" class="btn-secondary" data-cancel>
         {{ icon("arrow-left", class="w-4 h-4") }} Back to groups
     </a>
 </div>
 
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>Edit group</h1>
         <p class="lede">Editing <code>{{ name }}</code></p>
@@ -36,12 +36,12 @@
     {# Phase 6.2 — General (name + description) via the shared
        FormField include. #}
     {% for section in sections %}
-    <div class="card-v14">
-        <div class="card-v14-head">
+    <div class="card">
+        <div class="card-head">
             <h2>{{ section.title or "General" }}</h2>
         </div>
-        <div class="card-v14-body">
-            <div class="field-grid-v14">
+        <div class="card-body">
+            <div class="field-grid">
                 {% for field in section.fields %}
                 <div class="{% if field.span == 2 %}span-2{% endif %}">
                     {% include "admin/includes/_form_field.html" %}
@@ -56,16 +56,16 @@
        correction #2 (sanctioned domain-specific layout). Each
        permission posts as `perm_<id>=on` so the do_group_edit handler
        reads the existing form-data shape unchanged. #}
-    <div class="card-v14">
-        <div class="card-v14-head">
+    <div class="card">
+        <div class="card-head">
             <h2>Permissions</h2>
             <p class="sub">Tick every permission this group should grant.</p>
         </div>
-        <div class="card-v14-body">
+        <div class="card-body">
             {% if all_permissions %}
-            <div class="perm-grid-v14">
+            <div class="perm-grid">
                 {% for p in all_permissions %}
-                <label class="perm-tile-v14">
+                <label class="perm-tile">
                     <input type="checkbox" name="perm_{{ p.id }}"{% if p.id in group_permissions %} checked{% endif %}>
                     <code>{{ p.name }}</code>
                 </label>
@@ -77,9 +77,9 @@
         </div>
     </div>
 
-    <div class="save-row-v14">
+    <div class="save-row">
         <div class="group">
-            <button type="submit" name="_save" class="btn-primary-v14">
+            <button type="submit" name="_save" class="btn-primary">
                 {{ icon("check", class="w-4 h-4") }} Save
             </button>
         </div>
@@ -87,7 +87,7 @@
            rationale. Fallback href is /admin/groups when there's no
            prior history entry to return to. #}
         <a href="/admin/groups"
-           class="btn-text-v14"
+           class="btn-text"
            data-cancel
            onclick="if (history.length > 1) { history.back(); return false; }">
             Cancel
@@ -95,7 +95,7 @@
     </div>
 </form>
 
-<div class="danger-zone-v14">
+<div class="danger-zone">
     <div class="head">
         {{ icon("circle-alert", class="w-4 h-4") }}
         Danger zone
@@ -105,7 +105,7 @@
             <strong>Delete this group</strong>
             <small>Group memberships and permission attachments cascade away. Users keep their accounts.</small>
         </div>
-        <a href="/admin/groups/{{ group_id }}/delete" class="btn-danger-v14">
+        <a href="/admin/groups/{{ group_id }}/delete" class="btn-danger">
             {{ icon("trash", class="w-4 h-4") }} Delete group
         </a>
     </div>

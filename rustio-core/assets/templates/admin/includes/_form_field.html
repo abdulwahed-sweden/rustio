@@ -12,11 +12,11 @@
      searchable, has_more, search_url, errors.
 
    v14 contract
-     * outer wrapper: `.field-v14`
-     * label:         `.label-v14` (standard) or `.checkbox-row-v14`
+     * outer wrapper: `.field`
+     * label:         `.label` (standard) or `.checkbox-row`
                       (checkbox layout)
-     * inputs:        styled by `.field-v14 input[type=...]` /
-                      `.field-v14 textarea` / `.field-v14 select`
+     * inputs:        styled by `.field input[type=...]` /
+                      `.field textarea` / `.field select`
                       rules in base.html — no per-element class needed
      * required-marker: `<span class="required">` (the literal classname
                       is asserted by `form_renders_required_marker_…`)
@@ -32,7 +32,7 @@
    validators populate the keyed errors via `apply_field_errors`; the
    generic AdminEntry path passes the empty map and renders the global
    error banner only. #}
-<div class="field-v14">
+<div class="field">
     {% if field.widget == "checkbox" %}
         {# Phase 7.5 — checkbox layout: input + label inline in a
            single <label>, so click-on-text toggles AND the visual
@@ -40,7 +40,7 @@
            `for=` is redundant when the input is inside the label,
            but kept for tests + screen readers that prefer explicit
            association. #}
-        <label for="id_{{ field.name }}" class="checkbox-row-v14">
+        <label for="id_{{ field.name }}" class="checkbox-row">
             <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
                 value="true"{% if field.checked %} checked{% endif %}
                 {% if field.required %}required{% endif %}
@@ -55,7 +55,7 @@
         {% endif %}
         {% if field.hint %}<p class="help">{{ field.hint }}</p>{% endif %}
     {% else %}
-        <label class="label-v14" for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}</label>
+        <label class="label" for="id_{{ field.name }}">{{ field.label }}{% if field.required %} <span class="required" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}</label>
         {% if field.widget == "textarea" %}
             <textarea id="id_{{ field.name }}" name="{{ field.name }}" rows="5"
                 {% if field.required %}required{% endif %}
@@ -76,7 +76,7 @@
             <input
                 type="text"
                 placeholder="Search…"
-                class="search-input-v14"
+                class="search-input"
                 role="searchbox"
                 data-search-input
                 data-target="id_{{ field.name }}"

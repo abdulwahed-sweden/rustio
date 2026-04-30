@@ -9,25 +9,25 @@
    card with a near-black submit button, completely off-tone. The
    topbar_brand override also forced `text-white` on the now-white
    v14 topbar, leaving the site name invisible. Both issues fixed by
-   not overriding `topbar_brand` and styling with -v14 classes. #}
+   not overriding `topbar_brand` and styling with  classes. #}
 
 {% block breadcrumbs %}{% endblock %}
 
 {% block content %}
-<div class="login-card-v14">
-    <div class="login-head-v14">
+<div class="login-card">
+    <div class="login-head">
         <h2>Sign in to {{ site_header }}</h2>
         <p>Enter your administrator credentials to continue.</p>
     </div>
-    <form method="post" action="/admin/login" data-form class="login-body-v14">
+    <form method="post" action="/admin/login" data-form class="login-body">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         {% if error %}
-        <div class="login-error-v14" role="alert">{{ error }}</div>
+        <div class="login-error" role="alert">{{ error }}</div>
         {% endif %}
         {% for section in sections %}
             {% for field in section.fields %}
-            <div class="field-v14">
-                <label class="label-v14" for="id_{{ field.name }}">
+            <div class="field">
+                <label class="label" for="id_{{ field.name }}">
                     {{ field.label }}{% if field.required %} <span class="req" aria-hidden="true">*</span><span class="sr-only"> (required)</span>{% endif %}
                 </label>
                 <input
@@ -48,7 +48,7 @@
             </div>
             {% endfor %}
         {% endfor %}
-        <button type="submit" class="btn-primary-v14 login-submit-v14">Sign in</button>
+        <button type="submit" class="btn-primary login-submit">Sign in</button>
     </form>
 </div>
 {% endblock %}

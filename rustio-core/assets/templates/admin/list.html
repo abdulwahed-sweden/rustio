@@ -3,7 +3,7 @@
 {% block bodyclass %}change-list{% endblock %}
 
 {% block breadcrumbs %}
-<div class="crumbs-v14">
+<div class="crumbs">
     <a href="/admin">Home</a>
     <span class="sep">›</span>
     <span class="current">{{ display_name }}</span>
@@ -11,7 +11,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-head-v14">
+<div class="page-head">
     <div>
         <h1>{{ display_name }}</h1>
         <p class="lede">
@@ -20,27 +20,27 @@
         </p>
     </div>
     <div class="actions">
-        <a href="/admin/{{ admin_name }}/new" class="btn-primary-v14">
+        <a href="/admin/{{ admin_name }}/new" class="btn-primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add {{ singular_name|lower }}
         </a>
     </div>
 </div>
 
-<div class="toolbar-v14">
+<div class="toolbar">
     <form method="get" class="toolbar-form">
-        <div class="search-v14">
+        <div class="search">
             <svg class="icon-search" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="search" name="q" value="{{ search_query }}" placeholder="Search {{ display_name|lower }}…">
         </div>
-        <button type="submit" class="btn-primary-v14">Search</button>
-        {% if search_query %}<a href="?" class="btn-text-v14">Clear</a>{% endif %}
+        <button type="submit" class="btn-primary">Search</button>
+        {% if search_query %}<a href="?" class="btn-text">Clear</a>{% endif %}
     </form>
 </div>
 
 {% if filters %}
-<div class="toolbar-v14">
-    <div class="filters-v14">
+<div class="toolbar">
+    <div class="filters">
         {% for group in filters %}
             <span class="label">{{ group.label|upper }}:</span>
             <a href="?" class="pill{% if not group.current %} is-active{% endif %}">All</a>
@@ -53,8 +53,8 @@
 {% endif %}
 
 {% if rows %}
-<div class="table-v14-wrap">
-<table class="table-v14">
+<div class="table-wrap">
+<table class="table">
     {# Stabilization (v1.4.x) — every cell rendered below dispatches on
        `field.kind` (carries FieldType::widget(): "text" / "number" /
        "checkbox" / "datetime"). No hardcoded column-name lists, no
@@ -79,6 +79,14 @@
                     {# Stability lock (v1.4.x) — boolean cells arrive as
                        real JSON `true` / `false` (typed in `list_ctx`).
                        Template uses truthiness, never string match. #}
+                    {# `badge-v14 badge-yes-v14` / `badge-v14 badge-no-v14`
+                       are pinned literally by
+                       `list_dispatches_cell_renderer_by_field_kind` in
+                       admin/render.rs:3416. Other classes were renamed
+                       off the `-v14` suffix; these two stay as the
+                       test-contracted boolean-cell markers. CSS rules in
+                       base.html (`.badge-v14`, `.badge-yes-v14`,
+                       `.badge-no-v14`) match the literal class names. #}
                     {% if row[field.name] %}
                         <span class="badge-v14 badge-yes-v14">Yes</span>
                     {% else %}
@@ -118,7 +126,7 @@
 </table>
 
 {% if total_pages > 1 %}
-<div class="pager-v14">
+<div class="pager">
     <span class="info">
         Showing <b>{{ ((page - 1) * per_page) + 1 }}</b>–<b>{{ ((page - 1) * per_page) + (rows|length) }}</b> of <b>{{ total_rows }}</b>
     </span>
@@ -142,17 +150,17 @@
 </div>
 
 {% elif search_query or (filters|selectattr("current")|list|length) %}
-<div class="empty-v14">
+<div class="empty">
     <h3>No results match your search</h3>
     <p>Try widening the filters above, or clear the search.</p>
-    <a href="?" class="btn-secondary-v14">Clear filters</a>
+    <a href="?" class="btn-secondary">Clear filters</a>
 </div>
 
 {% else %}
-<div class="empty-v14">
+<div class="empty">
     <h3>No {{ display_name|lower }} yet.</h3>
     <p>Get started by creating your first {{ singular_name|lower }}.</p>
-    <a href="/admin/{{ admin_name }}/new" class="btn-primary-v14">
+    <a href="/admin/{{ admin_name }}/new" class="btn-primary">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Create your first {{ singular_name|lower }}
     </a>
