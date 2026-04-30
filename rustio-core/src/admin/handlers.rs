@@ -228,8 +228,13 @@ pub(crate) async fn list_model(
     }
 
     let total_rows = rows.len();
-    let per_page = 100usize;
-    let page: usize = qs.get("p").and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
+    let per_page = 50usize;
+    let total_pages = total_rows.div_ceil(per_page.max(1)).max(1);
+    let page_raw: usize = qs.get("p").and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
+    // Clamp out-of-range page numbers to the last valid page so a stale
+    // bookmark (e.g. `?p=999` after rows shrank) renders the last page
+    // instead of an empty body.
+    let page = page_raw.min(total_pages);
     let start = (page - 1) * per_page;
     let page_rows: Vec<_> = rows.into_iter().skip(start).take(per_page).collect();
 
