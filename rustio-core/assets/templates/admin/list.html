@@ -28,7 +28,7 @@
 </div>
 
 <div class="toolbar-v14">
-    <form method="get" class="search-v14" style="display:contents">
+    <form method="get" class="toolbar-form">
         <div class="search-v14">
             <svg class="icon-search" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="search" name="q" value="{{ search_query }}" placeholder="Search {{ display_name|lower }}…">
@@ -39,7 +39,7 @@
 </div>
 
 {% if filters %}
-<div class="toolbar-v14" style="margin-top:-4px">
+<div class="toolbar-v14">
     <div class="filters-v14">
         {% for group in filters %}
             <span class="label">{{ group.label|upper }}:</span>
@@ -65,7 +65,7 @@
             {% for field in fields %}
             <th scope="col"{% if field.kind == "number" %} class="num"{% endif %}>{{ field.label }}</th>
             {% endfor %}
-            <th scope="col" style="width:100px;text-align:right">Actions</th>
+            <th scope="col" class="actions-cell">Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -90,7 +90,7 @@
                     {% else %}
                         <span class="rio-cell-empty">—</span>
                     {% endif %}
-                {% elif row[field.name] == "" %}
+                {% elif not row[field.name] %}
                     <span class="rio-cell-empty">—</span>
                 {% else %}
                     {{ row[field.name] }}

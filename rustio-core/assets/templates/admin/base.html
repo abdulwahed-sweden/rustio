@@ -96,6 +96,7 @@
         }
         .topbar-v14 .title { font-weight: 600; font-size: 18px; color: var(--rio-text); font-family: var(--rio-font-heading); }
         .topbar-v14 .tools { display: inline-flex; align-items: center; gap: 12px; font-size: 15px; flex-wrap: wrap; }
+        .topbar-v14 .tools form { margin: 0; }
         .topbar-v14 .who { color: var(--rio-text-muted); }
         .btn-pill-v14 {
             display: inline-flex; align-items: center; gap: 6px;
@@ -394,6 +395,12 @@
             padding: 16px 18px; box-shadow: var(--rio-shadow-card); margin-bottom: 18px;
             display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
         }
+        /* When a filters toolbar follows the search toolbar, tighten the
+           gap so the two read as a connected control strip. */
+        .toolbar-v14 + .toolbar-v14 { margin-top: -8px; }
+        /* `<form>` wrapping the search + button + clear lets its children
+           participate in the parent toolbar's flex layout directly. */
+        .toolbar-form { display: contents; }
         .search-v14 { flex: 1; min-width: 220px; position: relative; }
         .search-v14 input {
             width: 100%; height: 44px; padding: 0 14px 0 40px;
@@ -454,8 +461,11 @@
             color: var(--rio-text); font-weight: 600; text-decoration: none;
         }
         .table-v14 .row-link:hover { color: var(--rio-accent); text-decoration: underline; }
-        /* Action cell ALWAYS visible — touch-friendly, scannable, not hover-only */
+        /* Action cell ALWAYS visible — touch-friendly, scannable, not hover-only.
+           Width is fixed on the `th` so the column doesn't shift when
+           icons appear or rows have different action sets. */
         .table-v14 .actions-cell { text-align: right; white-space: nowrap; opacity: 1; }
+        .table-v14 thead th.actions-cell { width: 100px; }
         .table-v14 .icon-btn {
             display: inline-flex; align-items: center; justify-content: center;
             width: 32px; height: 32px; border-radius: 6px;
@@ -595,7 +605,7 @@
     <div class="tools">
         <span class="who">{{ identity.email }}</span>
         <a href="/admin/password_change" class="btn-pill-v14">Change password</a>
-        <form method="post" action="/admin/logout" style="margin:0">
+        <form method="post" action="/admin/logout">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit" class="btn-pill-v14">Log out</button>
         </form>

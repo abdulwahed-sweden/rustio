@@ -3135,14 +3135,17 @@ mod tests {
             .render("admin/form.html", &ctx)
             .expect("form renders");
 
-        // The wrapper around the textarea field must include col-span-2.
+        // Stabilization (v1.4.x) — the wrapper around the textarea field
+        // uses the field-grid component's own .span-2 class instead of
+        // the legacy Tailwind `col-span-2` utility. Same effect, single
+        // source of truth.
         let body_wrapper_idx = body
-            .find("class=\"col-span-2\"")
-            .expect("col-span-2 wrapper present");
+            .find("class=\"span-2\"")
+            .expect("span-2 wrapper present (the .field-grid-v14 component class)");
         let body_after = &body[body_wrapper_idx..];
         assert!(
             body_after.contains("name=\"body\""),
-            "col-span-2 wrapper should contain the body field"
+            "span-2 wrapper should contain the body field"
         );
     }
 
@@ -3366,6 +3369,58 @@ mod tests {
         assert!(
             body.contains(r#"href="/admin/posts/1/edit">Sample</a>"#),
             "first-column row-link convention must still apply for text columns"
+        );
+    }
+
+    /// Stabilization (v1.4.x) — the list template must not carry per-page
+    /// `style="..."` attributes. Layout decisions belong in the CSS
+    /// component classes (`.toolbar-form`, `.toolbar-v14`,
+    /// `.actions-cell`). If anyone re-introduces an inline style for
+    /// these surfaces, this test fails.
+    #[test]
+    fn list_template_has_no_per_page_inline_styles() {
+        let templates = Templates::new(None).expect("embedded templates");
+        let mut ctx = empty_list_ctx_skeleton();
+        ctx["fields"] = serde_json::json!([
+            { "name": "title", "label": "Title", "kind": "text" },
+        ]);
+        ctx["filters"] = serde_json::json!([
+            {
+                "field": "published",
+                "label": "Published",
+                "options": [
+                    { "value": "true",  "label": "Yes", "selected": false },
+                    { "value": "false", "label": "No",  "selected": false },
+                ],
+                "current": null,
+            }
+        ]);
+        ctx["rows"] = serde_json::json!([{ "id": 1, "title": "x" }]);
+        ctx["total_rows"] = serde_json::json!(1);
+        let body = templates
+            .render("admin/list.html", &ctx)
+            .expect("list renders");
+
+        // The three layout hacks the v1.4.x stabilization removed:
+        for hack in [
+            r#"style="display:contents""#,
+            r#"style="margin-top:-4px""#,
+            r#"style="width:100px;text-align:right""#,
+        ] {
+            assert!(
+                !body.contains(hack),
+                "list template must not carry per-page inline style {hack:?}"
+            );
+        }
+
+        // The component classes that replaced them must be present.
+        assert!(
+            body.contains(r#"class="toolbar-form""#),
+            "search form must use the .toolbar-form component class"
+        );
+        assert!(
+            body.contains(r#"class="actions-cell""#),
+            "Actions header must use the .actions-cell component class"
         );
     }
 
