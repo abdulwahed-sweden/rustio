@@ -1,5 +1,136 @@
 # Changelog
 
+## [1.4.0] - 2026-04-30
+
+A UI / design-system release. The admin chrome has been migrated end
+to end onto a single, finalized design system; every legacy
+component-class has been pruned. Type-driven list and form rendering
+is locked down. No API changes — existing models, handlers, and
+project layouts continue to work without modification.
+
+### Highlights
+
+* **Finalized admin design system.** Every admin template now uses
+  one set of bare-named components (`.card`, `.btn-primary`,
+  `.field`, `.alert`, `.table`, `.crumbs`, `.page-head`, `.save-row`,
+  `.danger-zone`, `.status-card`, `.login-card`, and friends). All
+  rules are token-driven through `--rio-*` CSS custom properties so
+  a one-line palette change ripples through the whole admin.
+* **Full admin template migration.** All twenty-plus admin templates
+  (login, dashboard, model lists, model forms, user CRUD, group CRUD,
+  password change, confirm-delete pages, error / forbidden /
+  coming-soon, audit views) speak the same vocabulary. The shared
+  `_form_field.html` include is now v14-only, so login,
+  password_change, every model form, every user / group form
+  inherits the same chrome through one source of truth.
+* **CSS pruning.** The legacy admin.css component layer has been
+  removed (about 65% of the prior file's bytes). Compiled
+  `admin.css` shrank from ~66 KiB to ~23 KiB. Inline
+  `<style>` (the design system) and `input.css` (Tailwind base +
+  legacy survivors) have **zero overlapping selectors** — exactly
+  one definition site per component.
+* **Type-driven table / form rendering — locked.** Every admin list
+  cell dispatches on `field.kind` from the macro-emitted
+  `FieldType::widget()`; every form input is rendered through the
+  shared `_form_field.html` include. No string-shape detection, no
+  per-model templates, no field-name hardcoding.
+* **Long-text table truncation.** Tables that carry summary /
+  description / notes columns no longer blow up the layout.
+  `table-layout: fixed` plus a `.cell-text` 2-line clamp keeps the
+  column stable; the full text is preserved on hover via the
+  `title=` attribute.
+* **DateTime fixes.** List cells render the canonical
+  `YYYY-MM-DDTHH:MM` ISO-8601 separator that `<input
+  type="datetime-local">` requires (`T`, not space). Native
+  date / datetime-local inputs match the v14 input chrome.
+* **`Option<String>` display fix.** `#[derive(RustioAdmin)]`
+  previously refused to compile any model declaring an
+  `Option<String>` field; the `display_values` arm now splits
+  `String` and `OptionalString` correctly (None → empty string,
+  Some(v) → v).
+* **Login page rewritten.** Now renders inside the v14 design
+  language (white card, rust-accent submit, focus ring on
+  inputs) instead of the previous dark-navy legacy card.
+
+### Improved
+
+* **Generic table column behaviour.** Numeric columns use tabular
+  figures and right-alignment via `.num`. Boolean cells render
+  through consistent badge components.
+* **Stress-tested at scale.** The bookshelf consumer seeds 100+
+  rows across multiple model shapes (numbers, booleans, datetime,
+  nullable fields, long text, large numbers, RTL text) — used to
+  validate truncation, pagination, and the kind-driven dispatch
+  before this release.
+* **Documented test-pinned classnames.** `<span class="required">`,
+  `<span class="btn-danger">` (disabled-Delete), `<button
+  class="btn-danger">` (confirm-delete submit), `<table
+  class="results row-clickable">` (users_list), and the
+  `.badge-v14 / .badge-yes-v14 / .badge-no-v14` boolean-cell trio
+  in list.html are pinned by render tests; each is annotated at
+  its callsite so future migrations don't accidentally rename them.
+
+### Removed
+
+* Legacy `@layer components` rules in `assets/css/input.css`:
+  `.admin-shell`, `.topbar*`, `.sidebar*`, `.demo-banner*`,
+  `.btn-primary` / `.btn-secondary` / `.btn-ghost` / `.btn-back` /
+  `.btn-edit` / `.btn-danger` rule body, `.deletelink-inline`,
+  `.card` / `.card-compact`, `.module*`, `.object-tools*`,
+  `#toolbar*`, `.form-row*` / `.form-input` / `.field-input`,
+  `fieldset.module*`, `.submit-row*`, `.warningnote`, `.paginator*`,
+  `#changelist*`, `body.login` / `#login-form*`, `.forbidden-page`,
+  `.coming-soon-body`, `.danger-zone` (legacy), `.user-view*`,
+  `.confirm-form .submit-row`, `.input`, `.table*`, `.page-header`,
+  `.page-actions`, `.subhead-note`, `.hero-icon*`. Every removed
+  rule had zero template consumers after the migration.
+* Three orphan rule blocks from the inline `<style>` in `base.html`
+  (`.toggle-row`, `.toggle`, the legacy
+  `.form-row .field-input input[type=…]` font-size override).
+
+### Kept (with `Used by:` notes in `input.css`)
+
+`.breadcrumbs` (audit views), `.results` / `.row-clickable`
+(users_list test pin + audit views), `.user-row`, `.actions` /
+`.action-*` (bulk-action UI gated until Phase 8), `.required`,
+`.errornote` (`_field_errors` include), `.messagelist` /
+`.message-*` (flash banner), `.empty-list` (audit views),
+`.checkbox-list` / `.checkbox-item` (user_edit Groups),
+`.cascade-list` (confirm-delete), `.code-pill`, `.badge-success` /
+`-warning` / `-danger` / `-neutral`, `.btn-*:disabled`.
+Theme-switch classes (`.dark`, `.theme-rust`, `.theme-brand`)
+preserved as public API.
+
+### Accessibility
+
+* Form labels link via `for="id_<name>"` ↔ `id="id_<name>"`.
+* Skip-to-content link present in every admin page.
+* `:focus-visible` rules fire only on keyboard navigation.
+* Icon-only buttons carry `aria-label`.
+* Text contrast: `--rio-text` on `--rio-bg` = **16.5:1** (AAA);
+  `--rio-text-muted` on white = **8.6:1** (AAA);
+  `--rio-text-faint` on white = **4.7:1** (AA).
+
+### API
+
+No breaking changes. `AdminModel`, `Model`, `RustioAdmin` derive,
+`FieldType`, `AdminEntry`, `Admin::new()` builder, route
+registration — all stable. Existing v1.3.x consumers can upgrade
+without code changes.
+
+### Performance
+
+* Compiled `admin.css`: ~23 KiB (was ~66 KiB).
+* Inline `<style>` block: ~46 KiB / 953 lines.
+* Total CSS payload: ~69 KiB.
+* Selector depth: max 3 levels; no deep nesting.
+
+### Notes
+
+* PostgreSQL-only (unchanged from v1.3.x).
+* Sandbox tests: 402 passing. Pg-gated tests: 41 (require
+  `RUSTIO_TEST_DB=1` + a running Postgres).
+
 ## [1.3.1] - 2026-04-29
 
 ### Fixed
