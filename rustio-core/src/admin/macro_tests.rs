@@ -213,3 +213,57 @@ fn datetime_display_value_uses_iso_separator() {
     assert!(!val.contains(' '), "no space allowed in datetime-local value");
     assert_eq!(val.len(), 16, "expected YYYY-MM-DDTHH:MM (16 chars)");
 }
+
+/// v1.4.x stress-test bug-fix lock: the `display_values` arm for
+/// `Option<String>` fields used to be folded in with `String`,
+/// calling `self.field.clone().to_string()` — but `Option<String>`
+/// doesn't implement `Display`, so any model with an `Option<String>`
+/// field failed to compile inside the derive expansion. Caught when
+/// adding `shipping_notes: Option<String>` to a stress-test Order
+/// model in the bookshelf example. The fix splits the arm: None →
+/// empty string, Some(v) → v. This test exercises both branches via
+/// a fresh fixture with an `Option<String>` field.
+#[derive(Debug, RustioAdmin)]
+#[allow(dead_code)]
+pub struct OptionalStringFixture {
+    pub id: i64,
+    pub title: String,
+    pub notes: Option<String>,
+}
+
+impl rustio_core::Model for OptionalStringFixture {
+    const TABLE: &'static str = "optional_string_fixtures";
+    const COLUMNS: &'static [&'static str] = &["id", "title", "notes"];
+    const INSERT_COLUMNS: &'static [&'static str] = &["title", "notes"];
+    fn id(&self) -> i64 { self.id }
+    fn from_row(_: rustio_core::Row<'_>) -> Result<Self, rustio_core::Error> {
+        unimplemented!("not used in this test — display_values is the only path under test")
+    }
+    fn insert_values(&self) -> Vec<rustio_core::Value> { Vec::new() }
+}
+
+#[test]
+fn optional_string_field_display_values_works_for_some_and_none() {
+    use rustio_core::admin::AdminModel;
+
+    // Some(v) → v
+    let with_value = OptionalStringFixture {
+        id: 0,
+        title: "x".into(),
+        notes: Some("hello world".into()),
+    };
+    let pairs = with_value.display_values();
+    let (_, val) = pairs.iter().find(|(k, _)| k == "notes").expect("notes pair present");
+    assert_eq!(val, "hello world", "Some(\"hello world\") must surface as the inner string");
+
+    // None → empty string (not "None", not "null")
+    let without_value = OptionalStringFixture {
+        id: 0,
+        title: "x".into(),
+        notes: None,
+    };
+    let pairs = without_value.display_values();
+    let (_, val) = pairs.iter().find(|(k, _)| k == "notes").expect("notes pair present");
+    assert_eq!(val, "", "None must surface as the empty string, never the literal \"None\"");
+}
+

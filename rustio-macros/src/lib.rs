@@ -98,8 +98,21 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
 
         // `display_values`: stringify the field for the list page.
         let display_arm = match kind {
-            FieldKind::String | FieldKind::OptionalString => quote! {
-                out.push((#fname_str.to_string(), self.#fname.clone().to_string()));
+            FieldKind::String => quote! {
+                out.push((#fname_str.to_string(), self.#fname.clone()));
+            },
+            FieldKind::OptionalString => quote! {
+                // Stress-test fix (v1.4.x) — `Option<String>` does not
+                // implement `Display`, so the previous shared
+                // `String | OptionalString` arm that called
+                // `self.#fname.clone().to_string()` would not compile
+                // for any model that declared an `Option<String>`
+                // field. Mirrors the `OptionalI64` arm: None →
+                // empty string, Some(v) → v.
+                out.push((#fname_str.to_string(), match &self.#fname {
+                    Some(v) => v.clone(),
+                    None => String::new(),
+                }));
             },
             FieldKind::I32 | FieldKind::I64 => quote! {
                 out.push((#fname_str.to_string(), self.#fname.to_string()));
@@ -471,6 +484,17 @@ fn find_label_field(fields: &syn::punctuated::Punctuated<syn::Field, syn::Token!
     // Heuristic: prefer `name`, then `title`, then `full_name`, then
     // fall through to #id. Keeps object_label() useful without forcing
     // users to implement anything.
+    //
+    // Future evolution — explicit `label_field` plug-in point:
+    // when a struct-level attribute is added (likely
+    // `#[rustio(label_field = "summary")]`), this function becomes
+    // the override site: parse the attribute off `input.attrs` in
+    // `expand`, pass the chosen ident in, and return it here before
+    // running the heuristic. The trait layer (`AdminModel::object_label`
+    // in `rustio-core/src/admin/types.rs`) and the FK rendering layer
+    // (`AdminRelation::display_field` in the same file) already accept
+    // a per-model label without further plumbing — this is the only
+    // file the new attribute needs to touch.
     let names = ["name", "title", "full_name", "label", "email"];
     for candidate in names {
         if fields
