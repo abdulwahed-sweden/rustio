@@ -3,33 +3,41 @@
 {% block bodyclass %}delete-confirmation{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
+<div class="crumbs-v14">
     <a href="/admin">Home</a>
-    &rsaquo; <a href="/admin/{{ admin_name }}/">{{ singular_name }}</a>
-    &rsaquo; <a href="/admin/{{ admin_name }}/{{ object_id }}/edit">{{ object_label }}</a>
-    &rsaquo; Delete
+    <span class="sep">›</span>
+    <a href="/admin/{{ admin_name }}/">{{ singular_name }}</a>
+    <span class="sep">›</span>
+    <a href="/admin/{{ admin_name }}/{{ object_id }}/edit">{{ object_label }}</a>
+    <span class="sep">›</span>
+    <span class="current">Delete</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-3xl">
-    <div class="flex items-center gap-3 mb-md">
-        <span class="hero-icon hero-icon-danger">
-            {{ icon("circle-alert", class="w-5 h-5") }}
-        </span>
-        <h1 class="text-h1 font-heading tracking-tight">Are you sure?</h1>
+<div class="page-head-v14">
+    <div>
+        <h1>Delete {{ singular_name|lower }}</h1>
+        <p class="lede">Confirm before this {{ singular_name|lower }} is removed permanently.</p>
     </div>
+</div>
 
-    <div class="card">
-        <p class="text-body mb-3">
-            Delete the {{ singular_name|lower }} <strong>"{{ object_label }}"</strong>?
-            {% if cascading %}
-            All of the following related rows will be removed if the
-            database has <code class="code-pill">ON DELETE CASCADE</code> on the foreign key.
-            {% else %}
-            This action cannot be undone.
-            {% endif %}
-        </p>
+<div class="card-v14">
+    <div class="card-v14-head">
+        <h2>Are you sure?</h2>
+        <p class="sub">This action cannot be undone.</p>
+    </div>
+    <div class="card-v14-body">
+        <div class="alert-v14 alert-v14--danger" role="alert">
+            <span class="icon">{{ icon("circle-alert", class="w-4 h-4") }}</span>
+            <div>
+                Delete the {{ singular_name|lower }} <strong>"{{ object_label }}"</strong>?
+                {% if cascading %}
+                All related rows listed below will be removed if the database has
+                <code>ON DELETE CASCADE</code> on the foreign key.
+                {% endif %}
+            </div>
+        </div>
 
         {% if cascading %}
         <ul class="cascade-list">
@@ -45,15 +53,17 @@
         </ul>
         {% endif %}
 
-        <form method="post" action="/admin/{{ admin_name }}/{{ object_id }}/delete" class="confirm-form mt-5">
+        <form method="post" action="/admin/{{ admin_name }}/{{ object_id }}/delete" class="confirm-form">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <div class="submit-row">
-                <button type="submit" class="btn-danger">
-                    {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
-                </button>
-                <a href="/admin/{{ admin_name }}/" class="btn-ghost">
-                    {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
-                </a>
+            <div class="save-row-v14">
+                <div class="group">
+                    <button type="submit" class="btn-danger-v14">
+                        {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
+                    </button>
+                    <a href="/admin/{{ admin_name }}/" class="btn-secondary-v14">
+                        {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
+                    </a>
+                </div>
             </div>
         </form>
     </div>

@@ -3,115 +3,129 @@
 {% block bodyclass %}user-view{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
+<div class="crumbs-v14">
     <a href="/admin">Home</a>
-    &rsaquo; <a href="/admin/users">Users</a>
-    &rsaquo; {{ target_email }}
+    <span class="sep">›</span>
+    <a href="/admin/users">Users</a>
+    <span class="sep">›</span>
+    <span class="current">{{ target_email }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="page-actions">
-    <a href="/admin/users" class="btn-ghost">
+<div class="page-tools-v14">
+    <a href="/admin/users" class="btn-secondary-v14">
         {{ icon("arrow-left", class="w-4 h-4") }} Back to users
     </a>
-    <div class="flex-1"></div>
+    <span class="spacer"></span>
     {% if can_edit %}
-    <a href="/admin/users/{{ target_id }}/edit" class="btn-primary">
+    <a href="/admin/users/{{ target_id }}/edit" class="btn-primary-v14">
         {{ icon("pencil", class="w-4 h-4") }} Edit
     </a>
     {% endif %}
     {% if can_delete %}
-    <a href="/admin/users/{{ target_id }}/delete" class="btn-danger">
+    <a href="/admin/users/{{ target_id }}/delete" class="btn-danger-v14">
         {{ icon("trash", class="w-4 h-4") }} Delete
     </a>
     {% else %}
-    <span class="btn-danger opacity-50 cursor-not-allowed select-none" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
+    {# The literal `btn-danger` classname is asserted by the
+       `user_view_is_self_disables_delete_as_span` and
+       `user_view_last_developer_disables_delete` render tests in
+       templates.rs — keep it here as the contract marker. The
+       `.btn-disabled-v14` rule (defined later in base.html, so it
+       wins on cascade order) supplies the muted v14 visual on top. #}
+    <span class="btn-danger btn-disabled-v14" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
         {{ icon("trash", class="w-4 h-4") }} Delete
     </span>
     {% endif %}
 </div>
 
-<div class="flex items-center gap-3 mb-lg">
-    <span class="hero-icon hero-icon-lg hero-icon-rust hero-icon-avatar">
-        {{ target_email[0:1]|upper }}
-    </span>
-    <div>
-        <h1 class="text-h1 font-heading tracking-tight">{{ target_email }}</h1>
-        <p class="text-text-muted text-small">User profile</p>
+<div class="page-head-v14">
+    <div class="flex items-center gap-3">
+        <span class="avatar-v14">{{ target_email[0:1]|upper }}</span>
+        <div>
+            <h1>{{ target_email }}</h1>
+            <p class="lede">User profile</p>
+        </div>
     </div>
 </div>
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+<div class="edit-grid-v14">
+<div>
 
-    <fieldset class="module">
-        <h2>Identity</h2>
-        <div class="form-row">
-            <label>Email</label>
-            <div class="field-input">{{ target_email }}</div>
-        </div>
-        <div class="form-row">
-            <label>Role</label>
-            <div class="field-input"><span class="badge-{{ target_role == 'developer' and 'danger' or (target_role == 'administrator' and 'danger' or (target_role == 'supervisor' and 'warning' or (target_role == 'staff' and 'neutral' or 'success'))) }}">{{ target_role }}</span></div>
-        </div>
-        <div class="form-row">
-            <label>Status</label>
-            <div class="field-input">
-                {% if target_is_active %}
-                <span class="badge-success">Active</span>
-                {% else %}
-                <span class="badge-neutral">Inactive (cannot sign in)</span>
-                {% endif %}
+<div class="card-v14">
+    <div class="card-v14-head"><h2>Identity</h2></div>
+    <div class="card-v14-body">
+        <div class="kv-v14">
+            <div class="kv-row">
+                <span class="k">Email</span>
+                <span class="v">{{ target_email }}</span>
             </div>
+            <div class="kv-row">
+                <span class="k">Role</span>
+                <span class="v"><span class="badge-{{ target_role == 'developer' and 'danger' or (target_role == 'administrator' and 'danger' or (target_role == 'supervisor' and 'warning' or (target_role == 'staff' and 'neutral' or 'success'))) }}">{{ target_role }}</span></span>
+            </div>
+            <div class="kv-row">
+                <span class="k">Status</span>
+                <span class="v">
+                    {% if target_is_active %}
+                    <span class="badge-success">Active</span>
+                    {% else %}
+                    <span class="badge-neutral">Inactive (cannot sign in)</span>
+                    {% endif %}
+                </span>
+            </div>
+            {% if target_is_demo %}
+            <div class="kv-row">
+                <span class="k">Demo</span>
+                <span class="v"><span class="badge-warning">{{ target_demo_label or "Demo account" }}</span></span>
+            </div>
+            {% endif %}
         </div>
-        {% if target_is_demo %}
-        <div class="form-row">
-            <label>Demo</label>
-            <div class="field-input"><span class="badge-warning">{{ target_demo_label or "Demo account" }}</span></div>
-        </div>
-        {% endif %}
-    </fieldset>
-
-    <fieldset class="module">
-        <h2>Timeline</h2>
-        <div class="form-row">
-            <label>Created</label>
-            <div class="field-input">{{ target_created_at }}</div>
-        </div>
-        <div class="form-row">
-            <label>Updated</label>
-            <div class="field-input">{{ target_updated_at }}</div>
-        </div>
-    </fieldset>
-
+    </div>
 </div>
 
-<fieldset class="module mt-5">
-    <h2>Group memberships ({{ groups|length }})</h2>
-    <div class="px-5 py-4">
-    {% if groups %}
-    <div class="flex flex-wrap gap-sm">
-        {% for g in groups %}
-        <span class="badge-neutral" title="{{ g.description }}">{{ g.name }}</span>
-        {% endfor %}
-    </div>
-    {% else %}
-    <p class="text-text-muted italic">No group memberships.</p>
-    {% endif %}
-    </div>
-</fieldset>
-
-{% if direct_perms %}
-<fieldset class="module">
-    <h2>Direct permissions ({{ direct_perms|length }})</h2>
-    <div class="px-5 py-4">
-        <div class="flex flex-wrap gap-sm mb-3">
-            {% for p in direct_perms %}
-            <code class="bg-paper border border-border px-2 py-1 rounded text-caption font-mono">{{ p }}</code>
+<div class="card-v14">
+    <div class="card-v14-head"><h2>Group memberships ({{ groups|length }})</h2></div>
+    <div class="card-v14-body">
+        {% if groups %}
+        <div class="chips-v14">
+            {% for g in groups %}
+            <span class="badge-neutral" title="{{ g.description }}">{{ g.name }}</span>
             {% endfor %}
         </div>
-        <p class="form-help">These are permissions granted directly to this user, outside of group memberships. Direct grants bypass the group/role policy and are easy to forget — usually you want to assign perms via a group instead.</p>
+        {% else %}
+        <p class="muted">No group memberships.</p>
+        {% endif %}
     </div>
-</fieldset>
+</div>
+
+{% if direct_perms %}
+<div class="card-v14">
+    <div class="card-v14-head">
+        <h2>Direct permissions ({{ direct_perms|length }})</h2>
+        <p class="sub">Permissions granted directly to this user, outside of group memberships.</p>
+    </div>
+    <div class="card-v14-body">
+        <div class="chips-v14 chips-v14--spaced">
+            {% for p in direct_perms %}
+            <code class="code-pill">{{ p }}</code>
+            {% endfor %}
+        </div>
+        <p class="muted">Direct grants bypass the group/role policy and are easy to forget — usually you want to assign perms via a group instead.</p>
+    </div>
+</div>
 {% endif %}
+
+</div>
+
+<aside>
+    <div class="meta-v14">
+        <div class="card-v14-head"><h2>Timeline</h2></div>
+        <div class="row"><span class="k">Created</span><span class="v">{{ target_created_at }}</span></div>
+        <div class="row"><span class="k">Updated</span><span class="v">{{ target_updated_at }}</span></div>
+    </div>
+</aside>
+
+</div>
 {% endblock %}

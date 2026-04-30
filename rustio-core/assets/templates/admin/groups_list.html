@@ -3,51 +3,63 @@
 {% block bodyclass %}change-list groups-list{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
-    <a href="/admin">Home</a> &rsaquo; Groups
+<div class="crumbs-v14">
+    <a href="/admin">Home</a>
+    <span class="sep">›</span>
+    <span class="current">Groups</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
+<div class="page-head-v14">
     <div>
-        <h1 class="text-h1 font-heading tracking-tight">Groups</h1>
-        <p class="subhead-note">
-            {% if groups %}{{ groups|length }} group{% if groups|length != 1 %}s{% endif %}{% else %}No groups yet{% endif %}
+        <h1>Groups</h1>
+        <p class="lede">
+            {% if groups %}{{ groups|length }} group{% if groups|length != 1 %}s{% endif %} in total{% else %}No groups yet{% endif %}
         </p>
     </div>
-    <a href="/admin/groups/new" class="btn-primary">
-        {{ icon("plus", class="w-4 h-4") }} Add group
-    </a>
+    <div class="actions">
+        <a href="/admin/groups/new" class="btn-primary-v14">
+            {{ icon("plus", class="w-4 h-4") }} Add group
+        </a>
+    </div>
 </div>
 
 {% if groups %}
+<div class="table-v14-wrap">
 <table class="results">
     <thead>
         <tr>
             <th scope="col">Name</th>
             <th scope="col">Description</th>
-            <th scope="col" class="text-right pr-md">Actions</th>
+            <th scope="col" class="actions-cell">Actions</th>
         </tr>
     </thead>
     <tbody>
         {% for g in groups %}
         <tr>
-            <td><a href="/admin/groups/{{ g.id }}/edit" class="text-rust hover:underline font-semibold">{{ g.name }}</a></td>
-            <td class="help"><span class="cell-text" title="{{ g.description }}">{{ g.description }}</span></td>
-            <td class="text-right pr-md">
-                <a href="/admin/groups/{{ g.id }}/edit" class="text-rust no-underline hover:underline mr-3 inline-flex items-center gap-1">
-                    {{ icon("pencil", class="w-3.5 h-3.5") }} Edit
+            <td><a href="/admin/groups/{{ g.id }}/edit" class="row-link">{{ g.name }}</a></td>
+            <td><span class="cell-text" title="{{ g.description }}">{{ g.description }}</span></td>
+            <td class="actions-cell">
+                <a href="/admin/groups/{{ g.id }}/edit" class="icon-btn" title="Edit" aria-label="Edit">
+                    {{ icon("pencil", class="w-3.5 h-3.5") }}
                 </a>
-                <a href="/admin/groups/{{ g.id }}/delete" class="deletelink-inline inline-flex items-center gap-1">
-                    {{ icon("trash", class="w-3.5 h-3.5") }} Delete
+                <a href="/admin/groups/{{ g.id }}/delete" class="icon-btn danger" title="Delete" aria-label="Delete">
+                    {{ icon("trash", class="w-3.5 h-3.5") }}
                 </a>
             </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% else %}
-<p class="empty-list">No groups yet. Create one above, or from the CLI: <code class="code-pill">rustio group create &lt;name&gt;</code></p>
+<div class="empty-v14">
+    <h3>No groups yet.</h3>
+    <p>Create one above, or from the CLI: <code class="code-pill">rustio group create &lt;name&gt;</code></p>
+    <a href="/admin/groups/new" class="btn-primary-v14">
+        {{ icon("plus", class="w-4 h-4") }} Add group
+    </a>
+</div>
 {% endif %}
 {% endblock %}

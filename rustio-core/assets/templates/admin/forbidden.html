@@ -3,33 +3,29 @@
 {% block bodyclass %}forbidden{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
-    <a href="/admin">Home</a> &rsaquo; Permission denied
+<div class="crumbs-v14">
+    <a href="/admin">Home</a>
+    <span class="sep">›</span>
+    <span class="current">Permission denied</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="forbidden-page">
-    <span class="hero-icon hero-icon-lg hero-icon-danger mx-auto mb-3">
-        {{ icon("circle-x", class="w-6 h-6") }}
-    </span>
+<div class="status-card-v14">
+    <span class="hero">{{ icon("circle-x", class="w-6 h-6") }}</span>
     <h1>Permission denied</h1>
-    <p class="text-text-muted mt-sm">You don't have permission to access this page.</p>
+    <p>You don't have permission to access this page.</p>
 
     {% if required_role %}
-    <p class="text-gray-600 text-small mt-3">
-        This page requires <strong class="text-metal">{{ required_role }}</strong> access.
-    </p>
+    <p>This page requires <strong>{{ required_role }}</strong> access.</p>
     {% endif %}
 
     {% if attempted %}
-    <p class="text-gray-600 text-small mt-xs">
-        You tried to reach: <code class="code-pill">{{ attempted }}</code>
-    </p>
+    <p>You tried to reach: <code>{{ attempted }}</code></p>
     {% endif %}
 
-    <div class="mt-lg">
-        <a href="/admin" class="btn-ghost">
+    <div class="actions">
+        <a href="/admin" class="btn-secondary-v14">
             {{ icon("arrow-left", class="w-4 h-4") }} Return to dashboard
         </a>
     </div>

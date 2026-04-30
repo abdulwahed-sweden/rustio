@@ -565,6 +565,118 @@
         /* Empty / NULL cell — muted em-dash, easier to scan than blank. */
         .rio-cell-empty { color: var(--rio-text-faint); font-weight: 600; }
 
+        /* Generic v14 alert — used by user_edit.html for the
+           last-developer notice and by any page that needs a
+           contextual banner. Three kinds: success / warning / danger.
+           Same shape as the bespoke `.login-error-v14` (which is
+           danger-flavoured); kept side-by-side rather than merging so
+           the login card's specific copy/layout doesn't drift. */
+        .alert-v14 {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 12px 16px; border-radius: 8px;
+            font-size: 14px; font-weight: 500; line-height: 1.5;
+            margin-bottom: 16px;
+        }
+        .alert-v14 .icon { flex-shrink: 0; margin-top: 2px; }
+        .alert-v14 strong { font-weight: 600; }
+        .alert-v14 code {
+            background: rgba(0,0,0,0.06); padding: 1px 6px; border-radius: 4px;
+            font-family: var(--rio-font-mono); font-size: 13px;
+        }
+        .alert-v14--success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+        .alert-v14--warning { background: #fffbeb; border: 1px solid #fde68a; color: #854d0e; }
+        .alert-v14--danger  { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+
+        /* Centered status card — used by error.html and forbidden.html
+           when the page IS the message (no surrounding admin chrome).
+           Compositionally a `.card-v14` with extra centering padding
+           and a hero icon slot. */
+        .status-card-v14 {
+            max-width: 520px; margin: 64px auto;
+            background: var(--rio-bg-surface-1);
+            border: 1px solid var(--rio-border);
+            border-radius: 12px;
+            box-shadow: var(--rio-shadow-card);
+            padding: 40px 32px;
+            text-align: center;
+        }
+        .status-card-v14 .hero {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: #fef2f2; color: #b91c1c; margin-bottom: 16px;
+        }
+        .status-card-v14 h1 {
+            margin: 0 0 8px; font-size: 22px; font-weight: 700;
+            color: var(--rio-text); line-height: 1.25; font-family: var(--rio-font-heading);
+        }
+        .status-card-v14 p {
+            margin: 0 auto; max-width: 380px;
+            font-size: 15px; color: var(--rio-text-muted); line-height: 1.55;
+        }
+        .status-card-v14 p + p { margin-top: 8px; }
+        .status-card-v14 .actions { margin-top: 24px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .status-card-v14 code {
+            background: var(--rio-bg-surface-2);
+            padding: 2px 8px; border-radius: 4px;
+            font-family: var(--rio-font-mono); font-size: 13px; font-weight: 500;
+            color: var(--rio-text);
+        }
+
+        /* Inline page-tools row — back button on the left, primary
+           action(s) on the right. Used by user_view.html so the same
+           horizontal control strip from form.html appears on read-only
+           detail pages too. */
+        .page-tools-v14 {
+            display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+        .page-tools-v14 .spacer { flex: 1; }
+        .page-tools-v14 .btn-disabled-v14 {
+            display: inline-flex; align-items: center; gap: 7px;
+            padding: 11px 16px; background: var(--rio-bg-surface-1);
+            border: 1px solid var(--rio-border); border-radius: 8px;
+            color: var(--rio-text-faint); font-size: 15px; font-weight: 600;
+            opacity: 0.55; cursor: not-allowed; user-select: none;
+        }
+
+        /* Avatar disc — first letter of an email/identifier on a
+           rust-tinted circle. Used on user_view.html. */
+        .avatar-v14 {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 56px; height: 56px; border-radius: 50%;
+            background: var(--rio-accent-bg); color: var(--rio-accent);
+            font-weight: 700; font-size: 22px; font-family: var(--rio-font-heading);
+            border: 1px solid var(--rio-accent-border);
+        }
+
+        /* Read-only key/value rows inside a card — matches the
+           `.meta-v14` shape but reusable inside any card body, not
+           tied to the right-rail metadata block. */
+        .kv-v14 { display: flex; flex-direction: column; }
+        .kv-v14 .kv-row {
+            display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 16px; padding: 14px 0;
+            border-bottom: 1px solid var(--rio-border-faint);
+        }
+        .kv-v14 .kv-row:last-child { border-bottom: 0; }
+        .kv-v14 .kv-row .k {
+            font-size: 14px; color: var(--rio-text-muted);
+            font-weight: 500; min-width: 110px;
+        }
+        .kv-v14 .kv-row .v { font-size: 15px; color: var(--rio-text); font-weight: 500; }
+
+        /* Tag / chip cluster — used by user_view's group-membership
+           list. Just gap + flex-wrap; chip visuals come from
+           `.badge-v14` family. The `--spaced` modifier adds bottom
+           breathing room when followed by sibling copy. */
+        .chips-v14 { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chips-v14.chips-v14--spaced { margin-bottom: 12px; }
+        /* Inline muted helper text — used inside cards where
+           descriptive copy follows a chip cluster or a key/value list.
+           Same colour as `.lede`/`.help` but reusable without the
+           page-head context. */
+        .muted { color: var(--rio-text-muted); font-size: 14px; line-height: 1.55; margin: 0; }
+
         /* Login card — bespoke layout that matches the rest of the v14
            design language. Replaces the legacy `#login-form` /
            `.module` / `.btn-primary` styling from admin.css that
