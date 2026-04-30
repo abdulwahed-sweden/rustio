@@ -461,6 +461,67 @@
             color: var(--rio-text); font-weight: 600; text-decoration: none;
         }
         .table-v14 .row-link:hover { color: var(--rio-accent); text-decoration: underline; }
+        /* UX hardening — long-text handling. Wrapper applied by the
+           list template's `field.kind == "text"` arm (the catch-all
+           branch). 2-line clamp + max-width keeps the column from
+           expanding uncontrollably; the `title` attribute on the
+           wrapper exposes the full string on hover. Generic — no
+           per-model logic, no field-name dependence. */
+        .table-v14 .cell-text {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            word-break: break-word;
+            max-width: 320px;
+            line-height: 1.45;
+        }
+        /* UX hardening — row-level click navigation. The whole `<tr>`
+           reads as a link via `data-href`; the JS handler in list.html
+           bails early when the click target is inside `a / button /
+           .actions-cell`, so the existing row-link and the icon
+           buttons keep their own click semantics without needing
+           explicit stopPropagation in markup. */
+        .table-v14 tbody tr[data-href] {
+            cursor: pointer;
+            transition: background 0.12s ease;
+        }
+        .table-v14 tbody tr[data-href]:hover td,
+        .table-v14 tbody tr[data-href]:nth-child(even):hover td {
+            background: #fdf3eb;
+        }
+        /* UX hardening — primary-label emphasis (positional, not by
+           field name). Column 1 is the ID by RustIO convention;
+           muted + mono so the eye doesn't anchor on row numbers.
+           Column 2 is the primary label (title / name / *_number /
+           email — whichever the model declares second); bolder so
+           rows are recognised by meaning. */
+        .table-v14 tbody td:first-child {
+            width: 72px;
+            font-family: var(--rio-font-mono);
+            font-size: 13px;
+            color: var(--rio-text-faint);
+            font-weight: 500;
+            font-feature-settings: "tnum" 1, "lnum" 1;
+        }
+        .table-v14 tbody td:first-child .row-link {
+            color: var(--rio-text-faint);
+            font-weight: 500;
+        }
+        .table-v14 tbody td:first-child .row-link:hover {
+            color: var(--rio-accent);
+        }
+        .table-v14 tbody td:nth-child(2) {
+            color: var(--rio-text-strong);
+            font-weight: 700;
+        }
+        .table-v14 tbody td:nth-child(2) .cell-text { font-weight: 700; }
+        /* UX hardening — table stability. Min row height keeps
+           1-line and 2-line cells from creating a visible hop as
+           the user scans down. Padding stays the same; min-height
+           is the floor only. */
+        .table-v14 tbody td { min-height: 56px; }
         /* Action cell ALWAYS visible — touch-friendly, scannable, not hover-only.
            Width is fixed on the `th` so the column doesn't shift when
            icons appear or rows have different action sets. */
