@@ -18,6 +18,42 @@
  * classes still reference `bg-rust`, `bg-paper`, `bg-metal-*`. Those
  * legacy colour names live alongside the semantic tokens until the
  * template-refactor sub-phase ships.
+ *
+ * --- LEGACY RULES SCHEDULED FOR REMOVAL ------------------------------
+ * The base.html inline <style> block defines the v14 design system
+ * with the `-v14` suffix to coexist with these legacy component
+ * classes. When the eight templates listed below are migrated to v14
+ * vocabulary, the duplicate rules in this file (`.btn-primary`,
+ * `.btn-secondary`, `.btn-ghost`, `.btn-danger`, `.card`, `.topbar`,
+ * `.table`, `.form-row`, `.field-input`, `.module`, `.results`,
+ * `.empty-list`, `.paginator`, `.badge-success/-warning/-danger
+ * /-neutral`, `.errornote`, `.warningnote`, `.messagelist`,
+ * `.deletelink-inline`, `.forbidden-page`, `.hero-icon*`,
+ * `.code-pill`, `.checkbox-list`, `.checkbox-item`, `.cascade-list`)
+ * become orphans and should be deleted; the `-v14` suffix in
+ * base.html is then renamed to bare names without collision.
+ *
+ * Templates still using legacy classes (must be migrated first):
+ *   coming_soon.html           index.html
+ *   user_new.html              user_confirm_delete.html
+ *   group_new.html             group_edit.html
+ *   group_confirm_delete.html  includes/_form_field.html
+ *
+ * Removal checklist when those land:
+ *   1. Migrate each template above to v14 vocabulary (model on the
+ *      changes in commits 6c9e28c + 8c8d3dd).
+ *   2. Remove this entire `@layer components` body's legacy rules
+ *      (keep only the `body.login` / dark-mode / `--ds-color-*`
+ *      tokens that the v14 layer reads through).
+ *   3. Run a global rename: `-v14` → bare names in base.html and
+ *      every template that still references the suffixed class.
+ *   4. Run `make css` and `cargo test --workspace --lib`. The
+ *      `users_list_renders_row_clickable_links` and
+ *      `assert_delete_is_disabled_span` tests require the literal
+ *      class names `results row-clickable` and `btn-danger` (on
+ *      the disabled <span>) — preserve those as test-pinned
+ *      contracts even after the rename.
+ * --------------------------------------------------------------------
  */
 
 @tailwind base;

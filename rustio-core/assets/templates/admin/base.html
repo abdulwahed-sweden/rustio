@@ -11,11 +11,78 @@
 
     <link rel="stylesheet" href="/static/admin.css">
     <style>
-        /* RustIO admin v1.4 — design tokens applied as a final override layer.
-           Class names use the -v14 suffix to coexist with the legacy admin.css
-           utility classes used by templates that haven't been refactored yet
-           (login, password change, user/group flows). */
+        /* =====================================================================
+         * RustIO admin design system — v1.4.x
+         * =====================================================================
+         *
+         * This <style> block is the runtime UI contract for the admin. It is
+         * intentionally embedded here (rather than in admin.css) because every
+         * rule below depends on the `--rio-*` design tokens defined in this
+         * same block — keeping tokens and consumers co-located guarantees the
+         * cascade resolves correctly even if a template overrides
+         * /static/admin.css.
+         *
+         * Two-tier CSS pipeline
+         * ---------------------
+         *   /static/admin.css   ←  legacy / Tailwind utilities. Compiled from
+         *                          rustio-core/assets/css/input.css. Loaded
+         *                          first via <link>. Powers templates that
+         *                          haven't been migrated to v14 yet
+         *                          (coming_soon, index, user_new,
+         *                          user_confirm_delete, group_new, group_edit,
+         *                          group_confirm_delete, _form_field include).
+         *   inline <style>      ←  v14 design system below. Loaded after
+         *                          admin.css so equal-specificity rules win
+         *                          on cascade order. Class names carry the
+         *                          `-v14` suffix to coexist with legacy
+         *                          rules of the same base name (`.card`,
+         *                          `.btn-primary`, `.topbar`, `.table`).
+         *                          The suffix will be retired once the eight
+         *                          legacy-using templates are migrated and
+         *                          the colliding rules are pruned from
+         *                          input.css.
+         *
+         * Section map
+         * -----------
+         *   §1  Design tokens          — :root variables (colours, typography,
+         *                                 spacing, shadows). Single source of
+         *                                 truth for every component below.
+         *   §2  Base / reset           — body, html, font baseline, focus.
+         *   §3  Layout shell           — topbar, sidebar, main, footer, demo
+         *                                 banner.
+         *   §4  Components             — cards, fields, buttons, tables,
+         *                                 badges, alerts, status card,
+         *                                 navigation chips, login card.
+         *   §5  Utilities              — `.muted`, `.sr-only`, etc. Tiny
+         *                                 cross-component helpers.
+         *
+         * Test-pinned classnames
+         * ----------------------
+         *   `<table class="results row-clickable">` on users_list.html
+         *     — pinned by templates.rs:476.
+         *   `<span class="btn-danger">` on user_view.html disabled-Delete
+         *     — pinned by templates.rs:415 (asserted via
+         *       `assert_delete_is_disabled_span`).
+         *   These two literals are deliberately kept; the v14 visual is
+         *   layered on top via `.btn-disabled-v14` and the existing
+         *   `.results` rule (which `table-layout: fixed` from the
+         *   truncation commit already styles correctly).
+         *
+         * Add a new component
+         * -------------------
+         *   1. Drop the rule into §4 alongside its siblings (button rules
+         *      stay together, card rules stay together, etc.).
+         *   2. Drive every value from a `--rio-*` token if one exists.
+         *   3. Reference the consumer template(s) in a one-line comment
+         *      above the rule — orphaned components rot.
+         * =====================================================================
+         */
 
+        /* §1 — Design tokens =================================================
+         * Single source of truth for the entire v14 layer. Every component
+         * rule below should resolve through these variables; a one-line
+         * change here is meant to ripple through the whole admin.
+         */
         :root {
             /* Typography (v1.4.x polish) */
             --rio-font-body:       'Inter', 'Noto Sans Arabic', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
@@ -51,6 +118,10 @@
             --rio-ring:            0 0 0 3px rgba(184,67,26,0.12);
         }
 
+        /* §2 — Base / reset =================================================
+         * Body baseline + global anchor colour + the skip-to-content
+         * a11y affordance. Everything else lives in §3/§4.
+         */
         * { box-sizing: border-box; }
         html, body { margin: 0; padding: 0; }
         body {
@@ -75,6 +146,12 @@
             text-decoration: none; font-weight: 600; border-radius: 0 0 8px 0;
         }
         .skip-v14:focus { top: 0; }
+
+        /* §3 — Layout shell =================================================
+         * Topbar + sidebar + main + footer. These rules define the page
+         * frame; every consumer template renders inside this skeleton.
+         * Per-page content lives in §4 components.
+         */
 
         /* Topbar */
         .topbar-v14 {
@@ -185,6 +262,36 @@
         .crumbs-v14 a:hover { color: var(--rio-text); text-decoration: underline; }
         .crumbs-v14 .current { color: var(--rio-text); font-weight: 600; }
         .crumbs-v14 .sep { color: var(--rio-text-faint); }
+
+        /* §4 — Components ==================================================
+         * Reusable UI building blocks. Each subsection is one component
+         * family: page header, cards, fields, buttons, tables, badges,
+         * alerts, etc. Every rule resolves through `--rio-*` tokens from
+         * §1 — never hard-code colours/sizes here.
+         *
+         * Component → consuming template index
+         * ------------------------------------
+         *   page-head     →  every list, form, view
+         *   card          →  form, password_change, confirm_delete,
+         *                    user_view, user_edit
+         *   field         →  login (inline), every consumer of the shared
+         *                    _form_field include via the legacy `.form-row`
+         *                    cascade override below in §5
+         *   buttons       →  every page
+         *   save-row      →  form, password_change, user_edit, confirm_delete
+         *   danger-zone   →  form (edit mode), user_edit
+         *   meta / tip    →  form right rail, user_view right rail
+         *   toolbar /
+         *     filters     →  list (search bar + filter pills)
+         *   table         →  list (model lists), groups_list, users_list
+         *                    (the `results` legacy class)
+         *   badges /
+         *     status-card →  user_view (badges); error / forbidden (status)
+         *   alert         →  password_change, user_edit, confirm_delete,
+         *                    login (login-error variant)
+         *   pager         →  list
+         *   login-card    →  login
+         */
 
         /* Page header */
         .page-head-v14 {
@@ -528,6 +635,13 @@
         }
         .pager-v14 .nav span.this { background: var(--rio-accent); color: #fff; border-color: var(--rio-accent); font-weight: 600; }
         .pager-v14 .nav a:hover { background: var(--rio-bg); }
+
+        /* §5 — Utilities & legacy bridges ==================================
+         * Cross-component helpers (`.muted`, `.sr-only` defined later
+         * inline near their consumers) and overrides that make the legacy
+         * admin.css cascade match the v14 visual tone where templates
+         * still mix the two systems.
+         */
 
         /* Form input override for legacy admin.css textarea fallback */
         .form-row .field-input input[type="text"],
