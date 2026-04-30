@@ -70,11 +70,7 @@
     </thead>
     <tbody>
     {% for row in rows %}
-        {# UX hardening — row-level click navigation. The JS handler
-           in extra_js below bails on `a / button / .actions-cell`
-           so the existing row-link and the action icons keep their
-           own click handlers without needing inline stopPropagation. #}
-        <tr data-href="/admin/{{ admin_name }}/{{ row.id }}/edit">
+        <tr>
             {% for field in fields %}
             <td{% if field.kind == "number" %} class="num"{% endif %}>
                 {% if loop.index0 == 0 %}
@@ -100,12 +96,7 @@
                 {% elif not row[field.name] %}
                     <span class="rio-cell-empty">—</span>
                 {% else %}
-                    {# UX hardening — long-text truncation. The wrapper
-                       carries 2-line clamp + max-width 320px (CSS in
-                       base.html); the `title` attr gives the full
-                       value on hover. Generic — applies to every
-                       text-kind cell, no field-name dependence. #}
-                    <span class="cell-text" title="{{ row[field.name] }}">{{ row[field.name] }}</span>
+                    {{ row[field.name] }}
                 {% endif %}
             </td>
             {% endfor %}
@@ -172,25 +163,6 @@ document.addEventListener("keydown", function (e) {
         var s = document.querySelector("input[name=q]");
         if (s) { s.focus(); e.preventDefault(); }
     }
-});
-
-// UX hardening — row-level click navigation. Whole `<tr>` reads as a
-// link via its `data-href`. We bail on clicks inside any actionable
-// element (the column-0 `<a class="row-link">`, the action-cell icon
-// links, and any future `<button>` / `<a>` we add to a row) so those
-// elements' own click handlers run instead. Cmd/Ctrl + click opens
-// in a new tab to match standard link behaviour.
-document.querySelectorAll(".table-v14 tbody tr[data-href]").forEach(function (tr) {
-    tr.addEventListener("click", function (e) {
-        if (e.target.closest("a, button, .actions-cell")) return;
-        var href = tr.dataset.href;
-        if (!href) return;
-        if (e.metaKey || e.ctrlKey) {
-            window.open(href, "_blank", "noopener");
-        } else {
-            window.location = href;
-        }
-    });
 });
 </script>
 {% endblock %}
