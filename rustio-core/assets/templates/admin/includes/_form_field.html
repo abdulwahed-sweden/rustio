@@ -32,7 +32,7 @@
            association. #}
         <label for="id_{{ field.name }}" class="flex items-center gap-sm">
             <input type="checkbox" id="id_{{ field.name }}" name="{{ field.name }}"
-                value="true"{% if field.value == "true" %} checked{% endif %}
+                value="true"{% if field.checked %} checked{% endif %}
                 {% if field.required %}required{% endif %}
                 {% if field.autofocus %}autofocus{% endif %}
                 {% if field.disabled %}disabled{% endif %}

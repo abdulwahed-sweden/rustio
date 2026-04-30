@@ -76,7 +76,10 @@
                 {% if loop.index0 == 0 %}
                     <a class="row-link" href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
                 {% elif field.kind == "checkbox" %}
-                    {% if row[field.name] == "true" %}
+                    {# Stability lock (v1.4.x) — boolean cells arrive as
+                       real JSON `true` / `false` (typed in `list_ctx`).
+                       Template uses truthiness, never string match. #}
+                    {% if row[field.name] %}
                         <span class="badge-v14 badge-yes-v14">Yes</span>
                     {% else %}
                         <span class="badge-v14 badge-no-v14">No</span>

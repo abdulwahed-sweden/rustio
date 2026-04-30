@@ -151,6 +151,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
             FormField {
                 name: "password",
@@ -173,6 +174,7 @@ pub(crate) fn login_form_sections() -> Vec<FormSection> {
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
         ],
     }]
@@ -392,11 +394,18 @@ pub(crate) struct ListCtx {
 /// the flattened map (the loader skips inserting an "id" key) so
 /// `row.id` continues to render as the integer id without colliding
 /// with any model field literally named "id".
+///
+/// Stability lock (v1.4.x) — value type is `serde_json::Value` instead
+/// of `String`. Boolean cells get parsed to JSON `true` / `false` in
+/// `list_ctx`, so the template does `{% if row[field.name] %}` (real
+/// truthiness) instead of `{% if row[field.name] == "true" %}` (string
+/// match). Other types (text / number / datetime) stay as JSON strings
+/// because the macro emits them in their final display form already.
 #[derive(Serialize)]
 pub(crate) struct ListRowCtx {
     pub id: i64,
     #[serde(flatten)]
-    pub values: HashMap<String, String>,
+    pub values: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -447,6 +456,12 @@ pub(crate) fn list_ctx(
     // `entry.fields` because `AdminModel::display_values` is generated
     // in the same field order as `FIELDS`.
     let field_names: Vec<&'static str> = entry.fields.iter().map(|f| f.name).collect();
+    // Stability lock (v1.4.x) — pre-compute the field type per index so
+    // the row loop can decide how to type each cell value. Boolean
+    // fields decode to JSON `true` / `false` so templates use
+    // truthiness; everything else stays as a JSON string.
+    let field_types: Vec<crate::admin::FieldType> =
+        entry.fields.iter().map(|f| f.field_type).collect();
     ListCtx {
         base: BaseContext::new(Some(identity), csrf_token, admin),
         page_title: entry.display_name.to_string(),
@@ -463,16 +478,23 @@ pub(crate) fn list_ctx(
         rows: rows
             .into_iter()
             .map(|r| {
-                let mut values: HashMap<String, String> =
+                let mut values: HashMap<String, serde_json::Value> =
                     HashMap::with_capacity(field_names.len().saturating_sub(1));
                 for (i, cell) in r.cells.into_iter().enumerate() {
                     if let Some(name) = field_names.get(i) {
                         // Skip the "id" key so the explicit `id: i64`
                         // struct field wins on serialization (otherwise
                         // a flatten-map "id" string would shadow it).
-                        if *name != "id" {
-                            values.insert((*name).to_string(), cell);
+                        if *name == "id" {
+                            continue;
                         }
+                        let typed = match field_types.get(i) {
+                            Some(crate::admin::FieldType::Bool) => {
+                                serde_json::Value::Bool(cell == "true")
+                            }
+                            _ => serde_json::Value::String(cell),
+                        };
+                        values.insert((*name).to_string(), typed);
                     }
                 }
                 ListRowCtx { id: r.id, values }
@@ -608,6 +630,21 @@ pub(crate) struct FormField {
     /// "No <Model> available" empty-options message. Mirrors
     /// `search_url`'s relation-derived nature.
     pub target_model: Option<String>,
+    /// Stability lock (v1.4.x) — checked-state for boolean fields,
+    /// computed once at FormField construction time using the same
+    /// normalization as `FormData::bool_flag` (`on` / `true` / `1` /
+    /// `yes` → `true`, anything else → `false`).
+    ///
+    /// Removes a latent bug: `_form_field.html` previously read
+    /// `field.value == "true"` to decide whether to emit `checked`.
+    /// That worked for values loaded from the DB (display_values
+    /// emits `"true"` / `"false"`), but failed when the SAME form
+    /// re-rendered after a validation error: HTML form submits send
+    /// `is_active=on`, not `is_active=true`. The string-match path
+    /// then rendered the checkbox as unchecked even though the user
+    /// had just checked it. Computing `checked` here normalizes the
+    /// representation once, and templates do `{% if field.checked %}`.
+    pub checked: bool,
 }
 
 /// Phase 6 — one logical group of fields on a form. `title: None`
@@ -847,6 +884,12 @@ pub(crate) fn form_ctx(
             // ("No <Model> available"). For non-relation fields the
             // placeholder + target_model come from `intelligence`.
             let target_model = f.relation.as_ref().map(|rel| rel.target_model.to_string());
+            // Stability lock (v1.4.x) — boolean fields' checked-state is
+            // computed once here using the same normalization
+            // `FormData::bool_flag` applies on submit (`on` / `true` /
+            // `1` / `yes`). Templates render `{% if field.checked %}`
+            // instead of comparing strings.
+            let checked = matches!(value.as_str(), "on" | "true" | "1" | "yes");
             let placeholder = if let Some(rel) = &f.relation {
                 Some(format!("Select {}…", rel.target_model))
             } else {
@@ -881,6 +924,7 @@ pub(crate) fn form_ctx(
                 // every field on those paths starts with an empty Vec.
                 errors: field_errors.get(f.name).cloned().unwrap_or_default(),
                 target_model,
+                checked,
             }
         })
         .collect::<Vec<FormField>>();
@@ -1561,6 +1605,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     search_url: None,
                     errors: vec![],
                     target_model: None,
+                    checked: false,
                 },
                 FormField {
                     name: "password",
@@ -1586,6 +1631,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                     search_url: None,
                     errors: vec![],
                     target_model: None,
+                    checked: false,
                 },
             ],
         },
@@ -1615,6 +1661,7 @@ pub(crate) fn user_new_form_sections(email: &str, role: &str) -> Vec<FormSection
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             }],
         },
     ]
@@ -1652,6 +1699,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
             FormField {
                 name: "description",
@@ -1674,6 +1722,7 @@ pub(crate) fn group_form_sections(name: &str, description: &str) -> Vec<FormSect
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
         ],
     }]
@@ -1714,6 +1763,7 @@ pub(crate) fn user_edit_identity_sections(
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
             FormField {
                 name: "role",
@@ -1736,6 +1786,7 @@ pub(crate) fn user_edit_identity_sections(
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
             FormField {
                 name: "is_active",
@@ -1762,6 +1813,12 @@ pub(crate) fn user_edit_identity_sections(
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                // Bespoke builder — `checked` is the source of truth
+                // for whether the rendered <input> emits `checked`.
+                // The string `value` field is kept for the form-data
+                // submit shape ("true" / "false") that the legacy
+                // user-edit handler still parses.
+                checked: is_active,
             },
         ],
     }]
@@ -1793,6 +1850,7 @@ pub(crate) fn user_edit_password_sections() -> Vec<FormSection> {
             search_url: None,
             errors: vec![],
             target_model: None,
+            checked: false,
         }],
     }]
 }
@@ -1824,6 +1882,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
             FormField {
                 name: "new_password1",
@@ -1846,6 +1905,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
             FormField {
                 name: "new_password2",
@@ -1868,6 +1928,7 @@ pub(crate) fn password_change_form_sections() -> Vec<FormSection> {
                 search_url: None,
                 errors: vec![],
                 target_model: None,
+                checked: false,
             },
         ],
     }]
@@ -3325,14 +3386,17 @@ mod tests {
                 "id": 1,
                 "title": "Sample",
                 "pages": "180",
-                "is_available": "true",
+                // Stability lock (v1.4.x) — boolean cells arrive as
+                // real JSON booleans, not strings. The list_ctx
+                // builder type-converts at the boundary.
+                "is_available": true,
                 "published_at": "1925-04-10T00:00",
             },
             {
                 "id": 2,
                 "title": "Other",
                 "pages": "311",
-                "is_available": "false",
+                "is_available": false,
                 "published_at": "1932-09-05T00:00",
             },
         ]);
@@ -3370,6 +3434,132 @@ mod tests {
             body.contains(r#"href="/admin/posts/1/edit">Sample</a>"#),
             "first-column row-link convention must still apply for text columns"
         );
+    }
+
+    /// Stability lock (v1.4.x) — `list_ctx` MUST type-convert Bool
+    /// cells to JSON booleans before they reach templates. This is
+    /// the single normalization site for the boolean wire format
+    /// ("true" / "false" emitted by the macro's display_values).
+    /// Templates downstream do `{% if row[field.name] %}` truthiness;
+    /// they never see the string forms again. Locks the boundary.
+    #[test]
+    fn list_ctx_normalizes_bool_cells_to_json_booleans() {
+        use crate::admin::types::AdminEntry;
+        use crate::admin::types::ListRow;
+        use crate::admin::FieldType;
+
+        // Two-field entry: one bool, one string. Cells come from the
+        // macro as strings; list_ctx must keep the string as-is and
+        // convert the bool to a real JSON boolean.
+        static FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "title",
+                label: "Title",
+                field_type: FieldType::String,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+            crate::admin::AdminField {
+                name: "is_available",
+                label: "Available",
+                field_type: FieldType::Bool,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing("books", "Books", "Book", "books", FIELDS, false);
+        let ident = fake_identity(Role::Administrator);
+
+        // Cells are positional, in FIELDS order. The fixture's
+        // FIELDS doesn't include an `id` column, so cells map
+        // directly to (title, is_available).
+        let rows = vec![
+            ListRow { id: 1, cells: vec!["Gatsby".into(), "true".into()] },
+            ListRow { id: 2, cells: vec!["Brave".into(), "false".into()] },
+        ];
+        let ctx = list_ctx(
+            &ident, &admin, &entry, rows,
+            String::new(), vec![], 1, 25, 2,
+            "csrf".into(),
+        );
+
+        // Row 1: is_available was "true" → must be JSON `true`.
+        let row1_avail = ctx.rows[0].values.get("is_available").expect("is_available cell");
+        assert!(row1_avail.is_boolean(), "Bool cell must be a JSON boolean, got {row1_avail:?}");
+        assert_eq!(row1_avail.as_bool(), Some(true));
+
+        // Row 2: is_available was "false" → must be JSON `false`
+        // (NOT the truthy string "false", which would render Yes
+        // under template truthiness).
+        let row2_avail = ctx.rows[1].values.get("is_available").expect("is_available cell");
+        assert!(row2_avail.is_boolean(), "Bool cell must be a JSON boolean, got {row2_avail:?}");
+        assert_eq!(row2_avail.as_bool(), Some(false));
+
+        // Title (a String field) stays a JSON string. No type
+        // conversion — the macro's display_values output IS the
+        // display form for non-Bool types.
+        let row1_title = ctx.rows[0].values.get("title").expect("title cell");
+        assert!(row1_title.is_string(), "String cell must remain a JSON string, got {row1_title:?}");
+        assert_eq!(row1_title.as_str(), Some("Gatsby"));
+    }
+
+    /// Stability lock (v1.4.x) — `form_ctx` MUST normalize the
+    /// boolean form-data wire forms into a single `checked: bool`
+    /// flag. `FormData::bool_flag` accepts any of `on / true / 1 /
+    /// yes` as truthy on submit; this test pins that the same
+    /// vocabulary is honored on render so a checkbox preserves its
+    /// visual checked-state across submit-validate-rerender.
+    #[test]
+    fn form_ctx_normalizes_checkbox_value_to_checked_bool() {
+        use crate::admin::types::AdminEntry;
+        use crate::admin::FieldType;
+        use crate::http::FormData;
+
+        static FIELDS: &[crate::admin::AdminField] = &[
+            crate::admin::AdminField {
+                name: "is_active",
+                label: "Active",
+                field_type: FieldType::Bool,
+                editable: true,
+                relation: None,
+                choices: None,
+            },
+        ];
+        let admin = Admin::new();
+        let entry = AdminEntry::for_testing("posts", "Posts", "Post", "posts", FIELDS, false);
+        let ident = fake_identity(Role::Administrator);
+
+        // Each candidate value should produce checked=true; everything
+        // else (including the unchecked-checkbox empty string) → false.
+        for truthy in ["on", "true", "1", "yes"] {
+            let body = format!("is_active={truthy}");
+            let form = FormData::from_urlencoded(&body);
+            let ctx = form_ctx(
+                &ident, &admin, &entry, "edit", Some(7), None,
+                vec![], "csrf".into(), HashMap::new(), HashMap::new(),
+                Some(&form),
+            );
+            let f = ctx.sections.iter().flat_map(|s| s.fields.iter())
+                .find(|f| f.name == "is_active").expect("is_active");
+            assert!(
+                f.checked,
+                "value {truthy:?} should produce checked=true (FormData::bool_flag contract)"
+            );
+        }
+
+        // Unchecked checkbox (HTML omits absent fields entirely) → false.
+        let form = FormData::from_urlencoded("");
+        let ctx = form_ctx(
+            &ident, &admin, &entry, "edit", Some(7), None,
+            vec![], "csrf".into(), HashMap::new(), HashMap::new(),
+            Some(&form),
+        );
+        let f = ctx.sections.iter().flat_map(|s| s.fields.iter())
+            .find(|f| f.name == "is_active").expect("is_active");
+        assert!(!f.checked, "absent checkbox in submission must produce checked=false");
     }
 
     /// Stabilization (v1.4.x) — the list template must not carry per-page
