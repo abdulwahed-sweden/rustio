@@ -34,7 +34,7 @@
         {% for g in groups %}
         <tr>
             <td><a href="/admin/groups/{{ g.id }}/edit" class="text-rust hover:underline font-semibold">{{ g.name }}</a></td>
-            <td class="help">{{ g.description }}</td>
+            <td class="help"><span class="cell-text" title="{{ g.description }}">{{ g.description }}</span></td>
             <td class="text-right pr-md">
                 <a href="/admin/groups/{{ g.id }}/edit" class="text-rust no-underline hover:underline mr-3 inline-flex items-center gap-1">
                     {{ icon("pencil", class="w-3.5 h-3.5") }} Edit

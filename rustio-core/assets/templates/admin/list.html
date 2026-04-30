@@ -96,7 +96,11 @@
                 {% elif not row[field.name] %}
                     <span class="rio-cell-empty">—</span>
                 {% else %}
-                    {{ row[field.name] }}
+                    {# UX fix — long-text truncation. Wrapper has the
+                       2-line clamp (CSS in base.html); the title attr
+                       gives the full string on hover. Generic — applies
+                       to every text-kind cell, no field-name dependence. #}
+                    <span class="cell-text" title="{{ row[field.name] }}">{{ row[field.name] }}</span>
                 {% endif %}
             </td>
             {% endfor %}

@@ -35,7 +35,7 @@
             <td>
                 <a href="/admin/{{ e.model_admin_name }}/{{ e.object_id }}/edit" class="text-rust hover:underline">{{ e.model_name }} #{{ e.object_id }}</a>
             </td>
-            <td>{{ e.summary }}</td>
+            <td><span class="cell-text" title="{{ e.summary }}">{{ e.summary }}</span></td>
             <td class="help text-caption">{{ e.ip_address }}</td>
         </tr>
         {% endfor %}

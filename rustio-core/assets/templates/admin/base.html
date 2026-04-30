@@ -439,7 +439,7 @@
             border: 1px solid var(--rio-border); border-radius: 10px;
             box-shadow: var(--rio-shadow-card); overflow: hidden;
         }
-        .table-v14 { width: 100%; border-collapse: collapse; }
+        .table-v14 { width: 100%; border-collapse: collapse; table-layout: fixed; }
         .table-v14 thead th {
             background: #f3f4f6; font-size: 12px; font-weight: 600;
             color: var(--rio-text-secondary); text-align: left; padding: 14px 18px;
@@ -564,6 +564,30 @@
 
         /* Empty / NULL cell — muted em-dash, easier to scan than blank. */
         .rio-cell-empty { color: var(--rio-text-faint); font-weight: 600; }
+
+        /* UX fix — long-text truncation in admin tables. The pairing of
+           `table-layout: fixed` (above on .table-v14, plus .results
+           below) and `.cell-text` clamps every text-kind cell to two
+           lines with ellipsis. Without `table-layout: fixed`, the TD
+           expands to its content's natural width and pushes neighbour
+           columns off-screen — a max-width on the inner span alone is
+           NOT enough. The full text is preserved on hover via the
+           `title=` attribute on the wrapper. Generic — applies to
+           every text cell, no field-name dependence.
+           `-webkit-line-clamp` works in WebKit, Chromium and Firefox 68+;
+           the `max-height: calc(1.4em * 2)` belt-and-braces line cap
+           keeps fallback browsers from running away. */
+        .results { table-layout: fixed; width: 100%; }
+        .cell-text {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 1.4;
+            max-height: calc(1.4em * 2);
+            word-break: break-word;
+        }
 
         /* v1.4.x — Native date / datetime-local inputs aligned with the
            rest of the form's input visuals. Browser pickers stay native;
