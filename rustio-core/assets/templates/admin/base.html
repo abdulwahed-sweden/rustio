@@ -367,31 +367,6 @@
             .field-grid > .span-2 { grid-column: span 1; }
         }
 
-        /* Toggle row (boolean fields) */
-        .toggle-row {
-            padding: 18px 20px; background: var(--rio-bg-surface-2);
-            border: 1px solid var(--rio-border); border-radius: 8px;
-            display: flex; align-items: center; justify-content: space-between; gap: 14px;
-        }
-        .toggle-row .copy strong { display: block; font-size: 15px; font-weight: 600; color: var(--rio-text); margin-bottom: 2px; }
-        .toggle-row .copy small { font-size: 13px; color: var(--rio-text-muted); }
-        .toggle { position: relative; display: inline-block; flex-shrink: 0; }
-        .toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
-        .toggle .track {
-            position: relative; display: block; width: 46px; height: 26px;
-            background: var(--rio-border); border-radius: 13px; cursor: pointer;
-            transition: background 0.15s;
-        }
-        .toggle .track::after {
-            content: ""; position: absolute; top: 3px; left: 3px;
-            width: 20px; height: 20px; background: #fff; border-radius: 50%;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-            transition: transform 0.15s;
-        }
-        .toggle input:checked + .track { background: var(--rio-text); }
-        .toggle input:checked + .track::after { transform: translateX(20px); }
-        .toggle input:focus-visible + .track { outline: 3px solid rgba(184,67,26,0.25); outline-offset: 2px; }
-
         /* Buttons — primary now uses rust accent (was solid black).
            In an 8-hour-a-day admin, the rust anchor on Save/Add gives
            the eye a faster scan target than black-on-white. */
@@ -642,22 +617,11 @@
         .pager .nav span.this { background: var(--rio-accent); color: #fff; border-color: var(--rio-accent); font-weight: 600; }
         .pager .nav a:hover { background: var(--rio-bg); }
 
-        /* §5 — Utilities & legacy bridges ==================================
-         * Cross-component helpers (`.muted`, `.sr-only` defined later
-         * inline near their consumers) and overrides that make the legacy
-         * admin.css cascade match the v14 visual tone where templates
-         * still mix the two systems.
+        /* §5 — Utilities ===================================================
+         * Cross-component helpers and small reusable bits. `.muted` and
+         * `.sr-only` are defined inline near their first consumers in §4
+         * so the rule travels with the component that introduced it.
          */
-
-        /* Form input override for legacy admin.css textarea fallback */
-        .form-row .field-input input[type="text"],
-        .form-row .field-input input[type="email"],
-        .form-row .field-input input[type="password"],
-        .form-row .field-input input[type="number"],
-        .form-row .field-input textarea {
-            font-family: var(--rio-font-body);
-            font-size: 15px;
-        }
 
         /* Apply tabular numerics to any code/numeric value rendered with
            the .num utility class (used in lists and meta cards). */
