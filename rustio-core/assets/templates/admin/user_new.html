@@ -3,17 +3,21 @@
 {% block bodyclass %}change-form user-new{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
+<div class="crumbs-v14">
     <a href="/admin">Home</a>
-    &rsaquo; <a href="/admin/users">Users</a>
-    &rsaquo; Add user
+    <span class="sep">›</span>
+    <a href="/admin/users">Users</a>
+    <span class="sep">›</span>
+    <span class="current">Add user</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="flex items-center gap-3 mb-5">
-    {{ icon("plus", class="w-6 h-6 text-rust") }}
-    <h1 class="text-h1 font-heading tracking-tight">Add user</h1>
+<div class="page-head-v14">
+    <div>
+        <h1>Add user</h1>
+        <p class="lede">Create a new account. Group memberships are picked on the next page.</p>
+    </div>
 </div>
 
 {% if errors %}
@@ -28,23 +32,30 @@
        Role (5-option select) groupings; the role select carries the
        per-tier descriptions as `option.label`. #}
     {% for section in sections %}
-        {% if section.title %}
-        <h3 class="mt-lg mb-sm">{{ section.title }}</h3>
-        {% endif %}
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-md">
-            {% for field in section.fields %}
-            <div class="{% if field.span == 2 %}col-span-2{% endif %}">
-                {% include "admin/includes/_form_field.html" %}
-            </div>
-            {% endfor %}
+    <div class="card-v14">
+        <div class="card-v14-head">
+            <h2>{{ section.title or "Account" }}</h2>
+            <p class="sub">Required fields are marked with an asterisk</p>
         </div>
+        <div class="card-v14-body">
+            <div class="field-grid-v14">
+                {% for field in section.fields %}
+                <div class="{% if field.span == 2 %}span-2{% endif %}">
+                    {% include "admin/includes/_form_field.html" %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
     {% endfor %}
 
-    <p class="form-help mt-sm">After saving you'll be sent to the user's edit page where you can pick group memberships.</p>
-
-    <div class="submit-row sticky bottom-0 bg-bg border-t border-border py-sm">
-        <button type="submit" name="_save" class="btn-primary">Save</button>
-        <a href="/admin/users" class="btn-ghost" data-cancel>Cancel</a>
+    <div class="save-row-v14">
+        <div class="group">
+            <button type="submit" name="_save" class="btn-primary-v14">
+                {{ icon("check", class="w-4 h-4") }} Save
+            </button>
+        </div>
+        <a href="/admin/users" class="btn-text-v14" data-cancel>Cancel</a>
     </div>
 </form>
 {% endblock %}

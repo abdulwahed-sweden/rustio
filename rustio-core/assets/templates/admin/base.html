@@ -785,6 +785,89 @@
            breathing room when followed by sibling copy. */
         .chips-v14 { display: flex; flex-wrap: wrap; gap: 8px; }
         .chips-v14.chips-v14--spaced { margin-bottom: 12px; }
+
+        /* Permission tiles — used by group_edit.html. A 2-column
+           responsive grid of checkbox tiles, each carrying a
+           permission name in monospace. Tile hover/active state
+           uses the rust accent so it reads as the same affordance
+           as `.dashboard-model-v14`. */
+        .perm-grid-v14 {
+            display: grid; gap: 8px; grid-template-columns: 1fr;
+        }
+        @media (min-width: 640px) {
+            .perm-grid-v14 { grid-template-columns: repeat(2, 1fr); }
+        }
+        .perm-tile-v14 {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 8px 12px; border: 1px solid var(--rio-border);
+            border-radius: 6px; background: var(--rio-bg-surface-1);
+            cursor: pointer; font-size: 13px;
+            transition: border-color 0.12s ease, background 0.12s ease;
+        }
+        .perm-tile-v14:hover {
+            border-color: var(--rio-accent-border);
+            background: var(--rio-accent-bg);
+        }
+        .perm-tile-v14 input[type="checkbox"] {
+            width: 16px; height: 16px; flex-shrink: 0; cursor: pointer;
+            accent-color: var(--rio-accent);
+        }
+        .perm-tile-v14 code {
+            font-family: var(--rio-font-mono); font-size: 13px;
+            color: var(--rio-text); font-weight: 500;
+        }
+
+        /* Dashboard model rows — used by index.html. A model row is
+           a clickable model-name link on the left and small +Add /
+           Change shortcuts on the right. Two-column grid at sm+. */
+        .dashboard-models-v14 {
+            display: grid; grid-template-columns: 1fr; gap: 8px;
+        }
+        @media (min-width: 640px) {
+            .dashboard-models-v14 { grid-template-columns: repeat(2, 1fr); }
+        }
+        .dashboard-model-v14 {
+            display: flex; align-items: center; justify-content: space-between;
+            border: 1px solid var(--rio-border); border-radius: 8px;
+            padding: 10px 14px; background: var(--rio-bg-surface-1);
+            transition: border-color 0.12s ease, background 0.12s ease;
+        }
+        .dashboard-model-v14:hover {
+            border-color: var(--rio-accent-border); background: var(--rio-accent-bg);
+        }
+        .dashboard-model-v14-link {
+            display: inline-flex; align-items: center; gap: 10px;
+            color: var(--rio-text); font-weight: 600; text-decoration: none;
+            font-size: 15px;
+        }
+        .dashboard-model-v14-link:hover { color: var(--rio-accent); }
+        .dashboard-model-v14-link svg { color: var(--rio-text-faint); }
+        .dashboard-model-v14:hover .dashboard-model-v14-link svg { color: var(--rio-accent); }
+        .dashboard-model-v14-actions {
+            display: inline-flex; gap: 12px; font-size: 13px;
+        }
+        .dashboard-model-v14-actions a {
+            color: var(--rio-text-muted); text-decoration: none; font-weight: 500;
+        }
+        .dashboard-model-v14-actions a:hover { color: var(--rio-accent); }
+
+        /* Recent-activity feed — used by the dashboard right rail.
+           Tight stack of audit-log lines; the per-line `pill_class`
+           comes from the server side and pulls one of the existing
+           `badge-success/-warning/-danger/-neutral` chips. */
+        .dashboard-recent-v14 {
+            list-style: none; margin: 0; padding: 0;
+            display: flex; flex-direction: column; gap: 14px;
+        }
+        .dashboard-recent-v14 li { font-size: 14px; line-height: 1.5; }
+        .dashboard-recent-v14 li a {
+            color: var(--rio-text); font-weight: 500;
+            text-decoration: none; margin-left: 6px;
+        }
+        .dashboard-recent-v14 li a:hover { color: var(--rio-accent); }
+        .dashboard-recent-v14 li .meta {
+            margin-top: 3px; font-size: 12px; color: var(--rio-text-muted);
+        }
         /* Inline muted helper text — used inside cards where
            descriptive copy follows a chip cluster or a key/value list.
            Same colour as `.lede`/`.help` but reusable without the
@@ -831,8 +914,33 @@
         }
         /* `.req` is used by the inline label markup on the login card;
            mirrors the existing `.label-v14 .req` colour but applies one
-           level higher so it works without the .label-v14 nesting too. */
-        .field-v14 .req { color: var(--rio-accent); margin-left: 2px; }
+           level higher so it works without the .label-v14 nesting too.
+           `.required` is the same marker but with the legacy classname
+           preserved for `form_renders_required_marker_humanised_label_and_cancel`
+           which asserts `class="required"` literally. Same visual. */
+        .field-v14 .req,
+        .field-v14 .required { color: var(--rio-accent); margin-left: 2px; font-weight: 600; }
+        /* Checkbox row inside a `.field-v14` wrapper — replaces the
+           Tailwind-utility `flex items-center gap-sm` pattern that the
+           shared _form_field used to inline. Single component class,
+           semantic name. The base `.field-v14 input[type=...]` rule
+           DOESN'T match `input[type=checkbox]`, so the checkbox keeps
+           its native browser metrics; we just add the right size +
+           accent colour. */
+        .field-v14 .checkbox-row-v14 {
+            display: inline-flex; align-items: center; gap: 10px;
+            font-size: 15px; color: var(--rio-text); font-weight: 500;
+            cursor: pointer;
+        }
+        .field-v14 .checkbox-row-v14 input[type="checkbox"] {
+            width: 16px; height: 16px; flex-shrink: 0; cursor: pointer;
+            accent-color: var(--rio-accent);
+        }
+        /* Search-box inside a searchable-select field. The standard
+           `.field-v14 input[type="text"]` rule above already supplies
+           the chrome; this only adds bottom breathing-room before the
+           sibling <select>. */
+        .field-v14 .search-input-v14 { margin-bottom: 8px; }
         /* `.sr-only` for the hidden "(required)" suffix that screen
            readers announce while the asterisk handles sighted users. */
         .sr-only {

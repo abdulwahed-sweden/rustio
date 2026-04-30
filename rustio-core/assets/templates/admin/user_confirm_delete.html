@@ -3,56 +3,62 @@
 {% block bodyclass %}delete-confirmation user-delete{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
+<div class="crumbs-v14">
     <a href="/admin">Home</a>
-    &rsaquo; <a href="/admin/users">Users</a>
-    &rsaquo; <a href="/admin/users/{{ user_id }}/">{{ email }}</a>
-    &rsaquo; Delete
+    <span class="sep">›</span>
+    <a href="/admin/users">Users</a>
+    <span class="sep">›</span>
+    <a href="/admin/users/{{ user_id }}/">{{ email }}</a>
+    <span class="sep">›</span>
+    <span class="current">Delete</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="max-w-3xl">
-    <div class="flex items-center gap-3 mb-md">
-        <span class="hero-icon hero-icon-danger">
-            {{ icon("circle-alert", class="w-5 h-5") }}
-        </span>
-        <h1 class="text-h1 font-heading tracking-tight">Are you sure?</h1>
+<div class="page-head-v14">
+    <div>
+        <h1>Delete user</h1>
+        <p class="lede">Confirm before this account is removed permanently.</p>
     </div>
+</div>
 
-    {% if is_self %}
-    <div class="errornote">
-        <div class="flex items-start gap-sm">
-            <span class="mt-0.5 shrink-0">{{ icon("circle-x", class="w-4 h-4") }}</span>
+{% if is_self %}
+<div class="alert-v14 alert-v14--danger" role="alert">
+    <span class="icon">{{ icon("circle-x", class="w-4 h-4") }}</span>
+    <div>
+        You cannot delete <strong>your own account</strong> while signed in. Sign in as another administrator to remove this user.
+    </div>
+</div>
+{% elif is_last_developer %}
+<div class="alert-v14 alert-v14--danger" role="alert">
+    <span class="icon">{{ icon("circle-x", class="w-4 h-4") }}</span>
+    <div>
+        <strong>{{ email }}</strong> is the last active developer. Promote another user to <em>Developer</em> via <code>rustio-cli user role set</code> before deleting this account.
+    </div>
+</div>
+{% endif %}
+
+<div class="card-v14">
+    <div class="card-v14-head">
+        <h2>Are you sure?</h2>
+        <p class="sub">This action cannot be undone.</p>
+    </div>
+    <div class="card-v14-body">
+        <div class="alert-v14 alert-v14--warning" role="alert">
+            <span class="icon">{{ icon("circle-alert", class="w-4 h-4") }}</span>
             <div>
-                You cannot delete <strong>your own account</strong> while signed in. Sign in as another administrator to remove this user.
+                Delete the user <strong>"{{ email }}"</strong> (<span class="badge-{{ role == 'developer' and 'danger' or (role == 'administrator' and 'danger' or (role == 'supervisor' and 'warning' or (role == 'staff' and 'neutral' or 'success'))) }}">{{ role }}</span>)?
+                {% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
+                The following will also be removed (cascade):
+                {% else %}
+                This user has no group memberships, no active sessions, and no direct permission grants, so the delete is clean.
+                {% endif %}
             </div>
         </div>
-    </div>
-    {% elif is_last_developer %}
-    <div class="errornote">
-        <div class="flex items-start gap-sm">
-            <span class="mt-0.5 shrink-0">{{ icon("circle-x", class="w-4 h-4") }}</span>
-            <div>
-                <strong>{{ email }}</strong> is the last active developer. Promote another user to <em>Developer</em> via <code class="code-pill">rustio-cli user role set</code> before deleting this account.
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
-    <div class="card">
-        <p class="text-body mb-3">
-            Delete the user <strong>"{{ email }}"</strong> (<span class="badge-{{ role == 'developer' and 'danger' or (role == 'administrator' and 'danger' or (role == 'supervisor' and 'warning' or (role == 'staff' and 'neutral' or 'success'))) }}">{{ role }}</span>)?
-            {% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
-            The following will also be removed (cascade):
-            {% else %}
-            This user has no group memberships, no active sessions, and no direct permission grants, so the delete is clean.
-            {% endif %}
-        </p>
 
         {% if group_count > 0 or session_count > 0 or direct_perm_count > 0 %}
         <ul class="cascade-list">
-            <li><strong>User:</strong> {{ email }} <span class="help">— role: {{ role }}</span></li>
+            <li><strong>User:</strong> {{ email }} <span class="muted">— role: {{ role }}</span></li>
             {% if group_count > 0 %}
             <li><strong>{{ group_count }} group membership{{ group_count != 1 and "s" or "" }}</strong> — the groups themselves stay; only this user's link to each is removed.</li>
             {% endif %}
@@ -65,21 +71,31 @@
         </ul>
         {% endif %}
 
-        <form method="post" action="/admin/users/{{ user_id }}/delete" class="confirm-form mt-5">
+        {# The literal `<button type="submit" class="btn-danger" disabled>`
+           and `<button type="submit" class="btn-danger">` markup is
+           pinned by `user_confirm_delete_renders_with_last_developer_banner`
+           and `user_confirm_delete_submit_enabled_for_normal_user` in
+           templates.rs. The legacy `.btn-danger` rule from admin.css
+           supplies the red colour; that's enough for a working
+           destructive button. The cancel anchor uses `.btn-secondary-v14`
+           so the cancel and submit read as a v14 pair visually. #}
+        <form method="post" action="/admin/users/{{ user_id }}/delete" class="confirm-form">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <div class="submit-row">
-                {% if is_self or is_last_developer %}
-                <button type="submit" class="btn-danger" disabled>
-                    {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
-                </button>
-                {% else %}
-                <button type="submit" class="btn-danger">
-                    {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
-                </button>
-                {% endif %}
-                <a href="/admin/users" class="btn-ghost">
-                    {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
-                </a>
+            <div class="save-row-v14">
+                <div class="group">
+                    {% if is_self or is_last_developer %}
+                    <button type="submit" class="btn-danger" disabled>
+                        {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
+                    </button>
+                    {% else %}
+                    <button type="submit" class="btn-danger">
+                        {{ icon("trash", class="w-4 h-4") }} Yes, I'm sure
+                    </button>
+                    {% endif %}
+                    <a href="/admin/users" class="btn-secondary-v14">
+                        {{ icon("arrow-left", class="w-4 h-4") }} No, take me back
+                    </a>
+                </div>
             </div>
         </form>
     </div>

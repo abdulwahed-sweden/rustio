@@ -3,21 +3,23 @@
 {% block bodyclass %}coming-soon{% endblock %}
 
 {% block breadcrumbs %}
-<div class="breadcrumbs">
-    <a href="/admin">Home</a> &rsaquo; Developer tools &rsaquo; {{ feature_name }}
+<div class="crumbs-v14">
+    <a href="/admin">Home</a>
+    <span class="sep">›</span>
+    <span>Developer tools</span>
+    <span class="sep">›</span>
+    <span class="current">{{ feature_name }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="coming-soon-body">
-    <span class="hero-icon hero-icon-lg hero-icon-rust mx-auto mb-3">
-        {{ icon("clock", class="w-6 h-6") }}
-    </span>
+<div class="status-card-v14">
+    <span class="hero">{{ icon("clock", class="w-6 h-6") }}</span>
     <h1>{{ feature_name }}</h1>
-    <p class="text-gray-600 text-body mt-sm">{{ description }}</p>
-    <p class="text-text-muted text-small mt-3 italic">This developer tool will be implemented in Phase 8.</p>
-    <div class="mt-lg">
-        <a href="/admin" class="btn-ghost">
+    <p>{{ description }}</p>
+    <p>This developer tool will be implemented in Phase 8.</p>
+    <div class="actions">
+        <a href="/admin" class="btn-secondary-v14">
             {{ icon("arrow-left", class="w-4 h-4") }} Return to dashboard
         </a>
     </div>
