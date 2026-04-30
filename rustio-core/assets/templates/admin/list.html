@@ -68,10 +68,8 @@
         <tr>
             {% for field in fields %}
             <td{% if field.name == 'id' or field.name in ['pages','price','quantity','count','priority_score','year_published','views','view_count','stock_quantity'] %} class="num"{% endif %}>
-                {% if field.name == row.label_field|default('title') and field.name != 'id' %}
-                    <a href="/admin/{{ admin_name }}/{{ row.id }}/edit" class="row-link">{{ row[field.name] }}</a>
-                {% elif loop.index0 == 1 and not row.label_field %}
-                    <a href="/admin/{{ admin_name }}/{{ row.id }}/edit" class="row-link">{{ row[field.name] }}</a>
+                {% if loop.index0 == 0 %}
+                    <a class="row-link" href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
                 {% elif row[field.name] == "true" %}
                     <span class="badge-v14 badge-yes-v14">Yes</span>
                 {% elif row[field.name] == "false" %}

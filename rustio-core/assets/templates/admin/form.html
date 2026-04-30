@@ -43,7 +43,7 @@
 <div>
 
 {% for section in sections %}
-<div class="card-v14" style="margin-bottom:14px">
+<div class="card-v14">
     {% if section.title %}
     <div class="card-v14-head">
         <h2>{{ section.title }}</h2>
@@ -76,7 +76,9 @@
         <button type="submit" name="_continue" value="Save and continue editing" class="btn-secondary-v14">Save and continue editing</button>
         <button type="submit" name="_addanother" value="Save and add another" class="btn-secondary-v14">Save and add another</button>
     </div>
-    <a href="/admin/{{ admin_name }}/" class="btn-text-v14" data-cancel>Cancel</a>
+    <a href="/admin/{{ admin_name }}/" class="btn-text-v14" data-cancel>
+            Cancel
+    </a>
 </div>
 
 {% if mode == "edit" and object_id %}
