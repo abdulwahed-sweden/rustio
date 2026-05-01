@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.4.1] - 2026-05-01
+
+### Fixed
+
+- **List view column proportions.** Type-driven width hints on `<td>` (id 72px, checkbox 110px, datetime 170px, actions 100px) so variable-text columns get the remaining space. Fixes cramped layouts on wide-table models.
+- **Row hover state.** Previous hover used the same colour as zebra striping → no feedback. New `--rio-bg-soft` token applied to `tr:hover td` with a 120ms transition.
+
+### Changed
+
+- **Primary label is now the row's edit anchor.** First non-typed cell renders as `<a class="row-link">` to the edit page. Pure type-driven (no field-name lookup); ID and typed cells are skipped so the link lands on the meaningful column.
+- **Datetime cell layout.** Date on top, time below, in a two-line stack.
+- **Default pagination size.** 50 → 25 rows per page for scanability. Optional `?per_page=10|25|50|100` query override; invalid values fall back to 25.
+
+### Added
+
+- **Generic pagination on admin list views.** Server-side slicing, out-of-range page numbers clamp to the last valid page, single `<div class="pager">` block matches the existing toolbar styling.
+
+### Notes
+
+- No API breaks; v1.4.0 consumers upgrade with no code changes.
+- Multi-select / bulk actions deferred to v1.5.0 — see RFC.
+
 ## [1.4.0] - 2026-04-30
 
 A UI / design-system release. The admin chrome has been migrated end
