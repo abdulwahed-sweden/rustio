@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.6.0] - 2026-05-01
+
+### Added
+
+- **First-run banner.** Scaffolded projects now print a clear "⚠ No admin user found" banner on startup when the `rustio_users` table is empty, with the exact `rustio user create --email admin@<project>.local` command and the admin URL. Disappears once any user exists. Read-only probe; never blocks startup.
+- **Welcome page at `GET /`.** Replaces the implicit `/` → `/admin` redirect with a minimal landing page (`templates/home.html`) — links to `/admin` and the docs repo, plus the create-admin hint. Plain HTML + ~15 lines of CSS, no framework, no JS.
+- **Interactive `rustio user create`.** Run with no flags (or partial flags) to be prompted: `Email:`, `Password:`, `Confirm password:`. Password validated (min 8, no all-same character, no common passwords). Polished error wording: "Password must be at least 8 characters.", "Password is too weak.", "Passwords do not match." Non-interactive flag-only invocation still works.
+
+### Changed
+
+- **`rustio user create --role` default:** `"admin"` → `"administrator"`. The previous default never parsed (`Role::parse` only accepts the canonical name); this had been silently broken since v1.0.
+- **CLI loads `.env` at startup.** Subcommands like `rustio user create`, `rustio migrate apply`, etc. now resolve `--db` from the project's `.env` without requiring a shell `export DATABASE_URL=...`. Mirrors what the scaffold's `MAIN_RS` does at runtime — same env, same behavior.
+- **Scaffold README quickstart** now includes the `rustio user create --email admin@<project>.local` step between `cargo run` and the admin URL.
+- **Scaffold `Cargo.toml` template** adds `sqlx = "0.8"` (with `runtime-tokio`, `postgres` features) for the new `SELECT COUNT(*) FROM rustio_users` probe. Already transitive via `rustio-core`, so the binary size is unchanged.
+
+### Notes
+
+- No `rustio-core` or `rustio-macros` changes — `cargo publish -p rustio-cli` only.
+- No auto-seeding of users; the framework remains explicit-by-default.
+- Admin auth flow unchanged — `/admin` still requires login and redirects unauthenticated visitors to `/admin/login`.
+- Scripted callers of `rustio user create` that explicitly passed `--role admin` were already failing pre-1.6 (see "Changed"). After 1.6, those scripts get the correct default by simply omitting the flag.
+
 ## [1.5.0] - 2026-05-01
 
 ### Added
