@@ -96,6 +96,10 @@
             --rio-bg:              #f4f4f5;
             --rio-bg-surface-1:    #ffffff;
             --rio-bg-surface-2:    #fafafa;
+            /* v1.4.1 — subtle, distinct from zebra (surface-2). Used by
+               row hover so the feedback is visible on both odd rows
+               (white) and even rows (surface-2 #fafafa). */
+            --rio-bg-soft:         #f4f4f5;
 
             /* Borders + card shadow (softer border, stronger shadow) */
             --rio-border:          #e5e7eb;
@@ -531,6 +535,7 @@
         .table tbody td {
             padding: 14px 18px; border-bottom: 1px solid var(--rio-border-faint);
             font-size: 15px; color: var(--rio-text-secondary); vertical-align: middle;
+            transition: background 120ms ease;
         }
         /* Type-driven column-width hints (v1.4.1). With `table-layout:
            auto` the browser distributes width by content; these hints
@@ -553,7 +558,7 @@
         .table th.actions-cell,
         .table td.actions-cell { width: 100px; }
         .table tbody tr:nth-child(even) td { background: var(--rio-bg-surface-2); }
-        .table tbody tr:hover td { background: var(--rio-bg-surface-2); }
+        .table tbody tr:hover td { background: var(--rio-bg-soft); }
         .table tbody tr:last-child td { border-bottom: 0; }
         /* Tabular figures + lining numerals + right-align on numeric cols */
         .table .num { font-feature-settings: "tnum" 1, "lnum" 1; text-align: right; }
