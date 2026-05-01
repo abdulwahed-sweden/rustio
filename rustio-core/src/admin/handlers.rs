@@ -228,7 +228,13 @@ pub(crate) async fn list_model(
     }
 
     let total_rows = rows.len();
-    let per_page = 50usize;
+    // v1.4.1 — default 25 for scanability; ?per_page=10|25|50|100 overrides.
+    // Anything else (including unparseable input) falls back to 25.
+    let per_page: usize = qs
+        .get("per_page")
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|n| matches!(n, 10 | 25 | 50 | 100))
+        .unwrap_or(25);
     let total_pages = total_rows.div_ceil(per_page.max(1)).max(1);
     let page_raw: usize = qs.get("p").and_then(|s| s.parse().ok()).unwrap_or(1).max(1);
     // Clamp out-of-range page numbers to the last valid page so a stale
