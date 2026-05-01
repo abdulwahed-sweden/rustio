@@ -24,3 +24,8 @@ package-lock.json
 # Local experiments / scratch — playground/ holds untracked
 # scaffolds and demo schemas that shouldn't ship.
 playground/
+
+# Claude Code runtime artifacts (lock files for scheduled tasks etc).
+# `.claude/settings.local.json` is already covered by the user's global
+# gitignore; this rule keeps ephemeral lock files out of the tree.
+.claude/*.lock
