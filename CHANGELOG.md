@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.4.2] - 2026-05-01
+
+### Fixed
+
+- **`rustio new app` outside a project polluted the working directory.** The command previously created `src/apps/<name>` in any directory (including $HOME) without validation. It now requires being inside a RustIO project and fails with a clear, beginner-friendly error.
+
+### Added
+
+- **Django-style commands:**
+  - `rustio startproject <name>` — create a new project
+  - `rustio startapp <name>` — create an app inside a project
+- **Project detection helper** — shared foundation for future CLI features.
+- **README.md in project scaffold** with a minimal quickstart.
+
+### Changed
+
+- Generated projects now depend on `rustio-core = "1.4"` instead of "1.0".
+
+### Notes
+
+- Existing commands `rustio new project` and `rustio new app` are still supported for backward compatibility.
+
 ## [1.4.1] - 2026-05-01
 
 ### Fixed
