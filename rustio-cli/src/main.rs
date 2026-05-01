@@ -27,6 +27,16 @@ enum Command {
         #[command(subcommand)]
         kind: NewKind,
     },
+    /// Create a new RustIO project. Alias for `new project`.
+    #[command(name = "startproject")]
+    Startproject {
+        name: String,
+    },
+    /// Create a new app inside a RustIO project. Alias for `new app`.
+    #[command(name = "startapp")]
+    Startapp {
+        name: String,
+    },
     /// Run database migrations.
     Migrate {
         #[command(subcommand)]
@@ -307,6 +317,8 @@ fn main() -> ExitCode {
             NewKind::Project { name } => scaffold::project(&name),
             NewKind::App { name } => scaffold::app(&name),
         },
+        Command::Startproject { name } => scaffold::project(&name),
+        Command::Startapp { name } => scaffold::app(&name),
         Command::Migrate { action } => match action {
             MigrateAction::Apply { db, dir } => tokio_run(migrate_apply(db, dir)),
             MigrateAction::Generate { name, dir } => migrations::generate(&dir, &name)
@@ -1563,16 +1575,161 @@ mod tests {
             "actionable fixes must mention the docker-compose escape hatch"
         );
     }
+
+    // ----- v1.4.2 — project detection + scaffold guards -----------------
+
+    fn write_rustio_cargo_toml(at: &Path) {
+        std::fs::write(
+            at.join("Cargo.toml"),
+            "[package]\nname=\"x\"\nversion=\"0.1.0\"\nedition=\"2021\"\n\n[dependencies]\nrustio-core = \"1.4\"\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn find_project_root_finds_rustio_project() {
+        let dir = tempdir_path();
+        write_rustio_cargo_toml(&dir);
+        let found = scaffold::find_project_root(&dir).expect("must find project root");
+        assert_eq!(found, dir.canonicalize().unwrap(), "should return the project dir");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn find_project_root_walks_up_from_subdir() {
+        let dir = tempdir_path();
+        write_rustio_cargo_toml(&dir);
+        let nested = dir.join("src").join("apps").join("orders");
+        std::fs::create_dir_all(&nested).unwrap();
+        let found = scaffold::find_project_root(&nested).expect("must walk up to root");
+        assert_eq!(found, dir.canonicalize().unwrap(), "walk-up must land at project root");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn find_project_root_returns_none_outside_project() {
+        let dir = tempdir_path();
+        // Empty tempdir — no Cargo.toml on the way up to /tmp.
+        assert!(
+            scaffold::find_project_root(&dir).is_none(),
+            "no Cargo.toml above cwd → must return None"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn find_project_root_skips_non_rustio_cargo_toml() {
+        let dir = tempdir_path();
+        std::fs::write(
+            dir.join("Cargo.toml"),
+            "[package]\nname=\"random\"\nversion=\"0\"\n[dependencies]\nserde = \"1\"\n",
+        )
+        .unwrap();
+        assert!(
+            scaffold::find_project_root(&dir).is_none(),
+            "Cargo.toml without rustio-core must NOT be treated as a RustIO project"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scaffold_app_with_cwd_fails_outside_project() {
+        let dir = tempdir_path();
+        let err = scaffold::app_with_cwd(&dir, "orders").unwrap_err();
+        assert!(err.contains("not inside a RustIO project"), "err was: {err}");
+        assert!(
+            err.contains("rustio startproject"),
+            "err must point the beginner at startproject; was: {err}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scaffold_app_with_cwd_creates_under_project_root() {
+        let dir = tempdir_path();
+        write_rustio_cargo_toml(&dir);
+        std::fs::create_dir_all(dir.join("src").join("apps")).unwrap();
+        scaffold::app_with_cwd(&dir, "orders").expect("create should succeed");
+        let app_dir = dir.join("src").join("apps").join("orders");
+        assert!(app_dir.is_dir(), "app dir must exist at project_root/src/apps/<name>");
+        assert!(app_dir.join("mod.rs").is_file(), "mod.rs missing");
+        assert!(app_dir.join("models.rs").is_file(), "models.rs missing");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scaffold_app_with_cwd_walks_up_from_subdir() {
+        let dir = tempdir_path();
+        write_rustio_cargo_toml(&dir);
+        let nested = dir.join("src").join("apps");
+        std::fs::create_dir_all(&nested).unwrap();
+        scaffold::app_with_cwd(&nested, "orders")
+            .expect("must walk up and create under project root");
+        assert!(
+            dir.join("src").join("apps").join("orders").join("mod.rs").is_file(),
+            "app must land under PROJECT root, not under cwd"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scaffold_project_at_creates_expected_files() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "demo").expect("project create should succeed");
+        let root = dir.join("demo");
+        for path in &[
+            "Cargo.toml",
+            "src/main.rs",
+            "src/apps/mod.rs",
+            ".gitignore",
+            ".env.example",
+            "README.md",
+        ] {
+            assert!(root.join(path).is_file(), "scaffold missing: {path}");
+        }
+        assert!(root.join("migrations").is_dir(), "migrations dir missing");
+        assert!(root.join("templates").is_dir(), "templates dir missing");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scaffold_project_cargo_toml_uses_rustio_core_1_4() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "demo").unwrap();
+        let toml = std::fs::read_to_string(dir.join("demo").join("Cargo.toml")).unwrap();
+        assert!(
+            toml.contains("rustio-core = \"1.4\""),
+            "scaffold Cargo.toml must reference rustio-core 1.4 (not 1.0)\n--- actual ---\n{toml}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn scaffold_project_readme_includes_project_name_and_startapp() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "shop").unwrap();
+        let readme = std::fs::read_to_string(dir.join("shop").join("README.md")).unwrap();
+        assert!(readme.contains("# shop"), "README must lead with the project name");
+        assert!(
+            readme.contains("rustio startapp"),
+            "README must point users at the startapp command"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 // ---- scaffold ----------------------------------------------------------
 
 mod scaffold {
     use std::fs;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     pub fn project(name: &str) -> Result<(), String> {
-        let root = Path::new(name);
+        project_at(Path::new("."), name)
+    }
+
+    pub fn project_at(base: &Path, name: &str) -> Result<(), String> {
+        let root = base.join(name);
         if root.exists() {
             return Err(format!("{name} already exists"));
         }
@@ -1585,6 +1742,7 @@ mod scaffold {
         fs::write(root.join("src").join("apps").join("mod.rs"), "").map_err(|e| e.to_string())?;
         fs::write(root.join(".gitignore"), GITIGNORE).map_err(|e| e.to_string())?;
         fs::write(root.join(".env.example"), ENV_EXAMPLE).map_err(|e| e.to_string())?;
+        fs::write(root.join("README.md"), project_readme(name)).map_err(|e| e.to_string())?;
 
         println!("✓ created project {name}");
         println!();
@@ -1596,7 +1754,20 @@ mod scaffold {
     }
 
     pub fn app(name: &str) -> Result<(), String> {
-        let app_dir = Path::new("src").join("apps").join(name);
+        let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+        app_with_cwd(&cwd, name)
+    }
+
+    /// Implementation seam for `app()` — accepts an explicit cwd so tests
+    /// can drive it against synthetic project trees in tempdirs without
+    /// chdir'ing the real process. The walk-up + project guard live here;
+    /// `app()` is just a thin wrapper that supplies the real cwd.
+    pub fn app_with_cwd(cwd: &Path, name: &str) -> Result<(), String> {
+        let project_root = find_project_root(cwd).ok_or_else(|| {
+            "not inside a RustIO project.\n\nTo create one:\n\n  rustio startproject myproject\n  cd myproject\n  rustio startapp myapp"
+                .to_string()
+        })?;
+        let app_dir = project_root.join("src").join("apps").join(name);
         if app_dir.exists() {
             return Err(format!("app {name} already exists"));
         }
@@ -1611,6 +1782,32 @@ mod scaffold {
         Ok(())
     }
 
+    /// Walk upward from `start`, returning the first directory whose
+    /// `Cargo.toml` mentions `rustio-core`. Returns `None` if the
+    /// filesystem root is reached without finding a match.
+    ///
+    /// Detection is naive substring match — robust against the various
+    /// shapes a `rustio-core` dependency can take (`version = "..."`,
+    /// `path = "..."`, `git = "..."`, workspace-inherited). Reusable;
+    /// future migrate / doctor commands can call this to refuse running
+    /// outside a project.
+    pub fn find_project_root(start: &Path) -> Option<PathBuf> {
+        let mut cur = start.canonicalize().ok()?;
+        loop {
+            let manifest = cur.join("Cargo.toml");
+            if manifest.is_file() {
+                if let Ok(text) = fs::read_to_string(&manifest) {
+                    if text.contains("rustio-core") {
+                        return Some(cur);
+                    }
+                }
+            }
+            if !cur.pop() {
+                return None;
+            }
+        }
+    }
+
     fn cargo_toml(name: &str) -> String {
         format!(
             r#"[package]
@@ -1619,13 +1816,41 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rustio-core = "1.0"
+rustio-core = "1.4"
 tokio = {{ version = "1", features = ["rt-multi-thread", "macros"] }}
 chrono = {{ version = "0.4", features = ["serde"] }}
 serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 env_logger = "0.11"
 log = "0.4"
+"#
+        )
+    }
+
+    fn project_readme(name: &str) -> String {
+        format!(
+            r#"# {name}
+
+A RustIO project.
+
+## Quickstart
+
+```sh
+cp .env.example .env
+# edit .env: set DATABASE_URL (and optionally MEILI_URL)
+cargo run
+```
+
+The admin lives at <http://127.0.0.1:8000/admin> by default.
+
+## Add an app
+
+```sh
+rustio startapp orders
+# then edit src/apps/orders/models.rs
+```
+
+See <https://github.com/abdulwahed-sweden/rustio> for documentation.
 "#
         )
     }
