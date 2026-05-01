@@ -120,13 +120,15 @@ enum MigrateAction {
 
 #[derive(Subcommand)]
 enum UserAction {
-    /// Create a user. If `--password` is omitted it will be prompted.
+    /// Create a user. Any of `--email` / `--password` may be omitted;
+    /// missing values are prompted for interactively. `--db` resolves
+    /// from `DATABASE_URL` (loaded from `.env` at CLI startup).
     Create {
         #[arg(long)]
-        email: String,
+        email: Option<String>,
         #[arg(long)]
         password: Option<String>,
-        #[arg(long, default_value = "admin")]
+        #[arg(long, default_value = "administrator")]
         role: String,
         #[arg(long, env = "DATABASE_URL")]
         db: String,
@@ -327,6 +329,11 @@ enum AiAction {
 }
 
 fn main() -> ExitCode {
+    // v1.6 — load .env at CLI startup so subcommands like
+    // `rustio user create` pick up DATABASE_URL from the project's
+    // .env file without requiring an explicit `export` in the shell.
+    // Mirrors what the scaffold's MAIN_RS does at runtime.
+    let _ = dotenvy::dotenv();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let cli = Cli::parse();
@@ -475,10 +482,15 @@ async fn migrate_status(db_url: String, dir: PathBuf) -> Result<(), String> {
 async fn user_cmd(action: UserAction) -> Result<(), String> {
     match action {
         UserAction::Create { email, password, role, db } => {
+            // v1.6 — interactive prompts when flags are omitted.
+            // Resolve email + password BEFORE touching the DB so the
+            // user doesn't wait on a connection just to be told their
+            // password is too short.
+            let email = prompt_email(email)?;
+            let password = resolve_password(password)?;
+            let role = Role::parse(&role).map_err(|e| e.to_string())?;
             let db = Db::connect(&db).await.map_err(|e| e.to_string())?;
             auth::init_tables(&db).await.map_err(|e| e.to_string())?;
-            let role = Role::parse(&role).map_err(|e| e.to_string())?;
-            let password = resolve_password(password)?;
             let id = auth::create_user(&db, &email, &password, role)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -599,9 +611,76 @@ fn confirm_orphan(email: &str) -> Result<bool, String> {
 
 fn resolve_password(provided: Option<String>) -> Result<String, String> {
     if let Some(p) = provided {
+        // Non-interactive path: still validate so a scripted call with
+        // `--password 1234` fails fast with the same rule the prompt
+        // would enforce.
+        validate_password(&p)?;
         return Ok(p);
     }
-    rpassword::prompt_password("Password: ").map_err(|e| e.to_string())
+    let pw = rpassword::prompt_password("Password: ").map_err(|e| e.to_string())?;
+    validate_password(&pw)?;
+    let confirm =
+        rpassword::prompt_password("Confirm password: ").map_err(|e| e.to_string())?;
+    if pw != confirm {
+        return Err("Passwords do not match.".into());
+    }
+    Ok(pw)
+}
+
+/// v1.6 — minimum password hygiene for interactive `rustio user create`.
+/// Intentionally light: length + a small list of weak passwords. Real
+/// strength rules belong in the application's auth layer; this guards
+/// against "1234"-class typos at create time. Errors are end-user
+/// strings (capitalized, full sentences) so they render cleanly in the
+/// CLI's "error: …" wrapper.
+fn validate_password(password: &str) -> Result<(), String> {
+    const MIN_LEN: usize = 8;
+    if password.len() < MIN_LEN {
+        return Err(format!(
+            "Password must be at least {MIN_LEN} characters."
+        ));
+    }
+    if let Some(first) = password.chars().next() {
+        if password.chars().all(|c| c == first) {
+            return Err("Password is too weak.".into());
+        }
+    }
+    let lower = password.to_lowercase();
+    let trivial = [
+        "password", "12345678", "11111111", "00000000", "qwertyui",
+        "abcd1234", "admin123", "letmein1", "00001111", "12341234",
+    ];
+    if trivial.contains(&lower.as_str()) {
+        return Err("Password is too weak.".into());
+    }
+    Ok(())
+}
+
+/// v1.6 — prompt for an email when `--email` was omitted. Validation is
+/// minimal (`@` present + non-empty) — RFC-strict checking belongs at
+/// the auth layer, not the CLI.
+fn prompt_email(provided: Option<String>) -> Result<String, String> {
+    if let Some(e) = provided {
+        if !e.contains('@') || e.trim().is_empty() {
+            return Err("Email must contain `@` and not be empty.".into());
+        }
+        return Ok(e);
+    }
+    use std::io::Write;
+    print!("Email: ");
+    std::io::stdout().flush().map_err(|e| e.to_string())?;
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_line(&mut buf)
+        .map_err(|e| e.to_string())?;
+    let email = buf.trim().to_string();
+    if email.is_empty() {
+        return Err("Email cannot be empty.".into());
+    }
+    if !email.contains('@') {
+        return Err("Email must contain `@`.".into());
+    }
+    Ok(email)
 }
 
 // ---- groups ------------------------------------------------------------
@@ -1791,6 +1870,181 @@ mod tests {
         );
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    // ----- v1.6 — first-run UX -----------------------------------------
+
+    /// v1.6 — scaffold MAIN_RS probes rustio_users on startup and prints
+    /// the empty-users banner if zero. Catches the case where a user has
+    /// the DB up but hasn't created an admin yet.
+    #[test]
+    fn scaffold_main_rs_emits_empty_users_banner() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            src.contains("SELECT COUNT(*) FROM rustio_users"),
+            "scaffold MAIN_RS must probe rustio_users on startup"
+        );
+        assert!(
+            src.contains("No admin user found."),
+            "scaffold MAIN_RS must print the polished banner headline"
+        );
+        assert!(
+            src.contains("Create one in another terminal:"),
+            "banner must use the v1.6.0 wording (\"Create one in another terminal:\")"
+        );
+        assert!(
+            src.contains("rustio user create --email admin@"),
+            "banner must show the exact `rustio user create` command"
+        );
+        assert!(
+            src.contains("http://127.0.0.1:8000/admin"),
+            "banner must point at the admin URL"
+        );
+    }
+
+    /// v1.6 — scaffold MAIN_RS registers GET / serving home.html. Without
+    /// this route a fresh project lands the user on a 404 at the root URL.
+    #[test]
+    fn scaffold_main_rs_registers_home_route() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            src.contains(".get(\"/\","),
+            "scaffold MAIN_RS must register a GET / route"
+        );
+        assert!(
+            src.contains("templates.render(\"home.html\""),
+            "GET / must render the home.html template"
+        );
+    }
+
+    /// v1.6 — scaffold's Cargo.toml must declare sqlx so the
+    /// `SELECT COUNT(*) FROM rustio_users` probe in MAIN_RS compiles.
+    #[test]
+    fn scaffold_cargo_toml_includes_sqlx_dep() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "demo").unwrap();
+        let toml = std::fs::read_to_string(dir.join("demo").join("Cargo.toml")).unwrap();
+        assert!(
+            toml.contains("sqlx ="),
+            "scaffold Cargo.toml must include sqlx — actual:\n{toml}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// v1.6 — scaffold writes templates/home.html with a project-name
+    /// placeholder and the create-admin hint. Spec wording: full GitHub
+    /// URL (no "(docs)" label), bare "No admin user yet?" question.
+    #[test]
+    fn scaffold_writes_home_html_template() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "shop").unwrap();
+        let html_path = dir.join("shop").join("templates").join("home.html");
+        assert!(html_path.is_file(), "templates/home.html must exist");
+        let html = std::fs::read_to_string(&html_path).unwrap();
+        assert!(
+            html.contains("{{ project }}"),
+            "home.html must use the {{{{ project }}}} minijinja variable"
+        );
+        assert!(
+            html.contains("/admin"),
+            "home.html must link to /admin"
+        );
+        assert!(
+            html.contains("https://github.com/abdulwahed-sweden/rustio"),
+            "home.html must show the full GitHub URL (no abbreviation)"
+        );
+        assert!(
+            !html.contains("(docs)"),
+            "home.html must NOT label the GitHub link \"(docs)\""
+        );
+        assert!(
+            html.contains("No admin user yet?"),
+            "home.html must include the bare \"No admin user yet?\" line"
+        );
+        assert!(
+            html.contains("rustio user create"),
+            "home.html must hint at the create-admin command"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// v1.6 — README quickstart must point users at `rustio user create`
+    /// with a project-name-substituted email.
+    #[test]
+    fn scaffold_readme_includes_user_create_step() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "shop").unwrap();
+        let readme = std::fs::read_to_string(dir.join("shop").join("README.md")).unwrap();
+        assert!(
+            readme.contains("rustio user create --email admin@shop.local"),
+            "README must show the project-name-substituted create-admin command — actual:\n{readme}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ----- v1.6 — password validation + email prompt --------------------
+
+    #[test]
+    fn validate_password_rejects_too_short() {
+        let err = super::validate_password("1234").unwrap_err();
+        assert_eq!(
+            err, "Password must be at least 8 characters.",
+            "v1.6.0 polished error wording"
+        );
+    }
+
+    #[test]
+    fn validate_password_rejects_all_same_character() {
+        let err = super::validate_password("00000000").unwrap_err();
+        assert_eq!(
+            err, "Password is too weak.",
+            "all-same-character must surface as the unified \"too weak\" message"
+        );
+        assert_eq!(
+            super::validate_password("aaaaaaaa").unwrap_err(),
+            "Password is too weak."
+        );
+    }
+
+    #[test]
+    fn validate_password_rejects_common_passwords() {
+        let err = super::validate_password("password").unwrap_err();
+        assert_eq!(err, "Password is too weak.");
+        assert_eq!(
+            super::validate_password("Password").unwrap_err(),
+            "Password is too weak.",
+            "common-password check must be case-insensitive"
+        );
+        assert_eq!(
+            super::validate_password("12345678").unwrap_err(),
+            "Password is too weak."
+        );
+        assert_eq!(
+            super::validate_password("admin123").unwrap_err(),
+            "Password is too weak."
+        );
+    }
+
+    #[test]
+    fn validate_password_accepts_strong_password() {
+        assert!(super::validate_password("MyS3cure!Pass").is_ok());
+        assert!(super::validate_password("correct horse battery").is_ok());
+    }
+
+    #[test]
+    fn prompt_email_passes_through_valid_input() {
+        let e = super::prompt_email(Some("admin@shop.local".into())).unwrap();
+        assert_eq!(e, "admin@shop.local");
+    }
+
+    #[test]
+    fn prompt_email_rejects_no_at_sign() {
+        let err = super::prompt_email(Some("not-an-email".into())).unwrap_err();
+        assert!(err.contains('@'), "error must explain the rule: {err}");
+        assert!(
+            err.starts_with("Email"),
+            "error must use polished wording (Email …), got: {err}"
+        );
+    }
 }
 
 // ---- scaffold ----------------------------------------------------------
@@ -1818,6 +2072,11 @@ mod scaffold {
         fs::write(root.join(".gitignore"), GITIGNORE).map_err(|e| e.to_string())?;
         fs::write(root.join(".env.example"), ENV_EXAMPLE).map_err(|e| e.to_string())?;
         fs::write(root.join("README.md"), project_readme(name)).map_err(|e| e.to_string())?;
+        // v1.6 — minimal welcome page rendered by `GET /`. Plain HTML,
+        // no JS, no framework. Edit freely; delete to fall through to
+        // a custom handler.
+        fs::write(root.join("templates").join("home.html"), HOME_HTML)
+            .map_err(|e| e.to_string())?;
 
         println!("✓ created project {name}");
         println!();
@@ -1899,6 +2158,10 @@ serde_json = "1"
 env_logger = "0.11"
 log = "0.4"
 dotenvy = "0.15"
+# v1.6 — used in main.rs for the first-run "no admin user" probe.
+# Already a transitive dep via rustio-core; declaring it here is for
+# the direct `sqlx::query_scalar` call site.
+sqlx = {{ version = "0.8", default-features = false, features = ["runtime-tokio", "postgres"] }}
 "#
         )
     }
@@ -1917,7 +2180,17 @@ cp .env.example .env
 cargo run
 ```
 
-The admin lives at <http://127.0.0.1:8000/admin> by default.
+In a second terminal, create your first admin user:
+
+```sh
+rustio user create --email admin@{name}.local
+```
+
+(Interactive — prompts for password. Run `rustio user create --help`
+to see the non-interactive flags.)
+
+Then open <http://127.0.0.1:8000/> for the welcome page or
+<http://127.0.0.1:8000/admin> to log in.
 
 ## Add an app
 
@@ -1926,22 +2199,61 @@ rustio startapp orders
 # then edit src/apps/orders/models.rs
 ```
 
+## Diagnose setup issues
+
+```sh
+rustio doctor
+```
+
 See <https://github.com/abdulwahed-sweden/rustio> for documentation.
 "#
         )
     }
 
+    pub(super) const HOME_HTML: &str = r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ project }}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 3rem auto; padding: 0 1.5rem; line-height: 1.6; color: #1a1a1a; }
+    h1 { margin-bottom: 0.25rem; }
+    .lede { color: #6b7280; margin-top: 0; }
+    a { color: #b8431a; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    pre { background: #f4f4f5; padding: 0.75rem 1rem; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    ul { list-style: none; padding: 0; }
+    li { margin: 0.25rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Welcome to {{ project }}</h1>
+  <p class="lede">Your RustIO project is running.</p>
+
+  <p>Get started:</p>
+  <ul>
+    <li>→ <a href="/admin">/admin</a></li>
+    <li>→ <a href="https://github.com/abdulwahed-sweden/rustio">https://github.com/abdulwahed-sweden/rustio</a></li>
+  </ul>
+
+  <p>No admin user yet?</p>
+  <pre><code>rustio user create --email admin@{{ project }}.local</code></pre>
+</body>
+</html>
+"#;
+
     pub(super) const MAIN_RS: &str = r#"use std::net::SocketAddr;
 
 use rustio_core::admin::{register_admin_routes, Admin, SiteBranding};
+use rustio_core::auth;
 use rustio_core::background;
+use rustio_core::http::Response;
 use rustio_core::middleware::{self, RateLimiter};
 use rustio_core::migrations;
 use rustio_core::orm::Db;
 use rustio_core::router::Router;
 use rustio_core::server::Server;
 use rustio_core::templates::Templates;
-use rustio_core::auth;
 
 /// Project branding — `env!("CARGO_PKG_NAME")` resolves at compile time
 /// to this project's package name, so the admin chrome shows your
@@ -2002,6 +2314,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     auth::init_tables(&db).await?;
     migrations::apply(&db, "migrations").await?;
+
+    // First-run hint: nudge the operator to create an admin user when
+    // the table is empty. Read-only check; disappears on next boot
+    // once any user exists. Silent on query error so a transient
+    // failure here can never block startup.
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustio_users")
+        .fetch_one(db.pool())
+        .await
+        .unwrap_or(0);
+    if user_count == 0 {
+        eprintln!();
+        eprintln!("⚠ No admin user found.");
+        eprintln!();
+        eprintln!("Create one in another terminal:");
+        eprintln!();
+        eprintln!("  rustio user create --email admin@{}.local", env!("CARGO_PKG_NAME"));
+        eprintln!();
+        eprintln!("Then open:");
+        eprintln!();
+        eprintln!("  http://127.0.0.1:8000/admin");
+        eprintln!();
+    }
+
     background::spawn_housekeeping(db.clone());
 
     let template_dir = std::env::var("RUSTIO_TEMPLATE_DIR").unwrap_or_else(|_| "templates".into());
@@ -2017,6 +2352,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .middleware(middleware::security_headers)
         .middleware(middleware::gzip)
         .middleware(middleware::csrf_protect);
+
+    // Welcome page at GET /. Templates are Clone-cheap (Arc inside);
+    // we keep one for the home route and hand the original off to
+    // `register_admin_routes` below. Edit `templates/home.html` to
+    // customize the landing page; delete the route + template if you
+    // want / to fall through to a custom handler.
+    let templates_for_home = templates.clone();
+    let router = router.get("/", move |_req| {
+        let templates = templates_for_home.clone();
+        async move {
+            let ctx = serde_json::json!({ "project": env!("CARGO_PKG_NAME") });
+            let body = templates.render("home.html", &ctx)?;
+            Ok(Response::html(body))
+        }
+    });
+
     let router = register_admin_routes(router, admin, db, templates);
 
     let addr: SocketAddr = "127.0.0.1:8000".parse()?;
