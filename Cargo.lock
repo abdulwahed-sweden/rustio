@@ -1691,6 +1691,7 @@ name = "rustio-cli"
 version = "1.4.2"
 dependencies = [
  "clap",
+ "dotenvy",
  "env_logger",
  "log",
  "rpassword",
@@ -1698,6 +1699,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "url",
 ]
 
 [[package]]

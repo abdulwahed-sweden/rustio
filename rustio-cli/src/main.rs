@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+
+mod doctor;
 // 0.9.x AI surface: planner emits PlanResult (plan + explanation); review_plan
 // builds a structured PlanReview; execute_plan_document writes files atomically.
 use rustio_core::ai::{
@@ -71,6 +73,22 @@ enum Command {
     /// Convenience wrapper around `cargo run`. Refuses with a clear
     /// error if no `Cargo.toml` is found.
     Run,
+    /// Diagnose the local environment for a RustIO project.
+    /// Read-only — checks project root, DATABASE_URL, PostgreSQL
+    /// reachability + connection, and Meilisearch reachability.
+    /// Exits 0 when ready (including degraded), 1 on any blocker.
+    Doctor {
+        /// Print only failures and the final summary.
+        #[arg(long, short = 'q')]
+        quiet: bool,
+        /// Show detail blocks for passing checks too.
+        #[arg(long, short = 'v')]
+        verbose: bool,
+        /// Disable ANSI colors (auto-disabled when stdout is not a TTY
+        /// or when `NO_COLOR` is set).
+        #[arg(long)]
+        no_color: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -312,6 +330,22 @@ fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let cli = Cli::parse();
+
+    // Doctor returns its own ExitCode (0 = ready / ready-degraded, 1 = not
+    // ready). Bypass the Result<(), String> mapping below — doctor's output
+    // is already user-facing and shouldn't get wrapped in `error: ...`.
+    if let Command::Doctor { quiet, verbose, no_color } = &cli.command {
+        let args = doctor::Args { quiet: *quiet, verbose: *verbose, no_color: *no_color };
+        let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("error: failed to start tokio runtime: {e}");
+                return ExitCode::FAILURE;
+            }
+        };
+        return rt.block_on(doctor::run(args));
+    }
+
     let out: Result<(), String> = match cli.command {
         Command::New { kind } => match kind {
             NewKind::Project { name } => scaffold::project(&name),
@@ -351,6 +385,7 @@ fn main() -> ExitCode {
         },
         Command::Schema { path } => print_schema(&path),
         Command::Run => cmd_run(&std::env::current_dir().unwrap_or_else(|_| ".".into())),
+        Command::Doctor { .. } => unreachable!("Doctor handled above via early return"),
     };
 
     match out {
@@ -1576,6 +1611,46 @@ mod tests {
         );
     }
 
+    /// v1.5.0 — the DB-failure banner must point users at `rustio doctor`
+    /// so they can self-diagnose (matches the release contract for the
+    /// runtime-integration hint).
+    #[test]
+    fn scaffold_main_rs_db_banner_points_at_rustio_doctor() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            src.contains("rustio doctor"),
+            "DB-failure banner must mention `rustio doctor` as the next step"
+        );
+    }
+
+    /// v1.5.0 — scaffold's MAIN_RS must call `dotenvy::dotenv()` so the
+    /// `.env` file the user creates via `cp .env.example .env` actually
+    /// loads. Without this, the .env hint is a lie. Doctor and runtime
+    /// must mirror each other.
+    #[test]
+    fn scaffold_main_rs_loads_dotenv() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            src.contains("dotenvy::dotenv()"),
+            "scaffold MAIN_RS must load .env via dotenvy at startup"
+        );
+    }
+
+    /// v1.5.0 — scaffold's Cargo.toml template must declare dotenvy as a
+    /// dependency so the new `dotenvy::dotenv()` call in MAIN_RS compiles
+    /// in fresh projects. Pin to the same minor as rustio-cli uses.
+    #[test]
+    fn scaffold_cargo_toml_includes_dotenvy_dep() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "demo").unwrap();
+        let toml = std::fs::read_to_string(dir.join("demo").join("Cargo.toml")).unwrap();
+        assert!(
+            toml.contains("dotenvy = \"0.15\""),
+            "scaffold Cargo.toml must include dotenvy = \"0.15\" — actual:\n{toml}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     // ----- v1.4.2 — project detection + scaffold guards -----------------
 
     fn write_rustio_cargo_toml(at: &Path) {
@@ -1823,6 +1898,7 @@ serde = {{ version = "1", features = ["derive"] }}
 serde_json = "1"
 env_logger = "0.11"
 log = "0.4"
+dotenvy = "0.15"
 "#
         )
     }
@@ -1896,6 +1972,9 @@ mod apps;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Load .env from the current directory if present. Silent on failure —
+    // .env is optional; production deploys typically use real env vars.
+    let _ = dotenvy::dotenv();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let db_url = std::env::var("DATABASE_URL")
@@ -1916,6 +1995,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("  * run `docker compose up -d` if using the repo dev stack");
             eprintln!();
             eprintln!("Original error: {e}");
+            eprintln!();
+            eprintln!("For a step-by-step diagnosis, run: rustio doctor");
             std::process::exit(1);
         }
     };

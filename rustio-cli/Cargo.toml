@@ -29,3 +29,9 @@ sqlx = { version = "0.8", default-features = false, features = [
     "postgres",
     "macros",
 ] }
+# v1.5.0 — `rustio doctor` only. dotenvy mirrors what the scaffold's
+# MAIN_RS does at runtime (so doctor reads the same .env). url parses
+# DATABASE_URL into host/port/user/password/dbname for the TCP probe
+# and the password-masked render.
+dotenvy = "0.15"
+url = "2"
