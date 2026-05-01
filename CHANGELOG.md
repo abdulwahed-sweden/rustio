@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.5.0] - 2026-05-01
+
+### Added
+
+- **`rustio doctor`** — pre-flight diagnostics for first-run setup. Five read-only checks: project root, `DATABASE_URL`, PostgreSQL TCP reachability, PostgreSQL connection (via `SELECT 1`), Meilisearch reachability. Distinguishes auth failure / missing role / missing database / insufficient privileges via SQLSTATE codes (`28P01`, `28000`, `3D000`, `42501`) with a tailored fix recipe per case.
+- **Three result states:** `READY ✓`, `READY (DEGRADED) ⚠` (warnings only), and `NOT READY`. Green and degraded states append `Next: cargo run` so beginners always know the next command. Exit 0 for READY/DEGRADED, exit 1 for NOT READY.
+- **`--quiet` / `--verbose` / `--no-color`** flags on `rustio doctor`. Honors the `NO_COLOR` env var convention.
+- **`.env` loading in scaffolded projects.** New projects' `MAIN_RS` now calls `dotenvy::dotenv().ok()` at startup, so `cp .env.example .env` actually works (this was a hidden first-run trap pre-1.5.0).
+
+### Changed
+
+- Scaffold's DB-failure banner now ends with *"For a step-by-step diagnosis, run: rustio doctor"* — discoverability without gating `cargo run` on doctor.
+- Generated project `Cargo.toml` template adds `dotenvy = "0.15"` so the new `.env` loading compiles in fresh projects.
+
+### Notes
+
+- No `rustio-core` or `rustio-macros` changes — patch on `rustio-cli` only. Existing v1.4.x consumers upgrade by `cargo install rustio-cli`.
+- PostgreSQL remains the only supported backend (per project policy).
+- Doctor is read-only by contract — never creates databases, never runs migrations, never mutates `.env`. Doctor diagnoses; the user executes.
+
 ## [1.4.2] - 2026-05-01
 
 ### Fixed
