@@ -347,6 +347,101 @@ Wholesale writes that bypass the per-pair helpers
 (`add_user_to_group` / `remove_user_from_group`) must call
 `invalidate_user_cache(user_id)` explicitly — see Phase 7a/0.5/sec3.
 
+## User profile (Phase 10)
+
+Every project gets a built-in user-profile page at
+`GET /admin/users/:id` without writing a handler, route, or template.
+The page renders four tabs (Overview / Activity / Permissions /
+Sessions) using the splitview / tabs / timeline / show-grid /
+stat-strip vocabulary from `admin/base.html`. Phase 10 ships in
+three sub-phases:
+
+- **`/a`** — additive schema migration. `rustio_users` gains
+  `full_name`, `locale`, `timezone` (all `TEXT NULL`); `rustio_sessions`
+  gains `ip`, `user_agent` (both `TEXT NULL`). Plus the public
+  read-only `auth::UserProfile` struct (no `password_hash`) and its
+  `auth::load_user_profile(db, user_id)` constructor.
+- **`/b`** — built-in handler in `admin/builtin.rs::show_user_view`,
+  built-in template at `assets/templates/admin/user_view.html`. Tab
+  routing via `?tab=overview|activity|permissions|sessions`; activity
+  tab paginates 50/page via `?tab=activity&page=N`. Tab links strip
+  `&page`; only the pager preserves it. Inline Delete on the show
+  page was removed in `/b` — destructive ops live exclusively at
+  `/admin/users/:id/delete` with their own confirm flow.
+- **`/c`** — extension mechanism. Projects register a single closure
+  on `Admin` to contribute extra sections; the framework template
+  defines `{% block project_user_fields %}` whose default body
+  renders those sections, so zero-config projects render nothing
+  and projects that want full markup control override the block.
+
+### Extending the profile page
+
+For the common case (key-value rows in a labeled section), register
+a closure on the `Admin` builder:
+
+```rust
+use rustio_core::admin::{Admin, UserProfileRow, UserProfileSection};
+
+let admin = Admin::new()
+    .model_with_search::<Post>(indexer.clone())
+    .user_profile_extension(|_db, user| Box::pin(async move {
+        Ok(vec![UserProfileSection {
+            label: "Halal certification".into(),
+            rows: vec![
+                UserProfileRow {
+                    label: "Certified by".into(),
+                    value: "ICCV Halal Authority".into(),
+                },
+                UserProfileRow {
+                    label: "License #".into(),
+                    value: "HC-2025-0042".into(),
+                },
+            ],
+        }])
+    }));
+```
+
+The closure receives `(Db, auth::UserProfile)` (both owned —
+`Db` is cheap to clone, `UserProfile` is small) and returns
+`Result<Vec<UserProfileSection>>`. It's invoked on every render of
+the Overview tab; other tabs skip the call. The `UserProfile`
+struct deliberately excludes `password_hash` so extensions cannot
+leak credential material. Real projects typically do a SQL query
+against a project-specific table here (`halalops` joins on
+`halal_certifications`, a school admin joins on `enrollments`) —
+the `Db` handle is exactly the framework pool used by the rest
+of the request.
+
+### Going beyond key-value rows
+
+When a project needs richer layout (a chart, a status grid, a chip
+list with badges), the closure isn't expressive enough. In that
+case, drop a project template at
+`templates/admin/user_view.html`:
+
+```jinja
+{% extends "admin/base.html" %}
+{% block project_user_fields %}
+    {# arbitrary HTML — has access to `user`, `project_fields`, and
+       every other context variable the framework renders. #}
+    <h2 style="margin-top: 32px;">Restaurant assignments</h2>
+    <ul class="chips">
+        {% for r in user.assigned_restaurants %}
+        <li class="chip">{{ r.name }}</li>
+        {% endfor %}
+    </ul>
+{% endblock %}
+```
+
+The closure and the template-block override aren't mutually
+exclusive — the closure can pre-compute data the override consumes
+via `project_fields` or via a richer custom context variable
+threaded through a project-side handler.
+
+The reference example is in `examples/blog/src/main.rs` — a minimal
+two-row "Blog account" section computed from `UserProfile` alone,
+no extra schema.
+
 ## What's deliberately small
 
 - The HTTP layer knows HTTP/1.1 only (`hyper::server::conn::http1`).

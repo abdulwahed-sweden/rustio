@@ -15,6 +15,45 @@ type CreateResult<'a> =
 type UpdateResult<'a> =
     Pin<Box<dyn Future<Output = Result<std::result::Result<(), Vec<String>>>> + Send + 'a>>;
 
+// ---------------------------------------------------------------------------
+// Phase 10/c — User profile extension API
+// ---------------------------------------------------------------------------
+
+/// One labeled section rendered in the project-extension area of the
+/// built-in user profile page (admin/user_view.html — `{% block
+/// project_user_fields %}`). A project's extension closure returns
+/// `Vec<UserProfileSection>` so it can contribute multiple disjoint
+/// areas (e.g. "Halal certification" + "Restaurant assignments") in
+/// a single registration.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UserProfileSection {
+    pub label: String,
+    pub rows: Vec<UserProfileRow>,
+}
+
+/// One key-value row inside a [`UserProfileSection`]. Both fields are
+/// `String` so projects can format whatever shape they need (numbers,
+/// dates, comma-joined lists). Rendered escaped — pass plain text;
+/// for arbitrary HTML, projects override the template block instead.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UserProfileRow {
+    pub label: String,
+    pub value: String,
+}
+
+/// The boxed-closure shape stored on `Admin`. `pub(crate)` because
+/// projects use the generic [`Admin::user_profile_extension`] builder
+/// method and never have to name this directly.
+pub(crate) type UserProfileExtensionFn = Arc<
+    dyn Fn(Db, crate::auth::UserProfile) -> UserProfileExtensionFuture
+        + Send
+        + Sync
+        + 'static,
+>;
+
+pub(crate) type UserProfileExtensionFuture =
+    Pin<Box<dyn Future<Output = Result<Vec<UserProfileSection>>> + Send + 'static>>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FieldType {
@@ -217,6 +256,10 @@ impl Default for SiteBranding {
 pub struct Admin {
     pub(crate) entries: Vec<AdminEntry>,
     pub(crate) site_branding: SiteBranding,
+    /// Phase 10/c — optional project-supplied closure that contributes
+    /// extra sections to the built-in user profile page. `None` for the
+    /// zero-config baseline.
+    pub(crate) user_profile_ext: Option<UserProfileExtensionFn>,
 }
 
 impl Default for Admin {
@@ -235,6 +278,7 @@ impl Admin {
         Self {
             entries: vec![core_user_entry()],
             site_branding: SiteBranding::default(),
+            user_profile_ext: None,
         }
     }
 
@@ -295,6 +339,46 @@ impl Admin {
 
     pub fn entries(&self) -> &[AdminEntry] {
         &self.entries
+    }
+
+    /// Phase 10/c — register a project-specific extension that contributes
+    /// extra sections to the built-in user profile page. The closure is
+    /// invoked on every render of `GET /admin/users/:id` (Overview tab);
+    /// it receives the `Db` handle and the loaded [`crate::auth::UserProfile`]
+    /// (no `password_hash`) and returns a `Vec<UserProfileSection>`.
+    /// Sections render in the order returned, immediately after the core
+    /// profile show-grid.
+    ///
+    /// Zero-config baseline: don't call this method, and the extension area
+    /// stays empty. Projects that need richer layout than key-value rows
+    /// override the `{% block project_user_fields %}` template block in
+    /// `templates/admin/user_view.html` (extending `admin/base.html`).
+    ///
+    /// ```ignore
+    /// let admin = Admin::new()
+    ///     .user_profile_extension(|_db, user| Box::pin(async move {
+    ///         Ok(vec![rustio_core::admin::UserProfileSection {
+    ///             label: "Account".into(),
+    ///             rows: vec![rustio_core::admin::UserProfileRow {
+    ///                 label: "Display name".into(),
+    ///                 value: user.full_name.unwrap_or(user.email),
+    ///             }],
+    ///         }])
+    ///     }));
+    /// ```
+    pub fn user_profile_extension<F, Fut>(mut self, ext: F) -> Self
+    where
+        F: Fn(Db, crate::auth::UserProfile) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Vec<UserProfileSection>>> + Send + 'static,
+    {
+        self.user_profile_ext = Some(Arc::new(move |db, user| Box::pin(ext(db, user))));
+        self
+    }
+
+    /// Internal accessor — handlers fetch the registered extension
+    /// closure (if any) here.
+    pub(crate) fn user_profile_ext(&self) -> Option<&UserProfileExtensionFn> {
+        self.user_profile_ext.as_ref()
     }
 
     pub fn find(&self, admin_name: &str) -> Option<&AdminEntry> {

@@ -353,6 +353,7 @@ mod tests {
             "activity_total_pages": 1,
             "permissions": [],
             "sessions": [],
+            "project_fields": [],
             "can_edit": true,
         })
     }
@@ -543,6 +544,48 @@ mod tests {
             count_for(r#"href="/admin/users/7/edit""#),
             0,
             "list rows must NOT link to /edit anymore — that lives behind the view"
+        );
+    }
+
+    /// Phase 10/c — when the project registers a `user_profile_extension`,
+    /// the closure's `Vec<UserProfileSection>` lands in `project_fields`
+    /// and the default `{% block project_user_fields %}` renders each
+    /// section as a labeled show-grid. Empty `project_fields` must
+    /// produce no extra markup — no orphan headings, no empty divs.
+    #[test]
+    fn user_view_overview_renders_project_fields_section() {
+        let t = Templates::new(None).unwrap();
+        let mut ctx = view_ctx_base();
+        ctx["project_fields"] = serde_json::json!([
+            {
+                "label": "Halal certification",
+                "rows": [
+                    { "label": "Certified by", "value": "ICCV Halal Authority" },
+                    { "label": "License #",    "value": "HC-2025-0042" },
+                ],
+            },
+        ]);
+        let body = t.render("admin/user_view.html", &ctx).unwrap();
+
+        assert!(body.contains("Halal certification"), "section label must render");
+        assert!(body.contains("Certified by"));
+        assert!(body.contains("ICCV Halal Authority"));
+        assert!(body.contains("License #"));
+        assert!(body.contains("HC-2025-0042"));
+    }
+
+    /// Phase 10/c — empty project_fields must produce no extra section
+    /// markup. Zero-config projects (no extension registered) get a
+    /// clean Overview tab with no orphan headings.
+    #[test]
+    fn user_view_overview_omits_extension_when_project_fields_empty() {
+        let t = Templates::new(None).unwrap();
+        let body = t.render("admin/user_view.html", &view_ctx_base()).unwrap();
+        // Fixture has project_fields=[] — no project label should appear.
+        // Spot-check a few labels that appear only if any section rendered.
+        assert!(
+            !body.contains("Halal certification"),
+            "no extension means no project section heading"
         );
     }
 

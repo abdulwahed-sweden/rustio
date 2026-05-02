@@ -20,6 +20,7 @@ rule).
 | `PHASE7a-0_5.md` | 7a/0.5 | Authorization, demo users, view-first navigation (12 commits) |
 | `PHASE7a-2.md` | 7a/2 | Admin redesign — Tailwind build pipeline + sidebar + Inter + lucide icons (5 commits) |
 | `PHASE1-ux.md` | 1 (UX) | Admin UX stabilization — auto timestamps, form polish, empty states |
+| `PHASE10.md` | 10 (a/b/c) | Built-in user profile page — schema, handler+template, extension closure (3 commits) |
 
 Phases 2 → 9.1 ship **without** a separate `PHASE*.md` per
 sub-phase. Each sub-phase's commit message is the authoritative

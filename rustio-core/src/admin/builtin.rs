@@ -416,6 +416,13 @@ struct UserViewCtx {
     /// Sessions tab payload. Empty unless `tab == "sessions"`.
     sessions: Vec<SessionItem>,
 
+    /// Phase 10/c — sections contributed by the project's
+    /// [`Admin::user_profile_extension`] closure, if registered.
+    /// Rendered in the Overview tab via the
+    /// `{% block project_user_fields %}` template block. Empty when
+    /// no extension is registered or `tab != "overview"`.
+    project_fields: Vec<super::types::UserProfileSection>,
+
     /// Edit button visibility. Administrator sessions always allow it;
     /// future tiers may not.
     can_edit: bool,
@@ -551,6 +558,18 @@ pub(crate) async fn show_user_view(
         .await
         .unwrap_or(0);
 
+    // Phase 10/c — call the project-registered extension closure (if any)
+    // only on the Overview tab. Other tabs don't render the extension
+    // section, so we skip the work to keep tab switches snappy.
+    let project_fields = if tab_str == "overview" {
+        match ctx.admin.user_profile_ext() {
+            Some(ext) => ext(ctx.db.clone(), profile.clone()).await?,
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+
     let role_label = profile.role.label().to_string();
     let display_name = profile
         .full_name
@@ -601,6 +620,7 @@ pub(crate) async fn show_user_view(
         activity_total_pages,
         permissions,
         sessions,
+        project_fields,
         can_edit: true,
     };
     let body = ctx.templates.render("admin/user_view.html", &view)?;

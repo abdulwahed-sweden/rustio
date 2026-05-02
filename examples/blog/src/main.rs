@@ -86,9 +86,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // here — the blog example IS the framework demo, so default RustIO
     // branding is exactly what we want. Future projects (tolkhuset etc.)
     // copy this line and pass their own values instead.
+    // Phase 10/c — example registration of a project-supplied user-profile
+    // extension. The closure receives the `Db` handle and a loaded
+    // `auth::UserProfile` (no `password_hash` — extensions never see
+    // credential material) and returns a `Vec<UserProfileSection>`. Each
+    // section becomes a labeled show-grid in the Overview tab, immediately
+    // below the core profile. Projects that need richer markup override
+    // the `{% block project_user_fields %}` template block instead.
+    //
+    // For a real project this would query a project-specific table —
+    // halalops would join on its `halal_certifications` table and surface
+    // licence numbers; a school admin would surface advisor + cohort.
+    // Here we just compute two cheap facts from `UserProfile` itself so
+    // the demo wires end-to-end without dragging in an extra schema.
+    use rustio_core::admin::{UserProfileRow, UserProfileSection};
     let admin = Admin::new()
         .site_branding(SiteBranding::default())
-        .model_with_search::<apps::posts::Post>(indexer.clone());
+        .model_with_search::<apps::posts::Post>(indexer.clone())
+        .user_profile_extension(|_db, user| {
+            Box::pin(async move {
+                let display_name = user
+                    .full_name
+                    .clone()
+                    .unwrap_or_else(|| user.email.clone());
+                Ok(vec![UserProfileSection {
+                    label: "Blog account".into(),
+                    rows: vec![
+                        UserProfileRow {
+                            label: "Display name".into(),
+                            value: display_name,
+                        },
+                        UserProfileRow {
+                            label: "Joined".into(),
+                            value: user.created_at.format("%B %Y").to_string(),
+                        },
+                    ],
+                }])
+            })
+        });
     admin.seed_permissions(&db).await?;
 
     // Phase 7a/0.5/c+d — when RUSTIO_DEMO_MODE=1 is set, seed the six

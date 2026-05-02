@@ -276,11 +276,25 @@
             </div>
 
             {# ── Phase 10/c extension point ─────────────────────────────
-               Projects override this block in `templates/admin/user_view.html`
-               (extending `admin/base.html`'s parent). The default content
-               is empty so a project that registers nothing renders just
-               the core profile, no orphan section heading. ── #}
-            {% block project_user_fields %}{% endblock %}
+               Default body renders any `project_fields` (Vec<UserProfileSection>)
+               returned by the closure registered via
+               `Admin::user_profile_extension`. A project with no extension
+               registered renders nothing — no orphan headings, no empty
+               <div>. Projects that need richer markup than key-value rows
+               override this block in their own `templates/admin/user_view.html`. #}
+            {% block project_user_fields %}
+                {% for section in project_fields %}
+                <h2 style="margin-top: 32px;">{{ section.label }}</h2>
+                <div class="show-grid">
+                    {% for row in section.rows %}
+                    <div class="show-row">
+                        <div class="show-k">{{ row.label }}</div>
+                        <div class="show-v">{{ row.value }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            {% endblock %}
 
             <h2 style="margin-top: 32px;">Recent activity</h2>
             <ul class="timeline">
