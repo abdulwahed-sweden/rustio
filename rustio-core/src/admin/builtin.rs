@@ -369,110 +369,198 @@ async fn render_user_edit_with_errors(
 // live here — so the edit + delete pages don't have to render
 // profile metadata; they stay focused on the action they perform.
 
-#[derive(Serialize)]
-struct UserViewGroup {
-    name: String,
-    description: String,
-}
-
+/// Phase 10/b — splitview/tabs user-profile context. Replaces the
+/// pre-10/b shape (target_* fields + delete-guard booleans) with a
+/// nested `user` object plus per-tab payloads. The Delete button is
+/// no longer rendered inline; destructive ops live on the separate
+/// `/admin/users/:id/delete` confirm page (which keeps its own
+/// guarding).
 #[derive(Serialize)]
 struct UserViewCtx {
     #[serde(flatten)]
     base: BaseContext,
     page_title: String,
     entries: Vec<SidebarEntry>,
-    target_id: i64,
-    target_email: String,
-    target_role: String,
-    target_is_active: bool,
-    target_is_demo: bool,
-    target_demo_label: Option<String>,
-    target_created_at: String,
-    target_updated_at: String,
-    groups: Vec<UserViewGroup>,
-    /// Direct permission grants (NOT via groups). Empty for the
-    /// common case — direct grants are the rare exception, callers
-    /// usually attach via groups.
-    direct_perms: Vec<String>,
-    /// `Identity::user_id == target.id`. Disables the Delete button
-    /// (matches `do_user_delete`'s self-delete guard).
-    is_self: bool,
-    /// `would_orphan_developers(target.id, Some(Role::User))`. Same
-    /// flag the delete confirm page uses.
-    is_last_developer: bool,
-    /// Convenience flag for the template: Administrator sessions
-    /// always have edit perm for built-in user pages, but threading
-    /// the bool through keeps the template free of role logic.
+
+    /// The user being viewed. Pre-formatted for direct display.
+    user: UserViewTarget,
+    /// 50-row list-pane sample. Sorted by `created_at DESC`. Spec note:
+    /// the user-spec asked for `last_seen DESC` with a fallback to
+    /// `created_at DESC` if the cross-table subquery proved costly.
+    /// `last_seen` lives on `rustio_sessions` only, so a `last_seen`
+    /// sort needs a correlated subquery (or LATERAL join) per row;
+    /// `/b` ships the cheaper single-table sort to keep the list-pane
+    /// fast. A follow-up can switch once the cost is measured.
+    users: Vec<UserListItem>,
+    total: i64,
+
+    /// Counts always shown on the tab bar.
+    activity_count: i64,
+    permission_count: i64,
+    session_count: i64,
+
+    /// `"overview" | "activity" | "permissions" | "sessions"`. The
+    /// template branches on this string in the detail-body region.
+    tab: &'static str,
+
+    /// Overview: last 7 events. Activity: 50 events for the current page.
+    /// Empty for permissions/sessions tabs.
+    recent_events: Vec<TimelineEvent>,
+    /// Activity-tab pagination. `page=1` is the default. `total_pages`
+    /// is `1` when there are no events (avoids div-by-zero in the pager).
+    activity_page: i64,
+    activity_total_pages: i64,
+
+    /// Permissions tab payload. Empty unless `tab == "permissions"`.
+    permissions: Vec<PermissionItem>,
+    /// Sessions tab payload. Empty unless `tab == "sessions"`.
+    sessions: Vec<SessionItem>,
+
+    /// Edit button visibility. Administrator sessions always allow it;
+    /// future tiers may not.
     can_edit: bool,
-    /// `!is_self && !is_last_developer`. The template renders the
-    /// Delete button as `<a>` when true, `<span class="disabled">`
-    /// otherwise — same blocking surface as the confirm page, just
-    /// promoted to the navigation row.
-    can_delete: bool,
 }
+
+#[derive(Serialize)]
+struct UserViewTarget {
+    id: i64,
+    email: String,
+    /// Display label; `full_name` if set, else humanized email local-part.
+    full_name: String,
+    /// Raw `full_name` column for the show-grid Full-name row's
+    /// "no value" rendering. Distinct from `full_name` (which always
+    /// has a usable display string).
+    full_name_value: Option<String>,
+    role: String,
+    is_admin: bool,
+    is_developer: bool,
+    is_active: bool,
+    is_demo: bool,
+    demo_label: Option<String>,
+    locale: Option<String>,
+    timezone: Option<String>,
+    created_at_iso: String,
+    last_seen_relative: String,
+    last_login_iso: String,
+    groups: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct UserListItem {
+    id: i64,
+    email: String,
+    full_name: String,
+    is_active: bool,
+    last_seen_relative: String,
+}
+
+#[derive(Serialize)]
+struct TimelineEvent {
+    id: i64,
+    /// `"success" | "info" | "warning" | "error" | "muted"`. Drives
+    /// the dot color in the timeline component.
+    kind: &'static str,
+    /// Already-escaped, ready for `{{ event.message|safe }}`.
+    message: String,
+    timestamp_relative: String,
+    /// Human-readable actor label (e.g. `"user:42"`). Future:
+    /// hyperlinked to the actor's profile.
+    actor: String,
+}
+
+#[derive(Serialize)]
+struct PermissionItem {
+    name: String,
+    /// `"direct"` for `rustio_user_permissions` rows, `"via <Group>"`
+    /// for inheritance.
+    source: String,
+}
+
+#[derive(Serialize)]
+struct SessionItem {
+    /// First 7 chars of the session token; the full token is never
+    /// exposed in the rendered HTML.
+    token_short: String,
+    created_at_iso: String,
+    last_seen_relative: String,
+    ip: Option<String>,
+    user_agent: Option<String>,
+}
+
+const ACTIVITY_PER_PAGE: i64 = 50;
+const OVERVIEW_RECENT_LIMIT: i64 = 7;
+const LIST_PANE_LIMIT: i64 = 50;
 
 pub(crate) async fn show_user_view(
     ctx: &AuthAdminCtx,
     identity: Identity,
     user_id: i64,
     csrf: String,
+    tab: Option<String>,
+    page: i64,
 ) -> Result<Response> {
-    let row = sqlx::query(
-        "SELECT id, email, role, is_active, is_demo, demo_label, \
-                created_at, updated_at \
-         FROM rustio_users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(ctx.db.pool())
-    .await?;
-    let row = row.ok_or_else(|| Error::NotFound(format!("user #{user_id}")))?;
-    let r = Row::from_pg(&row);
+    let profile = auth::load_user_profile(&ctx.db, user_id)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("user #{user_id}")))?;
 
-    // Group memberships for display. Same JOIN shape as
-    // `do_user_edit`'s checkbox seed, but ordered for readable output.
-    let group_rows = sqlx::query(
-        "SELECT g.name, g.description \
-         FROM rustio_groups g \
-         JOIN rustio_user_groups ug ON ug.group_id = g.id \
-         WHERE ug.user_id = $1 \
-         ORDER BY g.name ASC",
-    )
-    .bind(user_id)
-    .fetch_all(ctx.db.pool())
-    .await?;
-    let groups = group_rows
-        .iter()
-        .map(|r| {
-            let r = Row::from_pg(r);
-            Ok(UserViewGroup {
-                name: r.get_string("name")?,
-                description: r.get_string("description")?,
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let groups = load_user_groups(&ctx.db, user_id).await?;
+    let last_seen = load_max_session_ts(&ctx.db, user_id, "last_seen").await;
+    let last_login = load_max_session_ts(&ctx.db, user_id, "created_at").await;
+    let activity_count = load_user_activity_count(&ctx.db, user_id).await;
+    let permission_count = load_user_permission_count(&ctx.db, user_id).await;
+    let session_count = load_user_session_count(&ctx.db, user_id).await;
 
-    // Direct permission grants — explicitly NOT joined through
-    // groups. These are the rare per-user overrides; the template
-    // calls them out so admins can spot drift from group-only policy.
-    let direct_perms: Vec<String> = sqlx::query_scalar(
-        "SELECT p.name \
-         FROM rustio_permissions p \
-         JOIN rustio_user_permissions up ON up.permission_id = p.id \
-         WHERE up.user_id = $1 \
-         ORDER BY p.name ASC",
-    )
-    .bind(user_id)
-    .fetch_all(ctx.db.pool())
-    .await?;
+    let tab_str: &'static str = match tab.as_deref() {
+        Some("activity") => "activity",
+        Some("permissions") => "permissions",
+        Some("sessions") => "sessions",
+        _ => "overview",
+    };
+    let page = page.max(1);
 
-    let is_self = identity.user_id == user_id;
-    let is_last_developer =
-        auth::would_orphan_developers(&ctx.db, user_id, Some(Role::User)).await?;
+    let (recent_events, activity_page, activity_total_pages) = match tab_str {
+        "activity" => {
+            let total_pages = (activity_count.max(1) + ACTIVITY_PER_PAGE - 1) / ACTIVITY_PER_PAGE;
+            let total_pages = total_pages.max(1);
+            let page = page.min(total_pages);
+            let offset = (page - 1) * ACTIVITY_PER_PAGE;
+            let evts = load_user_audit(&ctx.db, user_id, ACTIVITY_PER_PAGE, offset).await?;
+            (evts, page, total_pages)
+        }
+        "overview" => {
+            let evts = load_user_audit(&ctx.db, user_id, OVERVIEW_RECENT_LIMIT, 0).await?;
+            (evts, 1, 1)
+        }
+        _ => (Vec::new(), 1, 1),
+    };
 
-    let target_email = r.get_string("email")?;
+    let permissions = if tab_str == "permissions" {
+        load_user_permissions(&ctx.db, user_id).await?
+    } else {
+        Vec::new()
+    };
+    let sessions = if tab_str == "sessions" {
+        load_user_sessions(&ctx.db, user_id).await?
+    } else {
+        Vec::new()
+    };
+
+    let users = load_user_list(&ctx.db, LIST_PANE_LIMIT).await?;
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustio_users")
+        .fetch_one(ctx.db.pool())
+        .await
+        .unwrap_or(0);
+
+    let role_label = profile.role.label().to_string();
+    let display_name = profile
+        .full_name
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| humanize_email(&profile.email));
+
     let view = UserViewCtx {
         base: BaseContext::new(Some(&identity), csrf, &ctx.admin),
-        page_title: format!("User: {target_email}"),
+        page_title: format!("{} — Users", profile.email),
         entries: ctx
             .admin
             .entries()
@@ -480,29 +568,284 @@ pub(crate) async fn show_user_view(
             .filter(|e| !e.core)
             .map(SidebarEntry::from)
             .collect(),
-        target_id: user_id,
-        target_email,
-        target_role: r.get_string("role")?,
-        target_is_active: r.get_bool("is_active")?,
-        target_is_demo: r.get_bool("is_demo")?,
-        target_demo_label: r.get_optional_string("demo_label")?,
-        target_created_at: r
-            .get_datetime("created_at")?
-            .format("%Y-%m-%d %H:%M UTC")
-            .to_string(),
-        target_updated_at: r
-            .get_datetime("updated_at")?
-            .format("%Y-%m-%d %H:%M UTC")
-            .to_string(),
-        groups,
-        direct_perms,
-        is_self,
-        is_last_developer,
+        user: UserViewTarget {
+            id: profile.id,
+            email: profile.email.clone(),
+            full_name: display_name,
+            full_name_value: profile.full_name.clone(),
+            role: role_label,
+            is_admin: profile.role.includes(Role::Administrator),
+            is_developer: profile.role.includes(Role::Developer),
+            is_active: profile.is_active,
+            is_demo: profile.is_demo,
+            demo_label: profile.demo_label.clone(),
+            locale: profile.locale.clone(),
+            timezone: profile.timezone.clone(),
+            created_at_iso: profile.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+            last_seen_relative: last_seen
+                .map(render::relative_time)
+                .unwrap_or_else(|| "never".into()),
+            last_login_iso: last_login
+                .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
+                .unwrap_or_else(|| "never".into()),
+            groups,
+        },
+        users,
+        total,
+        activity_count,
+        permission_count,
+        session_count,
+        tab: tab_str,
+        recent_events,
+        activity_page,
+        activity_total_pages,
+        permissions,
+        sessions,
         can_edit: true,
-        can_delete: !is_self && !is_last_developer,
     };
     let body = ctx.templates.render("admin/user_view.html", &view)?;
     Ok(Response::html(body))
+}
+
+// ---------- show_user_view helpers (Phase 10/b) ----------
+
+async fn load_user_groups(db: &Db, user_id: i64) -> Result<Vec<String>> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT g.name FROM rustio_groups g
+         JOIN rustio_user_groups ug ON ug.group_id = g.id
+         WHERE ug.user_id = $1
+         ORDER BY g.name ASC",
+    )
+    .bind(user_id)
+    .fetch_all(db.pool())
+    .await
+    .map_err(|e| Error::Internal(format!("query user groups: {e}")))?;
+    Ok(rows.into_iter().map(|(n,)| n).collect())
+}
+
+async fn load_max_session_ts(db: &Db, user_id: i64, col: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    // `col` is one of "last_seen" / "created_at" — never user input.
+    // String interpolation here is bound to the function's call sites
+    // in this module (no caller passes external data through `col`).
+    let sql = format!("SELECT MAX({col}) FROM rustio_sessions WHERE user_id = $1");
+    sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(&sql)
+        .bind(user_id)
+        .fetch_one(db.pool())
+        .await
+        .ok()
+        .flatten()
+}
+
+async fn load_user_activity_count(db: &Db, user_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM rustio_admin_actions WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(db.pool())
+        .await
+        .unwrap_or(0)
+}
+
+async fn load_user_session_count(db: &Db, user_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM rustio_sessions WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(db.pool())
+        .await
+        .unwrap_or(0)
+}
+
+async fn load_user_permission_count(db: &Db, user_id: i64) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT p.id)
+         FROM rustio_permissions p
+         LEFT JOIN rustio_user_permissions up
+                ON up.permission_id = p.id AND up.user_id = $1
+         LEFT JOIN rustio_group_permissions gp
+                ON gp.permission_id = p.id
+         LEFT JOIN rustio_user_groups ug
+                ON ug.group_id = gp.group_id AND ug.user_id = $1
+         WHERE up.user_id IS NOT NULL OR ug.user_id IS NOT NULL",
+    )
+    .bind(user_id)
+    .fetch_one(db.pool())
+    .await
+    .unwrap_or(0)
+}
+
+async fn load_user_audit(
+    db: &Db,
+    user_id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<TimelineEvent>> {
+    let rows: Vec<(i64, String, String, i64, chrono::DateTime<chrono::Utc>, String)> =
+        sqlx::query_as(
+            "SELECT id, action_type, model_name, object_id, timestamp, summary
+             FROM rustio_admin_actions
+             WHERE user_id = $1
+             ORDER BY timestamp DESC, id DESC
+             LIMIT $2 OFFSET $3",
+        )
+        .bind(user_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(db.pool())
+        .await
+        .map_err(|e| Error::Internal(format!("query audit: {e}")))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(id, action, model, obj, ts, summary)| TimelineEvent {
+            id,
+            kind: match action.as_str() {
+                "create" => "success",
+                "delete" => "error",
+                "update" => "info",
+                _ => "muted",
+            },
+            message: format!(
+                "<strong>{}</strong> on {} #{}",
+                html_escape(&summary),
+                html_escape(&model),
+                obj,
+            ),
+            timestamp_relative: render::relative_time(ts),
+            actor: format!("user:{user_id}"),
+        })
+        .collect())
+}
+
+async fn load_user_permissions(db: &Db, user_id: i64) -> Result<Vec<PermissionItem>> {
+    // Direct grants → source = "direct".
+    let direct: Vec<(String,)> = sqlx::query_as(
+        "SELECT p.name
+         FROM rustio_permissions p
+         JOIN rustio_user_permissions up ON up.permission_id = p.id
+         WHERE up.user_id = $1
+         ORDER BY p.name ASC",
+    )
+    .bind(user_id)
+    .fetch_all(db.pool())
+    .await
+    .map_err(|e| Error::Internal(format!("query direct perms: {e}")))?;
+
+    // Inherited via groups → source = "via <Group name>".
+    let inherited: Vec<(String, String)> = sqlx::query_as(
+        "SELECT p.name, g.name
+         FROM rustio_permissions p
+         JOIN rustio_group_permissions gp ON gp.permission_id = p.id
+         JOIN rustio_groups g ON g.id = gp.group_id
+         JOIN rustio_user_groups ug ON ug.group_id = g.id
+         WHERE ug.user_id = $1
+         ORDER BY p.name ASC, g.name ASC",
+    )
+    .bind(user_id)
+    .fetch_all(db.pool())
+    .await
+    .map_err(|e| Error::Internal(format!("query inherited perms: {e}")))?;
+
+    // Merge: a permission can be both direct AND via a group. We list
+    // each (perm, source) row separately so admins can see all sources.
+    // Order: direct first (rare, important to surface), then inherited.
+    let mut out: Vec<PermissionItem> = Vec::with_capacity(direct.len() + inherited.len());
+    for (name,) in direct {
+        out.push(PermissionItem { name, source: "direct".into() });
+    }
+    for (name, group) in inherited {
+        out.push(PermissionItem { name, source: format!("via {group}") });
+    }
+    Ok(out)
+}
+
+async fn load_user_sessions(db: &Db, user_id: i64) -> Result<Vec<SessionItem>> {
+    type SessionRow = (
+        String,
+        chrono::DateTime<chrono::Utc>,
+        chrono::DateTime<chrono::Utc>,
+        Option<String>,
+        Option<String>,
+    );
+    let rows: Vec<SessionRow> = sqlx::query_as(
+        "SELECT token, created_at, last_seen, ip, user_agent
+         FROM rustio_sessions
+         WHERE user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(db.pool())
+    .await
+    .map_err(|e| Error::Internal(format!("query sessions: {e}")))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(token, created_at, last_seen, ip, user_agent)| {
+            let token_short: String = token.chars().take(7).collect();
+            SessionItem {
+                token_short,
+                created_at_iso: created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+                last_seen_relative: render::relative_time(last_seen),
+                ip,
+                user_agent,
+            }
+        })
+        .collect())
+}
+
+async fn load_user_list(db: &Db, limit: i64) -> Result<Vec<UserListItem>> {
+    let rows: Vec<(i64, String, Option<String>, bool)> = sqlx::query_as(
+        "SELECT id, email, full_name, is_active
+         FROM rustio_users
+         ORDER BY created_at DESC
+         LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(db.pool())
+    .await
+    .map_err(|e| Error::Internal(format!("query user list: {e}")))?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for (id, email, full_name, is_active) in rows {
+        let last_seen = load_max_session_ts(db, id, "last_seen").await;
+        let display = full_name
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| humanize_email(&email));
+        out.push(UserListItem {
+            id,
+            email,
+            full_name: display,
+            is_active,
+            last_seen_relative: last_seen
+                .map(render::relative_time)
+                .unwrap_or_else(|| "—".into()),
+        });
+    }
+    Ok(out)
+}
+
+fn humanize_email(email: &str) -> String {
+    let local = email.split('@').next().unwrap_or(email);
+    let humanized: String = local
+        .split(['.', '_', '-'])
+        .filter(|p| !p.is_empty())
+        .map(|p| {
+            let mut chars = p.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    if humanized.is_empty() {
+        email.to_string()
+    } else {
+        humanized
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 // ---------- User delete (Phase 7a/0.5/f) ----------

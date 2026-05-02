@@ -1,131 +1,310 @@
 {% extends "admin/base.html" %}
 
-{% block bodyclass %}user-view{% endblock %}
+{% block title %}{{ user.email }} — Users | {{ site_title }}{% endblock %}
 
 {% block breadcrumbs %}
 <div class="crumbs">
     <a href="/admin">Home</a>
-    <span class="sep">›</span>
+    <span class="sep">/</span>
     <a href="/admin/users">Users</a>
-    <span class="sep">›</span>
-    <span class="current">{{ target_email }}</span>
+    <span class="sep">/</span>
+    <span class="current">{{ user.full_name }}</span>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="page-tools">
-    <a href="/admin/users" class="btn-secondary">
-        {{ icon("arrow-left", class="w-4 h-4") }} Back to users
-    </a>
-    <span class="spacer"></span>
-    {% if can_edit %}
-    <a href="/admin/users/{{ target_id }}/edit" class="btn-primary">
-        {{ icon("pencil", class="w-4 h-4") }} Edit
-    </a>
-    {% endif %}
-    {% if can_delete %}
-    <a href="/admin/users/{{ target_id }}/delete" class="btn-danger">
-        {{ icon("trash", class="w-4 h-4") }} Delete
-    </a>
-    {% else %}
-    {# The literal `btn-danger` classname is asserted by the
-       `user_view_is_self_disables_delete_as_span` and
-       `user_view_last_developer_disables_delete` render tests in
-       templates.rs — keep it here as the contract marker. The
-       `.btn-disabled` rule (defined later in base.html, so it
-       wins on cascade order) supplies the muted v14 visual on top. #}
-    <span class="btn-danger btn-disabled" title="{% if is_self %}Cannot delete your own account while signed in.{% else %}Cannot delete the last active developer.{% endif %}">
-        {{ icon("trash", class="w-4 h-4") }} Delete
-    </span>
-    {% endif %}
-</div>
 
 <div class="page-head">
-    <div class="flex items-center gap-3">
-        <span class="avatar">{{ target_email[0:1]|upper }}</span>
-        <div>
-            <h1>{{ target_email }}</h1>
-            <p class="lede">User profile</p>
-        </div>
+    <div>
+        <h1>Users</h1>
+        <p class="lede">Manage accounts, roles, and active sessions.</p>
+    </div>
+    <div class="actions">
+        <a href="/admin/users/new" class="btn-primary">
+            {{ icon("plus", class="w-4 h-4") }}
+            New user
+        </a>
     </div>
 </div>
 
-<div class="edit-grid">
-<div>
+<div class="splitview">
 
-<div class="card">
-    <div class="card-head"><h2>Identity</h2></div>
-    <div class="card-body">
-        <div class="kv">
-            <div class="kv-row">
-                <span class="k">Email</span>
-                <span class="v">{{ target_email }}</span>
+    {# ── List pane — 50 most-recent users; current selection highlighted. ── #}
+    <aside class="pane-list">
+        <div class="pane-head">
+            <div class="pane-title">
+                <h2>All users</h2>
+                <span class="count">{{ users|length }} of {{ total }}</span>
             </div>
-            <div class="kv-row">
-                <span class="k">Role</span>
-                <span class="v"><span class="badge-{{ target_role == 'developer' and 'danger' or (target_role == 'administrator' and 'danger' or (target_role == 'supervisor' and 'warning' or (target_role == 'staff' and 'neutral' or 'success'))) }}">{{ target_role }}</span></span>
+            {# TODO(/b): client-side search wiring. Decorative in /b — input
+               carries `data-search-input` so the global Esc handler clears
+               it, but no live filter is attached yet. Wire fuzzy filter
+               in a follow-up phase. #}
+            <div class="pane-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"/>
+                    <line x1="20" y1="20" x2="16.5" y2="16.5"/>
+                </svg>
+                <input type="search" placeholder="Search users..." data-search-input>
             </div>
-            <div class="kv-row">
-                <span class="k">Status</span>
-                <span class="v">
-                    {% if target_is_active %}
-                    <span class="badge-success">Active</span>
+        </div>
+
+        <div class="pane-rows">
+            {% for u in users %}
+            <a href="/admin/users/{{ u.id }}"
+               class="row {% if u.id == user.id %}is-active{% endif %}">
+                <div class="row-body">
+                    <div class="row-name">{{ u.full_name }}</div>
+                    <div class="row-meta">{{ u.email }}</div>
+                </div>
+                <div class="row-side">
+                    {% if u.is_active %}
+                    <span class="badge-v14 badge-yes-v14">Active</span>
                     {% else %}
-                    <span class="badge-neutral">Inactive (cannot sign in)</span>
+                    <span class="badge-v14 badge-no-v14">Inactive</span>
                     {% endif %}
-                </span>
+                    <span class="row-time">{{ u.last_seen_relative }}</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+
+        <div class="pane-foot">
+            <span>Showing 1–{{ users|length }} of {{ total }}</span>
+        </div>
+    </aside>
+
+    {# ── Detail pane ── #}
+    <section class="pane-detail">
+        <div class="detail-head">
+            <div class="detail-head-row">
+                <span>Users · {{ user.id }}</span>
+                <div class="actions">
+                    {% if can_edit %}
+                    <a href="/admin/users/{{ user.id }}/edit" class="btn-secondary">Edit</a>
+                    {% endif %}
+                </div>
             </div>
-            {% if target_is_demo %}
-            <div class="kv-row">
-                <span class="k">Demo</span>
-                <span class="v"><span class="badge-warning">{{ target_demo_label or "Demo account" }}</span></span>
+            <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;">
+                <span class="detail-id">{{ user.id }}</span>
+                {% if user.is_developer %}<span class="role developer">Developer</span>
+                {% elif user.is_admin %}<span class="role administrator">Admin</span>
+                {% else %}<span class="role">{{ user.role }}</span>{% endif %}
+                {% if user.is_active %}
+                <span class="badge-v14 badge-yes-v14">Active</span>
+                {% else %}
+                <span class="badge-v14 badge-no-v14">Inactive</span>
+                {% endif %}
+                {% if user.is_demo %}
+                <span class="badge-v14" style="background: var(--yellow-50); color: var(--yellow-800); box-shadow: inset 0 0 0 1px rgba(133, 77, 14, 0.2);">DEMO{% if user.demo_label %} · {{ user.demo_label }}{% endif %}</span>
+                {% endif %}
+            </div>
+            <h1 class="detail-name">{{ user.full_name }}</h1>
+            <p class="detail-sub">{{ user.email }} · joined {{ user.created_at_iso }}</p>
+        </div>
+
+        {# ── Tabs — clicking a tab strips ?page; only the pager preserves it. ── #}
+        <ul class="tabs tabs--compact">
+            <li><a href="?tab=overview"{% if tab == "overview" %} aria-current="page"{% endif %}>Overview</a></li>
+            <li><a href="?tab=activity"{% if tab == "activity" %} aria-current="page"{% endif %}>
+                Activity
+                <span class="tab-count">{{ activity_count }}</span>
+            </a></li>
+            <li><a href="?tab=permissions"{% if tab == "permissions" %} aria-current="page"{% endif %}>
+                Permissions
+                <span class="tab-count">{{ permission_count }}</span>
+            </a></li>
+            <li><a href="?tab=sessions"{% if tab == "sessions" %} aria-current="page"{% endif %}>
+                Sessions
+                <span class="tab-count">{{ session_count }}</span>
+            </a></li>
+        </ul>
+
+        <div class="detail-body">
+
+            {% if tab == "activity" %}
+            {# ── Activity tab — paginated audit log, 50/page. ── #}
+            <h2>Activity</h2>
+            <p class="sub">All admin actions performed by this user, newest first.</p>
+            <ul class="timeline" style="margin-top: 16px;">
+                {% for event in recent_events %}
+                <li class="tl-{{ event.kind }}">
+                    <span class="tl-text">{{ event.message|safe }}</span>
+                    <span class="tl-meta">
+                        {{ event.timestamp_relative }} · <code>{{ event.actor }}</code>
+                    </span>
+                </li>
+                {% else %}
+                <li class="tl-muted">
+                    <span class="tl-text">No activity recorded.</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% if activity_total_pages > 1 %}
+            <div class="pager" style="margin-top: 24px;">
+                <span class="info">Page <b>{{ activity_page }}</b> of <b>{{ activity_total_pages }}</b></span>
+                <div class="nav">
+                    {% if activity_page > 1 %}
+                    <a href="?tab=activity&page={{ activity_page - 1 }}">← Prev</a>
+                    {% endif %}
+                    <span class="this">{{ activity_page }}</span>
+                    {% if activity_page < activity_total_pages %}
+                    <a href="?tab=activity&page={{ activity_page + 1 }}">Next →</a>
+                    {% endif %}
+                </div>
             </div>
             {% endif %}
+
+            {% elif tab == "permissions" %}
+            {# ── Permissions tab — direct + inherited; source chip on each. ── #}
+            <h2>Permissions</h2>
+            <p class="sub">All effective permissions, including those inherited via group membership.</p>
+            {% if permissions %}
+            <div class="perm-grid" style="margin-top: 16px;">
+                {% for perm in permissions %}
+                <div class="perm-tile">
+                    <code style="background: none; padding: 0; flex: 1;">{{ perm.name }}</code>
+                    <span class="chip">{{ perm.source }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty" style="margin-top: 16px;">
+                <h3>No permissions</h3>
+                <p>This user has no direct or inherited permissions.</p>
+            </div>
+            {% endif %}
+
+            {% elif tab == "sessions" %}
+            {# ── Sessions tab — passive list. No revoke button (deferred). ── #}
+            <h2>Sessions</h2>
+            <p class="sub">Sessions for this account. IP and user-agent populate from new sign-ins; rows from before those columns existed show "—".</p>
+            {% if sessions %}
+            <div class="table-wrap" style="margin-top: 16px;">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Created</th>
+                            <th>Last seen</th>
+                            <th>IP</th>
+                            <th>User agent</th>
+                            <th>Token</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in sessions %}
+                        <tr>
+                            <td>{{ s.created_at_iso }}</td>
+                            <td>{{ s.last_seen_relative }}</td>
+                            <td>{% if s.ip %}<code>{{ s.ip }}</code>{% else %}<span class="rio-cell-empty">—</span>{% endif %}</td>
+                            <td>{% if s.user_agent %}<span class="cell-text">{{ s.user_agent }}</span>{% else %}<span class="rio-cell-empty">—</span>{% endif %}</td>
+                            <td><code>{{ s.token_short }}</code></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty" style="margin-top: 16px;">
+                <h3>No active sessions</h3>
+                <p>This user has no current sessions in the database.</p>
+            </div>
+            {% endif %}
+
+            {% else %}
+            {# ── Overview (default) ── #}
+            <div class="stat-strip">
+                <div class="stat-card">
+                    <div class="stat-label">Sessions</div>
+                    <div class="stat-value">{{ session_count }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Activity</div>
+                    <div class="stat-value">{{ activity_count }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Last seen</div>
+                    <div class="stat-value" style="font-size: 16px;">{{ user.last_seen_relative }}</div>
+                </div>
+            </div>
+
+            <h2>Profile</h2>
+
+            <div class="show-grid">
+                <div class="show-row">
+                    <div class="show-k">Full name</div>
+                    <div class="show-v">
+                        {% if user.full_name_value %}{{ user.full_name_value }}
+                        {% else %}<span class="show-v--muted">{{ user.full_name }} (derived from email)</span>{% endif %}
+                    </div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">Email</div>
+                    <div class="show-v"><a href="mailto:{{ user.email }}">{{ user.email }}</a></div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">User ID</div>
+                    <div class="show-v"><code>{{ user.id }}</code></div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">Role</div>
+                    <div class="show-v">{{ user.role }}</div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">Groups</div>
+                    <div class="show-v">
+                        {% if user.groups %}{% for g in user.groups %}<code>{{ g }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+                        {% else %}<span class="show-v--muted">No groups</span>{% endif %}
+                    </div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">Locale</div>
+                    <div class="show-v">{% if user.locale %}<span class="show-v--mono">{{ user.locale }}</span>{% else %}<span class="show-v--muted">—</span>{% endif %}</div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">Timezone</div>
+                    <div class="show-v">{% if user.timezone %}<span class="show-v--mono">{{ user.timezone }}</span>{% else %}<span class="show-v--muted">—</span>{% endif %}</div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">Created</div>
+                    <div class="show-v show-v--mono">{{ user.created_at_iso }}</div>
+                </div>
+                <div class="show-row">
+                    <div class="show-k">Last login</div>
+                    <div class="show-v show-v--mono">{{ user.last_login_iso }}</div>
+                </div>
+            </div>
+
+            {# ── Phase 10/c extension point ─────────────────────────────
+               Projects override this block in `templates/admin/user_view.html`
+               (extending `admin/base.html`'s parent). The default content
+               is empty so a project that registers nothing renders just
+               the core profile, no orphan section heading. ── #}
+            {% block project_user_fields %}{% endblock %}
+
+            <h2 style="margin-top: 32px;">Recent activity</h2>
+            <ul class="timeline">
+                {% for event in recent_events %}
+                <li class="tl-{{ event.kind }}">
+                    <span class="tl-text">{{ event.message|safe }}</span>
+                    <span class="tl-meta">
+                        {{ event.timestamp_relative }} · <code>{{ event.actor }}</code>
+                    </span>
+                </li>
+                {% else %}
+                <li class="tl-muted">
+                    <span class="tl-text">No activity recorded.</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% if activity_count > recent_events|length %}
+            <p style="margin-top: 12px;"><a href="?tab=activity">View all activity →</a></p>
+            {% endif %}
+
+            {% endif %}
+
         </div>
-    </div>
+    </section>
 </div>
 
-<div class="card">
-    <div class="card-head"><h2>Group memberships ({{ groups|length }})</h2></div>
-    <div class="card-body">
-        {% if groups %}
-        <div class="chips">
-            {% for g in groups %}
-            <span class="badge-neutral" title="{{ g.description }}">{{ g.name }}</span>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="muted">No group memberships.</p>
-        {% endif %}
-    </div>
-</div>
-
-{% if direct_perms %}
-<div class="card">
-    <div class="card-head">
-        <h2>Direct permissions ({{ direct_perms|length }})</h2>
-        <p class="sub">Permissions granted directly to this user, outside of group memberships.</p>
-    </div>
-    <div class="card-body">
-        <div class="chips chips--spaced">
-            {% for p in direct_perms %}
-            <code class="code-pill">{{ p }}</code>
-            {% endfor %}
-        </div>
-        <p class="muted">Direct grants bypass the group/role policy and are easy to forget — usually you want to assign perms via a group instead.</p>
-    </div>
-</div>
-{% endif %}
-
-</div>
-
-<aside>
-    <div class="meta">
-        <div class="card-head"><h2>Timeline</h2></div>
-        <div class="row"><span class="k">Created</span><span class="v">{{ target_created_at }}</span></div>
-        <div class="row"><span class="k">Updated</span><span class="v">{{ target_updated_at }}</span></div>
-    </div>
-</aside>
-
-</div>
 {% endblock %}

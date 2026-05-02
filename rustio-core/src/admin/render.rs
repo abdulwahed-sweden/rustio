@@ -324,7 +324,7 @@ fn action_pill_class(action_type: &str) -> &'static str {
     }
 }
 
-fn relative_time(ts: chrono::DateTime<chrono::Utc>) -> String {
+pub(crate) fn relative_time(ts: chrono::DateTime<chrono::Utc>) -> String {
     let now = chrono::Utc::now();
     let delta = now - ts;
     if delta.num_seconds() < 60 {

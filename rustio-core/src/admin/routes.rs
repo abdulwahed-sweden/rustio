@@ -526,7 +526,22 @@ pub fn register_admin_routes(
                 Guard::Redirect(r) => Ok(r),
                 Guard::Allow(ident) => {
                     let id = parse_id(req.param("id"))?;
-                    super::builtin::show_user_view(&ac, ident, id, handlers::csrf_token(&req)).await
+                    // Phase 10/b — `?tab=overview|activity|permissions|sessions`
+                    // selects the detail-pane content; `?page=N` paginates the
+                    // Activity tab. Tab links strip page; pager links preserve
+                    // both. Invalid values fall back silently to defaults.
+                    let q = req.query();
+                    let tab = q.get("tab").map(|s| s.to_string());
+                    let page: i64 = q.get("page").and_then(|s| s.parse().ok()).unwrap_or(1);
+                    super::builtin::show_user_view(
+                        &ac,
+                        ident,
+                        id,
+                        handlers::csrf_token(&req),
+                        tab,
+                        page,
+                    )
+                    .await
                 }
             }
         }

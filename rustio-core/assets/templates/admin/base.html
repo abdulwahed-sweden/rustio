@@ -119,6 +119,72 @@
             --rio-accent-bg:       #fff4ed;
             --rio-accent-border:   #fed7aa;
             --rio-ring:            0 0 0 3px rgba(184,67,26,0.12);
+
+            /* §1.5 — Phase 10/b — Tailwind-UI palette aliases ================
+             * The splitview / tabs / timeline / show-grid / stat-strip
+             * vocabulary was authored against Tailwind v3's `--gray-*` /
+             * `--emerald-*` / status / `--shadow-*` / `--ring-*` / `--rounded-*`
+             * tokens. Preserving those names keeps the structural CSS
+             * verbatim from the original Tailwind UI authoring; emerald
+             * shades alias to `--rio-accent` so the new components inherit
+             * the framework brand instead of bleeding emerald in. Existing
+             * pages don't touch these — they keep using `--rio-*` directly.
+             */
+            --gray-50:        #f9fafb;
+            --gray-100:       #f3f4f6;
+            --gray-200:       #e5e7eb;
+            --gray-300:       #d1d5db;
+            --gray-400:       #9ca3af;
+            --gray-500:       #6b7280;
+            --gray-600:       #4b5563;
+            --gray-700:       #374151;
+            --gray-800:       #1f2937;
+            --gray-900:       #111827;
+
+            --emerald-50:     var(--rio-accent-bg);
+            --emerald-100:    var(--rio-accent-border);
+            --emerald-200:    var(--rio-accent-border);
+            --emerald-500:    var(--rio-accent);
+            --emerald-600:    var(--rio-accent);
+            --emerald-700:    var(--rio-accent);
+            --emerald-800:    var(--rio-accent);
+
+            --green-50:       #f0fdf4;
+            --green-200:      #bbf7d0;
+            --green-600:      #16a34a;
+            --green-700:      #15803d;
+            --green-800:      #166534;
+            --red-50:         #fef2f2;
+            --red-200:        #fecaca;
+            --red-300:        #fca5a5;
+            --red-600:        #dc2626;
+            --red-700:        #b91c1c;
+            --red-800:        #991b1b;
+            --yellow-50:      #fefce8;
+            --yellow-200:     #fef08a;
+            --yellow-700:     #a16207;
+            --yellow-800:     #854d0e;
+            --blue-50:        #eff6ff;
+            --blue-700:       #1d4ed8;
+
+            --shadow-sm:      0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow:         0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+
+            --ring-gray:      inset 0 0 0 1px var(--gray-300);
+            --ring-emerald:   inset 0 0 0 2px var(--rio-accent);
+            --ring-red:       inset 0 0 0 1px var(--red-300);
+            --ring-red-focus: inset 0 0 0 2px var(--red-600);
+            --ring-black-5:   inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+
+            --rounded-sm:     2px;
+            --rounded:        4px;
+            --rounded-md:     6px;
+            --rounded-lg:     8px;
+            --rounded-xl:     12px;
+            --rounded-full:   9999px;
+
+            --font-body:      var(--rio-font-body);
+            --font-mono:      var(--rio-font-mono);
         }
 
         /* §2 — Base / reset =================================================
@@ -1001,6 +1067,420 @@
         .field input[type="date"]::-webkit-calendar-picker-indicator:hover,
         .field input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
             opacity: 1;
+        }
+
+        /* §10b — splitview / tabs / timeline / show-grid / stat-strip ========
+         * Phase 10/b — vocabulary used by the built-in user profile page
+         * (admin/user_view.html). Authored against Tailwind UI's Application
+         * UI patterns; ported verbatim from the original. Variable references
+         * resolve via the §1.5 alias block above — emerald shades alias to
+         * `--rio-accent` so these components inherit the framework brand.
+         * Existing pages don't reference these selectors and aren't affected.
+         */
+
+        /* ─── List / detail split ───────────────────────────────────────── */
+        .splitview {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            background: #ffffff;
+            border-radius: var(--rounded-lg);
+            box-shadow: var(--shadow-sm), var(--ring-black-5);
+            overflow: hidden;
+            margin-bottom: 24px;
+            min-height: 560px;
+        }
+        @media (max-width: 900px) {
+            .splitview { grid-template-columns: 1fr; min-height: 0; }
+        }
+        .splitview .pane-list {
+            border-right: 1px solid var(--gray-200);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        @media (max-width: 900px) {
+            .splitview .pane-list { border-right: 0; border-bottom: 1px solid var(--gray-200); }
+        }
+        .splitview .pane-detail {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            background: #ffffff;
+        }
+
+        .pane-list .pane-head {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--gray-200);
+            background: #ffffff;
+        }
+        .pane-list .pane-head .pane-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .pane-list .pane-head .pane-title h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+        .pane-list .pane-head .pane-title .count {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--gray-500);
+            font-feature-settings: "tnum" 1;
+        }
+        .pane-list .pane-search { position: relative; }
+        .pane-list .pane-search input {
+            display: block;
+            width: 100%;
+            height: 32px;
+            padding: 0 12px 0 32px;
+            background: #ffffff;
+            border: 0;
+            border-radius: var(--rounded-md);
+            font-size: 13px;
+            line-height: 20px;
+            color: var(--gray-900);
+            font-family: inherit;
+            outline: none;
+            box-shadow: var(--shadow-sm), var(--ring-gray);
+            transition: box-shadow 100ms ease;
+        }
+        .pane-list .pane-search input::placeholder { color: var(--gray-400); }
+        .pane-list .pane-search input:focus { box-shadow: var(--ring-emerald); }
+        .pane-list .pane-search svg {
+            position: absolute;
+            top: 50%;
+            left: 10px;
+            transform: translateY(-50%);
+            width: 14px;
+            height: 14px;
+            color: var(--gray-400);
+            pointer-events: none;
+        }
+
+        .pane-list .pane-rows { flex: 1; overflow-y: auto; }
+        .pane-list .row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-top: 1px solid var(--gray-200);
+            cursor: pointer;
+            text-decoration: none;
+            transition: background-color 100ms ease;
+        }
+        .pane-list .row:first-child { border-top: 0; }
+        .pane-list .row:hover { background: var(--gray-50); }
+        .pane-list .row.is-active {
+            background: var(--emerald-50);
+            box-shadow: inset 3px 0 0 0 var(--emerald-600);
+        }
+        .pane-list .row.is-active .row-name { color: var(--emerald-700); }
+        .pane-list .row .row-body { flex: 1; min-width: 0; }
+        .pane-list .row .row-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--gray-900);
+            line-height: 20px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .pane-list .row .row-meta {
+            font-size: 12px;
+            color: var(--gray-500);
+            font-family: var(--font-mono);
+            margin-top: 2px;
+            font-feature-settings: "tnum" 1;
+        }
+        .pane-list .row .row-side {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .pane-list .row .row-time {
+            font-size: 11px;
+            color: var(--gray-400);
+            font-family: var(--font-mono);
+            font-feature-settings: "tnum" 1;
+        }
+
+        .pane-list .pane-foot {
+            padding: 8px 16px;
+            border-top: 1px solid var(--gray-200);
+            background: var(--gray-50);
+            font-size: 12px;
+            color: var(--gray-500);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .pane-detail .detail-head {
+            padding: 20px 32px 16px;
+            border-bottom: 1px solid var(--gray-200);
+            background: #ffffff;
+        }
+        .pane-detail .detail-head-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 12px;
+            color: var(--gray-500);
+            font-family: var(--font-mono);
+            font-feature-settings: "tnum" 1;
+        }
+        .pane-detail .detail-id {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 8px;
+            background: var(--gray-100);
+            color: var(--gray-700);
+            border-radius: var(--rounded);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .pane-detail .detail-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--gray-900);
+            letter-spacing: -0.018em;
+            line-height: 28px;
+            margin: 0 0 4px;
+        }
+        .pane-detail .detail-sub {
+            font-size: 14px;
+            color: var(--gray-500);
+            line-height: 20px;
+        }
+        .pane-detail .detail-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px 32px 32px;
+        }
+
+        /* ─── Tabs (Tailwind UI underlined pattern) ────────────────────── */
+        .tabs {
+            display: flex;
+            gap: 32px;
+            border-bottom: 1px solid var(--gray-200);
+            padding: 0 32px;
+            background: #ffffff;
+            margin: 0;
+            list-style: none;
+            overflow-x: auto;
+        }
+        .tabs.tabs--compact { padding: 0 16px; gap: 24px; }
+        .tabs > a, .tabs > .tab {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 2px;
+            margin-bottom: -1px;
+            font-size: 14px;
+            font-weight: 500;
+            line-height: 20px;
+            color: var(--gray-500);
+            text-decoration: none;
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+            transition: color 100ms ease, border-color 100ms ease;
+            cursor: pointer;
+            background: none;
+        }
+        .tabs > a:hover, .tabs > .tab:hover {
+            color: var(--gray-700);
+            border-bottom-color: var(--gray-300);
+            text-decoration: none;
+        }
+        .tabs > a.is-active, .tabs > .tab.is-active,
+        .tabs > a[aria-current="page"], .tabs > .tab[aria-current="page"] {
+            color: var(--emerald-600);
+            border-bottom-color: var(--emerald-600);
+            font-weight: 600;
+        }
+        .tabs .tab-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 20px;
+            padding: 0 7px;
+            border-radius: var(--rounded-full);
+            background: var(--gray-100);
+            color: var(--gray-700);
+            font-size: 11px;
+            font-weight: 500;
+            line-height: 18px;
+            font-feature-settings: "tnum" 1;
+        }
+        .tabs > .is-active .tab-count,
+        .tabs > [aria-current="page"] .tab-count {
+            background: var(--emerald-50);
+            color: var(--emerald-700);
+        }
+
+        /* ─── Activity timeline (Tailwind UI feed pattern) ─────────────── */
+        .timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+        .timeline::before {
+            content: "";
+            position: absolute;
+            left: 11px;
+            top: 12px;
+            bottom: 12px;
+            width: 1px;
+            background: var(--gray-200);
+        }
+        .timeline > li {
+            position: relative;
+            padding: 0 0 24px 36px;
+            font-size: 14px;
+            color: var(--gray-700);
+            line-height: 20px;
+        }
+        .timeline > li:last-child { padding-bottom: 0; }
+        .timeline > li::before {
+            content: "";
+            position: absolute;
+            left: 6px;
+            top: 4px;
+            width: 12px;
+            height: 12px;
+            border-radius: var(--rounded-full);
+            background: #ffffff;
+            box-shadow: inset 0 0 0 2px var(--gray-300);
+        }
+        .timeline > li.tl-success::before { box-shadow: inset 0 0 0 2px var(--emerald-600); }
+        .timeline > li.tl-info::before    { box-shadow: inset 0 0 0 2px var(--blue-700); }
+        .timeline > li.tl-warning::before { box-shadow: inset 0 0 0 2px var(--yellow-700); }
+        .timeline > li.tl-error::before   { box-shadow: inset 0 0 0 2px var(--red-600); }
+        .timeline > li.tl-muted::before   { box-shadow: inset 0 0 0 2px var(--gray-400); }
+        .timeline .tl-text {
+            color: var(--gray-900);
+            font-weight: 400;
+            line-height: 20px;
+        }
+        .timeline .tl-text strong {
+            font-weight: 600;
+            color: var(--gray-900);
+        }
+        .timeline .tl-text a {
+            color: var(--emerald-600);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .timeline .tl-text a:hover { color: var(--emerald-700); }
+        .timeline .tl-meta {
+            display: block;
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--gray-500);
+            font-family: var(--font-mono);
+            font-feature-settings: "tnum" 1;
+        }
+        .timeline .tl-meta + .tl-meta { margin-top: 0; }
+        .timeline .tl-meta code {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            background: transparent;
+            padding: 0;
+            color: var(--gray-500);
+        }
+
+        /* ─── Show grid (read-only definition list) ────────────────────── */
+        .show-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0;
+            border-top: 1px solid var(--gray-100);
+        }
+        @media (min-width: 640px) {
+            .show-grid { grid-template-columns: 200px 1fr; }
+        }
+        .show-row { display: contents; }
+        .show-row > .show-k,
+        .show-row > .show-v {
+            padding: 12px 0;
+            font-size: 14px;
+            line-height: 24px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+        .show-row:last-child > .show-k,
+        .show-row:last-child > .show-v { border-bottom: 0; }
+        .show-row > .show-k {
+            color: var(--gray-500);
+            font-weight: 500;
+            padding-right: 24px;
+        }
+        .show-row > .show-v {
+            color: var(--gray-900);
+            font-weight: 500;
+        }
+        .show-row > .show-v.show-v--mono {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            color: var(--gray-700);
+            font-weight: 400;
+            font-feature-settings: "tnum" 1;
+        }
+        .show-row > .show-v.show-v--muted {
+            color: var(--gray-500);
+            font-weight: 400;
+            font-style: italic;
+        }
+        .show-row > .show-v code {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            background: var(--gray-100);
+            color: var(--gray-900);
+            padding: 1px 6px;
+            border-radius: var(--rounded);
+        }
+        .show-row > .show-v a {
+            color: var(--emerald-600);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .show-row > .show-v a:hover { color: var(--emerald-700); }
+
+        /* ─── Stat strip (three small cards above the show grid) ──────── */
+        .stat-strip {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+            margin: 0 0 24px;
+        }
+        .stat-card {
+            background: var(--gray-50);
+            border-radius: var(--rounded-lg);
+            padding: 14px 16px;
+            box-shadow: var(--ring-black-5);
+        }
+        .stat-card .stat-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 6px;
+        }
+        .stat-card .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--gray-900);
+            font-family: var(--font-mono);
+            line-height: 28px;
+            letter-spacing: -0.015em;
+            font-feature-settings: "tnum" 1;
         }
     </style>
     {% block extra_head %}{% endblock %}

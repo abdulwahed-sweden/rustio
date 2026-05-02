@@ -318,23 +318,42 @@ mod tests {
     // typos + missing variables without needing postgres.
     // ------------------------------------------------------------------
 
+    /// Phase 10/b — base context fixture for `admin/user_view.html`.
+    /// Matches the `UserViewCtx` shape in `admin/builtin.rs`. Tests
+    /// override individual fields via `ctx[...] = …`.
     fn view_ctx_base() -> serde_json::Value {
         serde_json::json!({
-            "target_id": 42,
-            "target_email": "alice@example.com",
-            "target_role": "staff",
-            "target_is_active": true,
-            "target_is_demo": false,
-            "target_demo_label": null,
-            "target_created_at": "2026-04-25 12:00 UTC",
-            "target_updated_at": "2026-04-25 12:30 UTC",
-            "groups": [],
-            "direct_perms": [],
-            "is_self": false,
-            "is_last_developer": false,
-            "can_edit": true,
-            "can_delete": true,
             "csrf_token": "test-csrf",
+            "user": {
+                "id": 42,
+                "email": "alice@example.com",
+                "full_name": "Alice",
+                "full_name_value": null,
+                "role": "Staff",
+                "is_admin": false,
+                "is_developer": false,
+                "is_active": true,
+                "is_demo": false,
+                "demo_label": null,
+                "locale": null,
+                "timezone": null,
+                "created_at_iso": "2026-04-25 12:00 UTC",
+                "last_seen_relative": "just now",
+                "last_login_iso": "2026-04-25 11:50 UTC",
+                "groups": [],
+            },
+            "users": [],
+            "total": 1,
+            "activity_count": 0,
+            "permission_count": 0,
+            "session_count": 0,
+            "tab": "overview",
+            "recent_events": [],
+            "activity_page": 1,
+            "activity_total_pages": 1,
+            "permissions": [],
+            "sessions": [],
+            "can_edit": true,
         })
     }
 
@@ -376,81 +395,112 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Phase 10/b — Overview tab renders the splitview shell + show-grid
+    /// profile + recent-activity timeline. Groups appear as `<code>` chips
+    /// in the show-grid Groups row.
     #[test]
-    fn user_view_renders_with_groups() {
+    fn user_view_overview_renders_with_groups() {
         let t = Templates::new(None).unwrap();
         let mut ctx = view_ctx_base();
-        ctx["groups"] = serde_json::json!([
-            { "name": "Auditors", "description": "read-only audit access" },
-            { "name": "Content Editors", "description": "" },
-        ]);
+        ctx["user"]["groups"] = serde_json::json!(["Auditors", "Content Editors"]);
         let body = t.render("admin/user_view.html", &ctx).unwrap();
-        assert!(
-            body.contains("Group memberships (2)"),
-            "membership count must reflect the groups list length"
-        );
-        assert!(body.contains("Auditors"));
-        assert!(body.contains("Content Editors"));
-        // Description-empty branch: the `<span class=\"help\">` must
-        // NOT render for the second group.
-        assert!(body.contains("read-only audit access"));
+
+        // Splitview shell + Overview branch markers.
+        assert!(body.contains("class=\"splitview\""), "must render the splitview shell");
+        assert!(body.contains("class=\"show-grid\""), "Overview must render the show-grid");
+        assert!(body.contains("class=\"stat-strip\""), "Overview must render the stat-strip");
+
+        // Groups row content — chips appear inside the show-grid.
+        assert!(body.contains("<code>Auditors</code>"));
+        assert!(body.contains("<code>Content Editors</code>"));
     }
 
+    /// Phase 10/b — empty groups render the muted "No groups" inline
+    /// in the Groups row of the show-grid.
     #[test]
-    fn user_view_without_groups_shows_empty_message() {
+    fn user_view_overview_without_groups_shows_empty_marker() {
         let t = Templates::new(None).unwrap();
         let body = t.render("admin/user_view.html", &view_ctx_base()).unwrap();
         assert!(
-            body.contains("No group memberships"),
-            "empty-state copy must appear when the groups list is empty"
-        );
-        assert!(body.contains("Group memberships (0)"));
-    }
-
-    /// Semantic invariant: when `can_delete` is false (whatever
-    /// reason), the Delete element must render as a `<span>` (not an
-    /// `<a href>`) so a misclick can't hit the destructive endpoint.
-    /// The exact CSS classes used to disable it are styling, not
-    /// contract.
-    fn assert_delete_is_disabled_span(body: &str, expected_tooltip: &str) {
-        assert!(
-            body.contains(r#"<span class="btn-danger"#),
-            "Delete must render as a <span> with btn-danger class when guarded"
-        );
-        assert!(
-            !body.contains(r#"<a href="/admin/users/42/delete""#),
-            "Delete must NOT render as an <a href=…/delete> when guarded"
-        );
-        assert!(
-            body.contains(expected_tooltip),
-            "tooltip must contain {expected_tooltip:?} so the operator knows why"
+            body.contains("No groups"),
+            "empty-groups copy must appear in the show-grid Groups row"
         );
     }
 
+    /// Phase 10/b — Activity tab renders the timeline component and a
+    /// pager when there's more than one page. Inline-Delete contract
+    /// from the pre-10/b template is intentionally gone; the destructive
+    /// path lives behind `/admin/users/:id/delete` exclusively.
     #[test]
-    fn user_view_is_self_disables_delete_as_span() {
+    fn user_view_activity_tab_renders_pager() {
         let t = Templates::new(None).unwrap();
         let mut ctx = view_ctx_base();
-        ctx["is_self"] = serde_json::Value::Bool(true);
-        ctx["can_delete"] = serde_json::Value::Bool(false);
+        ctx["tab"] = serde_json::json!("activity");
+        ctx["activity_count"] = serde_json::json!(120);
+        ctx["activity_page"] = serde_json::json!(2);
+        ctx["activity_total_pages"] = serde_json::json!(3);
+        ctx["recent_events"] = serde_json::json!([
+            { "id": 1, "kind": "info",    "message": "Updated <strong>posts</strong> #5",
+              "timestamp_relative": "1h ago", "actor": "user:42" },
+            { "id": 2, "kind": "success", "message": "Created <strong>posts</strong> #5",
+              "timestamp_relative": "2h ago", "actor": "user:42" },
+        ]);
         let body = t.render("admin/user_view.html", &ctx).unwrap();
-        assert_delete_is_disabled_span(&body, "Cannot delete your own account");
-        // Edit must still render as an anchor — administrators can
-        // edit themselves, just not delete.
-        assert!(
-            body.contains(r#"<a href="/admin/users/42/edit""#),
-            "Edit button stays clickable on a self-view"
-        );
+
+        assert!(body.contains("class=\"timeline\""), "Activity must render the timeline component");
+        assert!(body.contains("tl-info"), "event kind must drive the dot color class");
+        assert!(body.contains("class=\"pager\""), "Activity must render the pager when total_pages > 1");
+        assert!(body.contains("?tab=activity&page=1"), "pager must link Prev to page-1");
+        assert!(body.contains("?tab=activity&page=3"), "pager must link Next to page+1");
+        // Tab links must NOT carry &page=… (per Phase 10/b spec — tab clicks reset page).
+        assert!(!body.contains("?tab=overview&page="), "Overview tab link must strip page param");
+        assert!(!body.contains("?tab=permissions&page="), "Permissions tab link must strip page param");
+        assert!(!body.contains("?tab=sessions&page="), "Sessions tab link must strip page param");
     }
 
+    /// Phase 10/b — Permissions tab renders direct + inherited grants
+    /// with a source chip on each tile.
     #[test]
-    fn user_view_last_developer_disables_delete() {
+    fn user_view_permissions_tab_renders_with_sources() {
         let t = Templates::new(None).unwrap();
         let mut ctx = view_ctx_base();
-        ctx["is_last_developer"] = serde_json::Value::Bool(true);
-        ctx["can_delete"] = serde_json::Value::Bool(false);
+        ctx["tab"] = serde_json::json!("permissions");
+        ctx["permissions"] = serde_json::json!([
+            { "name": "posts.add_post",    "source": "direct" },
+            { "name": "posts.change_post", "source": "via Editors" },
+        ]);
         let body = t.render("admin/user_view.html", &ctx).unwrap();
-        assert_delete_is_disabled_span(&body, "Cannot delete the last active developer");
+
+        assert!(body.contains("class=\"perm-grid\""), "Permissions must render perm-grid");
+        assert!(body.contains("posts.add_post"));
+        assert!(body.contains("posts.change_post"));
+        assert!(body.contains("direct"), "direct grant must show the 'direct' source chip");
+        assert!(body.contains("via Editors"), "inherited grant must show the source group");
+    }
+
+    /// Phase 10/b — Sessions tab renders the table; absent IP / UA
+    /// columns render as the framework's "—" cell-empty marker. The
+    /// session token is truncated to its first 7 chars.
+    #[test]
+    fn user_view_sessions_tab_truncates_token_and_handles_nulls() {
+        let t = Templates::new(None).unwrap();
+        let mut ctx = view_ctx_base();
+        ctx["tab"] = serde_json::json!("sessions");
+        ctx["sessions"] = serde_json::json!([
+            {
+                "token_short": "abc1234",
+                "created_at_iso": "2026-05-01 10:00 UTC",
+                "last_seen_relative": "5m ago",
+                "ip": null,
+                "user_agent": null,
+            },
+        ]);
+        let body = t.render("admin/user_view.html", &ctx).unwrap();
+
+        assert!(body.contains("<table class=\"table\""), "Sessions must render the table");
+        assert!(body.contains("<code>abc1234</code>"), "token must render truncated, never full-length");
+        // Null IP / UA fall back to the framework's empty-cell marker.
+        assert!(body.contains("rio-cell-empty"), "absent IP / UA must render as the empty marker");
     }
 
     /// The users list now navigates to the profile view (not edit).
@@ -496,31 +546,31 @@ mod tests {
         );
     }
 
+    /// Phase 10/b — demo flag drives a yellow badge in the identity
+    /// strip of the detail-head; the badge must NOT render for a real
+    /// user, and MUST include the demo_label when one is set.
     #[test]
-    fn user_view_real_user_omits_demo_row() {
+    fn user_view_demo_badge_renders_only_for_demo_users() {
         let t = Templates::new(None).unwrap();
-        // is_demo defaults to false in view_ctx_base.
+        // Real (non-demo) user: no DEMO badge.
         let body = t.render("admin/user_view.html", &view_ctx_base()).unwrap();
-        // The demo label string only appears when target_is_demo=true.
-        // Looking for the demo-account marker that's only in the
-        // gated `{% if target_is_demo %}` block.
         assert!(
-            !body.contains("badge-warning\">staff @"),
-            "demo badge must NOT render for a real (non-demo) user"
-        );
-        assert!(
-            !body.contains("Demo account"),
-            "demo label must NOT appear for a real user"
+            !body.contains(">DEMO"),
+            "DEMO badge must NOT render for a real user"
         );
 
         // Demo case: badge renders with the label.
         let mut demo_ctx = view_ctx_base();
-        demo_ctx["target_is_demo"] = serde_json::Value::Bool(true);
-        demo_ctx["target_demo_label"] = serde_json::Value::String("staff @ rustio.local".into());
+        demo_ctx["user"]["is_demo"] = serde_json::Value::Bool(true);
+        demo_ctx["user"]["demo_label"] = serde_json::Value::String("staff @ rustio.local".into());
         let demo_body = t.render("admin/user_view.html", &demo_ctx).unwrap();
         assert!(
+            demo_body.contains(">DEMO"),
+            "DEMO badge must render for a demo user"
+        );
+        assert!(
             demo_body.contains("staff @ rustio.local"),
-            "demo label must render in the badge for a demo user"
+            "demo label must appear in the badge"
         );
     }
 
