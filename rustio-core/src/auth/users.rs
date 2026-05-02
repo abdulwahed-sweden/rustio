@@ -2,7 +2,7 @@
 
 use argon2::password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sqlx::Row as SqlxRow;
 
 use crate::error::{Error, Result};
@@ -44,6 +44,24 @@ pub struct StoredUser {
     pub password_hash: String,
     pub role: Role,
     pub is_active: bool,
+    pub is_demo: bool,
+    pub demo_label: Option<String>,
+}
+
+/// Read-only view of a user, used by the built-in admin profile page
+/// and passed into project-registered profile extensions. Excludes
+/// `password_hash` deliberately — extensions must never see credential
+/// material. Construct via [`load_user_profile`].
+#[derive(Debug, Clone)]
+pub struct UserProfile {
+    pub id: i64,
+    pub email: String,
+    pub role: Role,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub full_name: Option<String>,
+    pub locale: Option<String>,
+    pub timezone: Option<String>,
     pub is_demo: bool,
     pub demo_label: Option<String>,
 }
@@ -126,6 +144,19 @@ pub async fn migrate_user_schema(db: &Db) -> Result<()> {
     )
     .execute(db.pool())
     .await?;
+
+    // 5. Phase 10/a — profile-display columns. All nullable, no defaults,
+    //    no backfill. Read by `load_user_profile` and the built-in user
+    //    show page; never required by the auth path itself.
+    sqlx::query("ALTER TABLE rustio_users ADD COLUMN IF NOT EXISTS full_name TEXT")
+        .execute(db.pool())
+        .await?;
+    sqlx::query("ALTER TABLE rustio_users ADD COLUMN IF NOT EXISTS locale TEXT")
+        .execute(db.pool())
+        .await?;
+    sqlx::query("ALTER TABLE rustio_users ADD COLUMN IF NOT EXISTS timezone TEXT")
+        .execute(db.pool())
+        .await?;
 
     Ok(())
 }
@@ -317,6 +348,43 @@ pub async fn find_user_by_email(db: &Db, email: &str) -> Result<Option<StoredUse
     }
 }
 
+/// Load a user by id for display purposes. Returns `Ok(None)` for a
+/// missing id (callers map to 404). Returns `Err` only on a real DB
+/// failure or a corrupted role string.
+///
+/// Phase 10/a — companion to [`UserProfile`]. Reads the columns added
+/// by `migrate_user_schema` (full_name, locale, timezone) plus the
+/// existing demo flags. Never reads `password_hash`.
+pub async fn load_user_profile(db: &Db, user_id: i64) -> Result<Option<UserProfile>> {
+    let row = sqlx::query(
+        "SELECT id, email, role, is_active, created_at,
+                full_name, locale, timezone, is_demo, demo_label
+           FROM rustio_users
+          WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(db.pool())
+    .await?;
+    match row {
+        Some(r) => {
+            let r = Row::from_pg(&r);
+            Ok(Some(UserProfile {
+                id: r.get_i64("id")?,
+                email: r.get_string("email")?,
+                role: Role::parse(&r.get_string("role")?)?,
+                is_active: r.get_bool("is_active")?,
+                created_at: r.get_datetime("created_at")?,
+                full_name: r.get_optional_string("full_name")?,
+                locale: r.get_optional_string("locale")?,
+                timezone: r.get_optional_string("timezone")?,
+                is_demo: r.get_bool("is_demo")?,
+                demo_label: r.get_optional_string("demo_label")?,
+            }))
+        }
+        None => Ok(None),
+    }
+}
+
 pub async fn set_password(db: &Db, user_id: i64, new_password: &str) -> Result<()> {
     let hash = hash_password(new_password)?;
     sqlx::query(
@@ -413,6 +481,15 @@ pub async fn login(db: &Db, email: &str, password: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn user_profile_derives_debug_and_clone() {
+        // Phase 10/a — UserProfile must be Debug + Clone so handlers
+        // and template-context builders can format it and pass it by
+        // value into the project extension closure without ceremony.
+        fn assert_traits<T: std::fmt::Debug + Clone>() {}
+        assert_traits::<UserProfile>();
+    }
 
     #[test]
     fn password_round_trip() {
@@ -968,5 +1045,120 @@ mod tests {
 
         restore_active_devs(&db, &restore).await;
         delete_user(&db, staff).await;
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 10/a — UserProfile + load_user_profile
+    // ------------------------------------------------------------------
+
+    fn unique_email(tag: &str) -> String {
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("{tag}_{pid}_{nanos}@example.test")
+    }
+
+    /// E.1 (PG) — running `init_tables` twice is a no-op the second time;
+    /// the new profile columns and session columns must be present after.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn migration_is_idempotent_and_columns_present() {
+        let db = pg_db().await;
+        crate::auth::init_tables(&db).await.unwrap();
+        // Second run must not error.
+        crate::auth::init_tables(&db).await.unwrap();
+
+        let user_cols: Vec<(String,)> = sqlx::query_as(
+            "SELECT column_name::text FROM information_schema.columns
+             WHERE table_name = 'rustio_users'
+               AND column_name IN ('full_name','locale','timezone')
+             ORDER BY column_name",
+        )
+        .fetch_all(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(user_cols.len(), 3, "expected 3 new user columns, got {user_cols:?}");
+
+        let session_cols: Vec<(String,)> = sqlx::query_as(
+            "SELECT column_name::text FROM information_schema.columns
+             WHERE table_name = 'rustio_sessions'
+               AND column_name IN ('ip','user_agent')
+             ORDER BY column_name",
+        )
+        .fetch_all(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(session_cols.len(), 2, "expected 2 new session columns, got {session_cols:?}");
+    }
+
+    /// E.2 (PG) — `load_user_profile` returns a fully-populated `UserProfile`
+    /// for an existing user; the new optional columns default to None on a
+    /// freshly-created user.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn load_user_profile_happy_path() {
+        let db = pg_db().await;
+        crate::auth::init_tables(&db).await.unwrap();
+
+        let email = unique_email("profile_happy");
+        let id = create_user(&db, &email, "secret-pw-123", Role::Staff)
+            .await
+            .unwrap();
+
+        let profile = load_user_profile(&db, id).await.unwrap().expect("user exists");
+        assert_eq!(profile.id, id);
+        assert_eq!(profile.email, email);
+        assert_eq!(profile.role, Role::Staff);
+        assert!(profile.is_active);
+        assert!(profile.full_name.is_none());
+        assert!(profile.locale.is_none());
+        assert!(profile.timezone.is_none());
+        assert!(!profile.is_demo);
+        assert!(profile.demo_label.is_none());
+
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+            .bind(id)
+            .execute(db.pool())
+            .await;
+    }
+
+    /// E.3 (PG) — `load_user_profile` for a missing id returns Ok(None),
+    /// not Err. Callers map None to 404 themselves.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn load_user_profile_missing_returns_none() {
+        let db = pg_db().await;
+        crate::auth::init_tables(&db).await.unwrap();
+        let result = load_user_profile(&db, 999_999_999).await.unwrap();
+        assert!(result.is_none(), "missing id must yield Ok(None)");
+    }
+
+    /// E.4 (PG) — existing CRUD path (create → find → set_password) keeps
+    /// working after the migration. Smoke; not a re-run of the full auth
+    /// suite.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn existing_user_crud_unaffected_by_migration() {
+        let db = pg_db().await;
+        crate::auth::init_tables(&db).await.unwrap();
+
+        let email = unique_email("crud_smoke");
+        let id = create_user(&db, &email, "secret-pw-123", Role::User)
+            .await
+            .unwrap();
+
+        let found = find_user_by_email(&db, &email).await.unwrap().expect("found");
+        assert_eq!(found.id, id);
+
+        set_password(&db, id, "new-secret-456").await.unwrap();
+        let after = find_user_by_email(&db, &email).await.unwrap().expect("still there");
+        assert!(verify_password("new-secret-456", &after.password_hash));
+
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+            .bind(id)
+            .execute(db.pool())
+            .await;
     }
 }

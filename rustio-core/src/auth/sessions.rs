@@ -44,6 +44,20 @@ pub async fn init_session_tables(db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// Phase 10/a — additive schema upgrade for session-level metadata.
+/// Idempotent; safe to call on every boot. Reads consumed by the
+/// built-in user profile page (Sessions tab + last-login IP). The
+/// auth path itself never reads these columns.
+pub(crate) async fn migrate_session_schema(db: &Db) -> Result<()> {
+    sqlx::query("ALTER TABLE rustio_sessions ADD COLUMN IF NOT EXISTS ip TEXT")
+        .execute(db.pool())
+        .await?;
+    sqlx::query("ALTER TABLE rustio_sessions ADD COLUMN IF NOT EXISTS user_agent TEXT")
+        .execute(db.pool())
+        .await?;
+    Ok(())
+}
+
 pub async fn create_session(db: &Db, user_id: i64) -> Result<String> {
     let token = random_token();
     let expires = Utc::now() + Duration::days(SESSION_LENGTH_DAYS);
@@ -155,5 +169,47 @@ mod tests {
     fn random_token_has_reasonable_entropy() {
         // Rough sanity check — two consecutive tokens should differ.
         assert_ne!(random_token(), random_token());
+    }
+
+    /// E.5 (PG) — Phase 10/a: existing session create → identity → delete
+    /// path keeps working after `migrate_session_schema` adds the new
+    /// optional columns. Smoke; the new columns aren't populated yet.
+    #[tokio::test]
+    #[ignore = "needs `RUSTIO_TEST_DB=1` + a running postgres (URL via RUSTIO_TEST_DATABASE_URL or default)"]
+    async fn existing_session_crud_unaffected_by_migration() {
+        let url = std::env::var("RUSTIO_TEST_DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:dev@localhost:5432/rustio_dev".into());
+        let opts = crate::orm::DbOptions {
+            max_connections: 2,
+            ..crate::orm::DbOptions::default()
+        };
+        let db = crate::orm::Db::connect_with(&url, opts).await.unwrap();
+        crate::auth::init_tables(&db).await.unwrap();
+
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let email = format!("sess_smoke_{pid}_{nanos}@example.test");
+        let user_id = crate::auth::create_user(&db, &email, "secret-pw-123", Role::User)
+            .await
+            .unwrap();
+
+        let token = create_session(&db, user_id).await.unwrap();
+        let identity = identity_from_session(&db, &token)
+            .await
+            .unwrap()
+            .expect("session resolves to identity");
+        assert_eq!(identity.user_id, user_id);
+        assert_eq!(identity.email, email);
+
+        delete_session(&db, &token).await.unwrap();
+        assert!(identity_from_session(&db, &token).await.unwrap().is_none());
+
+        let _ = sqlx::query("DELETE FROM rustio_users WHERE id = $1")
+            .bind(user_id)
+            .execute(db.pool())
+            .await;
     }
 }

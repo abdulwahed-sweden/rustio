@@ -28,9 +28,9 @@ pub use sessions::{
     purge_expired_sessions, session_token_from_cookie, SESSION_COOKIE,
 };
 pub use users::{
-    bootstrap_demo_users, create_user, find_user_by_email, hash_password, init_user_tables, login,
-    migrate_user_schema, set_password, update_user_role, verify_password, would_orphan_developers,
-    Identity, StoredUser,
+    bootstrap_demo_users, create_user, find_user_by_email, hash_password, init_user_tables,
+    load_user_profile, login, migrate_user_schema, set_password, update_user_role, verify_password,
+    would_orphan_developers, Identity, StoredUser, UserProfile,
 };
 
 use crate::error::Result;
@@ -52,6 +52,8 @@ pub async fn init_tables(db: &Db) -> Result<()> {
     // Phase 7a/0.5: 5-tier role + demo columns. Idempotent.
     migrate_user_schema(db).await?;
     init_session_tables(db).await?;
+    // Phase 10/a: session-level metadata (ip, user_agent). Idempotent.
+    sessions::migrate_session_schema(db).await?;
     init_permission_tables(db).await?;
     Ok(())
 }
