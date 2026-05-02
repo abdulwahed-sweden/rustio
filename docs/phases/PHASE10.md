@@ -280,7 +280,7 @@ projects typically join against a project-specific table here.
 ### Halalops migration
 
 Halalops's local override at
-`~/Desktop/halalops/src/admin_views/` becomes redundant once
+`<halalops-repo>/src/admin_views/` becomes redundant once
 `rustio-core` releases the next version with `/c`. The override
 delete + dep bump + closure registration is halalops's own
 post-release commit, not part of Phase 10.
