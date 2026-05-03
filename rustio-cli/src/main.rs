@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 mod doctor;
+mod version_check;
 // 0.9.x AI surface: planner emits PlanResult (plan + explanation); review_plan
 // builds a structured PlanReview; execute_plan_document writes files atomically.
 use rustio_core::ai::{
@@ -335,6 +336,13 @@ fn main() -> ExitCode {
     // Mirrors what the scaffold's MAIN_RS does at runtime.
     let _ = dotenvy::dotenv();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    // v1.7.1 — non-blocking update notifier. Reads `~/.rustio/version-
+    // check.json` synchronously (microseconds) and prints a banner if
+    // a newer release is on crates.io; refreshes the cache on a
+    // detached background thread when stale. Disabled by
+    // RUSTIO_NO_UPDATE_CHECK=1, by CI=1/CI=true, and for `rustio doctor`.
+    version_check::run();
 
     let cli = Cli::parse();
 

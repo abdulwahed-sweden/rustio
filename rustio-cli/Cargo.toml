@@ -35,3 +35,9 @@ sqlx = { version = "0.8", default-features = false, features = [
 # and the password-masked render.
 dotenvy = "0.15"
 url = "2"
+# v1.7.1 — `version_check` module. ureq does the one-shot crates.io
+# GET on a detached background thread (rustls-tls default, no
+# system OpenSSL). semver parses + compares versions; matches what
+# cargo itself uses.
+ureq = "2"
+semver = "1"
