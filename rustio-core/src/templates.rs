@@ -44,8 +44,40 @@ impl Templates {
     /// `project_templates_dir = Some(path)` → disk overrides win at
     /// render time. Pass the value of `RUSTIO_TEMPLATE_DIR` (or your
     /// own resolved path) here.
+    ///
+    /// Phase 12/c-fix — when a disk root is supplied, the constructor
+    /// scans it once for overrides of embedded templates. Each match
+    /// is logged at INFO; an override that looks structurally
+    /// incomplete (no `{% extends %}`, no `{% block %}`, no `<html>`
+    /// tag) is logged at WARN so a one-line stub of `admin/base.html`
+    /// stops being a silent failure. Non-fatal: the override is still
+    /// served — the scan exists only to make the failure mode visible.
     pub fn new(project_templates_dir: Option<PathBuf>) -> Result<Arc<Self>> {
         let disk_root = project_templates_dir;
+        if let Some(root) = disk_root.as_deref() {
+            for v in validate_overrides(root) {
+                match v {
+                    OverrideValidation::Loaded { name, bytes } => {
+                        log::info!(
+                            "templates: project override loaded for `{name}` ({bytes} bytes)"
+                        );
+                    }
+                    OverrideValidation::Suspicious { name, bytes } => {
+                        log::warn!(
+                            "templates: project override for `{name}` looks incomplete \
+                             ({bytes} bytes, no `{{% extends %}}`, no `{{% block %}}`, no \
+                             `<html>` tag) — the admin UI may render incorrectly. Either \
+                             copy the framework default in full or remove the override."
+                        );
+                    }
+                    OverrideValidation::Unreadable { name, error } => {
+                        log::warn!(
+                            "templates: project override `{name}` exists but cannot be read: {error}"
+                        );
+                    }
+                }
+            }
+        }
         let mut env = Environment::new();
         env.set_loader(move |name| load_template(disk_root.as_deref(), name));
 
@@ -116,6 +148,66 @@ impl Templates {
         tmpl.render(ctx)
             .map_err(|e| Error::Internal(format!("render {name}: {e}")))
     }
+}
+
+/// Phase 12/c-fix — outcome of inspecting one project override file at
+/// startup. Per-file, not per-render: the cost is paid once when the
+/// `Templates` arc is built, not on every request.
+///
+/// Pure data — `Templates::new` translates each variant to a log line.
+/// Returned as a `Vec` so unit tests can assert on the structural
+/// classification without scraping log output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OverrideValidation {
+    /// File loaded and contains at least one of `{% extends %}`,
+    /// `{% block %}`, or `<html`. Heuristic for "this looks like a
+    /// real template body".
+    Loaded { name: &'static str, bytes: usize },
+    /// File loaded but contains none of the structural markers.
+    /// Most likely a stub or a placeholder; the framework default is
+    /// silently being replaced by something that will not render the
+    /// admin UI correctly.
+    Suspicious { name: &'static str, bytes: usize },
+    /// File exists on disk but `read_to_string` failed
+    /// (permissions, encoding, IO error).
+    Unreadable { name: &'static str, error: String },
+}
+
+/// Phase 12/c-fix — walk `EMBEDDED_TEMPLATES`, classify any project
+/// override of one of those names, return the per-file results.
+///
+/// Files in `disk_root` that do NOT shadow an embedded name are
+/// ignored: those are project-only templates (e.g. `home.html`) and
+/// have no framework default to compare against. Only shadowing files
+/// can cause the silent-replacement failure mode this scan exists for.
+pub(crate) fn validate_overrides(disk_root: &std::path::Path) -> Vec<OverrideValidation> {
+    let mut results = Vec::new();
+    for (name, _embedded) in EMBEDDED_TEMPLATES {
+        let path = disk_root.join(name);
+        if !path.is_file() {
+            continue;
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(body) => {
+                let bytes = body.len();
+                let has_structure = body.contains("{% extends")
+                    || body.contains("{% block")
+                    || body.contains("<html");
+                if has_structure {
+                    results.push(OverrideValidation::Loaded { name, bytes });
+                } else {
+                    results.push(OverrideValidation::Suspicious { name, bytes });
+                }
+            }
+            Err(e) => {
+                results.push(OverrideValidation::Unreadable {
+                    name,
+                    error: e.to_string(),
+                });
+            }
+        }
+    }
+    results
 }
 
 fn load_template(
@@ -217,6 +309,113 @@ mod tests {
         assert!(!body.is_empty());
         assert!(!body.contains("OVERRIDDEN-BODY"));
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ----- Phase 12/c-fix — validate_overrides ---------------------------
+
+    /// Phase 12/c-fix — a faithful copy of an embedded admin template
+    /// (here, just "contains `{% extends %}`") classifies as Loaded.
+    /// The structural marker is enough; the content doesn't have to
+    /// match the upstream template byte-for-byte.
+    #[test]
+    fn validate_overrides_classifies_real_template_as_loaded() {
+        let dir = tempdir();
+        let admin_dir = dir.join("admin");
+        std::fs::create_dir_all(&admin_dir).unwrap();
+        std::fs::write(
+            admin_dir.join("login.html"),
+            "{% extends \"admin/base.html\" %}\n{% block content %}hi{% endblock %}",
+        )
+        .unwrap();
+        let v = validate_overrides(&dir);
+        assert_eq!(v.len(), 1);
+        match &v[0] {
+            OverrideValidation::Loaded { name, bytes } => {
+                assert_eq!(*name, "admin/login.html");
+                assert!(*bytes > 0);
+            }
+            other => panic!("expected Loaded, got: {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Phase 12/c-fix — the bug we shipped pre-fix: a one-line stub of
+    /// admin/base.html silently destroys the admin UI. Validation must
+    /// flag it as Suspicious so the operator sees a WARN in the log.
+    #[test]
+    fn validate_overrides_flags_stub_admin_base_as_suspicious() {
+        let dir = tempdir();
+        let admin_dir = dir.join("admin");
+        std::fs::create_dir_all(&admin_dir).unwrap();
+        std::fs::write(admin_dir.join("base.html"), "<h1>TEST</h1>").unwrap();
+        let v = validate_overrides(&dir);
+        assert_eq!(v.len(), 1);
+        match &v[0] {
+            OverrideValidation::Suspicious { name, bytes } => {
+                assert_eq!(*name, "admin/base.html");
+                assert_eq!(*bytes, 13);
+            }
+            other => panic!("expected Suspicious, got: {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Phase 12/c-fix — a project-only template like `home.html` is NOT
+    /// in EMBEDDED_TEMPLATES, so it doesn't shadow a framework default
+    /// and must be silently ignored by the validator. Otherwise every
+    /// scaffolded project would emit warnings about its own home page.
+    #[test]
+    fn validate_overrides_ignores_project_only_templates() {
+        let dir = tempdir();
+        std::fs::write(dir.join("home.html"), "<h1>welcome</h1>").unwrap();
+        let v = validate_overrides(&dir);
+        assert!(
+            v.is_empty(),
+            "home.html shadows nothing, must not appear in validation: {v:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Phase 12/c-fix — empty disk root (the common case for projects
+    /// that ship no overrides) returns an empty Vec without touching
+    /// the filesystem beyond `is_file` checks.
+    #[test]
+    fn validate_overrides_empty_dir_returns_empty_vec() {
+        let dir = tempdir();
+        let v = validate_overrides(&dir);
+        assert!(v.is_empty(), "no files ⇒ no validations: {v:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Phase 12/c-fix — multiple overrides classify independently.
+    /// Order is the order of EMBEDDED_TEMPLATES (deterministic); test
+    /// asserts on the multi-set rather than the sequence.
+    #[test]
+    fn validate_overrides_handles_mixed_loaded_and_suspicious() {
+        let dir = tempdir();
+        let admin_dir = dir.join("admin");
+        std::fs::create_dir_all(&admin_dir).unwrap();
+        // A real-looking override of login.html.
+        std::fs::write(
+            admin_dir.join("login.html"),
+            "{% extends \"admin/base.html\" %}\n{% block content %}hi{% endblock %}",
+        )
+        .unwrap();
+        // And a stub of base.html.
+        std::fs::write(admin_dir.join("base.html"), "<h1>TEST</h1>").unwrap();
+        let v = validate_overrides(&dir);
+        assert_eq!(v.len(), 2, "both files must be classified: {v:?}");
+        let suspicious_count = v
+            .iter()
+            .filter(|x| matches!(x, OverrideValidation::Suspicious { .. }))
+            .count();
+        let loaded_count = v
+            .iter()
+            .filter(|x| matches!(x, OverrideValidation::Loaded { .. }))
+            .count();
+        assert_eq!(suspicious_count, 1, "exactly one Suspicious: {v:?}");
+        assert_eq!(loaded_count, 1, "exactly one Loaded: {v:?}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
