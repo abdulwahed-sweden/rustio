@@ -1848,11 +1848,17 @@ mod tests {
             "README.md",
             ".ai/context.md",
             ".rustio/project.lock",
+            "templates/home.html",
+            "templates/overrides/brand.html",
         ] {
             assert!(root.join(path).is_file(), "scaffold missing: {path}");
         }
         assert!(root.join("migrations").is_dir(), "migrations dir missing");
         assert!(root.join("templates").is_dir(), "templates dir missing");
+        assert!(
+            root.join("templates").join("overrides").is_dir(),
+            "templates/overrides dir missing"
+        );
         assert!(root.join(".ai").is_dir(), ".ai dir missing");
         assert!(root.join(".rustio").is_dir(), ".rustio dir missing");
         std::fs::remove_dir_all(&dir).ok();
@@ -1942,9 +1948,12 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// v1.6 — scaffold writes templates/home.html with a project-name
-    /// placeholder and the create-admin hint. Spec wording: full GitHub
-    /// URL (no "(docs)" label), bare "No admin user yet?" question.
+    /// v1.6 / Phase 12/b — scaffold writes templates/home.html with the
+    /// project-name interpolated at scaffold time (build-time
+    /// substitution via `format!()`); the previous runtime
+    /// `{{ project }}` minijinja variable is gone. Spec wording: full
+    /// GitHub URL (no "(docs)" label), bare "No admin user yet?"
+    /// question.
     #[test]
     fn scaffold_writes_home_html_template() {
         let dir = tempdir_path();
@@ -1953,8 +1962,16 @@ mod tests {
         assert!(html_path.is_file(), "templates/home.html must exist");
         let html = std::fs::read_to_string(&html_path).unwrap();
         assert!(
-            html.contains("{{ project }}"),
-            "home.html must use the {{{{ project }}}} minijinja variable"
+            html.contains("Welcome to shop"),
+            "home.html must interpolate the project name into the heading — actual:\n{html}"
+        );
+        assert!(
+            html.contains("admin@shop.local"),
+            "home.html must interpolate the project name into the create-admin hint"
+        );
+        assert!(
+            !html.contains("{{ project }}"),
+            "home.html must no longer carry the runtime `{{{{ project }}}}` variable (Phase 12/b)"
         );
         assert!(
             html.contains("/admin"),
@@ -2120,6 +2137,108 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    // ----- Phase 12/b — templates structure -----------------------------
+
+    /// Phase 12/b — the scaffold lays down the template tree the
+    /// developer is expected to own: `home.html` for project pages,
+    /// `overrides/brand.html` for the framework-level brand hook.
+    #[test]
+    fn scaffold_creates_templates_structure() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let root = dir.join("clinic");
+        assert!(
+            root.join("templates").join("home.html").is_file(),
+            "templates/home.html must exist"
+        );
+        assert!(
+            root.join("templates").join("overrides").is_dir(),
+            "templates/overrides/ must exist as a directory"
+        );
+        assert!(
+            root.join("templates").join("overrides").join("brand.html").is_file(),
+            "templates/overrides/brand.html must exist"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/b — the admin shell override is documented but NOT
+    /// scaffolded. Creating an empty / partial copy of base.html
+    /// would break admin rendering, so the file must stay absent
+    /// until a developer deliberately copies the upstream template.
+    #[test]
+    fn scaffold_no_admin_override_file() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let admin_override = dir
+            .join("clinic")
+            .join("templates")
+            .join("overrides")
+            .join("admin")
+            .join("base.html");
+        assert!(
+            !admin_override.exists(),
+            "templates/overrides/admin/base.html MUST NOT be scaffolded — \
+             it must be a deliberate developer action. Found at: {}",
+            admin_override.display()
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/b — `brand.html` overrides the real `--rio-accent`
+    /// design token (defined in rustio-core's admin/base.html) and
+    /// reads the brand colour from `project.brand` (sourced from
+    /// `.rustio/project.lock` in a future render-context wire-up).
+    /// This test guards against accidental re-introduction of a
+    /// hardcoded brand value or a fake `--rio-primary` token.
+    #[test]
+    fn brand_template_uses_real_token() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let brand = std::fs::read_to_string(
+            dir.join("clinic")
+                .join("templates")
+                .join("overrides")
+                .join("brand.html"),
+        )
+        .unwrap();
+        assert!(
+            brand.contains("--rio-accent"),
+            "brand.html must override the real --rio-accent token — actual:\n{brand}"
+        );
+        assert!(
+            brand.contains("project.brand"),
+            "brand.html must read the colour from project.brand (project.lock) — actual:\n{brand}"
+        );
+        assert!(
+            !brand.contains("--rio-primary"),
+            "brand.html must NOT reference --rio-primary (not a real token)"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/b — home.html ships with a developer-facing comment
+    /// that names it as the project page and points at the AI rules.
+    /// These two literals are the contract; downstream tooling and
+    /// documentation can grep for them.
+    #[test]
+    fn home_template_contains_guidance() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let home =
+            std::fs::read_to_string(dir.join("clinic").join("templates").join("home.html"))
+                .unwrap();
+        assert!(
+            home.contains("RustIO Project Page"),
+            "home.html must carry the 'RustIO Project Page' guidance line — actual:\n{home}"
+        );
+        assert!(
+            home.contains("See: .ai/context.md"),
+            "home.html must point developers at .ai/context.md — actual:\n{home}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     /// v1.6 — README quickstart must point users at `rustio user create`
     /// with a project-name-substituted email.
     #[test]
@@ -2218,6 +2337,13 @@ mod scaffold {
         fs::create_dir_all(root.join("src").join("apps")).map_err(|e| e.to_string())?;
         fs::create_dir_all(root.join("migrations")).map_err(|e| e.to_string())?;
         fs::create_dir_all(root.join("templates")).map_err(|e| e.to_string())?;
+        // Phase 12/b — `templates/overrides/` is the developer-facing
+        // boundary for framework-level template overrides. The admin
+        // base layout override is intentionally NOT scaffolded; it is
+        // documented in README.md and `.ai/context.md` instead so an
+        // empty placeholder cannot break admin rendering.
+        fs::create_dir_all(root.join("templates").join("overrides"))
+            .map_err(|e| e.to_string())?;
         // Phase 12/a — AI-readable scaffold. `.ai/` carries human prose
         // for AI agents; `.rustio/` carries machine-readable metadata
         // the CLI uses for doctor / future upgrades. Both are committed
@@ -2235,11 +2361,20 @@ mod scaffold {
             .map_err(|e| e.to_string())?;
         fs::write(root.join(".rustio").join("project.lock"), project_lock_toml(name))
             .map_err(|e| e.to_string())?;
-        // v1.6 — minimal welcome page rendered by `GET /`. Plain HTML,
-        // no JS, no framework. Edit freely; delete to fall through to
-        // a custom handler.
-        fs::write(root.join("templates").join("home.html"), HOME_HTML)
+        // Phase 12/b — `templates/home.html` is rendered with the
+        // project name baked in via `format!()` (build-time
+        // substitution); the runtime template no longer carries
+        // `{{ project }}`. Edit freely; delete to fall through to a
+        // custom handler.
+        fs::write(root.join("templates").join("home.html"), home_html(name))
             .map_err(|e| e.to_string())?;
+        // Phase 12/b — admin accent override. Inert until a future
+        // phase wires `project.brand` into the render context.
+        fs::write(
+            root.join("templates").join("overrides").join("brand.html"),
+            brand_override_html(),
+        )
+        .map_err(|e| e.to_string())?;
 
         println!("✓ created project {name}");
         println!();
@@ -2380,6 +2515,21 @@ rustio doctor
 Both directories are committed to git — they are project state, not
 local cache.
 
+## Templates
+
+- `templates/home.html` — your project's landing page. Edit freely.
+- `templates/overrides/` — framework-level template overrides. Files
+  here intentionally replace pieces of the framework's own templates.
+- `templates/overrides/brand.html` — admin accent colour override.
+  Reads `project.brand` from `.rustio/project.lock` (don't hardcode
+  hex values here).
+
+To override the admin shell, copy
+`rustio-core/assets/templates/admin/base.html` into
+`templates/overrides/admin/base.html` — but only if you understand
+the admin layout. A partial copy will break the admin UI; the
+override is intentionally NOT scaffolded.
+
 See <https://github.com/abdulwahed-sweden/rustio> for documentation.
 "#
         )
@@ -2446,6 +2596,22 @@ Use the existing RustIO admin classes. Do not introduce new UI systems.
   them freely.
 - `templates/overrides/` is reserved for framework-level customization
   and is tracked separately. Treat anything inside it as load-bearing.
+- `templates/overrides/brand.html` overrides the admin accent colour
+  by reading `project.brand` from `.rustio/project.lock`. Change the
+  brand by editing the lock file, not by hardcoding hex values in this
+  template.
+
+### Overriding the admin shell
+
+To override the admin base layout:
+
+1. Copy `rustio-core/assets/templates/admin/base.html` into
+   `templates/overrides/admin/base.html`.
+2. Edit the copy.
+
+Only do this if you understand the admin layout. A partial copy will
+break the admin UI. The override is intentionally NOT scaffolded — it
+must be a deliberate decision.
 
 ## Database
 
@@ -2508,24 +2674,36 @@ context = ".ai/context.md"
         )
     }
 
-    pub(super) const HOME_HTML: &str = r#"<!DOCTYPE html>
+    /// Phase 12/b — `templates/home.html` is now a build-time
+    /// substitution: the project name is interpolated into the file
+    /// at scaffold time, not at request time. The previous
+    /// `{{ project }}` minijinja variable is gone, and CSS braces
+    /// are doubled so `format!()` treats them as literals.
+    fn home_html(name: &str) -> String {
+        format!(
+            r#"<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ project }}</title>
+  <title>{name}</title>
+  <!--
+    RustIO Project Page
+    This is your page. You can edit freely.
+    See: .ai/context.md
+  -->
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 3rem auto; padding: 0 1.5rem; line-height: 1.6; color: #1a1a1a; }
-    h1 { margin-bottom: 0.25rem; }
-    .lede { color: #6b7280; margin-top: 0; }
-    a { color: #b8431a; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    pre { background: #f4f4f5; padding: 0.75rem 1rem; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    ul { list-style: none; padding: 0; }
-    li { margin: 0.25rem 0; }
+    body {{ font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 3rem auto; padding: 0 1.5rem; line-height: 1.6; color: #1a1a1a; }}
+    h1 {{ margin-bottom: 0.25rem; }}
+    .lede {{ color: #6b7280; margin-top: 0; }}
+    a {{ color: #b8431a; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    pre {{ background: #f4f4f5; padding: 0.75rem 1rem; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
+    ul {{ list-style: none; padding: 0; }}
+    li {{ margin: 0.25rem 0; }}
   </style>
 </head>
 <body>
-  <h1>Welcome to {{ project }}</h1>
+  <h1>Welcome to {name}</h1>
   <p class="lede">Your RustIO project is running.</p>
 
   <p>Get started:</p>
@@ -2535,10 +2713,44 @@ context = ".ai/context.md"
   </ul>
 
   <p>No admin user yet?</p>
-  <pre><code>rustio user create --email admin@{{ project }}.local</code></pre>
+  <pre><code>rustio user create --email admin@{name}.local</code></pre>
 </body>
 </html>
-"#;
+"#
+        )
+    }
+
+    /// Phase 12/b — `templates/overrides/brand.html`. A minijinja
+    /// fragment that overrides the admin's `--rio-accent` token from
+    /// the project's brand colour. Source of truth is
+    /// `.rustio/project.lock`; this template reads `project.brand`
+    /// from its render context (with the framework default as the
+    /// fallback). The single hex literal here is the `default(...)`
+    /// argument inside the Jinja expression — not a hardcoded fact
+    /// about this project.
+    ///
+    /// Phase 12/b lays down the file but does NOT wire it into the
+    /// runtime render path; that integration is a later phase. Until
+    /// wired up, the file is inert template source on disk.
+    ///
+    /// Raw-string delimiter is `r##"..."##` because the body contains
+    /// the literal sequence `"#` (the default brand colour),
+    /// which would close a single-`#` raw string early.
+    fn brand_override_html() -> &'static str {
+        r##"<!--
+  RustIO brand override.
+  This file overrides the admin accent colour (`--rio-accent`).
+  Source of truth: `.rustio/project.lock` (the `[design] brand` field).
+  Edit `.rustio/project.lock` — not this file — to change the brand.
+  See: .ai/context.md
+-->
+<style>
+  :root {
+    --rio-accent: {{ project.brand | default("#0d9488") }};
+  }
+</style>
+"##
+    }
 
     pub(super) const MAIN_RS: &str = r#"use std::net::SocketAddr;
 
