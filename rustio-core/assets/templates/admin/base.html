@@ -114,21 +114,25 @@
             --rio-text-muted:      #4b5563;
             --rio-text-faint:      #6b7280;
 
-            /* Brand (unchanged) */
-            --rio-accent:          #b8431a;
-            --rio-accent-bg:       #fff4ed;
-            --rio-accent-border:   #fed7aa;
-            --rio-ring:            0 0 0 3px rgba(184,67,26,0.12);
+            /* Brand — teal #0d9488 (Phase 11/a). */
+            --rio-accent:          #0d9488;
+            --rio-accent-bg:       #f0fdfa;
+            --rio-accent-border:   #ccfbf1;
+            --rio-ring:            0 0 0 3px rgba(13,148,136,0.12);
 
-            /* §1.5 — Phase 10/b — Tailwind-UI palette aliases ================
+            /* §1.5 — Tailwind-UI palette aliases ================
              * The splitview / tabs / timeline / show-grid / stat-strip
              * vocabulary was authored against Tailwind v3's `--gray-*` /
-             * `--emerald-*` / status / `--shadow-*` / `--ring-*` / `--rounded-*`
-             * tokens. Preserving those names keeps the structural CSS
-             * verbatim from the original Tailwind UI authoring; emerald
-             * shades alias to `--rio-accent` so the new components inherit
-             * the framework brand instead of bleeding emerald in. Existing
-             * pages don't touch these — they keep using `--rio-*` directly.
+             * `--shadow-*` / `--ring-*` / `--rounded-*` tokens. Preserving
+             * those names keeps the structural CSS verbatim from the
+             * original Tailwind UI authoring. The brand-* shades alias
+             * to `--rio-accent` so the new components inherit the
+             * framework brand. Existing pages don't touch these — they
+             * keep using `--rio-*` directly.
+             *
+             * Phase 11/a: renamed the §1.5 brand-aliased tokens to
+             * match the teal brand migration; the alias mechanism
+             * (alias-to-`--rio-accent`) is unchanged.
              */
             --gray-50:        #f9fafb;
             --gray-100:       #f3f4f6;
@@ -141,13 +145,13 @@
             --gray-800:       #1f2937;
             --gray-900:       #111827;
 
-            --emerald-50:     var(--rio-accent-bg);
-            --emerald-100:    var(--rio-accent-border);
-            --emerald-200:    var(--rio-accent-border);
-            --emerald-500:    var(--rio-accent);
-            --emerald-600:    var(--rio-accent);
-            --emerald-700:    var(--rio-accent);
-            --emerald-800:    var(--rio-accent);
+            --brand-50:       var(--rio-accent-bg);
+            --brand-100:      var(--rio-accent-border);
+            --brand-200:      var(--rio-accent-border);
+            --brand-500:      var(--rio-accent);
+            --brand-600:      var(--rio-accent);
+            --brand-700:      var(--rio-accent);
+            --brand-800:      var(--rio-accent);
 
             --green-50:       #f0fdf4;
             --green-200:      #bbf7d0;
@@ -171,7 +175,7 @@
             --shadow:         0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 
             --ring-gray:      inset 0 0 0 1px var(--gray-300);
-            --ring-emerald:   inset 0 0 0 2px var(--rio-accent);
+            --ring-brand:     inset 0 0 0 2px var(--rio-accent);
             --ring-red:       inset 0 0 0 1px var(--red-300);
             --ring-red-focus: inset 0 0 0 2px var(--red-600);
             --ring-black-5:   inset 0 0 0 1px rgba(0, 0, 0, 0.05);
@@ -294,7 +298,7 @@
             font-feature-settings: "tnum" 1, "lnum" 1;
         }
         .sidebar a.link:hover { background: var(--rio-bg-surface-1); }
-        /* Active item — KEEP the 3px rust left-stripe (improvement #2) */
+        /* Active item — KEEP the 3px brand left-stripe (improvement #2) */
         .sidebar a.link.is-active {
             background: var(--rio-accent-bg);
             color: var(--rio-accent);
@@ -316,7 +320,7 @@
 
         /* Main */
         .main {
-            flex: 1; padding: 32px 24px; background: var(--rio-bg); overflow-y: auto;
+            flex: 1; padding: 32px 32px; background: var(--rio-bg); overflow-y: auto;
             display: flex; justify-content: center;
         }
         .main .inner { width: 100%; max-width: 1200px; }
@@ -369,7 +373,7 @@
         }
         .page-head h1 {
             font-size: 32px; font-weight: var(--rio-weight-heading); margin: 0 0 8px;
-            color: var(--rio-text); letter-spacing: -0.02em; line-height: 1.15;
+            color: var(--rio-text); letter-spacing: -0.018em; line-height: 1.15;
             font-family: var(--rio-font-heading);
         }
         .page-head .lede {
@@ -437,19 +441,19 @@
             .field-grid > .span-2 { grid-column: span 1; }
         }
 
-        /* Buttons — primary now uses rust accent (was solid black).
-           In an 8-hour-a-day admin, the rust anchor on Save/Add gives
+        /* Buttons — primary now uses brand accent (was solid black).
+           In an 8-hour-a-day admin, the brand anchor on Save/Add gives
            the eye a faster scan target than black-on-white. */
         .btn-primary {
             display: inline-flex; align-items: center; gap: 8px;
             padding: 11px 18px; background: var(--rio-accent);
             border: 1px solid var(--rio-accent); border-radius: 8px;
             color: #fff; font-size: 15px; font-weight: 600;
-            cursor: pointer; box-shadow: 0 1px 2px rgba(184,67,26,0.18);
+            cursor: pointer; box-shadow: 0 1px 2px rgba(13,148,136,0.18);
             font-family: inherit; text-decoration: none;
         }
-        .btn-primary:hover { background: #9c3815; border-color: #9c3815; }
-        .btn-primary:focus-visible { outline: 3px solid rgba(184,67,26,0.30); outline-offset: 2px; }
+        .btn-primary:hover { background: #0f766e; border-color: #0f766e; }
+        .btn-primary:focus-visible { outline: 3px solid rgba(13,148,136,0.30); outline-offset: 2px; }
         .btn-secondary {
             display: inline-flex; align-items: center; gap: 7px;
             padding: 11px 16px; background: var(--rio-bg-surface-1);
@@ -526,7 +530,7 @@
             display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
             font-size: 15px; font-weight: 600; color: var(--rio-text);
         }
-        .tip .tip-head svg { color: var(--rio-accent); }
+        .tip .tip-head svg { color: var(--rio-text-muted); }
         .tip p { margin: 0; font-size: 14px; color: var(--rio-text-muted); line-height: 1.55; font-weight: 400; }
         .tip kbd {
             background: var(--rio-bg-surface-1); padding: 2px 7px; border-radius: 4px;
@@ -587,20 +591,20 @@
         /* Table */
         .table-wrap {
             background: var(--rio-bg-surface-1);
-            border: 1px solid var(--rio-border); border-radius: 10px;
+            border-radius: 10px;
             box-shadow: var(--rio-shadow-card); overflow: hidden;
         }
         .table { width: 100%; border-collapse: collapse; table-layout: auto; }
         .table thead th {
             background: #f3f4f6; font-size: 12px; font-weight: 600;
-            color: var(--rio-text-secondary); text-align: left; padding: 14px 18px;
+            color: var(--rio-text-faint); text-align: left; padding: 16px 18px;
             border-bottom: 1px solid var(--rio-border);
-            letter-spacing: 0.04em; text-transform: uppercase;
+            letter-spacing: 0.05em; text-transform: uppercase;
             position: sticky; top: 0; z-index: 1;
         }
         .table tbody td {
-            padding: 14px 18px; border-bottom: 1px solid var(--rio-border-faint);
-            font-size: 15px; color: var(--rio-text-secondary); vertical-align: middle;
+            padding: 16px 18px; border-bottom: 1px solid var(--rio-border-faint);
+            font-size: 14px; color: var(--rio-text); vertical-align: middle;
             transition: background 120ms ease;
         }
         /* Type-driven column-width hints (v1.4.1). With `table-layout:
@@ -633,7 +637,7 @@
             color: var(--rio-text); font-weight: 600; text-decoration: none;
             cursor: pointer;
         }
-        .table .row-link:hover { color: var(--rio-accent); text-decoration: underline; }
+        .table .row-link:hover { color: var(--rio-text); text-decoration: underline; }
         /* Primary-label cell marker (v1.4.1). list.html flags the
            first non-typed cell with `data-primary="true"`; that cell
            hosts the row-link `<a>` to the edit page. The bold weight
@@ -829,13 +833,12 @@
         }
 
         /* Avatar disc — first letter of an email/identifier on a
-           rust-tinted circle. Used on user_view.html. */
+           soft-gray circle. Used on user_view.html. */
         .avatar {
             display: inline-flex; align-items: center; justify-content: center;
             width: 56px; height: 56px; border-radius: 50%;
-            background: var(--rio-accent-bg); color: var(--rio-accent);
+            background: var(--gray-100); color: var(--gray-700);
             font-weight: 700; font-size: 22px; font-family: var(--rio-font-heading);
-            border: 1px solid var(--rio-accent-border);
         }
 
         /* Read-only key/value rows inside a card — matches the
@@ -863,11 +866,10 @@
 
         /* Permission tiles — used by group_edit.html. A 2-column
            responsive grid of checkbox tiles, each carrying a
-           permission name in monospace. Tile hover/active state
-           uses the rust accent so it reads as the same affordance
-           as `.dashboard-model`. */
+           permission name in monospace. Tile hover uses neutral
+           gray; the checkbox `accent-color` carries the brand. */
         .perm-grid {
-            display: grid; gap: 8px; grid-template-columns: 1fr;
+            display: grid; gap: 24px; grid-template-columns: 1fr;
         }
         @media (min-width: 640px) {
             .perm-grid { grid-template-columns: repeat(2, 1fr); }
@@ -880,8 +882,8 @@
             transition: border-color 0.12s ease, background 0.12s ease;
         }
         .perm-tile:hover {
-            border-color: var(--rio-accent-border);
-            background: var(--rio-accent-bg);
+            border-color: var(--gray-300);
+            background: var(--gray-50);
         }
         .perm-tile input[type="checkbox"] {
             width: 16px; height: 16px; flex-shrink: 0; cursor: pointer;
@@ -896,7 +898,7 @@
            a clickable model-name link on the left and small +Add /
            Change shortcuts on the right. Two-column grid at sm+. */
         .dashboard-models {
-            display: grid; grid-template-columns: 1fr; gap: 8px;
+            display: grid; grid-template-columns: 1fr; gap: 24px;
         }
         @media (min-width: 640px) {
             .dashboard-models { grid-template-columns: repeat(2, 1fr); }
@@ -908,23 +910,23 @@
             transition: border-color 0.12s ease, background 0.12s ease;
         }
         .dashboard-model:hover {
-            border-color: var(--rio-accent-border); background: var(--rio-accent-bg);
+            border-color: var(--gray-300); background: var(--gray-50);
         }
         .dashboard-model-link {
             display: inline-flex; align-items: center; gap: 10px;
             color: var(--rio-text); font-weight: 600; text-decoration: none;
             font-size: 15px;
         }
-        .dashboard-model-link:hover { color: var(--rio-accent); }
+        .dashboard-model-link:hover { color: var(--rio-text); text-decoration: underline; }
         .dashboard-model-link svg { color: var(--rio-text-faint); }
-        .dashboard-model:hover .dashboard-model-link svg { color: var(--rio-accent); }
+        .dashboard-model:hover .dashboard-model-link svg { color: var(--rio-text); }
         .dashboard-model-actions {
             display: inline-flex; gap: 12px; font-size: 13px;
         }
         .dashboard-model-actions a {
             color: var(--rio-text-muted); text-decoration: none; font-weight: 500;
         }
-        .dashboard-model-actions a:hover { color: var(--rio-accent); }
+        .dashboard-model-actions a:hover { color: var(--rio-text); text-decoration: underline; }
 
         /* Recent-activity feed — used by the dashboard right rail.
            Tight stack of audit-log lines; the per-line `pill_class`
@@ -939,7 +941,7 @@
             color: var(--rio-text); font-weight: 500;
             text-decoration: none; margin-left: 6px;
         }
-        .dashboard-recent li a:hover { color: var(--rio-accent); }
+        .dashboard-recent li a:hover { color: var(--rio-text); text-decoration: underline; }
         .dashboard-recent li .meta {
             margin-top: 3px; font-size: 12px; color: var(--rio-text-muted);
         }
@@ -1073,7 +1075,7 @@
          * Phase 10/b — vocabulary used by the built-in user profile page
          * (admin/user_view.html). Authored against Tailwind UI's Application
          * UI patterns; ported verbatim from the original. Variable references
-         * resolve via the §1.5 alias block above — emerald shades alias to
+         * resolve via the §1.5 alias block above — brand shades alias to
          * `--rio-accent` so these components inherit the framework brand.
          * Existing pages don't reference these selectors and aren't affected.
          */
@@ -1150,7 +1152,7 @@
             transition: box-shadow 100ms ease;
         }
         .pane-list .pane-search input::placeholder { color: var(--gray-400); }
-        .pane-list .pane-search input:focus { box-shadow: var(--ring-emerald); }
+        .pane-list .pane-search input:focus { box-shadow: var(--ring-brand); }
         .pane-list .pane-search svg {
             position: absolute;
             top: 50%;
@@ -1176,10 +1178,10 @@
         .pane-list .row:first-child { border-top: 0; }
         .pane-list .row:hover { background: var(--gray-50); }
         .pane-list .row.is-active {
-            background: var(--emerald-50);
-            box-shadow: inset 3px 0 0 0 var(--emerald-600);
+            background: var(--brand-50);
+            box-shadow: inset 3px 0 0 0 var(--brand-600);
         }
-        .pane-list .row.is-active .row-name { color: var(--emerald-700); }
+        .pane-list .row.is-active .row-name { color: var(--brand-700); }
         .pane-list .row .row-body { flex: 1; min-width: 0; }
         .pane-list .row .row-name {
             font-size: 14px;
@@ -1305,8 +1307,8 @@
         }
         .tabs > a.is-active, .tabs > .tab.is-active,
         .tabs > a[aria-current="page"], .tabs > .tab[aria-current="page"] {
-            color: var(--emerald-600);
-            border-bottom-color: var(--emerald-600);
+            color: var(--brand-600);
+            border-bottom-color: var(--brand-600);
             font-weight: 600;
         }
         .tabs .tab-count {
@@ -1325,8 +1327,8 @@
         }
         .tabs > .is-active .tab-count,
         .tabs > [aria-current="page"] .tab-count {
-            background: var(--emerald-50);
-            color: var(--emerald-700);
+            background: var(--brand-50);
+            color: var(--brand-700);
         }
 
         /* ─── Activity timeline (Tailwind UI feed pattern) ─────────────── */
@@ -1359,7 +1361,7 @@
             background: #ffffff;
             box-shadow: inset 0 0 0 2px var(--gray-300);
         }
-        .timeline > li.tl-success::before { box-shadow: inset 0 0 0 2px var(--emerald-600); }
+        .timeline > li.tl-success::before { box-shadow: inset 0 0 0 2px var(--green-600); }
         .timeline > li.tl-info::before    { box-shadow: inset 0 0 0 2px var(--blue-700); }
         .timeline > li.tl-warning::before { box-shadow: inset 0 0 0 2px var(--yellow-700); }
         .timeline > li.tl-error::before   { box-shadow: inset 0 0 0 2px var(--red-600); }
@@ -1374,11 +1376,11 @@
             color: var(--gray-900);
         }
         .timeline .tl-text a {
-            color: var(--emerald-600);
+            color: var(--brand-700);
             text-decoration: none;
             font-weight: 500;
         }
-        .timeline .tl-text a:hover { color: var(--emerald-700); }
+        .timeline .tl-text a:hover { color: var(--brand-700); text-decoration: underline; }
         .timeline .tl-meta {
             display: block;
             margin-top: 4px;
@@ -1446,24 +1448,24 @@
             border-radius: var(--rounded);
         }
         .show-row > .show-v a {
-            color: var(--emerald-600);
+            color: var(--brand-700);
             text-decoration: none;
             font-weight: 500;
         }
-        .show-row > .show-v a:hover { color: var(--emerald-700); }
+        .show-row > .show-v a:hover { color: var(--brand-700); text-decoration: underline; }
 
         /* ─── Stat strip (three small cards above the show grid) ──────── */
         .stat-strip {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 16px;
+            gap: 24px;
             margin: 0 0 24px;
         }
         .stat-card {
-            background: var(--gray-50);
+            background: #ffffff;
             border-radius: var(--rounded-lg);
             padding: 14px 16px;
-            box-shadow: var(--ring-black-5);
+            box-shadow: var(--shadow-sm);
         }
         .stat-card .stat-label {
             font-size: 12px;

@@ -56,16 +56,32 @@ module.exports = {
         "layer-4":      "rgb(var(--ds-color-layer-4) / <alpha-value>)",
 
         // ---------------------------------------------------------------
-        // Legacy brand colors. Phase 7a/2 templates still reference
-        // these (text-rust, bg-paper, bg-metal-surface, badge-teal, …).
-        // Kept intact so Phase 2 lands without forcing a same-commit
-        // template refactor; the next sub-phase moves call sites to
-        // the semantic tokens above and prunes this block.
+        // Brand palette — teal #0d9488 (Phase 11/a, replaces rust orange).
+        // The 50/100/600/700 scale is what every brand-anchored component
+        // pulls from. Soft tints at 50/100 are reserved for backgrounds
+        // (active-row tint, soft chip), 600 for primary affordances
+        // (button, active sidebar, focus ring), 700 for hover/active
+        // states + body-text links.
+        // ---------------------------------------------------------------
+        brand: {
+          50:  "#f0fdfa",
+          100: "#ccfbf1",
+          600: "#0d9488",
+          700: "#0f766e",
+        },
+
+        // ---------------------------------------------------------------
+        // Legacy aliases — the `rust` palette key resolves to brand teal
+        // for backward compatibility. Four templates still reference
+        // `text-rust` / `hover:text-rust-hover` (log_entries.html,
+        // object_history.html, confirm_delete.html); they keep rendering
+        // through this alias until a follow-up commit sweeps them to
+        // `text-brand-700`.
         // ---------------------------------------------------------------
         rust: {
-          DEFAULT: "#aa4422",
-          hover:   "#88331b",
-          glow:    "#d46644",
+          DEFAULT: "#0d9488",  // = brand-600
+          hover:   "#0f766e",  // = brand-700
+          glow:    "#5eead4",  // = teal-300 (lighter accent)
         },
         paper: "#f9f8f6",
         metal: {
@@ -73,7 +89,9 @@ module.exports = {
           dark:    "#181a1f",
           surface: "#22252b",
         },
-        teal: "#338899",
+        // (legacy `teal: "#338899"` removed — that was the Phase 7a/2
+        //  cyan-teal, unused in current admin templates and would clash
+        //  semantically with the new brand teal.)
       },
 
       // -------------------------------------------------------------------
@@ -147,10 +165,10 @@ module.exports = {
         card:     "0 2px 6px rgba(0,0,0,0.08)",
         dropdown: "0 12px 24px rgba(0,0,0,0.12)",
         modal:    "0 24px 48px rgba(0,0,0,0.18)",
-        // Legacy
-        mark:        "0 1px 3px rgba(170,68,34,0.4)",
-        btn:         "0 1px 2px rgba(170,68,34,0.3)",
-        "btn-hover": "0 4px 10px rgba(170,68,34,0.25)",
+        // Legacy — brand-tinted (rgb(13,148,136) = brand-600).
+        mark:        "0 1px 3px rgba(13,148,136,0.4)",
+        btn:         "0 1px 2px rgba(13,148,136,0.3)",
+        "btn-hover": "0 4px 10px rgba(13,148,136,0.25)",
         "card-hover":"0 8px 20px rgba(0,0,0,0.04)",
       },
     },
