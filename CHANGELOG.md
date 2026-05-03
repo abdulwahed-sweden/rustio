@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.8.0] - 2026-05-04
+
+### Added
+
+- **AI-native project scaffold (Phase 12/a).** `rustio startproject <name>` now writes `.ai/context.md` (a human + AI-readable description of the project — domain, do/don't rules, design system, template conventions) and `.rustio/project.lock` (machine-readable TOML metadata: project name, CLI version that created it, database backend, brand colour, design system tag). Both are committed to git; neither belongs in `.gitignore`. Lays the foundation for AI agents to read project context in a single file before making changes.
+- **Phase 12/b template scaffold + override boundary.** Scaffold writes `templates/home.html` with the project name baked in at build time (`format!()` substitution), no runtime template variables. The runtime template loader resolves overrides by **exact path match** under `templates/`: to override `admin/foo.html`, save your version at `templates/admin/foo.html`. There is no separate `overrides/` directory — that path was documented in early drafts as a fiction (the loader never read from it) and has been removed.
+- **Phase 12/c doctor checks.** `rustio doctor` learned three new project-state checks, slotted between Project root and DATABASE_URL:
+  - `AI context` — `.ai/context.md` exists and is non-empty.
+  - `Project lock` — `.rustio/project.lock` parses as TOML and contains `[project]` with `name` + `rustio_version`.
+  - `CLI version` — installed CLI version vs the version recorded in `project.lock`. Mismatch is a warning, not a blocker.
+  All three are warnings (not blockers): legacy projects (created before 1.8.0) have none of these files and the app still boots fine.
+- **Override safety net (`rustio-core`).** `Templates::new` now scans the disk root once at startup, INFO-logs every override of an embedded template, and WARN-logs any override file missing all of `{% extends %}`, `{% block %}`, and `<html>`. A 14-byte `<h1>TEST</h1>` override of `admin/base.html` no longer silently destroys the admin UI — the framework still serves the override (non-fatal) but the operator now sees the failure mode in the log.
+- **Non-blocking update check.** `rustio` commands fetch the latest published version from crates.io on a detached background thread once per day, cache the result, and print a one-line "newer version available" hint at the end of the next command. Silent on network failure; honours `RUSTIO_NO_UPDATE_CHECK=1` and `CI=1/true`.
+
+### Changed
+
+- **Scaffold's `rustio-core` pin.** Generated `Cargo.toml` now interpolates the CLI's own major.minor (e.g. CLI 1.8.0 → `rustio-core = "1.8"`). Was a literal `"1.4"` since v1.4, which cargo's caret semantics quietly resolved to "any 1.x ≥ 1.4" — a developer reading the file got 1.7.x with no signal in the manifest. The pin now matches what cargo actually resolves and stays in lockstep with the CLI as it bumps minors.
+- **Doctor heading** — "checking your environment" → "checking your project" to match the new project-state framing.
+
+### Fixed
+
+- **`rustio doctor` no longer silently misclassified the legacy-project case.** With Phase 12/a/c shipped, projects without `.rustio/project.lock` now show a clear warning rather than passing checks against an absent file.
+- **Disk-override breakage is observable.** See override-safety-net above.
+
+### Notes
+
+- 1.7.0 and 1.7.1 shipped without `CHANGELOG.md` entries; see `git log v1.6.0..v1.7.1` for the admin-UI refinement and design-system work that landed in those releases.
+- Phase 12/d (templates take/diff/upgrade tooling) and 12/e (`rustio ai` subcommands) are documented in `docs/phases/PHASE12_PLAN.md` but **not** in this release.
+- Scaffolded projects against 1.8.0 will still pull `rustio-core = "1.8"` from crates.io transparently. Existing projects on 1.7.x continue to work unchanged.
+
 ## [1.6.0] - 2026-05-01
 
 ### Added
