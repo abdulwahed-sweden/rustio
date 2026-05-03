@@ -1864,13 +1864,24 @@ mod tests {
     }
 
     #[test]
-    fn scaffold_project_cargo_toml_uses_rustio_core_1_4() {
+    fn scaffold_project_cargo_toml_pins_rustio_core_to_cli_minor() {
+        // Phase 12/c-fix — the scaffold pins rustio-core to the CLI's own
+        // major.minor (e.g. CLI v1.7.1 → `rustio-core = "1.7"`), so the
+        // version a developer reads in their Cargo.toml matches what cargo
+        // will resolve. Drift between the two was the bug we shipped in
+        // 12/a's "1.4" pin: cargo resolved it to 1.7.1 silently.
         let dir = tempdir_path();
         scaffold::project_at(&dir, "demo").unwrap();
         let toml = std::fs::read_to_string(dir.join("demo").join("Cargo.toml")).unwrap();
+        let want_minor: String = env!("CARGO_PKG_VERSION")
+            .split('.')
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(".");
+        let want_line = format!("rustio-core = \"{want_minor}\"");
         assert!(
-            toml.contains("rustio-core = \"1.4\""),
-            "scaffold Cargo.toml must reference rustio-core 1.4 (not 1.0)\n--- actual ---\n{toml}"
+            toml.contains(&want_line),
+            "scaffold Cargo.toml must pin rustio-core to the CLI's major.minor ({want_line})\n--- actual ---\n{toml}"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -2605,6 +2616,19 @@ mod scaffold {
     }
 
     fn cargo_toml(name: &str) -> String {
+        // Phase 12/c-fix — pin rustio-core to the CLI's current major.minor
+        // so the version string in the generated Cargo.toml matches what
+        // cargo will actually resolve. The previous "1.4" pin was honest
+        // about the floor but misleading about the ceiling: cargo's caret
+        // semantics turn "1.4" into "≥1.4.0, <2.0.0", so a developer
+        // reading the file got 1.7.x instead of 1.4.x with no signal in
+        // the manifest.
+        let cli_version = env!("CARGO_PKG_VERSION");
+        let major_minor = cli_version
+            .split('.')
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(".");
         format!(
             r#"[package]
 name = "{name}"
@@ -2612,7 +2636,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rustio-core = "1.4"
+rustio-core = "{major_minor}"
 tokio = {{ version = "1", features = ["rt-multi-thread", "macros"] }}
 chrono = {{ version = "0.4", features = ["serde"] }}
 serde = {{ version = "1", features = ["derive"] }}
