@@ -47,7 +47,7 @@
                 <strong>{{ item.source_display_name }}</strong> — rows whose
                 <code class="code-pill">{{ item.source_field }}</code>
                 points at this {{ singular_name|lower }}
-                (<a href="/admin/{{ item.source_admin_name }}/?{{ item.source_field }}={{ object_id }}" class="text-rust hover:underline">browse</a>)
+                (<a href="/admin/{{ item.source_admin_name }}/?{{ item.source_field }}={{ object_id }}" class="text-brand-700 hover:underline">browse</a>)
             </li>
             {% endfor %}
         </ul>
