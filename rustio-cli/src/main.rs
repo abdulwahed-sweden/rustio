@@ -1846,11 +1846,15 @@ mod tests {
             ".gitignore",
             ".env.example",
             "README.md",
+            ".ai/context.md",
+            ".rustio/project.lock",
         ] {
             assert!(root.join(path).is_file(), "scaffold missing: {path}");
         }
         assert!(root.join("migrations").is_dir(), "migrations dir missing");
         assert!(root.join("templates").is_dir(), "templates dir missing");
+        assert!(root.join(".ai").is_dir(), ".ai dir missing");
+        assert!(root.join(".rustio").is_dir(), ".rustio dir missing");
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1975,6 +1979,147 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    // ----- Phase 12/a — AI-readable scaffold ----------------------------
+
+    /// Phase 12/a — `.ai/context.md` lands with the project name
+    /// interpolated and the Do / Do-Not rules in place. Substring
+    /// checks; structural concerns (TOML) live in the project.lock
+    /// tests below.
+    #[test]
+    fn scaffold_project_at_creates_ai_context() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let path = dir.join("clinic").join(".ai").join("context.md");
+        assert!(path.is_file(), ".ai/context.md must exist");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains("# RustIO Project Context"),
+            "context.md must lead with the canonical heading — actual:\n{text}"
+        );
+        assert!(
+            text.contains("clinic"),
+            "context.md must interpolate the project name — actual:\n{text}"
+        );
+        assert!(
+            text.contains("rustio startapp"),
+            "context.md must reference the startapp command in the Do block"
+        );
+        assert!(
+            text.contains("Do not modify the upstream `rustio-core` crate"),
+            "context.md must carry the clarified rustio-core rule"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/a — `.rustio/project.lock` substring checks: every key
+    /// and section the doctor / future tooling will key off must be
+    /// present in the rendered file. The rustio_version assertion
+    /// reads `env!("CARGO_PKG_VERSION")` so the test survives bumps.
+    #[test]
+    fn scaffold_project_at_creates_project_lock() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let path = dir.join("clinic").join(".rustio").join("project.lock");
+        assert!(path.is_file(), ".rustio/project.lock must exist");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("[meta]"), "project.lock must have [meta]");
+        assert!(
+            text.contains("schema_version = 1"),
+            "project.lock must record schema_version = 1"
+        );
+        assert!(text.contains("[project]"), "project.lock must have [project]");
+        assert!(text.contains("[database]"), "project.lock must have [database]");
+        assert!(text.contains("[design]"), "project.lock must have [design]");
+        assert!(text.contains("[ai]"), "project.lock must have [ai]");
+        assert!(
+            text.contains("name = \"clinic\""),
+            "project.lock must interpolate the project name"
+        );
+        let want_version = format!("rustio_version = \"{}\"", env!("CARGO_PKG_VERSION"));
+        assert!(
+            text.contains(&want_version),
+            "project.lock must record the current CLI version — wanted: {want_version}\nactual:\n{text}"
+        );
+        assert!(
+            text.contains("backend = \"postgres\""),
+            "project.lock must record postgres as the database backend"
+        );
+        assert!(
+            text.contains("brand = \"#0d9488\""),
+            "project.lock must seed the default brand color"
+        );
+        assert!(
+            text.contains("design_system = \"rustio-admin-v1\""),
+            "project.lock must pin the design system tag"
+        );
+        assert!(
+            text.contains("context = \".ai/context.md\""),
+            "project.lock must point at the AI context file"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/a — `.rustio/project.lock` parses as valid TOML. Catches
+    /// malformed strings or accidental key-name typos that the substring
+    /// checks above would miss.
+    #[test]
+    fn scaffold_project_lock_parses_as_valid_toml() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let path = dir.join("clinic").join(".rustio").join("project.lock");
+        let text = std::fs::read_to_string(&path).unwrap();
+        let value: toml::Value = toml::from_str(&text)
+            .unwrap_or_else(|e| panic!("project.lock must parse as TOML: {e}\n--- actual ---\n{text}"));
+        assert_eq!(
+            value
+                .get("project")
+                .and_then(|p| p.get("name"))
+                .and_then(|n| n.as_str()),
+            Some("clinic"),
+            "project.name must equal the scaffold input"
+        );
+        assert_eq!(
+            value
+                .get("project")
+                .and_then(|p| p.get("rustio_version"))
+                .and_then(|v| v.as_str()),
+            Some(env!("CARGO_PKG_VERSION")),
+            "project.rustio_version must equal the CLI's CARGO_PKG_VERSION"
+        );
+        assert_eq!(
+            value
+                .get("meta")
+                .and_then(|m| m.get("schema_version"))
+                .and_then(|v| v.as_integer()),
+            Some(1),
+            "meta.schema_version must equal 1 (the initial Phase 12/a schema)"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/a — generated README must point developers at the two
+    /// new directories so they don't mistake them for editor cruft and
+    /// delete them.
+    #[test]
+    fn scaffold_project_readme_documents_ai_and_rustio_dirs() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "shop").unwrap();
+        let readme = std::fs::read_to_string(dir.join("shop").join("README.md")).unwrap();
+        assert!(
+            readme.contains(".ai/context.md"),
+            "README must reference .ai/context.md — actual:\n{readme}"
+        );
+        assert!(
+            readme.contains(".rustio/project.lock"),
+            "README must reference .rustio/project.lock — actual:\n{readme}"
+        );
+        assert!(
+            readme.contains("AI agents"),
+            "README must explain the .ai/ directory in terms of AI agents"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     /// v1.6 — README quickstart must point users at `rustio user create`
     /// with a project-name-substituted email.
     #[test]
@@ -2073,6 +2218,12 @@ mod scaffold {
         fs::create_dir_all(root.join("src").join("apps")).map_err(|e| e.to_string())?;
         fs::create_dir_all(root.join("migrations")).map_err(|e| e.to_string())?;
         fs::create_dir_all(root.join("templates")).map_err(|e| e.to_string())?;
+        // Phase 12/a — AI-readable scaffold. `.ai/` carries human prose
+        // for AI agents; `.rustio/` carries machine-readable metadata
+        // the CLI uses for doctor / future upgrades. Both are committed
+        // to git; neither belongs in `.gitignore`.
+        fs::create_dir_all(root.join(".ai")).map_err(|e| e.to_string())?;
+        fs::create_dir_all(root.join(".rustio")).map_err(|e| e.to_string())?;
 
         fs::write(root.join("Cargo.toml"), cargo_toml(name)).map_err(|e| e.to_string())?;
         fs::write(root.join("src").join("main.rs"), MAIN_RS).map_err(|e| e.to_string())?;
@@ -2080,6 +2231,10 @@ mod scaffold {
         fs::write(root.join(".gitignore"), GITIGNORE).map_err(|e| e.to_string())?;
         fs::write(root.join(".env.example"), ENV_EXAMPLE).map_err(|e| e.to_string())?;
         fs::write(root.join("README.md"), project_readme(name)).map_err(|e| e.to_string())?;
+        fs::write(root.join(".ai").join("context.md"), ai_context_md(name))
+            .map_err(|e| e.to_string())?;
+        fs::write(root.join(".rustio").join("project.lock"), project_lock_toml(name))
+            .map_err(|e| e.to_string())?;
         // v1.6 — minimal welcome page rendered by `GET /`. Plain HTML,
         // no JS, no framework. Edit freely; delete to fall through to
         // a custom handler.
@@ -2213,8 +2368,143 @@ rustio startapp orders
 rustio doctor
 ```
 
+## Project layout
+
+- `.ai/context.md` — what this project is, what AI agents may and may
+  not change. Edit this to teach Claude Code (or any AI agent) about
+  your domain and house rules.
+- `.rustio/project.lock` — machine-readable project metadata (RustIO
+  version, database backend, branding). Managed by the CLI; don't
+  hand-edit it.
+
+Both directories are committed to git — they are project state, not
+local cache.
+
 See <https://github.com/abdulwahed-sweden/rustio> for documentation.
 "#
+        )
+    }
+
+    /// Phase 12/a — `.ai/context.md` for AI agents (Claude Code, etc.).
+    /// The file is human-and-AI-readable: it tells an agent what the
+    /// project is, what may be modified, and what is off-limits. The
+    /// project name is interpolated; the rules and design-system
+    /// guidance are static prose the developer can edit.
+    fn ai_context_md(name: &str) -> String {
+        format!(
+            r#"# RustIO Project Context
+
+This is a RustIO project. AI agents (Claude Code, Cursor, etc.) should
+read this file before making changes.
+
+## Project Name
+
+{name}
+
+## Domain
+
+_Fill in: a short description of what this project does._
+
+## Main Resources
+
+_Fill in: the core resources this project models. Examples:_
+
+- _TODO: resource one_
+- _TODO: resource two_
+
+## Rules for AI Agents
+
+### Do
+
+- Add new apps using `rustio startapp <name>`.
+- Put model code inside `src/apps/<app>/models.rs`.
+- Add migrations inside `migrations/`.
+- Follow the existing admin design system.
+- Use `templates/overrides/` only for intentional framework overrides.
+
+### Do Not
+
+- Do not modify the upstream `rustio-core` crate (your dependency, not
+  your codebase). Project changes belong in `src/`, `migrations/`, and
+  `templates/` — never in the framework's source.
+- Do not rewrite admin templates unless explicitly requested.
+- Do not invent new colors.
+- Do not change design tokens randomly.
+- Do not add SQLite support — RustIO is PostgreSQL-only.
+- Do not auto-seed production users.
+- Do not modify `.rustio/*.lock` manually; the CLI manages those files.
+
+## Design System
+
+Primary brand color: `#0d9488`.
+
+Use the existing RustIO admin classes. Do not introduce new UI systems.
+
+## Template Rules
+
+- `templates/*.html` (e.g. `home.html`) are normal project pages — edit
+  them freely.
+- `templates/overrides/` is reserved for framework-level customization
+  and is tracked separately. Treat anything inside it as load-bearing.
+
+## Database
+
+PostgreSQL only.
+
+## Commands
+
+Run diagnostics:
+
+```sh
+rustio doctor
+```
+
+Create an admin user:
+
+```sh
+rustio user create --email admin@{name}.local
+```
+
+Run the server:
+
+```sh
+cargo run
+```
+"#
+        )
+    }
+
+    /// Phase 12/a — `.rustio/project.lock`. Machine-readable project
+    /// metadata: which RustIO version produced this project, which DB
+    /// backend, which design system, where the AI context file lives.
+    /// Not for hand-editing — the CLI rewrites it on upgrades.
+    fn project_lock_toml(name: &str) -> String {
+        let version = env!("CARGO_PKG_VERSION");
+        // The raw-string delimiter is `r##"..."##` (not `r#"..."#`) because
+        // the TOML body contains the literal sequence `"#` inside the brand
+        // colour value, which would close a single-`#` raw string early.
+        format!(
+            r##"# RustIO project metadata. Managed by the `rustio` CLI.
+# Do not hand-edit; the CLI rewrites this file on project upgrades.
+
+[meta]
+schema_version = 1
+
+[project]
+name = "{name}"
+rustio_version = "{version}"
+created_with_cli = "{version}"
+
+[database]
+backend = "postgres"
+
+[design]
+brand = "#0d9488"
+design_system = "rustio-admin-v1"
+
+[ai]
+context = ".ai/context.md"
+"##
         )
     }
 

@@ -41,3 +41,9 @@ url = "2"
 # cargo itself uses.
 ureq = "2"
 semver = "1"
+
+[dev-dependencies]
+# Phase 12/a — structural parse of the scaffolded `.rustio/project.lock`
+# in tests. Substring asserts catch typos; toml-parse catches malformed
+# TOML before it ships in a release.
+toml = "0.8"
