@@ -2324,6 +2324,106 @@ mod tests {
             "error must use polished wording (Email …), got: {err}"
         );
     }
+
+    // ----- Phase 12/c — scaffold::load_project_lock -----------------------
+
+    /// Phase 12/c — happy path. A scaffolded project's `.rustio/project.lock`
+    /// must round-trip through `load_project_lock` with the project name
+    /// and the CLI version intact.
+    #[test]
+    fn scaffold_load_project_lock_returns_name_and_version() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "clinic").unwrap();
+        let root = dir.join("clinic");
+        let lock = scaffold::load_project_lock(&root).expect("lock must parse");
+        assert_eq!(lock.name, "clinic");
+        assert_eq!(lock.rustio_version, env!("CARGO_PKG_VERSION"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/c — file missing (legacy project, or operator deleted).
+    #[test]
+    fn scaffold_load_project_lock_missing_returns_missing() {
+        let dir = tempdir_path();
+        // Fresh tempdir with no `.rustio/` at all.
+        let err = scaffold::load_project_lock(&dir).unwrap_err();
+        assert!(
+            matches!(err, scaffold::LoadProjectLockError::Missing),
+            "expected Missing, got: {err:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/c — file present but unparseable. The doctor surfaces the
+    /// parser error in its detail block, so the variant carries it.
+    #[test]
+    fn scaffold_load_project_lock_malformed_returns_invalid_toml() {
+        let dir = tempdir_path();
+        std::fs::create_dir_all(dir.join(".rustio")).unwrap();
+        std::fs::write(dir.join(".rustio").join("project.lock"), "not = valid = toml").unwrap();
+        let err = scaffold::load_project_lock(&dir).unwrap_err();
+        assert!(
+            matches!(err, scaffold::LoadProjectLockError::InvalidToml(_)),
+            "expected InvalidToml, got: {err:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/c — file parses but lacks `[project]` entirely.
+    #[test]
+    fn scaffold_load_project_lock_no_project_table_returns_missing_table() {
+        let dir = tempdir_path();
+        std::fs::create_dir_all(dir.join(".rustio")).unwrap();
+        std::fs::write(
+            dir.join(".rustio").join("project.lock"),
+            "[meta]\nschema_version = 1\n",
+        )
+        .unwrap();
+        let err = scaffold::load_project_lock(&dir).unwrap_err();
+        assert!(
+            matches!(err, scaffold::LoadProjectLockError::MissingProjectTable),
+            "expected MissingProjectTable, got: {err:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/c — `[project]` exists but `name` is gone. The two field
+    /// gaps are tested separately so a regression in either is named in
+    /// the failure.
+    #[test]
+    fn scaffold_load_project_lock_no_name_returns_missing_name() {
+        let dir = tempdir_path();
+        std::fs::create_dir_all(dir.join(".rustio")).unwrap();
+        std::fs::write(
+            dir.join(".rustio").join("project.lock"),
+            "[project]\nrustio_version = \"1.7.1\"\n",
+        )
+        .unwrap();
+        let err = scaffold::load_project_lock(&dir).unwrap_err();
+        assert!(
+            matches!(err, scaffold::LoadProjectLockError::MissingProjectName),
+            "expected MissingProjectName, got: {err:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/c — `[project]` exists but `rustio_version` is gone.
+    #[test]
+    fn scaffold_load_project_lock_no_version_returns_missing_version() {
+        let dir = tempdir_path();
+        std::fs::create_dir_all(dir.join(".rustio")).unwrap();
+        std::fs::write(
+            dir.join(".rustio").join("project.lock"),
+            "[project]\nname = \"clinic\"\n",
+        )
+        .unwrap();
+        let err = scaffold::load_project_lock(&dir).unwrap_err();
+        assert!(
+            matches!(err, scaffold::LoadProjectLockError::MissingProjectVersion),
+            "expected MissingProjectVersion, got: {err:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 // ---- scaffold ----------------------------------------------------------
@@ -2431,6 +2531,77 @@ mod scaffold {
                 return None;
             }
         }
+    }
+
+    /// Phase 12/c — fields `rustio doctor` keys off when reporting
+    /// project-metadata health. Mirrors a subset of `project_lock_toml`'s
+    /// `[project]` block; other sections are not loaded because no caller
+    /// needs them yet.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ProjectLock {
+        pub name: String,
+        pub rustio_version: String,
+    }
+
+    /// Phase 12/c — distinct failure modes for `load_project_lock`. The
+    /// doctor maps each variant to a specific headline + recipe so the
+    /// operator can tell "missing lock" from "malformed lock" from
+    /// "lock missing required fields" without reading source.
+    #[derive(Debug)]
+    pub enum LoadProjectLockError {
+        /// `.rustio/project.lock` does not exist. Either a legacy project
+        /// (created before Phase 12/a) or the operator deleted the file.
+        Missing,
+        /// File exists but couldn't be read (permissions, IO).
+        Io(std::io::Error),
+        /// File parsed by neither toml::from_str nor as a Value table.
+        InvalidToml(String),
+        /// TOML parses but has no `[project]` table.
+        MissingProjectTable,
+        /// `[project]` table exists but `name` is missing or not a string.
+        MissingProjectName,
+        /// `[project]` table exists but `rustio_version` is missing or
+        /// not a string.
+        MissingProjectVersion,
+    }
+
+    /// Phase 12/c — read `<root>/.rustio/project.lock` and pluck the
+    /// `[project]` table fields the doctor needs. Pluck via `toml::Value`
+    /// (no serde derive) because only two fields are consumed; a typed
+    /// struct would couple the parser to every section in the lock.
+    ///
+    /// Returns the structured value on success, or a `LoadProjectLockError`
+    /// variant the doctor maps to a headline + recipe.
+    pub fn load_project_lock(root: &Path) -> Result<ProjectLock, LoadProjectLockError> {
+        let path = root.join(".rustio").join("project.lock");
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(LoadProjectLockError::Missing);
+            }
+            Err(e) => return Err(LoadProjectLockError::Io(e)),
+        };
+        let value: toml::Value = text
+            .parse()
+            .map_err(|e: toml::de::Error| LoadProjectLockError::InvalidToml(e.to_string()))?;
+        let project = value
+            .get("project")
+            .and_then(|v| v.as_table())
+            .ok_or(LoadProjectLockError::MissingProjectTable)?;
+        let name = project
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or(LoadProjectLockError::MissingProjectName)?
+            .to_string();
+        let rustio_version = project
+            .get("rustio_version")
+            .and_then(|v| v.as_str())
+            .ok_or(LoadProjectLockError::MissingProjectVersion)?
+            .to_string();
+        Ok(ProjectLock {
+            name,
+            rustio_version,
+        })
     }
 
     fn cargo_toml(name: &str) -> String {

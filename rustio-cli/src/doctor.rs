@@ -1,16 +1,25 @@
 //! v1.5.0 — `rustio doctor`: pre-flight diagnostics for first-run setup.
 //!
-//! Read-only by contract. Five checks run in causal order; downstream
+//! Read-only by contract. Eight checks run in causal order; downstream
 //! checks render as `⏭` when an upstream blocker fails.
 //!
 //! Order mirrors the scaffold's `MAIN_RS` startup sequence so a green
 //! doctor implies `cargo run` will boot:
 //!
 //!   1. Project root           (filesystem, walk-up via `scaffold::find_project_root`)
-//!   2. DATABASE_URL           (process env, after `dotenvy::dotenv()`)
-//!   3. PostgreSQL TCP         (TcpStream::connect_timeout, 2s)
-//!   4. PostgreSQL connect     (sqlx pool, SELECT 1)
-//!   5. Meilisearch reachable  (`MeiliClient::health()`, warning-only)
+//!   2. AI context             (Phase 12/c — `.ai/context.md` exists, non-empty)
+//!   3. Project lock           (Phase 12/c — `.rustio/project.lock` parses, has [project])
+//!   4. CLI version            (Phase 12/c — `env!(CARGO_PKG_VERSION)` vs lock.rustio_version)
+//!   5. DATABASE_URL           (process env, after `dotenvy::dotenv()`)
+//!   6. PostgreSQL TCP         (TcpStream::connect_timeout, 2s)
+//!   7. PostgreSQL connect     (sqlx pool, SELECT 1)
+//!   8. Meilisearch reachable  (`MeiliClient::health()`, warning-only)
+//!
+//! Phase 12/c added checks 2–4. They surface project-metadata health
+//! after the walk-up succeeds and before any environment / DB work.
+//! All three are warnings (not blockers): the app boots without them,
+//! and a legacy project (created before Phase 12/a) has no `.rustio/`
+//! at all.
 //!
 //! No mutations. No connection retries. No package-manager detection.
 //! Anything not on this list is deferred to v1.6+.
@@ -73,11 +82,11 @@ pub(crate) struct ParsedUrl {
 pub async fn run(args: Args) -> ExitCode {
     if !args.quiet {
         println!();
-        println!("  RustIO doctor — checking your environment");
+        println!("  RustIO doctor — checking your project");
         println!();
     }
 
-    let mut results: Vec<CheckResult> = Vec::with_capacity(5);
+    let mut results: Vec<CheckResult> = Vec::with_capacity(8);
 
     // 1 — project root
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -92,17 +101,37 @@ pub async fn run(args: Args) -> ExitCode {
         return ExitCode::from(1);
     }
 
+    // Phase 12/c — project-metadata checks. The root is known here
+    // (project_ok ⇒ Some), so unwrap is safe. All three are warnings:
+    // legacy projects (pre-Phase 12/a) have none of `.ai/`, `.rustio/`,
+    // and the app boots fine without them.
+    let root = project_root.as_ref().expect("project_ok ⇒ Some");
+
+    // 2 — AI context
+    results.push(check_ai_context(root));
+
+    // 3 — Project lock (parsed once, re-used by check 4)
+    let lock_result = scaffold::load_project_lock(root);
+    results.push(check_project_lock(&lock_result));
+
+    // 4 — CLI version (skipped if lock didn't parse)
+    let cli_check = match &lock_result {
+        Ok(lock) => check_cli_version(lock),
+        Err(_) => skipped("CLI version", "project.lock unreadable"),
+    };
+    results.push(cli_check);
+
     // Mirror the scaffold's MAIN_RS: load `.env` from cwd before reading
     // DATABASE_URL. Silent on failure — `.env` is optional.
     let _ = dotenvy::dotenv();
 
-    // 2 — DATABASE_URL
+    // 5 — DATABASE_URL
     let raw = std::env::var("DATABASE_URL").ok();
     let (r2, parsed) = check_database_url(raw);
     let url_ok = matches!(r2.severity, Severity::Ok);
     results.push(r2);
 
-    // 3 — PG TCP
+    // 6 — PG TCP
     let tcp_result = if !url_ok {
         skipped("PostgreSQL TCP", "DATABASE_URL invalid")
     } else {
@@ -111,7 +140,7 @@ pub async fn run(args: Args) -> ExitCode {
     let tcp_ok = matches!(tcp_result.severity, Severity::Ok);
     results.push(tcp_result);
 
-    // 4 — PG connect (depends on URL parse + TCP)
+    // 7 — PG connect (depends on URL parse + TCP)
     let connect_result = if !url_ok {
         skipped("PostgreSQL", "DATABASE_URL invalid")
     } else if !tcp_ok {
@@ -121,7 +150,7 @@ pub async fn run(args: Args) -> ExitCode {
     };
     results.push(connect_result);
 
-    // 5 — Meili (independent — runs unless project check failed)
+    // 8 — Meili (independent — runs unless project check failed)
     results.push(check_meili().await);
 
     render(&results, &args);
@@ -181,7 +210,151 @@ fn project_name(root: &Path) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Check 2 — DATABASE_URL
+// Phase 12/c — Checks 2/3/4: project metadata
+// ---------------------------------------------------------------------------
+
+/// Check 2 — `.ai/context.md` exists and is non-empty. Empty / missing is
+/// a warning (the app still boots), not a blocker.
+pub(crate) fn check_ai_context(root: &Path) -> CheckResult {
+    let path = root.join(".ai").join("context.md");
+    match std::fs::read_to_string(&path) {
+        Ok(s) if !s.trim().is_empty() => CheckResult {
+            name: "AI context",
+            severity: Severity::Ok,
+            headline: format!(".ai/context.md ({} bytes)", s.len()),
+            detail: None,
+            elapsed_ms: None,
+        },
+        Ok(_) => CheckResult {
+            name: "AI context",
+            severity: Severity::Warning,
+            headline: ".ai/context.md is empty".into(),
+            detail: Some(
+                "AI agents read this file before making changes. An empty\n\
+                 file means an agent has no project rules to follow."
+                    .into(),
+            ),
+            elapsed_ms: None,
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => CheckResult {
+            name: "AI context",
+            severity: Severity::Warning,
+            headline: ".ai/context.md is missing".into(),
+            detail: Some(
+                "Likely a project created before Phase 12/a. The app boots\n\
+                 fine; AI agents will have no project-specific rules to read."
+                    .into(),
+            ),
+            elapsed_ms: None,
+        },
+        Err(e) => CheckResult {
+            name: "AI context",
+            severity: Severity::Warning,
+            headline: format!("cannot read .ai/context.md: {e}"),
+            detail: None,
+            elapsed_ms: None,
+        },
+    }
+}
+
+/// Check 3 — `.rustio/project.lock` parses as TOML and contains `[project]`
+/// with `name` + `rustio_version`. Each failure mode gets its own headline.
+pub(crate) fn check_project_lock(
+    result: &Result<scaffold::ProjectLock, scaffold::LoadProjectLockError>,
+) -> CheckResult {
+    use scaffold::LoadProjectLockError as E;
+    match result {
+        Ok(lock) => CheckResult {
+            name: "Project lock",
+            severity: Severity::Ok,
+            headline: format!("{} (created with rustio {})", lock.name, lock.rustio_version),
+            detail: None,
+            elapsed_ms: None,
+        },
+        Err(E::Missing) => CheckResult {
+            name: "Project lock",
+            severity: Severity::Warning,
+            headline: ".rustio/project.lock is missing".into(),
+            detail: Some(
+                "Likely a project created before Phase 12/a. The app boots\n\
+                 fine; doctor cannot report version drift without it."
+                    .into(),
+            ),
+            elapsed_ms: None,
+        },
+        Err(E::Io(e)) => CheckResult {
+            name: "Project lock",
+            severity: Severity::Warning,
+            headline: format!("cannot read .rustio/project.lock: {e}"),
+            detail: None,
+            elapsed_ms: None,
+        },
+        Err(E::InvalidToml(msg)) => CheckResult {
+            name: "Project lock",
+            severity: Severity::Warning,
+            headline: ".rustio/project.lock is malformed TOML".into(),
+            detail: Some(format!("Parser error:\n  {msg}")),
+            elapsed_ms: None,
+        },
+        Err(E::MissingProjectTable) => CheckResult {
+            name: "Project lock",
+            severity: Severity::Warning,
+            headline: ".rustio/project.lock has no [project] table".into(),
+            detail: None,
+            elapsed_ms: None,
+        },
+        Err(E::MissingProjectName) => CheckResult {
+            name: "Project lock",
+            severity: Severity::Warning,
+            headline: ".rustio/project.lock missing [project].name".into(),
+            detail: None,
+            elapsed_ms: None,
+        },
+        Err(E::MissingProjectVersion) => CheckResult {
+            name: "Project lock",
+            severity: Severity::Warning,
+            headline: ".rustio/project.lock missing [project].rustio_version".into(),
+            detail: None,
+            elapsed_ms: None,
+        },
+    }
+}
+
+/// Check 4 — installed `rustio` CLI version vs the version recorded in
+/// `project.lock`. Any string inequality is a warning; doctor does not
+/// attempt semver-range matching here. The user decides whether the drift
+/// matters for their setup.
+pub(crate) fn check_cli_version(lock: &scaffold::ProjectLock) -> CheckResult {
+    let installed = env!("CARGO_PKG_VERSION");
+    if installed == lock.rustio_version {
+        CheckResult {
+            name: "CLI version",
+            severity: Severity::Ok,
+            headline: installed.to_string(),
+            detail: None,
+            elapsed_ms: None,
+        }
+    } else {
+        CheckResult {
+            name: "CLI version",
+            severity: Severity::Warning,
+            headline: format!(
+                "installed {installed}, project on {}",
+                lock.rustio_version
+            ),
+            detail: Some(
+                "The CLI you're running was not the one that created this\n\
+                 project. Behaviour should still match for patch-level drift,\n\
+                 but minor / major drift may need a project upgrade."
+                    .into(),
+            ),
+            elapsed_ms: None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Check 5 — DATABASE_URL
 // ---------------------------------------------------------------------------
 
 pub(crate) fn check_database_url(raw: Option<String>) -> (CheckResult, Option<ParsedUrl>) {
@@ -281,7 +454,7 @@ pub(crate) fn render_url_masked(p: &ParsedUrl) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Check 3 — PostgreSQL TCP
+// Check 6 — PostgreSQL TCP
 // ---------------------------------------------------------------------------
 
 pub(crate) fn check_pg_tcp(parsed: &ParsedUrl) -> CheckResult {
@@ -350,7 +523,7 @@ fn pg_unreachable_recipe() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Check 4 — PostgreSQL connect + simple query
+// Check 7 — PostgreSQL connect + simple query
 // ---------------------------------------------------------------------------
 
 pub(crate) async fn check_pg_connect(parsed: &ParsedUrl) -> CheckResult {
@@ -492,7 +665,7 @@ fn generic_pg_failure(err: &sqlx::Error) -> CheckResult {
 }
 
 // ---------------------------------------------------------------------------
-// Check 5 — Meilisearch (warning only)
+// Check 8 — Meilisearch (warning only)
 // ---------------------------------------------------------------------------
 
 async fn check_meili() -> CheckResult {
@@ -698,6 +871,22 @@ fn symbol_for(sev: Severity, use_color: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Phase 12/c — unique tempdir per test, mirrors the helper in
+    /// main.rs::tests. Cleaned up by the OS; not load-bearing.
+    fn tempdir_path() -> PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "rustio-doctor-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
 
     fn parsed(host: &str, port: u16, user: &str, pw: &str, db: &str) -> ParsedUrl {
         ParsedUrl {
@@ -994,5 +1183,177 @@ mod tests {
             r.headline
         );
         assert!(r.headline.contains(":***@"), "headline must mask: {}", r.headline);
+    }
+
+    // ----- Phase 12/c — AI context check -----
+
+    #[test]
+    fn doctor_check_ai_context_ok_when_file_has_text() {
+        let dir = tempdir_path();
+        std::fs::create_dir_all(dir.join(".ai")).unwrap();
+        std::fs::write(dir.join(".ai").join("context.md"), "# project\n\nhello").unwrap();
+        let r = check_ai_context(&dir);
+        assert_eq!(r.severity, Severity::Ok);
+        assert!(
+            r.headline.contains(".ai/context.md"),
+            "headline: {}",
+            r.headline
+        );
+        assert!(
+            r.headline.contains("bytes"),
+            "headline must report size: {}",
+            r.headline
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_check_ai_context_warns_when_file_empty() {
+        let dir = tempdir_path();
+        std::fs::create_dir_all(dir.join(".ai")).unwrap();
+        std::fs::write(dir.join(".ai").join("context.md"), "   \n\n").unwrap();
+        let r = check_ai_context(&dir);
+        assert_eq!(r.severity, Severity::Warning);
+        assert!(
+            r.headline.contains("empty"),
+            "headline must say empty: {}",
+            r.headline
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn doctor_check_ai_context_warns_when_file_missing() {
+        let dir = tempdir_path();
+        // No .ai/ directory at all.
+        let r = check_ai_context(&dir);
+        assert_eq!(r.severity, Severity::Warning);
+        assert!(
+            r.headline.contains("missing"),
+            "headline must say missing: {}",
+            r.headline
+        );
+        // Legacy-project hint surfaces in the detail block.
+        assert!(
+            r.detail.unwrap().contains("Phase 12/a"),
+            "detail must explain the legacy-project case"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ----- Phase 12/c — Project lock check -----
+
+    #[test]
+    fn doctor_check_project_lock_ok_with_name_and_version_in_headline() {
+        let lock = crate::scaffold::ProjectLock {
+            name: "clinic".into(),
+            rustio_version: "1.7.1".into(),
+        };
+        let r = check_project_lock(&Ok(lock));
+        assert_eq!(r.severity, Severity::Ok);
+        assert!(
+            r.headline.contains("clinic"),
+            "headline must name the project: {}",
+            r.headline
+        );
+        assert!(
+            r.headline.contains("1.7.1"),
+            "headline must show creator version: {}",
+            r.headline
+        );
+    }
+
+    #[test]
+    fn doctor_check_project_lock_warns_when_missing() {
+        let r = check_project_lock(&Err(crate::scaffold::LoadProjectLockError::Missing));
+        assert_eq!(r.severity, Severity::Warning);
+        assert!(
+            r.headline.contains("missing"),
+            "headline: {}",
+            r.headline
+        );
+        assert!(
+            r.detail.unwrap().contains("Phase 12/a"),
+            "must explain legacy-project case"
+        );
+    }
+
+    #[test]
+    fn doctor_check_project_lock_warns_when_malformed() {
+        let r = check_project_lock(&Err(crate::scaffold::LoadProjectLockError::InvalidToml(
+            "expected `=`, found `]` at line 3".into(),
+        )));
+        assert_eq!(r.severity, Severity::Warning);
+        assert!(
+            r.headline.contains("malformed"),
+            "headline: {}",
+            r.headline
+        );
+        // Parser error surfaces in the detail so the user can fix it.
+        assert!(
+            r.detail.unwrap().contains("expected `=`"),
+            "detail must include the parser error"
+        );
+    }
+
+    #[test]
+    fn doctor_check_project_lock_warns_on_each_schema_gap() {
+        for (err, needle) in [
+            (
+                crate::scaffold::LoadProjectLockError::MissingProjectTable,
+                "[project] table",
+            ),
+            (
+                crate::scaffold::LoadProjectLockError::MissingProjectName,
+                "[project].name",
+            ),
+            (
+                crate::scaffold::LoadProjectLockError::MissingProjectVersion,
+                "[project].rustio_version",
+            ),
+        ] {
+            let r = check_project_lock(&Err(err));
+            assert_eq!(r.severity, Severity::Warning, "needle: {needle}");
+            assert!(
+                r.headline.contains(needle),
+                "headline must mention {needle}, got: {}",
+                r.headline
+            );
+        }
+    }
+
+    // ----- Phase 12/c — CLI version check -----
+
+    #[test]
+    fn doctor_check_cli_version_ok_when_match() {
+        let lock = crate::scaffold::ProjectLock {
+            name: "shop".into(),
+            rustio_version: env!("CARGO_PKG_VERSION").into(),
+        };
+        let r = check_cli_version(&lock);
+        assert_eq!(r.severity, Severity::Ok);
+        assert_eq!(r.headline, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn doctor_check_cli_version_warns_on_any_mismatch() {
+        // Use a version we know cannot equal the current CARGO_PKG_VERSION
+        // — the very first 0.x release is safe forever (we shipped 1.x).
+        let lock = crate::scaffold::ProjectLock {
+            name: "shop".into(),
+            rustio_version: "0.0.1".into(),
+        };
+        let r = check_cli_version(&lock);
+        assert_eq!(r.severity, Severity::Warning);
+        assert!(
+            r.headline.contains("0.0.1"),
+            "headline must mention the project's recorded version: {}",
+            r.headline
+        );
+        assert!(
+            r.headline.contains(env!("CARGO_PKG_VERSION")),
+            "headline must also mention the installed version: {}",
+            r.headline
+        );
     }
 }
