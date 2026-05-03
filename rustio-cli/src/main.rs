@@ -1849,15 +1849,14 @@ mod tests {
             ".ai/context.md",
             ".rustio/project.lock",
             "templates/home.html",
-            "templates/overrides/brand.html",
         ] {
             assert!(root.join(path).is_file(), "scaffold missing: {path}");
         }
         assert!(root.join("migrations").is_dir(), "migrations dir missing");
         assert!(root.join("templates").is_dir(), "templates dir missing");
         assert!(
-            root.join("templates").join("overrides").is_dir(),
-            "templates/overrides dir missing"
+            !root.join("templates").join("overrides").exists(),
+            "templates/overrides must NOT exist (Phase 12/b-fix removed the fictional path)"
         );
         assert!(root.join(".ai").is_dir(), ".ai dir missing");
         assert!(root.join(".rustio").is_dir(), ".rustio dir missing");
@@ -2139,9 +2138,11 @@ mod tests {
 
     // ----- Phase 12/b — templates structure -----------------------------
 
-    /// Phase 12/b — the scaffold lays down the template tree the
-    /// developer is expected to own: `home.html` for project pages,
-    /// `overrides/brand.html` for the framework-level brand hook.
+    /// Phase 12/b-fix — the scaffold lays down only `home.html`. The
+    /// `overrides/` directory is intentionally absent: the runtime
+    /// loader resolves overrides by exact path match under
+    /// `templates/<path>` (no `overrides/` segment), so any directory
+    /// of that name would be a documented fiction.
     #[test]
     fn scaffold_creates_templates_structure() {
         let dir = tempdir_path();
@@ -2152,20 +2153,18 @@ mod tests {
             "templates/home.html must exist"
         );
         assert!(
-            root.join("templates").join("overrides").is_dir(),
-            "templates/overrides/ must exist as a directory"
-        );
-        assert!(
-            root.join("templates").join("overrides").join("brand.html").is_file(),
-            "templates/overrides/brand.html must exist"
+            !root.join("templates").join("overrides").exists(),
+            "templates/overrides MUST NOT be scaffolded — the loader does not \
+             read from there; the path is documented as a fiction (Phase 12/b-fix)"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Phase 12/b — the admin shell override is documented but NOT
-    /// scaffolded. Creating an empty / partial copy of base.html
-    /// would break admin rendering, so the file must stay absent
-    /// until a developer deliberately copies the upstream template.
+    /// Phase 12/b-fix — the admin shell override is documented but NOT
+    /// scaffolded. The real override path per the runtime loader is
+    /// `templates/admin/base.html`; an empty / partial copy here would
+    /// break admin rendering, so the file must stay absent until a
+    /// developer deliberately copies the upstream template.
     #[test]
     fn scaffold_no_admin_override_file() {
         let dir = tempdir_path();
@@ -2173,46 +2172,13 @@ mod tests {
         let admin_override = dir
             .join("clinic")
             .join("templates")
-            .join("overrides")
             .join("admin")
             .join("base.html");
         assert!(
             !admin_override.exists(),
-            "templates/overrides/admin/base.html MUST NOT be scaffolded — \
+            "templates/admin/base.html MUST NOT be scaffolded — \
              it must be a deliberate developer action. Found at: {}",
             admin_override.display()
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    /// Phase 12/b — `brand.html` overrides the real `--rio-accent`
-    /// design token (defined in rustio-core's admin/base.html) and
-    /// reads the brand colour from `project.brand` (sourced from
-    /// `.rustio/project.lock` in a future render-context wire-up).
-    /// This test guards against accidental re-introduction of a
-    /// hardcoded brand value or a fake `--rio-primary` token.
-    #[test]
-    fn brand_template_uses_real_token() {
-        let dir = tempdir_path();
-        scaffold::project_at(&dir, "clinic").unwrap();
-        let brand = std::fs::read_to_string(
-            dir.join("clinic")
-                .join("templates")
-                .join("overrides")
-                .join("brand.html"),
-        )
-        .unwrap();
-        assert!(
-            brand.contains("--rio-accent"),
-            "brand.html must override the real --rio-accent token — actual:\n{brand}"
-        );
-        assert!(
-            brand.contains("project.brand"),
-            "brand.html must read the colour from project.brand (project.lock) — actual:\n{brand}"
-        );
-        assert!(
-            !brand.contains("--rio-primary"),
-            "brand.html must NOT reference --rio-primary (not a real token)"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -2235,6 +2201,47 @@ mod tests {
         assert!(
             home.contains("See: .ai/context.md"),
             "home.html must point developers at .ai/context.md — actual:\n{home}"
+        );
+        assert!(
+            !home.contains("overrides/"),
+            "home.html must not reference the removed `overrides/` path (Phase 12/b-fix)"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Phase 12/b-fix — render-time validation. Loads home.html via
+    /// `rustio_core::templates::Templates` (the same loader used at
+    /// request time in scaffolded `MAIN_RS`) and asserts that:
+    ///
+    /// 1. The render succeeds — proves the file is valid minijinja
+    ///    syntax and that `format!()`'s brace-doubling resolved to
+    ///    literal CSS braces in the output.
+    /// 2. The rendered output contains the project name baked in at
+    ///    scaffold time — proves build-time substitution actually
+    ///    happened.
+    /// 3. The rendered output contains no leftover `{{` markers —
+    ///    proves no Jinja variable escaped the conversion to
+    ///    build-time substitution.
+    ///
+    /// This test is the regression guard for the Phase 12/b-fix
+    /// contract: documented behaviour == runtime behaviour.
+    #[test]
+    fn home_template_renders_via_runtime_loader() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "shop").unwrap();
+        let templates_dir = dir.join("shop").join("templates");
+        let templates = rustio_core::templates::Templates::new(Some(templates_dir))
+            .expect("template environment must build");
+        let body = templates
+            .render("home.html", &serde_json::json!({}))
+            .expect("home.html must render via the runtime loader");
+        assert!(
+            body.contains("shop"),
+            "rendered home.html must contain the interpolated project name — actual:\n{body}"
+        );
+        assert!(
+            !body.contains("{{"),
+            "rendered home.html must contain no leftover Jinja markers — actual:\n{body}"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -2337,13 +2344,6 @@ mod scaffold {
         fs::create_dir_all(root.join("src").join("apps")).map_err(|e| e.to_string())?;
         fs::create_dir_all(root.join("migrations")).map_err(|e| e.to_string())?;
         fs::create_dir_all(root.join("templates")).map_err(|e| e.to_string())?;
-        // Phase 12/b — `templates/overrides/` is the developer-facing
-        // boundary for framework-level template overrides. The admin
-        // base layout override is intentionally NOT scaffolded; it is
-        // documented in README.md and `.ai/context.md` instead so an
-        // empty placeholder cannot break admin rendering.
-        fs::create_dir_all(root.join("templates").join("overrides"))
-            .map_err(|e| e.to_string())?;
         // Phase 12/a — AI-readable scaffold. `.ai/` carries human prose
         // for AI agents; `.rustio/` carries machine-readable metadata
         // the CLI uses for doctor / future upgrades. Both are committed
@@ -2368,13 +2368,6 @@ mod scaffold {
         // custom handler.
         fs::write(root.join("templates").join("home.html"), home_html(name))
             .map_err(|e| e.to_string())?;
-        // Phase 12/b — admin accent override. Inert until a future
-        // phase wires `project.brand` into the render context.
-        fs::write(
-            root.join("templates").join("overrides").join("brand.html"),
-            brand_override_html(),
-        )
-        .map_err(|e| e.to_string())?;
 
         println!("✓ created project {name}");
         println!();
@@ -2518,17 +2511,19 @@ local cache.
 ## Templates
 
 - `templates/home.html` — your project's landing page. Edit freely.
-- `templates/overrides/` — framework-level template overrides. Files
-  here intentionally replace pieces of the framework's own templates.
-- `templates/overrides/brand.html` — admin accent colour override.
-  Reads `project.brand` from `.rustio/project.lock` (don't hardcode
-  hex values here).
+- `templates/` — your project's templates. The runtime template
+  loader resolves a template name `<path>` by checking
+  `templates/<path>` on disk first, then falling back to the
+  framework's embedded default. Overrides are by *exact path match*:
+  to override `admin/foo.html`, save your version at
+  `templates/admin/foo.html`.
 
-To override the admin shell, copy
+**Warning:** the override path must match the original template path
+exactly — a wrong path fails silently (the loader simply falls
+through to the embedded default). To override the admin shell, copy
 `rustio-core/assets/templates/admin/base.html` into
-`templates/overrides/admin/base.html` — but only if you understand
-the admin layout. A partial copy will break the admin UI; the
-override is intentionally NOT scaffolded.
+`templates/admin/base.html` and edit. Only do this if you understand
+the admin layout; a partial copy will break the admin UI.
 
 See <https://github.com/abdulwahed-sweden/rustio> for documentation.
 "#
@@ -2570,7 +2565,9 @@ _Fill in: the core resources this project models. Examples:_
 - Put model code inside `src/apps/<app>/models.rs`.
 - Add migrations inside `migrations/`.
 - Follow the existing admin design system.
-- Use `templates/overrides/` only for intentional framework overrides.
+- Override a framework template by saving your copy at the exact same
+  path under `templates/` (e.g. `templates/admin/foo.html` overrides
+  `admin/foo.html`). There is no separate `overrides/` directory.
 
 ### Do Not
 
@@ -2594,19 +2591,21 @@ Use the existing RustIO admin classes. Do not introduce new UI systems.
 
 - `templates/*.html` (e.g. `home.html`) are normal project pages — edit
   them freely.
-- `templates/overrides/` is reserved for framework-level customization
-  and is tracked separately. Treat anything inside it as load-bearing.
-- `templates/overrides/brand.html` overrides the admin accent colour
-  by reading `project.brand` from `.rustio/project.lock`. Change the
-  brand by editing the lock file, not by hardcoding hex values in this
-  template.
+- The runtime loader resolves a template name `<path>` by checking
+  `templates/<path>` first, then the framework's embedded default.
+  Project templates override framework templates by **exact path
+  match** — there is no `overrides/` directory.
+- To override `admin/foo.html`, save your version at
+  `templates/admin/foo.html`. Wrong paths fail silently: the loader
+  falls through to the embedded default and the override has no
+  effect.
 
 ### Overriding the admin shell
 
 To override the admin base layout:
 
 1. Copy `rustio-core/assets/templates/admin/base.html` into
-   `templates/overrides/admin/base.html`.
+   `templates/admin/base.html`.
 2. Edit the copy.
 
 Only do this if you understand the admin layout. A partial copy will
@@ -2718,38 +2717,6 @@ context = ".ai/context.md"
 </html>
 "#
         )
-    }
-
-    /// Phase 12/b — `templates/overrides/brand.html`. A minijinja
-    /// fragment that overrides the admin's `--rio-accent` token from
-    /// the project's brand colour. Source of truth is
-    /// `.rustio/project.lock`; this template reads `project.brand`
-    /// from its render context (with the framework default as the
-    /// fallback). The single hex literal here is the `default(...)`
-    /// argument inside the Jinja expression — not a hardcoded fact
-    /// about this project.
-    ///
-    /// Phase 12/b lays down the file but does NOT wire it into the
-    /// runtime render path; that integration is a later phase. Until
-    /// wired up, the file is inert template source on disk.
-    ///
-    /// Raw-string delimiter is `r##"..."##` because the body contains
-    /// the literal sequence `"#` (the default brand colour),
-    /// which would close a single-`#` raw string early.
-    fn brand_override_html() -> &'static str {
-        r##"<!--
-  RustIO brand override.
-  This file overrides the admin accent colour (`--rio-accent`).
-  Source of truth: `.rustio/project.lock` (the `[design] brand` field).
-  Edit `.rustio/project.lock` — not this file — to change the brand.
-  See: .ai/context.md
--->
-<style>
-  :root {
-    --rio-accent: {{ project.brand | default("#0d9488") }};
-  }
-</style>
-"##
     }
 
     pub(super) const MAIN_RS: &str = r#"use std::net::SocketAddr;
@@ -2872,8 +2839,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let router = router.get("/", move |_req| {
         let templates = templates_for_home.clone();
         async move {
-            let ctx = serde_json::json!({ "project": env!("CARGO_PKG_NAME") });
-            let body = templates.render("home.html", &ctx)?;
+            // Phase 12/b-fix — home.html uses build-time interpolation
+            // only; no runtime context variables. Empty render context
+            // keeps the runtime in sync with the template's actual
+            // variable usage (and with `.ai/context.md`'s claims).
+            let body = templates.render("home.html", &serde_json::json!({}))?;
             Ok(Response::html(body))
         }
     });
