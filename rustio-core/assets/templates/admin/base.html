@@ -443,17 +443,27 @@
 
         /* Buttons — primary now uses brand accent (was solid black).
            In an 8-hour-a-day admin, the brand anchor on Save/Add gives
-           the eye a faster scan target than black-on-white. */
+           the eye a faster scan target than black-on-white.
+           1.8.3 — hover, focus ring, and shadow are all derived from
+           `var(--rio-accent)` via `color-mix`, so themed projects get
+           a coherent darker hover instead of falling back to teal. */
         .btn-primary {
             display: inline-flex; align-items: center; gap: 8px;
             padding: 11px 18px; background: var(--rio-accent);
             border: 1px solid var(--rio-accent); border-radius: 8px;
             color: #fff; font-size: 15px; font-weight: 600;
-            cursor: pointer; box-shadow: 0 1px 2px rgba(13,148,136,0.18);
+            cursor: pointer;
+            box-shadow: 0 1px 2px color-mix(in srgb, var(--rio-accent) 22%, transparent);
             font-family: inherit; text-decoration: none;
         }
-        .btn-primary:hover { background: #0f766e; border-color: #0f766e; }
-        .btn-primary:focus-visible { outline: 3px solid rgba(13,148,136,0.30); outline-offset: 2px; }
+        .btn-primary:hover {
+            background: color-mix(in srgb, var(--rio-accent) 88%, black);
+            border-color: color-mix(in srgb, var(--rio-accent) 88%, black);
+        }
+        .btn-primary:focus-visible {
+            outline: 3px solid color-mix(in srgb, var(--rio-accent) 30%, transparent);
+            outline-offset: 2px;
+        }
         .btn-secondary {
             display: inline-flex; align-items: center; gap: 7px;
             padding: 11px 16px; background: var(--rio-bg-surface-1);
@@ -1521,6 +1531,28 @@
         a, a:hover { color: {{ accent_hex }}; }
         ::selection { background-color: {{ accent_hex }}; color: #fff; }
         .action-checkbox input[type=checkbox] { accent-color: {{ accent_hex }}; }
+        /* 1.8.3 — bulk-action button. Tailwind shipped this as a
+           tiny dark-grey rectangle (.actions button { bg-metal,
+           padding .375rem .75rem }). Re-skin to the theme accent and
+           bump padding so it's a real touch target, not a polishing
+           afterthought. Hover is the same color-mix darken used by
+           .btn-primary so the two button shapes feel related. */
+        .actions button {
+            background-color: {{ accent_hex }} !important;
+            padding: .5rem 1rem !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            border-radius: 8px !important;
+        }
+        .actions button:hover {
+            background-color: color-mix(in srgb, {{ accent_hex }} 88%, black) !important;
+        }
+        /* 1.8.3 — table row separators. Tailwind shipped .results td
+           with `border-color: rgb(243 244 246)` — almost invisible
+           against most backgrounds. Use the theme border value so
+           dividers are obvious AND inherit the operator's palette. */
+        .results td { border-color: {{ theme_border }} !important; }
+        .results th { border-color: {{ theme_border }} !important; }
     </style>
     {% block extra_head %}{% endblock %}
 </head>

@@ -305,7 +305,12 @@ impl Default for AdminTheme {
             surface:    "#ffffff".into(), // existing --rio-bg-surface-1
             text:       "#111827".into(), // existing --rio-text
             text_muted: "#4b5563".into(), // existing --rio-text-muted
-            border:     "#e5e7eb".into(), // existing --rio-border
+            // 1.8.3 — bumped from #e5e7eb to #d1d5db. The lighter shade
+            // made table row separators (.results td) practically
+            // invisible against most backgrounds; #d1d5db still reads
+            // as a hairline but is actually visible. Operators wanting
+            // the older lighter look can opt back via theme override.
+            border:     "#d1d5db".into(),
         }
     }
 }

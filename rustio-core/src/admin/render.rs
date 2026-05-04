@@ -3018,6 +3018,9 @@ mod tests {
     /// 1.8.2 — AdminTheme::default returns the framework's current
     /// chrome values so projects using `..AdminTheme::default()` to
     /// pick up rest-defaults match what the framework ships.
+    /// 1.8.3 — `border` bumped from `#e5e7eb` (almost invisible
+    /// against light surfaces) to `#d1d5db` so default-theme projects
+    /// also get visible table row dividers.
     #[test]
     fn admin_theme_default_matches_framework_chrome() {
         use crate::admin::AdminTheme;
@@ -3027,7 +3030,7 @@ mod tests {
         assert_eq!(t.surface,    "#ffffff");
         assert_eq!(t.text,       "#111827");
         assert_eq!(t.text_muted, "#4b5563");
-        assert_eq!(t.border,     "#e5e7eb");
+        assert_eq!(t.border,     "#d1d5db");
     }
 
     #[test]
