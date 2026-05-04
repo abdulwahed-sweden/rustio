@@ -26,9 +26,30 @@
 
 ### Notes
 
-- 1.7.0 and 1.7.1 shipped without `CHANGELOG.md` entries; see `git log v1.6.0..v1.7.1` for the admin-UI refinement and design-system work that landed in those releases.
 - Phase 12/d (templates take/diff/upgrade tooling) and 12/e (`rustio ai` subcommands) are documented in `docs/phases/PHASE12_PLAN.md` but **not** in this release.
 - Scaffolded projects against 1.8.0 will still pull `rustio-core = "1.8"` from crates.io transparently. Existing projects on 1.7.x continue to work unchanged.
+
+## [1.7.1] - 2026-05-02
+
+### Changed
+
+- **Admin UI refinement + design-system alignment.** Patch release closing out Phase 11 work: teal brand migration, Windmill-style design tokens, and per-template alignment (`list.html`, `form.html`, `confirm_delete.html`).
+
+### Notes
+
+- Backfilled entry — released without a CHANGELOG entry at the time. See `git log v1.7.0..v1.7.1` for the per-commit breakdown.
+
+## [1.7.0] - 2026-05-02
+
+### Added
+
+- **Built-in user profile** (Phase 10). New `rustio_users` and `rustio_sessions` schema tables, a built-in user profile page (handler + template), and a "user-profile extension closure" that lets a project add custom fields without forking the framework.
+- **Phase 11/a teal brand migration.** Brand accent moved from the previous indigo to a teal token system inspired by Windmill, applied across the admin chrome.
+- **Phase 11/b template alignment.** `list.html`, `form.html`, and `confirm_delete.html` rewritten against the new design tokens for visual consistency with the rest of the admin UI.
+
+### Notes
+
+- Backfilled entry — released without a CHANGELOG entry at the time. See `git log v1.6.0..v1.7.0` for the per-commit breakdown.
 
 ## [1.6.0] - 2026-05-01
 
