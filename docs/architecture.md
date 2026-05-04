@@ -308,6 +308,61 @@ typo can't crash the page.
 To add a new icon: drop the lucide inner SVG fragment into
 `ICONS` in `admin/icons.rs` and update the unit-test catalogue.
 
+### Theming (1.8.x)
+
+The admin chrome is themable per-project without rebuilding Tailwind
+or shipping per-project assets. Three layers cooperate:
+
+| Layer | Where | Role |
+|---|---|---|
+| Design tokens | `docs/design-system.json` + `--ds-color-*` block in `input.css` | Static palette values; mirrored by hand in both files. The Cobalt Blue framework default lives here (`accent: "#2563EB"`, `accentBg: "#EFF6FF"`, `accentBorder: "#BFDBFE"`, plus `--ds-color-table-divider` scoped to `.results`). |
+| `--rio-*` design tokens | `<style>` block in `admin/base.html` | What the admin shell actually reads. Topbar, sidebar, body, cards, headings, hairlines all reference `var(--rio-bg / -text / -accent / …)`. |
+| Runtime override | `<style id="rio-accent-override">` injected into `<head>` per render | The bridge. Reads `AdminTheme` fields off the operator's `Admin` builder, redefines `--rio-*` tokens at `:root`, and the entire chrome cascades to the new palette in one repaint. |
+
+The operator API:
+
+```rust
+use rustio_core::admin::{Admin, AdminTheme};
+
+// One-line accent change. Full chrome inherits framework defaults.
+let admin = Admin::new().accent_color("#7C3AED");
+
+// Or full palette override:
+let admin = Admin::new().theme(AdminTheme {
+    accent:     "#7C3AED".into(),
+    bg:         "#FAFAFC".into(),
+    surface:    "#FFFFFF".into(),
+    text:       "#1A1A2E".into(),
+    text_muted: "#6B7280".into(),
+    border:     "#D1D5DB".into(),
+});
+
+// `..AdminTheme::default()` rest-spreads framework defaults into
+// the fields the operator doesn't care about.
+let admin = Admin::new().theme(AdminTheme {
+    accent: "#7C3AED".into(),
+    ..AdminTheme::default()
+});
+```
+
+`Admin::new()` with no theme chain inherits `AdminTheme::default()`,
+which mirrors `themes.light` from `docs/design-system.json` exactly
+(Cobalt Blue framework default).
+
+Two derived surfaces are computed at render time via CSS
+`color-mix`, so the operator only specifies the primary accent:
+
+- `--rio-accent-bg`     = `color-mix(srgb, accent 8%, white)`  — active sidebar tint
+- `--rio-accent-border` = `color-mix(srgb, accent 25%, white)` — accent badge ring
+
+Button hover darkening uses the same recipe (`88% accent + black`)
+in `.btn-primary:hover`, so themed projects get a coherent darker
+hover automatically.
+
+Single-binary deploy contract is preserved: no per-project asset
+pipeline, no Tailwind rebuild, no extra stylesheet. Cost is one
+small `<style>` block per page render.
+
 ## Sessions
 
 Sessions are rows in `rustio_sessions`. The token is a 32-byte

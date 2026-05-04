@@ -226,6 +226,32 @@ You now have:
   `posts.delete_post`, `posts.view_post`
 - Auto-indexing into Meilisearch on every write
 
+### Theme it (1.8.3+)
+
+The admin chrome ships in Cobalt Blue (`#2563EB`) by default. To
+re-skin the whole shell — topbar, sidebar, body, cards, hairlines,
+accent — pass an `AdminTheme` to the builder. Operators usually
+override only one or two fields and let `..AdminTheme::default()`
+fill the rest:
+
+```rust
+use rustio_core::admin::{Admin, AdminTheme};
+
+let admin = Admin::new()
+    .theme(AdminTheme {
+        accent:  "#7C3AED".into(), // your brand
+        ..AdminTheme::default()
+    })
+    .model::<Post>();
+```
+
+`Admin::accent_color("#7C3AED")` is a one-line shortcut for the
+common case (only the accent changes). Hover darkening, the active
+sidebar tint, and the accent badge border are all derived from the
+single accent value at render time via `color-mix` — no extra
+config, no Tailwind rebuild. See `docs/architecture.md → Theming`
+for the layered model.
+
 ## Users, groups, permissions
 
 Two parallel grammars:

@@ -1,5 +1,22 @@
 # RustIO brand
 
+> **Historical spec.** This document captures the rust+teal visual
+> language drafted in Phase 6a. Two redesigns later (Phase 11/a teal
+> alignment, then 1.8.3 Cobalt Blue migration), the framework default
+> is now **Cobalt Blue (`#2563EB`)**.
+>
+> **Current source of truth:** `docs/design-system.json → themes.light`.
+> The layered model (design tokens → `--rio-*` chrome tokens →
+> runtime override) is documented in `docs/architecture.md → Theming`.
+> Per-project overrides go through `Admin::theme(AdminTheme)` — see
+> the README's "Theme it" section.
+>
+> Preserved as the historical reference for the rust / steel-teal
+> palette so future redesign phases have something to measure
+> against.
+
+---
+
 Canonical visual brand for the RustIO project. Replaces the Phase 6a
 "Django classic + RustIO accent" contract that lives in
 `rustio-core/assets/static/css/admin.css`. The Phase 6a admin styling
