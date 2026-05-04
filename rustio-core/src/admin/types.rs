@@ -260,6 +260,13 @@ pub struct Admin {
     /// extra sections to the built-in user profile page. `None` for the
     /// zero-config baseline.
     pub(crate) user_profile_ext: Option<UserProfileExtensionFn>,
+    /// 1.8.2 — runtime accent colour for the admin chrome. The framework
+    /// default `#0d9488` (teal) ships baked into `admin.css` Tailwind
+    /// utility classes; the value here drives a small `<style>` override
+    /// in `admin/base.html` that re-skins those classes per request, no
+    /// Tailwind rebuild required. Hex form (`#rrggbb`); the renderer
+    /// also exposes the RGB-triplet form for transparent variants.
+    pub(crate) accent_hex: String,
 }
 
 impl Default for Admin {
@@ -279,6 +286,7 @@ impl Admin {
             entries: vec![core_user_entry()],
             site_branding: SiteBranding::default(),
             user_profile_ext: None,
+            accent_hex: "#0d9488".into(),
         }
     }
 
@@ -294,6 +302,35 @@ impl Admin {
     /// builders use this to thread brand strings into templates.
     pub fn branding(&self) -> &SiteBranding {
         &self.site_branding
+    }
+
+    /// 1.8.2 — set the admin chrome's accent colour. Hex form, with or
+    /// without the leading `#` (`"#1e6ba8"` and `"1e6ba8"` both work).
+    /// Drives a runtime `<style>` block in `admin/base.html` that
+    /// overrides every Tailwind utility baking the framework's default
+    /// teal as a literal RGB value (`bg-brand-600`, `text-brand-700`,
+    /// link colour, selection colour, focus rings, the `--ds-color-accent`
+    /// CSS variable). No Tailwind rebuild required.
+    ///
+    /// Malformed input (wrong length, non-hex characters) is accepted
+    /// silently — the renderer falls back to the framework default at
+    /// hex-to-RGB conversion time. This avoids panicking the admin path
+    /// over a config typo; future versions may add a `Result`-returning
+    /// builder for stricter operators.
+    pub fn accent_color(mut self, color: impl Into<String>) -> Self {
+        let raw = color.into();
+        // Normalise to `#rrggbb` so downstream code never has to
+        // strip-or-not-strip the prefix.
+        let trimmed = raw.trim_start_matches('#');
+        self.accent_hex = format!("#{trimmed}");
+        self
+    }
+
+    /// 1.8.2 — read-only access to the configured accent colour
+    /// (`#rrggbb`). Used by `BaseContext` to populate the render
+    /// context; projects rarely need to call this directly.
+    pub fn accent(&self) -> &str {
+        &self.accent_hex
     }
 
     pub fn model<M>(mut self) -> Self

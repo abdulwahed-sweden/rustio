@@ -58,6 +58,31 @@ pub(crate) struct BaseContext {
     /// ("Demo Staff", "Demo Administrator"). Rendered in parens after
     /// the banner's "DEMO USER" text when present.
     pub demo_label: Option<String>,
+    /// 1.8.2 — accent colour in `#rrggbb` form. The runtime `<style>`
+    /// override in `admin/base.html` uses this to re-skin every Tailwind
+    /// utility class that bakes the framework default teal.
+    pub accent_hex: String,
+    /// 1.8.2 — same colour as a space-separated RGB triplet (`"30 107 168"`)
+    /// for use inside `rgb(... / opacity)` expressions and the
+    /// `--ds-color-accent` CSS variable.
+    pub accent_rgb: String,
+}
+
+/// 1.8.2 — convert an `#rrggbb` (or `rrggbb`) hex string into the
+/// space-separated RGB-triplet form Tailwind expects in CSS variables
+/// (`13 148 136` for `#0d9488`). On any parse failure (wrong length,
+/// invalid hex digits) returns the framework default teal so the admin
+/// chrome never breaks over a config typo.
+pub(crate) fn hex_to_rgb_triplet(hex: &str) -> String {
+    const FALLBACK: &str = "13 148 136"; // #0d9488 — framework default teal
+    let h = hex.trim_start_matches('#');
+    if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
+        return FALLBACK.into();
+    }
+    let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(13);
+    let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(148);
+    let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(136);
+    format!("{r} {g} {b}")
 }
 
 impl BaseContext {
@@ -71,6 +96,8 @@ impl BaseContext {
             Some(i) => (i.is_demo, i.demo_label.clone()),
             None => (false, None),
         };
+        let accent_hex = admin.accent().to_string();
+        let accent_rgb = hex_to_rgb_triplet(&accent_hex);
         Self {
             identity: identity.map(IdentityCtx::from),
             csrf_token,
@@ -80,6 +107,8 @@ impl BaseContext {
             footer_copyright: b.footer_copyright.clone(),
             is_demo_session,
             demo_label,
+            accent_hex,
+            accent_rgb,
         }
     }
 }
@@ -1947,6 +1976,58 @@ mod tests {
     use crate::auth::Role;
     use crate::templates::Templates;
 
+    // ----- 1.8.2 — accent colour pipeline -----
+
+    /// 1.8.2 — hex_to_rgb_triplet is the boundary between operator
+    /// input and the CSS variable form Tailwind expects. Test the
+    /// happy path, the leading-`#` form, and three failure modes
+    /// (wrong length, non-hex chars, empty).
+    #[test]
+    fn hex_to_rgb_triplet_parses_canonical_form() {
+        assert_eq!(hex_to_rgb_triplet("#1e6ba8"), "30 107 168");
+        assert_eq!(hex_to_rgb_triplet("1e6ba8"), "30 107 168");
+        assert_eq!(hex_to_rgb_triplet("#0d9488"), "13 148 136");
+    }
+
+    #[test]
+    fn hex_to_rgb_triplet_falls_back_on_garbage() {
+        // Wrong length → fallback (framework default teal RGB).
+        assert_eq!(hex_to_rgb_triplet("#1e6"), "13 148 136");
+        // Non-hex character → fallback.
+        assert_eq!(hex_to_rgb_triplet("#xyzzy7"), "13 148 136");
+        // Empty → fallback.
+        assert_eq!(hex_to_rgb_triplet(""), "13 148 136");
+    }
+
+    /// 1.8.2 — Admin::accent_color normalises "#rrggbb" and "rrggbb"
+    /// to the same canonical form so downstream code (BaseContext,
+    /// templates) doesn't have to handle both shapes.
+    #[test]
+    fn admin_accent_color_normalises_with_or_without_hash() {
+        let a1 = crate::admin::Admin::new().accent_color("#1e6ba8");
+        let a2 = crate::admin::Admin::new().accent_color("1e6ba8");
+        assert_eq!(a1.accent(), "#1e6ba8");
+        assert_eq!(a2.accent(), "#1e6ba8");
+    }
+
+    /// 1.8.2 — default Admin (no .accent_color call) keeps the
+    /// framework's teal so existing projects see no behaviour change.
+    #[test]
+    fn admin_default_accent_is_framework_teal() {
+        let a = crate::admin::Admin::new();
+        assert_eq!(a.accent(), "#0d9488");
+    }
+
+    /// 1.8.2 — BaseContext populates both accent_hex and accent_rgb
+    /// from the Admin builder so templates can use either form.
+    #[test]
+    fn base_context_carries_accent_in_both_forms() {
+        let admin = crate::admin::Admin::new().accent_color("#1e6ba8");
+        let ctx = BaseContext::new(None, "tok".into(), &admin);
+        assert_eq!(ctx.accent_hex, "#1e6ba8");
+        assert_eq!(ctx.accent_rgb, "30 107 168");
+    }
+
     /// Build a minimal AdminField for mapping tests. Phase 5/d shifted
     /// the mapping fn to take `&AdminField` (so it can see relation +
     /// choices); this helper hides the boilerplate.
@@ -2828,6 +2909,67 @@ mod tests {
             !body.contains("name=\"is_superuser\""),
             "old is_superuser checkbox should be gone"
         );
+    }
+
+    /// 1.8.2 — full render test. Default Admin (no .accent_color call)
+    /// produces an admin page whose injected style block contains the
+    /// framework default teal `#0d9488`. Custom accent produces the
+    /// custom value AND the corresponding RGB triplet (for the
+    /// `--ds-color-accent` CSS variable). Proves the value flows from
+    /// the builder all the way to rendered HTML.
+    #[test]
+    fn admin_accent_default_renders_framework_teal() {
+        let admin = Admin::new();
+        let templates = Templates::new(None).expect("embedded templates");
+        let ident = Identity {
+            user_id: 1,
+            email: "staff@rustio.local".into(),
+            role: Role::Administrator,
+            is_active: true,
+            is_demo: false,
+            demo_label: None,
+        };
+        let dash = dashboard_ctx(&ident, &admin, vec![], "csrf".into());
+        let body = templates.render("admin/index.html", &dash).unwrap();
+        assert!(
+            body.contains("#0d9488"),
+            "default admin chrome must contain #0d9488 in the override style"
+        );
+        assert!(
+            body.contains("13 148 136"),
+            "default admin chrome must set --ds-color-accent to the RGB triplet"
+        );
+    }
+
+    #[test]
+    fn admin_accent_custom_color_propagates_to_rendered_html() {
+        let admin = Admin::new().accent_color("#1e6ba8");
+        let templates = Templates::new(None).expect("embedded templates");
+        let ident = Identity {
+            user_id: 1,
+            email: "staff@rustio.local".into(),
+            role: Role::Administrator,
+            is_active: true,
+            is_demo: false,
+            demo_label: None,
+        };
+        let dash = dashboard_ctx(&ident, &admin, vec![], "csrf".into());
+        let body = templates.render("admin/index.html", &dash).unwrap();
+        assert!(
+            body.contains("#1e6ba8"),
+            "custom accent must appear in rendered admin HTML"
+        );
+        assert!(
+            body.contains("30 107 168"),
+            "custom accent must produce its RGB triplet in --ds-color-accent"
+        );
+        // The framework default must NOT appear in the override block
+        // (it's still in admin.css, but the runtime override re-skins
+        // every place the operator would notice).
+        // Note: the literal "#0d9488" still appears once in the
+        // baseline CSS variable defaults block; the override block
+        // appears AFTER it, so the cascade wins for the operator's
+        // colour. We only assert the custom colour is present.
     }
 
     #[test]

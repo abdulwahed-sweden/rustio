@@ -1485,6 +1485,22 @@
             font-feature-settings: "tnum" 1;
         }
     </style>
+    {# 1.8.2 — runtime accent-colour override. The framework's admin.css
+       ships the default teal baked into Tailwind utility classes
+       (.bg-brand-600, .text-brand-700, ::selection, etc.). This block
+       re-skins those classes from the project-supplied accent at every
+       render — no Tailwind rebuild needed. Driven by `Admin::accent_color`. #}
+    <style id="rio-accent-override">
+        :root { --ds-color-accent: {{ accent_rgb }}; --rio-accent: {{ accent_hex }}; }
+        .bg-brand-600 { background-color: {{ accent_hex }} !important; }
+        .text-brand-600 { color: {{ accent_hex }} !important; }
+        .text-brand-700 { color: {{ accent_hex }} !important; }
+        .text-rust { color: {{ accent_hex }} !important; }
+        .required { color: {{ accent_hex }} !important; }
+        a, a:hover { color: {{ accent_hex }}; }
+        ::selection { background-color: {{ accent_hex }}; color: #fff; }
+        .action-checkbox input[type=checkbox] { accent-color: {{ accent_hex }}; }
+    </style>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
