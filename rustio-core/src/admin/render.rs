@@ -66,6 +66,15 @@ pub(crate) struct BaseContext {
     /// for use inside `rgb(... / opacity)` expressions and the
     /// `--ds-color-accent` CSS variable.
     pub accent_rgb: String,
+    /// 1.8.2 — full theme palette. The override `<style>` block in
+    /// admin/base.html redefines `--rio-bg`, `--rio-bg-surface-1`,
+    /// `--rio-text`, `--rio-text-muted`, and `--rio-border` from these
+    /// values, and the cascade re-skins the entire admin chrome.
+    pub theme_bg: String,
+    pub theme_surface: String,
+    pub theme_text: String,
+    pub theme_text_muted: String,
+    pub theme_border: String,
 }
 
 /// 1.8.2 — convert an `#rrggbb` (or `rrggbb`) hex string into the
@@ -96,7 +105,8 @@ impl BaseContext {
             Some(i) => (i.is_demo, i.demo_label.clone()),
             None => (false, None),
         };
-        let accent_hex = admin.accent().to_string();
+        let theme = admin.active_theme();
+        let accent_hex = theme.accent.clone();
         let accent_rgb = hex_to_rgb_triplet(&accent_hex);
         Self {
             identity: identity.map(IdentityCtx::from),
@@ -109,6 +119,11 @@ impl BaseContext {
             demo_label,
             accent_hex,
             accent_rgb,
+            theme_bg: theme.bg.clone(),
+            theme_surface: theme.surface.clone(),
+            theme_text: theme.text.clone(),
+            theme_text_muted: theme.text_muted.clone(),
+            theme_border: theme.border.clone(),
         }
     }
 }
@@ -2939,6 +2954,80 @@ mod tests {
             body.contains("13 148 136"),
             "default admin chrome must set --ds-color-accent to the RGB triplet"
         );
+    }
+
+    /// 1.8.2 — full-theme integration: a custom AdminTheme produces
+    /// all six colours in the rendered admin HTML so the entire
+    /// chrome (topbar, sidebar, body, headings, hairlines, accent)
+    /// follows the operator's palette.
+    #[test]
+    fn admin_full_theme_propagates_all_six_colors_to_rendered_html() {
+        use crate::admin::AdminTheme;
+        let theme = AdminTheme {
+            accent:     "#1e6ba8".into(),
+            bg:         "#f0f5fa".into(),
+            surface:    "#fdfdff".into(),
+            text:       "#1a202c".into(),
+            text_muted: "#64748b".into(),
+            border:     "#dbeafe".into(),
+        };
+        let admin = Admin::new().theme(theme);
+        let templates = Templates::new(None).expect("embedded templates");
+        let ident = Identity {
+            user_id: 1,
+            email: "vet@vetcare.local".into(),
+            role: Role::Administrator,
+            is_active: true,
+            is_demo: false,
+            demo_label: None,
+        };
+        let dash = dashboard_ctx(&ident, &admin, vec![], "csrf".into());
+        let body = templates.render("admin/index.html", &dash).unwrap();
+        for color in [
+            "#1e6ba8", // accent
+            "#f0f5fa", // bg
+            "#fdfdff", // surface
+            "#1a202c", // text
+            "#64748b", // text_muted
+            "#dbeafe", // border
+        ] {
+            assert!(
+                body.contains(color),
+                "rendered admin must contain {color} from custom theme"
+            );
+        }
+    }
+
+    /// 1.8.2 — Admin::theme replaces the whole palette; calling
+    /// .accent_color afterwards only overwrites the accent slot,
+    /// leaving the other theme fields intact. This is the documented
+    /// builder behaviour.
+    #[test]
+    fn admin_accent_color_after_theme_only_overrides_accent() {
+        use crate::admin::AdminTheme;
+        let theme = AdminTheme {
+            accent: "#aaaaaa".into(),
+            bg:     "#f0f5fa".into(),
+            ..AdminTheme::default()
+        };
+        let admin = Admin::new().theme(theme).accent_color("#1e6ba8");
+        assert_eq!(admin.accent(), "#1e6ba8");
+        assert_eq!(admin.active_theme().bg, "#f0f5fa");
+    }
+
+    /// 1.8.2 — AdminTheme::default returns the framework's current
+    /// chrome values so projects using `..AdminTheme::default()` to
+    /// pick up rest-defaults match what the framework ships.
+    #[test]
+    fn admin_theme_default_matches_framework_chrome() {
+        use crate::admin::AdminTheme;
+        let t = AdminTheme::default();
+        assert_eq!(t.accent,     "#0d9488");
+        assert_eq!(t.bg,         "#f4f4f5");
+        assert_eq!(t.surface,    "#ffffff");
+        assert_eq!(t.text,       "#111827");
+        assert_eq!(t.text_muted, "#4b5563");
+        assert_eq!(t.border,     "#e5e7eb");
     }
 
     #[test]

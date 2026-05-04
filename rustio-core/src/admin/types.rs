@@ -251,6 +251,65 @@ impl Default for SiteBranding {
     }
 }
 
+/// 1.8.2 — full admin chrome palette. Each field maps onto one of the
+/// framework's `--rio-*` design tokens defined in `admin/base.html`,
+/// so overriding these values via `Admin::theme(...)` re-skins the
+/// entire admin shell (topbar, sidebar, body, cards, headings, hairlines)
+/// without touching CSS or rebuilding Tailwind.
+///
+/// Defaults match the framework's current chrome so a project that
+/// doesn't call `.theme(...)` renders unchanged. Operators typically
+/// override 1–3 fields and let the rest default:
+///
+/// ```ignore
+/// admin.theme(AdminTheme {
+///     accent:  "#1e6ba8".into(),
+///     topbar:  "#1e3a5f".into(),
+///     bg:      "#f0f5fa".into(),
+///     ..AdminTheme::default()
+/// })
+/// ```
+///
+/// Hex form (`#rrggbb` or `rrggbb`); leading `#` is auto-normalised
+/// at render time. Malformed values fall back to framework defaults
+/// rather than panic — the admin path never breaks over a config typo.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AdminTheme {
+    /// Primary brand colour. Drives `--rio-accent` (logo mark, focus
+    /// rings, primary buttons, badges) AND the `--ds-color-accent`
+    /// CSS variable (for Tailwind utilities that bake the accent
+    /// with opacity, like `bg-accent/10`).
+    pub accent: String,
+    /// Page background. Drives `--rio-bg` — the canvas behind the
+    /// shell on every admin page.
+    pub bg: String,
+    /// Card / topbar / sidebar surface. Drives `--rio-bg-surface-1` —
+    /// the colour of the topbar background and any elevated surface.
+    pub surface: String,
+    /// Body text colour. Drives `--rio-text` — body copy AND the
+    /// "skip-to-content" link AND the topbar brand title.
+    pub text: String,
+    /// Secondary / supporting text. Drives `--rio-text-muted` — the
+    /// "signed in as …" line, table hints, and most metadata labels.
+    pub text_muted: String,
+    /// Border / hairline colour. Drives `--rio-border` — every visible
+    /// hairline on cards, the topbar bottom-border, and table dividers.
+    pub border: String,
+}
+
+impl Default for AdminTheme {
+    fn default() -> Self {
+        Self {
+            accent:     "#0d9488".into(), // framework teal
+            bg:         "#f4f4f5".into(), // existing --rio-bg
+            surface:    "#ffffff".into(), // existing --rio-bg-surface-1
+            text:       "#111827".into(), // existing --rio-text
+            text_muted: "#4b5563".into(), // existing --rio-text-muted
+            border:     "#e5e7eb".into(), // existing --rio-border
+        }
+    }
+}
+
 /// Builder for the admin. Register models with `.model::<M>()`, then
 /// hand it to the router via `register_admin_routes`.
 pub struct Admin {
@@ -260,13 +319,12 @@ pub struct Admin {
     /// extra sections to the built-in user profile page. `None` for the
     /// zero-config baseline.
     pub(crate) user_profile_ext: Option<UserProfileExtensionFn>,
-    /// 1.8.2 — runtime accent colour for the admin chrome. The framework
-    /// default `#0d9488` (teal) ships baked into `admin.css` Tailwind
-    /// utility classes; the value here drives a small `<style>` override
-    /// in `admin/base.html` that re-skins those classes per request, no
-    /// Tailwind rebuild required. Hex form (`#rrggbb`); the renderer
-    /// also exposes the RGB-triplet form for transparent variants.
-    pub(crate) accent_hex: String,
+    /// 1.8.2 — full admin chrome palette. See `AdminTheme` for the
+    /// fields and how each one flows to a `--rio-*` CSS token.
+    /// `Admin::accent_color(...)` sets `theme.accent` only and leaves
+    /// the rest defaulted; `Admin::theme(...)` replaces the whole
+    /// palette at once.
+    pub(crate) theme: AdminTheme,
 }
 
 impl Default for Admin {
@@ -286,7 +344,7 @@ impl Admin {
             entries: vec![core_user_entry()],
             site_branding: SiteBranding::default(),
             user_profile_ext: None,
-            accent_hex: "#0d9488".into(),
+            theme: AdminTheme::default(),
         }
     }
 
@@ -304,8 +362,11 @@ impl Admin {
         &self.site_branding
     }
 
-    /// 1.8.2 — set the admin chrome's accent colour. Hex form, with or
-    /// without the leading `#` (`"#1e6ba8"` and `"1e6ba8"` both work).
+    /// 1.8.2 — set the admin chrome's accent colour (one-line shortcut
+    /// for `theme(AdminTheme { accent: ..., ..Default::default() })`).
+    /// Hex form, with or without the leading `#` (`"#1e6ba8"` and
+    /// `"1e6ba8"` both work).
+    ///
     /// Drives a runtime `<style>` block in `admin/base.html` that
     /// overrides every Tailwind utility baking the framework's default
     /// teal as a literal RGB value (`bg-brand-600`, `text-brand-700`,
@@ -318,11 +379,17 @@ impl Admin {
     /// over a config typo; future versions may add a `Result`-returning
     /// builder for stricter operators.
     pub fn accent_color(mut self, color: impl Into<String>) -> Self {
-        let raw = color.into();
-        // Normalise to `#rrggbb` so downstream code never has to
-        // strip-or-not-strip the prefix.
-        let trimmed = raw.trim_start_matches('#');
-        self.accent_hex = format!("#{trimmed}");
+        self.theme.accent = normalise_hex(color);
+        self
+    }
+
+    /// 1.8.2 — set the entire admin chrome palette in one call.
+    /// Re-skins the topbar, sidebar, body background, surface cards,
+    /// body text, muted text, and hairlines by overriding the
+    /// framework's `--rio-*` design tokens at render time. See
+    /// [`AdminTheme`] for the field-by-field contract.
+    pub fn theme(mut self, theme: AdminTheme) -> Self {
+        self.theme = theme;
         self
     }
 
@@ -330,7 +397,13 @@ impl Admin {
     /// (`#rrggbb`). Used by `BaseContext` to populate the render
     /// context; projects rarely need to call this directly.
     pub fn accent(&self) -> &str {
-        &self.accent_hex
+        &self.theme.accent
+    }
+
+    /// 1.8.2 — read-only access to the active full theme. Used by
+    /// `BaseContext` to populate the override `<style>` block.
+    pub fn active_theme(&self) -> &AdminTheme {
+        &self.theme
     }
 
     pub fn model<M>(mut self) -> Self
@@ -662,6 +735,17 @@ const CORE_USER_FIELDS: &[AdminField] = &[
         choices: None,
     },
 ];
+
+/// 1.8.2 — normalise a user-supplied colour string to `#rrggbb` form.
+/// Accepts both `"#1e6ba8"` and `"1e6ba8"`; trims whitespace; does NOT
+/// validate that the body is hex (that's the renderer's job, where
+/// invalid values fall back to the framework default rather than
+/// panic). The `format!()` adds back exactly one leading `#`.
+pub(crate) fn normalise_hex(input: impl Into<String>) -> String {
+    let raw = input.into();
+    let trimmed = raw.trim().trim_start_matches('#');
+    format!("#{trimmed}")
+}
 
 fn core_user_entry() -> AdminEntry {
     AdminEntry {

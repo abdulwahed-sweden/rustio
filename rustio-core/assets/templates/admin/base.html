@@ -1485,13 +1485,34 @@
             font-feature-settings: "tnum" 1;
         }
     </style>
-    {# 1.8.2 — runtime accent-colour override. The framework's admin.css
-       ships the default teal baked into Tailwind utility classes
-       (.bg-brand-600, .text-brand-700, ::selection, etc.). This block
-       re-skins those classes from the project-supplied accent at every
-       render — no Tailwind rebuild needed. Driven by `Admin::accent_color`. #}
+    {# 1.8.2 — runtime theme override. Two passes:
+
+       (1) Redefine the framework's `--rio-*` design tokens from the
+           operator-supplied `AdminTheme`. The existing chrome (topbar,
+           sidebar, body, cards, headings, hairlines) all reference
+           these tokens via `var(--rio-X)`, so the entire admin shell
+           re-skins automatically through the cascade.
+       (2) Override every Tailwind utility class in admin.css that
+           bakes the framework default teal as a literal RGB value
+           (`bg-brand-600`, `text-brand-*`, `::selection`, the ring +
+           focus colours, the checkbox accent). These don't read from
+           CSS variables, so we have to override them explicitly.
+
+       No Tailwind rebuild needed; the cost is one tiny CSS block per
+       page render. Driven by `Admin::theme(...)` / `accent_color(...)`. #}
     <style id="rio-accent-override">
-        :root { --ds-color-accent: {{ accent_rgb }}; --rio-accent: {{ accent_hex }}; }
+        :root {
+            /* (1) — design tokens. The cascade re-skins every framework
+               component that reads these tokens. */
+            --rio-bg:               {{ theme_bg }};
+            --rio-bg-surface-1:     {{ theme_surface }};
+            --rio-text:             {{ theme_text }};
+            --rio-text-muted:       {{ theme_text_muted }};
+            --rio-border:           {{ theme_border }};
+            --rio-accent:           {{ accent_hex }};
+            --ds-color-accent:      {{ accent_rgb }};
+        }
+        /* (2) — Tailwind utility-class overrides for accent colour. */
         .bg-brand-600 { background-color: {{ accent_hex }} !important; }
         .text-brand-600 { color: {{ accent_hex }} !important; }
         .text-brand-700 { color: {{ accent_hex }} !important; }

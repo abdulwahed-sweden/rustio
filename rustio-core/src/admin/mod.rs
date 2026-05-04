@@ -40,6 +40,6 @@ pub use suggestions::{
     find_relation_suggestion, find_suggestion, find_suggestion_from_entries, Confidence, Suggestion,
 };
 pub use types::{
-    Admin, AdminEntry, AdminField, AdminModel, AdminRelation, FieldType, SiteBranding,
-    UserProfileRow, UserProfileSection,
+    Admin, AdminEntry, AdminField, AdminModel, AdminRelation, AdminTheme, FieldType,
+    SiteBranding, UserProfileRow, UserProfileSection,
 };
