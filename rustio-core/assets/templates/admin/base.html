@@ -269,54 +269,106 @@
         /* Shell */
         .shell { display: flex; min-height: calc(100vh - 64px - 50px); }
 
-        /* Sidebar */
+        /* Sidebar — 1.8.4 redesign.
+           Goals: clearer section separation (top-border dividers,
+           more breathing room), tighter list rhythm (items packed
+           closer, less wasted space), cleaner active state (single
+           visual cue: left stripe + tinted bg, no inset shadow,
+           no border, no padding shift), and a powered card that
+           pinned to the bottom via flex so the layout doesn't
+           dangle. */
         .sidebar {
-            width: 248px; flex-shrink: 0;
-            background: var(--rio-bg-surface-2);
+            width: 240px; flex-shrink: 0;
+            background: var(--rio-bg-surface-1);
             border-right: 1px solid var(--rio-border);
-            padding: 24px 14px;
-            font-family: var(--rio-font-heading);
+            padding: 28px 14px 20px;
+            font-family: var(--rio-font-body);
+            display: flex; flex-direction: column;
         }
         .sidebar .section {
-            font-size: 12px; font-weight: 600; color: var(--rio-text-faint);
-            letter-spacing: 0.08em; padding: 12px 12px 10px; text-transform: uppercase;
+            font-size: 11px; font-weight: 600;
+            color: var(--rio-text-muted);
+            letter-spacing: 0.09em; text-transform: uppercase;
+            padding: 0 14px;
+            margin: 0 0 6px 0;
         }
-        .sidebar .section + .section,
-        .sidebar .section:not(:first-child) { margin-top: 14px; }
+        /* Each section after the first gets a subtle rule + breathing
+           room above. The rule uses --rio-border-soft (lighter) so it
+           reads as "divider" not "boundary". */
+        .sidebar .section:not(:first-child) {
+            margin-top: 22px;
+            padding-top: 18px;
+            border-top: 1px solid var(--rio-border-soft);
+        }
         .sidebar a.link {
             display: flex; align-items: center; justify-content: space-between;
-            padding: 8px 14px; color: var(--rio-text-secondary); border-radius: 8px;
-            font-size: var(--rio-text-base); font-weight: 500; text-decoration: none;
-            margin-bottom: 6px; gap: 10px;
-            border: 1px solid transparent;
+            padding: 8px 14px; color: var(--rio-text-secondary);
+            border-radius: 6px;
+            font-size: 14px; font-weight: 500;
+            text-decoration: none; margin-bottom: 2px; gap: 10px;
+            transition: background 0.12s ease, color 0.12s ease;
         }
-        .sidebar a.link .label { display: inline-flex; align-items: center; gap: 12px; }
+        .sidebar a.link .label {
+            display: inline-flex; align-items: center; gap: 10px;
+            min-width: 0;
+        }
+        .sidebar a.link .label .text {
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
         .sidebar a.link .badge {
-            background: var(--rio-bg-surface-1); color: var(--rio-text-secondary);
-            font-size: 13px; padding: 2px 10px; border-radius: 10px; font-weight: 600;
-            border: 1px solid var(--rio-border);
+            background: var(--rio-bg); color: var(--rio-text-muted);
+            font-size: 12px; padding: 1px 8px; border-radius: 10px;
+            font-weight: 600; border: 1px solid var(--rio-border);
             font-feature-settings: "tnum" 1, "lnum" 1;
+            flex-shrink: 0;
         }
-        .sidebar a.link:hover { background: var(--rio-bg-surface-1); }
-        /* Active item — KEEP the 3px brand left-stripe (improvement #2) */
+        .sidebar a.link:hover {
+            background: var(--rio-bg);
+            color: var(--rio-text);
+        }
+        /* Active state — exactly two visual cues: tinted bg + left
+           stripe. Drop the previous inset-shadow + border + padding
+           shift; redundant cues create instability when toggling. */
         .sidebar a.link.is-active {
             background: var(--rio-accent-bg);
             color: var(--rio-accent);
-            border-color: var(--rio-accent-border);
             font-weight: 600;
-            box-shadow: var(--rio-shadow-card), inset 3px 0 0 var(--rio-accent);
-            padding-left: 16px;
+            position: relative;
         }
-        .sidebar a.link.is-active .badge { color: var(--rio-accent); border-color: var(--rio-accent-border); }
-        .sidebar .powered {
-            margin-top: 24px; padding: 14px 16px;
+        .sidebar a.link.is-active::before {
+            content: "";
+            position: absolute;
+            left: 0; top: 6px; bottom: 6px;
+            width: 3px;
+            background: var(--rio-accent);
+            border-radius: 0 2px 2px 0;
+        }
+        .sidebar a.link.is-active .badge {
+            color: var(--rio-accent);
+            border-color: var(--rio-accent-border);
             background: var(--rio-bg-surface-1);
-            border: 1px solid var(--rio-border);
-            border-radius: 8px;
-            box-shadow: var(--rio-shadow-card);
         }
-        .sidebar .powered .k { font-size: 13px; color: var(--rio-text-muted); font-weight: 500; }
-        .sidebar .powered .v { font-size: 15px; font-weight: 600; color: var(--rio-text); margin-top: 2px; }
+        /* Powered card — pinned to bottom via `margin-top: auto`
+           inside the flex column so the sidebar's negative space
+           always sits between sections and the card, not below it. */
+        .sidebar .powered {
+            margin-top: auto;
+            padding: 12px 14px;
+            background: var(--rio-bg);
+            border: 1px solid var(--rio-border-soft);
+            border-radius: 8px;
+        }
+        .sidebar .powered .k {
+            font-size: 11px;
+            color: var(--rio-text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+        }
+        .sidebar .powered .v {
+            font-size: 14px; font-weight: 600;
+            color: var(--rio-text); margin-top: 2px;
+        }
 
         /* Main */
         .main {
@@ -1521,6 +1573,14 @@
             --rio-border:           {{ theme_border }};
             --rio-accent:           {{ accent_hex }};
             --ds-color-accent:      {{ accent_rgb }};
+            /* 1.8.4 — derived accent surfaces. The active sidebar
+               link uses these for its tint; without these overrides
+               the active-link still showed the framework's pale
+               teal regardless of the operator's accent. Mixed from
+               the accent against pure white so they coordinate
+               automatically with any custom hue. */
+            --rio-accent-bg:        color-mix(in srgb, {{ accent_hex }} 8%, white);
+            --rio-accent-border:    color-mix(in srgb, {{ accent_hex }} 25%, white);
         }
         /* (2) — Tailwind utility-class overrides for accent colour. */
         .bg-brand-600 { background-color: {{ accent_hex }} !important; }
