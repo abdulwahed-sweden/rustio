@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-rustio-macros = { path = "../rustio-macros", version = "1.8.1" }
+rustio-macros = { path = "../rustio-macros", version = "1.8.2" }
 
 # runtime
 tokio = { version = "1", features = ["net", "rt-multi-thread", "macros", "sync", "signal", "time", "fs"] }

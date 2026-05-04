@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.8.2] - 2026-05-04
+
+Admin chrome theming. Driven by the v1.8.1 vetcare review: the
+`[design] brand` field in `.rustio/project.lock` was inert metadata
+because nothing in the runtime read it, and overriding the admin
+shell required either a partial template copy (fragile) or a full
+fork. This release closes the loop with a small, additive builder
+on `Admin`. No breaking changes.
+
+### Added
+
+- **`Admin::accent_color(impl Into<String>) -> Self`** — one-line
+  shortcut to set just the brand accent. Hex form, with or without
+  the leading `#`. Drives a runtime `<style>` block in
+  `admin/base.html` that overrides every Tailwind utility class
+  baking the framework's default teal as a literal RGB value
+  (`bg-brand-600`, `text-brand-*`, `::selection`, link colour,
+  focus rings, the `--ds-color-accent` CSS variable).
+- **`Admin::theme(AdminTheme) -> Self`** — full chrome palette in
+  one call. `AdminTheme` exposes six hex tokens that map onto the
+  framework's existing `--rio-*` design tokens (accent, bg, surface,
+  text, text_muted, border). The runtime override block redefines
+  those tokens at the document `:root`, and the existing chrome
+  cascades to the new palette in a single repaint — topbar, sidebar,
+  body, cards, headings, and hairlines all follow because every
+  framework component already reads these tokens via `var(--rio-X)`.
+- **`AdminTheme` struct** with `Default` matching the framework's
+  current chrome. Operators typically override 1–3 fields with
+  `..AdminTheme::default()` to keep the rest at framework values.
+- **`Admin::active_theme()` and `Admin::accent()` accessors** for
+  read-only inspection (used internally by `BaseContext`; rarely
+  needed by projects directly).
+- **Hex parser with safe fallback.** `hex_to_rgb_triplet` parses
+  `#rrggbb` (or `rrggbb`) into the space-separated form Tailwind
+  expects in CSS variables. On any malformed input — wrong length,
+  non-hex characters, empty string — falls back to the framework
+  default RGB rather than panic. The admin path never breaks over
+  a config typo.
+
+### Changed
+
+- **`SiteBranding` is untouched.** Adding the new fields there
+  would have broken every project that constructs the struct
+  directly. Putting accent and theme on `Admin` instead is fully
+  additive — projects that don't call `.theme(...)` or
+  `.accent_color(...)` render identically to v1.8.1.
+
+### Notes
+
+- 10 new tests across the workspace (424 lib, 101 CLI total) cover
+  hex parsing, the accent shortcut, the theme builder, the override
+  block schema, and a full template render proving all six theme
+  colours flow into the rendered HTML.
+- Single-binary deploy contract preserved: no per-project asset
+  pipeline, no Tailwind rebuild, no separate stylesheet to ship.
+  Cost is one tiny `<style id="rio-accent-override">` block per
+  page render.
+- Future work: auto-load the accent from `.rustio/project.lock`
+  `[design] brand` so the lock value flows without an explicit
+  builder call. Lives in the rustio-cli scaffold (or a future
+  Phase 12/d brand-token pipeline), not in rustio-core.
+
 ## [1.8.1] - 2026-05-04
 
 Polish release in response to the v1.8.0 end-to-end review. Five DX-grade improvements; no breaking changes.
