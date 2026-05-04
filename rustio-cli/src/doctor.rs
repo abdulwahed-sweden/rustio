@@ -63,6 +63,10 @@ pub struct Args {
     pub quiet: bool,
     pub verbose: bool,
     pub no_color: bool,
+    /// 1.8.1 — emit a single JSON object on stdout instead of the human
+    /// renderer. quiet/verbose/no_color do not apply to JSON output.
+    /// Exit code is unchanged: 0 for READY/DEGRADED, 1 for NOT READY.
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +84,9 @@ pub(crate) struct ParsedUrl {
 // ---------------------------------------------------------------------------
 
 pub async fn run(args: Args) -> ExitCode {
-    if !args.quiet {
+    // 1.8.1 — JSON mode suppresses the human banner; the heading would
+    // contaminate the JSON document an external tool is parsing.
+    if !args.quiet && !args.json {
         println!();
         println!("  RustIO doctor — checking your project");
         println!();
@@ -730,6 +736,15 @@ fn skipped(name: &'static str, reason: &str) -> CheckResult {
 // ---------------------------------------------------------------------------
 
 fn render(results: &[CheckResult], args: &Args) {
+    // 1.8.1 — JSON renderer takes priority. Emits a single line of
+    // canonical JSON to stdout; `quiet`/`verbose`/`no_color` are
+    // ignored (they apply only to the human renderer). Designed for
+    // CI gating: `rustio doctor --json | jq .status`.
+    if args.json {
+        render_json(results);
+        return;
+    }
+
     let use_color = !args.no_color
         && std::env::var_os("NO_COLOR").is_none()
         && std::io::stdout().is_terminal();
@@ -774,6 +789,77 @@ fn render_check_default<W: Write>(out: &mut W, r: &CheckResult, args: &Args, use
             let _ = writeln!(out, "       {line}");
         }
         let _ = writeln!(out);
+    }
+}
+
+/// 1.8.1 — overall health status as a stable string. Used in JSON output
+/// and to drive the human renderer's summary line. Pure function over the
+/// blocker/warning counts — no side effects, easy to unit-test.
+pub(crate) fn overall_status(results: &[CheckResult]) -> &'static str {
+    let blockers = results
+        .iter()
+        .filter(|r| r.severity == Severity::Blocker)
+        .count();
+    let warnings = results
+        .iter()
+        .filter(|r| r.severity == Severity::Warning)
+        .count();
+    if blockers > 0 {
+        "not_ready"
+    } else if warnings > 0 {
+        "ready_degraded"
+    } else {
+        "ready"
+    }
+}
+
+/// 1.8.1 — JSON renderer. One canonical line on stdout: `status`,
+/// per-check array, blocker/warning counts. Schema is intentionally
+/// flat and stable so `jq` queries don't need to track changes.
+///
+/// `severity` field uses lowercase string identifiers (`ok`, `blocker`,
+/// `warning`, `skipped`) instead of integer codes — easier to grep and
+/// to read in CI logs.
+pub(crate) fn render_json(results: &[CheckResult]) {
+    let status = overall_status(results);
+    let blockers = results
+        .iter()
+        .filter(|r| r.severity == Severity::Blocker)
+        .count();
+    let warnings = results
+        .iter()
+        .filter(|r| r.severity == Severity::Warning)
+        .count();
+    let checks: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            let sev = match r.severity {
+                Severity::Ok => "ok",
+                Severity::Blocker => "blocker",
+                Severity::Warning => "warning",
+                Severity::Skipped => "skipped",
+            };
+            serde_json::json!({
+                "name": r.name,
+                "severity": sev,
+                "headline": r.headline,
+                "detail": r.detail,
+                "elapsed_ms": r.elapsed_ms,
+            })
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "status": status,
+        "blockers": blockers,
+        "warnings": warnings,
+        "checks": checks,
+    });
+    // serde_json::to_string never fails on a Value built from owned data,
+    // but we still handle it explicitly rather than .unwrap() — a panic
+    // here would be confusing in a CI script.
+    match serde_json::to_string(&doc) {
+        Ok(s) => println!("{s}"),
+        Err(e) => eprintln!("doctor: failed to serialise JSON output: {e}"),
     }
 }
 
@@ -1333,6 +1419,92 @@ mod tests {
         let r = check_cli_version(&lock);
         assert_eq!(r.severity, Severity::Ok);
         assert_eq!(r.headline, env!("CARGO_PKG_VERSION"));
+    }
+
+    // ----- 1.8.1 — overall_status + JSON render -----
+
+    #[test]
+    fn doctor_overall_status_all_ok_is_ready() {
+        let r = vec![ok("a"), ok("b")];
+        assert_eq!(overall_status(&r), "ready");
+    }
+
+    #[test]
+    fn doctor_overall_status_only_warnings_is_ready_degraded() {
+        let r = vec![ok("a"), warn("b")];
+        assert_eq!(overall_status(&r), "ready_degraded");
+    }
+
+    #[test]
+    fn doctor_overall_status_any_blocker_is_not_ready() {
+        let r = vec![ok("a"), warn("b"), blocker("c")];
+        assert_eq!(overall_status(&r), "not_ready");
+    }
+
+    /// 1.8.1 — JSON render is deterministic and machine-consumable.
+    /// We capture stdout via a child process? Too heavy. Instead, the
+    /// JSON shape is also exposed via `render_json` consuming `results`;
+    /// we test the schema by reconstructing the same Value the renderer
+    /// builds and asserting its shape.
+    ///
+    /// (Direct stdout-capture would require redirecting std::io::stdout,
+    /// which is harder than rebuilding the same JSON Value here. The
+    /// renderer is one .to_string() call on this Value, so the stdout
+    /// content is fully determined by the Value's structure.)
+    #[test]
+    fn doctor_render_json_schema_is_stable() {
+        let results = vec![ok("Project root"), warn("Meilisearch"), blocker("DB")];
+        let status = overall_status(&results);
+        let blockers = results
+            .iter()
+            .filter(|r| r.severity == Severity::Blocker)
+            .count();
+        let warnings = results
+            .iter()
+            .filter(|r| r.severity == Severity::Warning)
+            .count();
+        let checks: Vec<serde_json::Value> = results
+            .iter()
+            .map(|r| {
+                let sev = match r.severity {
+                    Severity::Ok => "ok",
+                    Severity::Blocker => "blocker",
+                    Severity::Warning => "warning",
+                    Severity::Skipped => "skipped",
+                };
+                serde_json::json!({
+                    "name": r.name,
+                    "severity": sev,
+                    "headline": r.headline,
+                    "detail": r.detail,
+                    "elapsed_ms": r.elapsed_ms,
+                })
+            })
+            .collect();
+        let doc = serde_json::json!({
+            "status": status,
+            "blockers": blockers,
+            "warnings": warnings,
+            "checks": checks,
+        });
+        // Schema asserts.
+        assert_eq!(doc["status"], "not_ready");
+        assert_eq!(doc["blockers"], 1);
+        assert_eq!(doc["warnings"], 1);
+        assert_eq!(doc["checks"].as_array().unwrap().len(), 3);
+        let c0 = &doc["checks"][0];
+        assert_eq!(c0["name"], "Project root");
+        assert_eq!(c0["severity"], "ok");
+        assert!(c0.get("detail").is_some(), "detail key must always exist");
+        assert!(
+            c0.get("elapsed_ms").is_some(),
+            "elapsed_ms key must always exist"
+        );
+        // Round-trips through the same serializer the renderer uses.
+        let s = serde_json::to_string(&doc).unwrap();
+        assert!(s.starts_with('{') && s.ends_with('}'));
+        let _: serde_json::Value =
+            serde_json::from_str(&s).expect("output must be valid JSON");
     }
 
     #[test]

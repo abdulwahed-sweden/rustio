@@ -89,6 +89,12 @@ enum Command {
         /// or when `NO_COLOR` is set).
         #[arg(long)]
         no_color: bool,
+        /// 1.8.1 — emit a single JSON object instead of the human-readable
+        /// renderer. Suppresses --quiet/--verbose/--no-color (they apply
+        /// only to the human renderer). Useful for CI gating and
+        /// machine-readable diagnostics.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -349,8 +355,13 @@ fn main() -> ExitCode {
     // Doctor returns its own ExitCode (0 = ready / ready-degraded, 1 = not
     // ready). Bypass the Result<(), String> mapping below — doctor's output
     // is already user-facing and shouldn't get wrapped in `error: ...`.
-    if let Command::Doctor { quiet, verbose, no_color } = &cli.command {
-        let args = doctor::Args { quiet: *quiet, verbose: *verbose, no_color: *no_color };
+    if let Command::Doctor { quiet, verbose, no_color, json } = &cli.command {
+        let args = doctor::Args {
+            quiet: *quiet,
+            verbose: *verbose,
+            no_color: *no_color,
+            json: *json,
+        };
         let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
             Ok(rt) => rt,
             Err(e) => {
@@ -1664,12 +1675,27 @@ mod tests {
     /// Scaffold next-steps and `.env.example` content are part of the
     /// v1.3.1 DX contract. If these strings drift, downstream docs
     /// (root README, examples/README) drift with them.
+    ///
+    /// 1.8.1 — env_example is now per-project: the `DATABASE_URL`
+    /// embeds the project name to give every project its own DB by
+    /// default. Test asserts both the static contract and the
+    /// per-project interpolation.
     #[test]
     fn scaffold_env_example_documents_postgres_requirement() {
-        let txt = scaffold::ENV_EXAMPLE;
+        let txt = scaffold::env_example("clinic");
         assert!(txt.contains("DATABASE_URL=postgres://"), "must seed a Postgres URL");
         assert!(txt.contains("PostgreSQL is required"), "must explain PG requirement");
         assert!(txt.contains("MEILI_URL"), "must include MEILI_URL line");
+        // Per-project DB: the project name appears in the connection string
+        // so two rustio projects on one Postgres don't collide on auth tables.
+        assert!(
+            txt.contains("clinic_dev"),
+            "env_example must interpolate `<name>_dev` into DATABASE_URL — actual:\n{txt}"
+        );
+        assert!(
+            !txt.contains("rustio_dev"),
+            "env_example must not hardcode `rustio_dev` (1.8.1 fix) — actual:\n{txt}"
+        );
     }
 
     #[test]
@@ -1923,9 +1949,62 @@ mod tests {
             src.contains("rustio user create --email admin@"),
             "banner must show the exact `rustio user create` command"
         );
+        // 1.8.1 — banner uses the dynamic `{addr}` so the URL is correct
+        // when the operator overrides BIND/PORT. The literal default
+        // appears elsewhere (BIND= comment in .env.example) but the
+        // banner reads from the runtime addr.
         assert!(
-            src.contains("http://127.0.0.1:8000/admin"),
-            "banner must point at the admin URL"
+            src.contains("http://{addr}/admin"),
+            "banner must point at the dynamically-built admin URL (1.8.1 fix for env-driven bind)"
+        );
+    }
+
+    /// 1.8.1 — scaffolded MAIN_RS reads BIND and PORT env vars before
+    /// constructing SocketAddr. Production deploys must not require
+    /// editing the source file just to change the listening address.
+    #[test]
+    fn scaffold_main_rs_reads_bind_and_port_env() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            src.contains("std::env::var(\"BIND\")"),
+            "MAIN_RS must read BIND env var"
+        );
+        assert!(
+            src.contains("std::env::var(\"PORT\")"),
+            "MAIN_RS must read PORT env var"
+        );
+        assert!(
+            src.contains("\"127.0.0.1\""),
+            "BIND default must remain 127.0.0.1 (back-compat)"
+        );
+        assert!(
+            src.contains("8000"),
+            "PORT default must remain 8000 (back-compat)"
+        );
+    }
+
+    /// 1.8.1 — scaffolded MAIN_RS reads RUSTIO_ENV; `production` mode
+    /// suppresses the dev-only "no admin user" banner (it's an
+    /// onboarding hint, not an operational signal). The mode is
+    /// logged at startup for operator visibility.
+    #[test]
+    fn scaffold_main_rs_reads_rustio_env() {
+        let src = scaffold::MAIN_RS;
+        assert!(
+            src.contains("std::env::var(\"RUSTIO_ENV\")"),
+            "MAIN_RS must read RUSTIO_ENV env var"
+        );
+        assert!(
+            src.contains("\"development\""),
+            "RUSTIO_ENV must default to development"
+        );
+        assert!(
+            src.contains("if is_dev && user_count == 0"),
+            "no-admin-user banner must be gated on is_dev (production hides it)"
+        );
+        assert!(
+            src.contains("starting in {env_mode} mode"),
+            "MAIN_RS must log the active env mode at startup"
         );
     }
 
@@ -2466,7 +2545,7 @@ mod scaffold {
         fs::write(root.join("src").join("main.rs"), MAIN_RS).map_err(|e| e.to_string())?;
         fs::write(root.join("src").join("apps").join("mod.rs"), "").map_err(|e| e.to_string())?;
         fs::write(root.join(".gitignore"), GITIGNORE).map_err(|e| e.to_string())?;
-        fs::write(root.join(".env.example"), ENV_EXAMPLE).map_err(|e| e.to_string())?;
+        fs::write(root.join(".env.example"), env_example(name)).map_err(|e| e.to_string())?;
         fs::write(root.join("README.md"), project_readme(name)).map_err(|e| e.to_string())?;
         fs::write(root.join(".ai").join("context.md"), ai_context_md(name))
             .map_err(|e| e.to_string())?;
@@ -2987,15 +3066,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     auth::init_tables(&db).await?;
     migrations::apply(&db, "migrations").await?;
 
+    // 1.8.1 — environment mode. `RUSTIO_ENV=production` suppresses the
+    // dev-only "no admin user" banner and changes the startup log line.
+    // Default is "development" so existing projects keep their current
+    // behaviour without setting anything new.
+    let env_mode = std::env::var("RUSTIO_ENV").unwrap_or_else(|_| "development".into());
+    let is_dev = env_mode != "production";
+
+    // 1.8.1 — server bind from env. `BIND` and `PORT` override the
+    // defaults so production deploys don't require editing this file.
+    // The `unwrap_or` chain keeps the existing 127.0.0.1:8000 default
+    // verbatim for operators who don't set anything.
+    let bind_host = std::env::var("BIND").unwrap_or_else(|_| "127.0.0.1".into());
+    let bind_port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8000);
+    let addr: SocketAddr = format!("{bind_host}:{bind_port}").parse()?;
+
     // First-run hint: nudge the operator to create an admin user when
     // the table is empty. Read-only check; disappears on next boot
     // once any user exists. Silent on query error so a transient
     // failure here can never block startup.
+    //
+    // 1.8.1 — gated on `is_dev`. Production deploys don't get this
+    // banner (it's a developer-onboarding hint, not an operational
+    // signal); the URL line interpolates the actual `addr` so it's
+    // correct when BIND/PORT are overridden.
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM rustio_users")
         .fetch_one(db.pool())
         .await
         .unwrap_or(0);
-    if user_count == 0 {
+    if is_dev && user_count == 0 {
         eprintln!();
         eprintln!("⚠ No admin user found.");
         eprintln!();
@@ -3005,7 +3107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!();
         eprintln!("Then open:");
         eprintln!();
-        eprintln!("  http://127.0.0.1:8000/admin");
+        eprintln!("  http://{addr}/admin");
         eprintln!();
     }
 
@@ -3045,7 +3147,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let router = register_admin_routes(router, admin, db, templates);
 
-    let addr: SocketAddr = "127.0.0.1:8000".parse()?;
+    // 1.8.1 — log the env mode + bind so an operator skimming the
+    // startup log can tell development from production at a glance.
+    log::info!("rustio starting in {env_mode} mode on http://{addr}");
     Server::new(router, addr).run().await?;
     Ok(())
 }
@@ -3066,11 +3170,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 // }
 "#;
 
-    const GITIGNORE: &str = "/target\n.env\n";
+    /// 1.8.1 — proper Rust .gitignore. Was just `/target\n.env\n`, which
+    /// missed IDE files, OS metadata, lock-files-for-secrets variants, and
+    /// build cruft. Adds the standard ignores so a fresh `git init` doesn't
+    /// stage editor settings or `.DS_Store` noise.
+    const GITIGNORE: &str = "\
+# Build artifacts
+/target
+**/*.rs.bk
 
-    pub(super) const ENV_EXAMPLE: &str = r#"# PostgreSQL is required in v1.3.x.
+# Local env (do NOT commit secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE
+/.idea
+/.vscode
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+";
+
+    /// 1.8.1 — per-project default `DATABASE_URL`. The previous
+    /// hardcoded `rustio_dev` made every fresh project share the same
+    /// auth tables (`rustio_users`, `rustio_sessions`, …) by default;
+    /// two rustio projects on one Postgres collided silently. Now each
+    /// project gets `<name>_dev`, isolated by default. Operators who
+    /// want a shared DB can edit the line; operators who don't (the
+    /// 99% case) get isolation for free.
+    ///
+    /// Also documents the new `BIND`, `PORT`, and `RUSTIO_ENV` knobs
+    /// the scaffolded `MAIN_RS` reads — kept commented so they don't
+    /// override defaults until the operator opts in.
+    pub(super) fn env_example(name: &str) -> String {
+        format!(
+            r#"# PostgreSQL is required in v1.3.x.
 # Edit DATABASE_URL before running if your database name or user differs.
-DATABASE_URL=postgres://postgres:dev@localhost/rustio_dev
+DATABASE_URL=postgres://postgres:dev@localhost/{name}_dev
 
 # Meilisearch is optional — the app handles a missing search backend
 # gracefully. Set MEILI_MASTER_KEY in production.
@@ -3078,5 +3217,15 @@ MEILI_URL=http://127.0.0.1:7700
 # MEILI_MASTER_KEY=your-key-if-configured
 
 RUST_LOG=info
-"#;
+
+# 1.8.1 — server bind. Defaults shown; uncomment + edit to override.
+# BIND=127.0.0.1
+# PORT=8000
+
+# 1.8.1 — environment mode. `production` suppresses the dev-only
+# "no admin user found" banner and changes the startup log line.
+# RUSTIO_ENV=development
+"#
+        )
+    }
 }
