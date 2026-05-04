@@ -17,6 +17,15 @@ pub mod ai_gen;
 pub mod auth;
 pub mod background;
 pub mod cache;
+// Phase 14 — Schema Contract System (commit 1, types only). Lives
+// under `contract` to avoid colliding with the existing `schema`
+// module (the AI-layer Schema export). The contract module is the
+// single source of truth describing a model's columns, Rust types,
+// expected SQL DDL, and admin/search flags. Commit 1 ships only
+// the types + compatibility helpers; the macro that generates a
+// `ModelSchema` ships in commit 2; the runtime validator that
+// introspects PostgreSQL ships in commit 3.
+pub mod contract;
 pub mod error;
 pub mod http;
 pub mod middleware;
