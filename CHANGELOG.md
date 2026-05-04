@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.8.1] - 2026-05-04
+
+Polish release in response to the v1.8.0 end-to-end review. Five DX-grade improvements; no breaking changes.
+
+### Added
+
+- **Orphan-admin-file detection (`rustio-core`).** `Templates::new`'s startup scan now also walks `templates/admin/*.html` and warns about any file whose name doesn't match an embedded template — catches the inverted-typo case where a developer writes `templates/admin/baes.html` thinking they're overriding `base.html` but actually shadow nothing. Symmetrical to the v1.8.0 stub-override warning.
+- **`rustio doctor --json`.** New flag emits a single canonical JSON document on stdout: `status` (`ready` / `ready_degraded` / `not_ready`), `blockers`, `warnings`, and a `checks[]` array with lowercase severity strings (`ok`, `blocker`, `warning`, `skipped`). Suppresses the human banner. Designed for CI gating: `rustio doctor --json | jq .status`.
+- **`BIND` and `PORT` env vars in scaffolded `MAIN_RS`.** Production deploys can now change the listening address without editing `src/main.rs`. Defaults preserved (127.0.0.1:8000) so existing projects need no change. The "no admin user" startup banner interpolates the actual addr so the URL it shows is correct when overridden.
+- **`RUSTIO_ENV` env var in scaffolded `MAIN_RS`.** Defaults to `development`. When set to `production`, the dev-only "no admin user" onboarding banner is suppressed (it's a developer hint, not an operational signal). Active mode is logged at startup for operator visibility.
+- **`.env.example` documents the new knobs.** `BIND`, `PORT`, and `RUSTIO_ENV` ship as commented-out lines so an operator sees them when configuring `.env`.
+
+### Changed
+
+- **Per-project default `DATABASE_URL` in scaffolded `.env.example`.** Was a hardcoded `rustio_dev`; now interpolates `<name>_dev` so two rustio projects on one Postgres no longer collide on the auth tables (`rustio_users`, `rustio_sessions`, …) by default. Existing projects are unaffected — only new scaffolds change.
+- **Hardened scaffold `.gitignore`.** Was 14 bytes (`/target` + `.env` only); now includes `.env.local`, `.env.*.local`, `**/*.rs.bk`, `/.idea`, `/.vscode`, `*.iml`, `.DS_Store`, `Thumbs.db`. Reduces accidental commits of secrets, IDE state, and OS metadata.
+- **Doctor JSON severity uses string identifiers**, not integer codes — easier to grep and read in CI logs.
+
+### Fixed
+
+- **Backfilled `CHANGELOG.md` for 1.7.0 and 1.7.1.** Both releases had shipped without entries; the v1.8.0 changelog noted the gap as a TODO. Now closed; v1.8.0's stale "1.7.x shipped without entries" note was also removed.
+
+### Notes
+
+- All workspace crates republished at 1.8.1 to keep version inheritance lockstep, even though `rustio-macros` has no source changes.
+- The override safety net (1.8.0) and orphan detection (1.8.1) are non-fatal: the framework still serves whatever the developer put on disk — these scans only make the silent-failure modes observable in the log.
+- 414 lib + 101 CLI tests pass against this release. Clippy clean. CSS in sync.
+
 ## [1.8.0] - 2026-05-04
 
 ### Added
