@@ -1962,6 +1962,9 @@ mod tests {
             ".ai/context.md",
             ".rustio/project.lock",
             "templates/home.html",
+            // 1.8.3 — placeholder migration README so the directory
+            // is self-documenting (format, naming, runner).
+            "migrations/0001_README.md",
         ] {
             assert!(root.join(path).is_file(), "scaffold missing: {path}");
         }
@@ -2178,6 +2181,9 @@ mod tests {
     /// interpolated and the Do / Do-Not rules in place. Substring
     /// checks; structural concerns (TOML) live in the project.lock
     /// tests below.
+    /// 1.8.3 — extended to verify the worked-example block, blog
+    /// pointer, model-registration step, and migration README cross-
+    /// reference all land in the rendered file.
     #[test]
     fn scaffold_project_at_creates_ai_context() {
         let dir = tempdir_path();
@@ -2200,6 +2206,110 @@ mod tests {
         assert!(
             text.contains("Do not modify the upstream `rustio-core` crate"),
             "context.md must carry the clarified rustio-core rule"
+        );
+        // 1.8.3 — five-step worked example.
+        assert!(
+            text.contains("Adding a model end-to-end"),
+            "context.md must include the worked-example heading (1.8.3)"
+        );
+        assert!(
+            text.contains(".model::<"),
+            "context.md must mention the .model::<T>() registration step (1.8.3)"
+        );
+        assert!(
+            text.contains("examples/blog"),
+            "context.md must point at examples/blog/ as the canonical reference (1.8.3)"
+        );
+        assert!(
+            text.contains("migrations/0001_README.md"),
+            "context.md must cross-reference the migration README (1.8.3)"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 1.8.3 — drift guard. The brand colour written into
+    /// `.ai/context.md` MUST match `AdminTheme::default().accent`
+    /// exactly. Pre-1.8.3 the AI context hardcoded `#0d9488` while
+    /// the framework default migrated to `#2563EB`, leaving the
+    /// AI doc actively misleading. This test fails the moment the
+    /// two drift again.
+    #[test]
+    fn scaffold_ai_context_brand_color_matches_admin_theme_default() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "drift").unwrap();
+        let text = std::fs::read_to_string(
+            dir.join("drift").join(".ai").join("context.md"),
+        )
+        .unwrap();
+        let want = rustio_core::admin::AdminTheme::default().accent;
+        assert!(
+            text.contains(&want),
+            "context.md brand colour must match AdminTheme::default().accent ({want}) — actual:\n{text}"
+        );
+        // And explicitly: the old teal MUST NOT appear (it was the
+        // original bug — a future agent might paste it back in).
+        assert!(
+            !text.contains("#0d9488"),
+            "context.md must not reference the legacy teal #0d9488 — actual:\n{text}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 1.8.3 — every command mentioned in the Commands section must
+    /// match a real CLI subcommand. Naive grep — but enough to catch
+    /// "rustio nonexistent-cmd" being added to the doc by accident.
+    /// Updates here are cheap; updates that prevent fictitious
+    /// commands from shipping are valuable.
+    #[test]
+    fn scaffold_ai_context_commands_section_is_grounded() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "real").unwrap();
+        let text = std::fs::read_to_string(
+            dir.join("real").join(".ai").join("context.md"),
+        )
+        .unwrap();
+        for needle in &[
+            "rustio doctor",
+            "rustio doctor --json",
+            "rustio startapp",
+            "rustio user create",
+            "rustio migrate generate",
+            "cargo run",
+        ] {
+            assert!(
+                text.contains(needle),
+                "context.md Commands section must list `{needle}`"
+            );
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 1.8.3 — placeholder migration README is scaffolded into
+    /// `migrations/0001_README.md` so the file naming and SQL
+    /// convention are self-documenting.
+    #[test]
+    fn scaffold_writes_migrations_readme() {
+        let dir = tempdir_path();
+        scaffold::project_at(&dir, "shop").unwrap();
+        let path = dir.join("shop").join("migrations").join("0001_README.md");
+        assert!(
+            path.is_file(),
+            "migrations/0001_README.md must exist after scaffold (1.8.3)"
+        );
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("# Migrations"), "must lead with heading");
+        assert!(
+            text.contains("rustio_core::migrations::apply"),
+            "must reference the runner"
+        );
+        assert!(
+            text.contains("BIGSERIAL PRIMARY KEY"),
+            "must include a SQL example"
+        );
+        // Naming convention spelled out.
+        assert!(
+            text.contains("0001_") || text.contains("Sequence-prefixed"),
+            "must explain the sequence-prefix naming"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -2638,6 +2748,12 @@ mod scaffold {
             .map_err(|e| e.to_string())?;
         fs::write(root.join(".rustio").join("project.lock"), project_lock_toml(name))
             .map_err(|e| e.to_string())?;
+        // 1.8.3 — placeholder migration README so the format + naming
+        // convention are self-documenting. The migrations/ dir is
+        // otherwise empty; without this file an agent has to guess
+        // (.sql? .rs? sequence numbers? timestamps?).
+        fs::write(root.join("migrations").join("0001_README.md"), MIGRATIONS_README)
+            .map_err(|e| e.to_string())?;
         // Phase 12/b — `templates/home.html` is rendered with the
         // project name baked in via `format!()` (build-time
         // substitution); the runtime template no longer carries
@@ -2921,11 +3037,17 @@ See <https://github.com/abdulwahed-sweden/rustio> for documentation.
     /// project name is interpolated; the rules and design-system
     /// guidance are static prose the developer can edit.
     fn ai_context_md(name: &str) -> String {
+        // 1.8.3 — brand colour read from `AdminTheme::default()` so this
+        // file can never go stale relative to the framework default.
+        // Pre-1.8.3 the value was hardcoded to `#0d9488` (teal) and
+        // drifted when the framework migrated to Cobalt Blue.
+        let brand = rustio_core::admin::AdminTheme::default().accent;
         format!(
-            r#"# RustIO Project Context
+            r##"# RustIO Project Context
 
 This is a RustIO project. AI agents (Claude Code, Cursor, etc.) should
-read this file before making changes.
+read this file before making changes. **The README is a useful companion;
+read both.**
 
 ## Project Name
 
@@ -2942,85 +3064,199 @@ _Fill in: the core resources this project models. Examples:_
 - _TODO: resource one_
 - _TODO: resource two_
 
+## Canonical reference
+
+The blog example at `examples/blog/` in the upstream RustIO repo
+(<https://github.com/abdulwahed-sweden/rustio/tree/main/examples/blog>)
+is the worked-out version of every step below. When in doubt, read it.
+
+## Adding a model end-to-end
+
+Five steps. Skipping any leaves the model invisible to `/admin`.
+
+### 1. Create the app
+
+```sh
+rustio startapp orders
+```
+
+This creates `src/apps/orders/{{mod.rs,models.rs}}` AND wires
+`pub mod orders;` into `src/apps/mod.rs` automatically (1.8.3+).
+
+### 2. Define the model in `src/apps/orders/models.rs`
+
+```rust
+use chrono::{{DateTime, Utc}};
+use rustio_core::{{Error, Model, Row, RustioAdmin, Value}};
+
+#[derive(Debug, RustioAdmin)]
+pub struct Order {{
+    pub id: i64,
+    pub customer: String,
+    pub total_cents: i64,
+    pub created_at: DateTime<Utc>,
+}}
+
+impl Model for Order {{
+    const TABLE: &'static str = "orders";
+    const COLUMNS: &'static [&'static str] =
+        &["id", "customer", "total_cents", "created_at"];
+    const INSERT_COLUMNS: &'static [&'static str] =
+        &["customer", "total_cents", "created_at"];
+
+    fn id(&self) -> i64 {{ self.id }}
+
+    fn from_row(row: Row<'_>) -> Result<Self, Error> {{
+        Ok(Self {{
+            id: row.get_i64("id")?,
+            customer: row.get_string("customer")?,
+            total_cents: row.get_i64("total_cents")?,
+            created_at: row.get_datetime("created_at")?,
+        }})
+    }}
+
+    fn insert_values(&self) -> Vec<Value> {{
+        vec![
+            self.customer.clone().into(),
+            self.total_cents.into(),
+            self.created_at.into(),
+        ]
+    }}
+}}
+```
+
+### 3. Write the migration in `migrations/0002_orders.sql`
+
+```sql
+CREATE TABLE orders (
+    id          BIGSERIAL PRIMARY KEY,
+    customer    TEXT NOT NULL,
+    total_cents BIGINT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+(See `migrations/0001_README.md` for the file naming + format
+convention. Migrations apply at boot via `migrations::apply`.)
+
+### 4. Register with the admin in `src/main.rs`
+
+```rust
+let admin = Admin::new()
+    .site_branding(branding())
+    .model::<apps::orders::models::Order>();   // ← THIS step
+admin.seed_permissions(&db).await?;
+```
+
+Without `.model::<T>()`, `/admin/orders` does not render. The list,
+edit, delete views are auto-emitted from the `Model` + `RustioAdmin`
+pair plus this single registration call.
+
+### 5. Restart `cargo run`
+
+The admin shell now serves:
+
+- `/admin/orders` — list with edit/delete
+- `/admin/orders/new` — add form (CSRF-protected)
+- `/admin/orders/:id/edit` — edit form
+- `/admin/orders/:id/delete` — confirm-and-delete
+
 ## Rules for AI Agents
 
 ### Do
 
-- Add new apps using `rustio startapp <name>`.
+- Add new apps using `rustio startapp <name>`. The CLI wires
+  `pub mod <name>;` into `src/apps/mod.rs` automatically (1.8.3+).
 - Put model code inside `src/apps/<app>/models.rs`.
-- Add migrations inside `migrations/`.
-- Follow the existing admin design system.
-- Override a framework template by saving your copy at the exact same
-  path under `templates/` (e.g. `templates/admin/foo.html` overrides
-  `admin/foo.html`). There is no separate `overrides/` directory.
+- Always pair a model with a migration in `migrations/` AND a
+  registration call (`.model::<T>()`) in `src/main.rs`.
+- Follow the existing admin design system. Brand colour is
+  exposed at `Admin::accent()`; full palette via `AdminTheme`.
+- Override a framework template by saving your copy at the exact
+  same path under `templates/` (e.g. `templates/admin/foo.html`
+  overrides `admin/foo.html`). There is no separate `overrides/`
+  directory.
 
 ### Do Not
 
-- Do not modify the upstream `rustio-core` crate (your dependency, not
-  your codebase). Project changes belong in `src/`, `migrations/`, and
-  `templates/` — never in the framework's source.
+- Do not modify the upstream `rustio-core` crate (your dependency,
+  not your codebase). Project changes belong in `src/`,
+  `migrations/`, and `templates/` — never in the framework's source.
 - Do not rewrite admin templates unless explicitly requested.
-- Do not invent new colors.
+- Do not invent new colours; use the framework default
+  (`{brand}`) or call `Admin::accent_color`/`Admin::theme` to
+  override coherently. See `docs/architecture.md → Theming`.
 - Do not change design tokens randomly.
 - Do not add SQLite support — RustIO is PostgreSQL-only.
 - Do not auto-seed production users.
-- Do not modify `.rustio/*.lock` manually; the CLI manages those files.
+- Do not modify `.rustio/*.lock` manually; the CLI manages those.
 
 ## Design System
 
-Primary brand color: `#0d9488`.
+Framework default brand colour: `{brand}`.
 
-Use the existing RustIO admin classes. Do not introduce new UI systems.
+The admin chrome uses the design tokens defined in
+`docs/design-system.json` (light theme). Override the palette per
+project via `Admin::theme(AdminTheme {{ accent: "#…".into(),
+..AdminTheme::default() }})` in `src/main.rs`. The active palette
+flows into every admin component automatically — no Tailwind
+rebuild required.
+
+Use the existing RustIO admin classes. Do not introduce new UI
+systems.
 
 ## Template Rules
 
-- `templates/*.html` (e.g. `home.html`) are normal project pages — edit
-  them freely.
+- `templates/*.html` (e.g. `home.html`) are normal project pages —
+  edit them freely.
 - The runtime loader resolves a template name `<path>` by checking
   `templates/<path>` first, then the framework's embedded default.
   Project templates override framework templates by **exact path
   match** — there is no `overrides/` directory.
 - To override `admin/foo.html`, save your version at
-  `templates/admin/foo.html`. Wrong paths fail silently: the loader
-  falls through to the embedded default and the override has no
-  effect.
+  `templates/admin/foo.html`. Wrong paths produce a WARN at
+  startup (1.8.1+ orphan-detection log) AND fall through to the
+  embedded default — the override has no effect.
 
 ### Overriding the admin shell
 
-To override the admin base layout:
-
-1. Copy `rustio-core/assets/templates/admin/base.html` into
-   `templates/admin/base.html`.
+1. Copy `rustio-core/assets/templates/admin/base.html` from the
+   upstream repo into `templates/admin/base.html`.
 2. Edit the copy.
 
-Only do this if you understand the admin layout. A partial copy will
-break the admin UI. The override is intentionally NOT scaffolded — it
-must be a deliberate decision.
+Only do this if you understand the admin layout. A partial copy
+breaks the admin UI; the framework warns at startup if the file
+is structurally incomplete. The override is intentionally NOT
+scaffolded — it must be a deliberate decision.
 
 ## Database
 
-PostgreSQL only.
+PostgreSQL only. Connection via `DATABASE_URL` in `.env`.
+
+Migrations live in `migrations/` and apply at boot via
+`migrations::apply`. See `migrations/0001_README.md` for the file
+naming + format convention.
 
 ## Commands
 
-Run diagnostics:
-
 ```sh
-rustio doctor
-```
-
-Create an admin user:
-
-```sh
+rustio doctor                         # diagnose project + DB + Meili
+rustio doctor --json                  # machine-readable for CI
+rustio startapp <name>                # add a new app under src/apps/
+rustio user create --email <addr>     # create an admin user
 rustio user create --email admin@{name}.local
+rustio migrate generate <name>        # scaffold a migration file
+cargo run                             # start the server (BIND/PORT/RUSTIO_ENV in .env)
 ```
 
-Run the server:
+## Further reading
 
-```sh
-cargo run
-```
-"#
+- `examples/blog/` (upstream) — full worked example.
+- `docs/architecture.md` — framework architecture, including the
+  Theming section.
+- `docs/design-system.json` — current design tokens.
+- README — quickstart + commands reference.
+"##
         )
     }
 
@@ -3285,6 +3521,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// missed IDE files, OS metadata, lock-files-for-secrets variants, and
     /// build cruft. Adds the standard ignores so a fresh `git init` doesn't
     /// stage editor settings or `.DS_Store` noise.
+    /// 1.8.3 — placeholder migration so the format and naming
+    /// convention are self-documenting. The migrations runner
+    /// only consumes `*.sql` files (alphabetical), so this `.md`
+    /// file is ignored at boot but visible to anyone (or any
+    /// agent) browsing the directory.
+    const MIGRATIONS_README: &str = "\
+# Migrations
+
+Migrations live in this directory as `*.sql` files. They apply at
+boot in alphabetical order via `rustio_core::migrations::apply`.
+
+## File naming
+
+- Sequence-prefixed: `0001_create_orders.sql`, `0002_add_index.sql`.
+- Four-digit zero-padded so 0009 < 0010 in alphabetical sort.
+- Snake_case description after the prefix.
+- One logical change per file.
+
+## Format
+
+Plain SQL. Apply once, never edit a migration after it has shipped.
+To revise a schema, write a NEW migration that alters/drops/adds.
+
+```sql
+-- 0001_create_orders.sql
+CREATE TABLE orders (
+    id          BIGSERIAL PRIMARY KEY,
+    customer    TEXT NOT NULL,
+    total_cents BIGINT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+The `rustio_*` framework tables (`rustio_users`, `rustio_sessions`, …)
+are auto-created at boot by `auth::init_tables` — you do NOT write
+those migrations yourself.
+
+## Generate a new migration
+
+```sh
+rustio migrate generate orders_initial
+```
+
+This file (`0001_README.md`) is itself a `.md` placeholder, NOT a
+SQL migration. It exists so the directory is self-documenting.
+The migrations runner only reads `*.sql`.
+";
+
     const GITIGNORE: &str = "\
 # Build artifacts
 /target
