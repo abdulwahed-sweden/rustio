@@ -41,6 +41,12 @@
  *                                     (test-pinned `<button class=
  *                                     "btn-danger" disabled>`)
  *
+ * NOTE: .btn-* rules live inline in admin/base.html (keyed off
+ * --rio-* tokens), not here. See base.html ~line 500. Their
+ * disabled-state sibling stays here because it pairs with
+ * test-pinned markup; everything else (base rule, hover, focus)
+ * is in base.html.
+ *
  * Removed in this commit
  * ----------------------
  *   .admin-shell, .topbar*, .admin-body, .sidebar*, .content-shell,
@@ -74,10 +80,12 @@
     --ds-color-surface:        255 255 255; /* #FFFFFF */
     --ds-color-surface-muted:  249 250 251; /* #F9FAFB */
     --ds-color-text:            17  24  39; /* #111827 */
-    --ds-color-text-muted:     107 114 128; /* #6B7280 */
-    --ds-color-border:         229 231 235; /* #E5E7EB */
+    --ds-color-text-muted:      75  85  99; /* #4B5563 */
+    --ds-color-border:         209 213 219; /* #D1D5DB */
     --ds-color-primary:         17  24  39; /* #111827 */
-    --ds-color-accent:          13 148 136; /* #0D9488 — brand-600 */
+    --ds-color-accent:          37  99 235; /* #2563EB — Cobalt Blue */
+    --ds-color-accent-bg:      239 246 255; /* #EFF6FF */
+    --ds-color-accent-border:  191 219 254; /* #BFDBFE */
     --ds-color-success:         22 163  74; /* #16A34A */
     --ds-color-warning:        217 119   6; /* #D97706 */
     --ds-color-danger:         220  38  38; /* #DC2626 */
@@ -101,6 +109,8 @@
     --ds-color-border:          74  78  87; /* #4A4E57 */
     --ds-color-primary:        245 245 245; /* #F5F5F5 */
     --ds-color-accent:          91 140 255; /* #5B8CFF */
+    --ds-color-accent-bg:       30  42  74; /* #1E2A4A */
+    --ds-color-accent-border:   42  61 107; /* #2A3D6B */
     --ds-color-success:         52 211 153; /* #34D399 */
     --ds-color-warning:        251 191  36; /* #FBBF24 */
     --ds-color-danger:         248 113 113; /* #F87171 */
@@ -118,7 +128,9 @@
     --ds-color-text-muted:     107 114 128; /* #6B7280 */
     --ds-color-border:         239 230 225; /* #EFE6E1 */
     --ds-color-primary:         17  24  39; /* #111827 */
-    --ds-color-accent:          13 148 136; /* #0D9488 — brand-600 */
+    --ds-color-accent:         194  65  12; /* #C2410C — rust orange (themes.rust.accent) */
+    --ds-color-accent-bg:      255 247 237; /* #FFF7ED */
+    --ds-color-accent-border:  254 215 170; /* #FED7AA */
     --ds-color-success:         22 163  74; /* #16A34A */
     --ds-color-warning:        217 119   6; /* #D97706 */
     --ds-color-danger:         220  38  38; /* #DC2626 */
@@ -206,20 +218,27 @@
     @apply w-full border-collapse bg-surface rounded-md text-body overflow-hidden;
     table-layout: fixed;
   }
-  /* Header→body junction divider is heavier (gray-200) than per-row
-   * dividers (gray-100); convention helps the eye land on column
-   * labels. The .results td rule below sets the lighter border. */
+  /* 1.8.3 — table dividers + hover migrated to semantic tokens
+   * (border, surface-muted) so they follow the active theme instead
+   * of the hardcoded gray-100/gray-50. Header→body junction uses the
+   * same `border` token but the heavier `border-b-2` weight so the
+   * eye still lands on column labels.
+   * Hover: theme-aware via surface-muted, with a 100ms colour
+   * transition so the row swap reads as deliberate, not jittery.
+   * Last row: drop the trailing rule via `:last-child` so there's no
+   * dangling separator above the pager. */
   .results th, .results td {
     @apply px-4 py-4 text-left;
   }
   .results th {
-    @apply bg-surface-muted text-gray-500 font-semibold text-caption uppercase tracking-wider border-b border-gray-200;
+    @apply bg-surface-muted text-gray-500 font-semibold text-caption uppercase tracking-wider border-b-2 border-border;
   }
   .results td {
-    @apply text-small border-b border-gray-100;
+    @apply text-small border-b border-border transition-colors duration-100;
   }
+  .results tbody tr:last-child td { @apply border-b-0; }
   .results tbody tr:nth-child(even) td { @apply bg-surface-muted/50; }
-  .results tr:hover td { @apply bg-gray-50; }
+  .results tr:hover td { @apply bg-surface-muted; }
   .results.row-clickable td { @apply p-0; }
   .results.row-clickable .row-link {
     @apply block px-4 py-4 text-metal no-underline transition-colors;

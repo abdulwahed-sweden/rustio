@@ -79,18 +79,20 @@ pub(crate) struct BaseContext {
 
 /// 1.8.2 — convert an `#rrggbb` (or `rrggbb`) hex string into the
 /// space-separated RGB-triplet form Tailwind expects in CSS variables
-/// (`13 148 136` for `#0d9488`). On any parse failure (wrong length,
-/// invalid hex digits) returns the framework default teal so the admin
-/// chrome never breaks over a config typo.
+/// (`37 99 235` for `#2563EB`). On any parse failure (wrong length,
+/// invalid hex digits) returns the framework default accent RGB so
+/// the admin chrome never breaks over a config typo.
+/// 1.8.3 — fallback updated alongside the Cobalt Blue migration so
+/// the parse-failure colour matches the new framework default.
 pub(crate) fn hex_to_rgb_triplet(hex: &str) -> String {
-    const FALLBACK: &str = "13 148 136"; // #0d9488 — framework default teal
+    const FALLBACK: &str = "37 99 235"; // #2563EB — framework default cobalt
     let h = hex.trim_start_matches('#');
     if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
         return FALLBACK.into();
     }
-    let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(13);
-    let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(148);
-    let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(136);
+    let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(37);
+    let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(99);
+    let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(235);
     format!("{r} {g} {b}")
 }
 
@@ -2006,12 +2008,14 @@ mod tests {
 
     #[test]
     fn hex_to_rgb_triplet_falls_back_on_garbage() {
-        // Wrong length → fallback (framework default teal RGB).
-        assert_eq!(hex_to_rgb_triplet("#1e6"), "13 148 136");
+        // Wrong length → fallback (framework default accent RGB).
+        // 1.8.3 — fallback migrated to Cobalt Blue alongside the
+        // AdminTheme default change.
+        assert_eq!(hex_to_rgb_triplet("#1e6"), "37 99 235");
         // Non-hex character → fallback.
-        assert_eq!(hex_to_rgb_triplet("#xyzzy7"), "13 148 136");
+        assert_eq!(hex_to_rgb_triplet("#xyzzy7"), "37 99 235");
         // Empty → fallback.
-        assert_eq!(hex_to_rgb_triplet(""), "13 148 136");
+        assert_eq!(hex_to_rgb_triplet(""), "37 99 235");
     }
 
     /// 1.8.2 — Admin::accent_color normalises "#rrggbb" and "rrggbb"
@@ -2025,12 +2029,14 @@ mod tests {
         assert_eq!(a2.accent(), "#1e6ba8");
     }
 
-    /// 1.8.2 — default Admin (no .accent_color call) keeps the
-    /// framework's teal so existing projects see no behaviour change.
+    /// 1.8.2 — default Admin (no .accent_color call) returns the
+    /// framework default accent.
+    /// 1.8.3 — default migrated from teal `#0d9488` to Cobalt Blue
+    /// `#2563EB` to match `docs/design-system.json` themes.light.
     #[test]
-    fn admin_default_accent_is_framework_teal() {
+    fn admin_default_accent_matches_framework_palette() {
         let a = crate::admin::Admin::new();
-        assert_eq!(a.accent(), "#0d9488");
+        assert_eq!(a.accent(), "#2563EB");
     }
 
     /// 1.8.2 — BaseContext populates both accent_hex and accent_rgb
@@ -2928,12 +2934,14 @@ mod tests {
 
     /// 1.8.2 — full render test. Default Admin (no .accent_color call)
     /// produces an admin page whose injected style block contains the
-    /// framework default teal `#0d9488`. Custom accent produces the
-    /// custom value AND the corresponding RGB triplet (for the
+    /// framework default accent. Custom accent produces the custom
+    /// value AND the corresponding RGB triplet (for the
     /// `--ds-color-accent` CSS variable). Proves the value flows from
     /// the builder all the way to rendered HTML.
+    /// 1.8.3 — default migrated from teal to Cobalt Blue (#2563EB
+    /// → 37 99 235).
     #[test]
-    fn admin_accent_default_renders_framework_teal() {
+    fn admin_accent_default_renders_framework_palette() {
         let admin = Admin::new();
         let templates = Templates::new(None).expect("embedded templates");
         let ident = Identity {
@@ -2947,11 +2955,11 @@ mod tests {
         let dash = dashboard_ctx(&ident, &admin, vec![], "csrf".into());
         let body = templates.render("admin/index.html", &dash).unwrap();
         assert!(
-            body.contains("#0d9488"),
-            "default admin chrome must contain #0d9488 in the override style"
+            body.contains("#2563EB"),
+            "default admin chrome must contain Cobalt Blue (#2563EB) in the override style"
         );
         assert!(
-            body.contains("13 148 136"),
+            body.contains("37 99 235"),
             "default admin chrome must set --ds-color-accent to the RGB triplet"
         );
     }
@@ -3018,19 +3026,20 @@ mod tests {
     /// 1.8.2 — AdminTheme::default returns the framework's current
     /// chrome values so projects using `..AdminTheme::default()` to
     /// pick up rest-defaults match what the framework ships.
-    /// 1.8.3 — `border` bumped from `#e5e7eb` (almost invisible
-    /// against light surfaces) to `#d1d5db` so default-theme projects
-    /// also get visible table row dividers.
+    /// 1.8.3 — defaults migrated to the Cobalt Blue palette from
+    /// `docs/design-system.json` themes.light. Test asserts the
+    /// uppercase canonical hex form exactly as written in the JSON
+    /// so a future drift between the struct and the JSON is caught.
     #[test]
     fn admin_theme_default_matches_framework_chrome() {
         use crate::admin::AdminTheme;
         let t = AdminTheme::default();
-        assert_eq!(t.accent,     "#0d9488");
-        assert_eq!(t.bg,         "#f4f4f5");
-        assert_eq!(t.surface,    "#ffffff");
+        assert_eq!(t.accent,     "#2563EB"); // cobalt blue
+        assert_eq!(t.bg,         "#F4F6FB");
+        assert_eq!(t.surface,    "#FFFFFF");
         assert_eq!(t.text,       "#111827");
-        assert_eq!(t.text_muted, "#4b5563");
-        assert_eq!(t.border,     "#d1d5db");
+        assert_eq!(t.text_muted, "#4B5563");
+        assert_eq!(t.border,     "#D1D5DB");
     }
 
     #[test]

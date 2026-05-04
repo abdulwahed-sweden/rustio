@@ -44,6 +44,12 @@ module.exports = {
         border:         "rgb(var(--ds-color-border) / <alpha-value>)",
         primary:        "rgb(var(--ds-color-primary) / <alpha-value>)",
         accent:         "rgb(var(--ds-color-accent) / <alpha-value>)",
+        // 1.8.3 — Cobalt Blue refinement. Soft accent surfaces used for
+        // tinted backgrounds (active sidebar item, focus rings) and
+        // borders. Each theme block in input.css supplies its own pair
+        // (light cobalt, dark navy, rust amber).
+        "accent-bg":    "rgb(var(--ds-color-accent-bg) / <alpha-value>)",
+        "accent-border":"rgb(var(--ds-color-accent-border) / <alpha-value>)",
         success:        "rgb(var(--ds-color-success) / <alpha-value>)",
         warning:        "rgb(var(--ds-color-warning) / <alpha-value>)",
         danger:         "rgb(var(--ds-color-danger) / <alpha-value>)",

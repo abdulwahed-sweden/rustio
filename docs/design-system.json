@@ -11,10 +11,12 @@
         "surface": "#FFFFFF",
         "surfaceMuted": "#F9FAFB",
         "text": "#111827",
-        "textMuted": "#6B7280",
-        "border": "#E5E7EB",
+        "textMuted": "#4B5563",
+        "border": "#D1D5DB",
         "primary": "#111827",
-        "accent": "#3B82F6",
+        "accent": "#2563EB",
+        "accentBg": "#EFF6FF",
+        "accentBorder": "#BFDBFE",
         "success": "#16A34A",
         "warning": "#D97706",
         "danger": "#DC2626"
@@ -35,6 +37,8 @@
         "border": "#4A4E57",
         "primary": "#F5F5F5",
         "accent": "#5B8CFF",
+        "accentBg": "#1E2A4A",
+        "accentBorder": "#2A3D6B",
         "success": "#34D399",
         "warning": "#FBBF24",
         "danger": "#F87171"
@@ -51,6 +55,8 @@
         "border": "#EFE6E1",
         "primary": "#111827",
         "accent": "#C2410C",
+        "accentBg": "#FFF7ED",
+        "accentBorder": "#FED7AA",
         "success": "#16A34A",
         "warning": "#D97706",
         "danger": "#DC2626"

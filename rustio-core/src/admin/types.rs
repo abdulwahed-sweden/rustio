@@ -299,18 +299,24 @@ pub struct AdminTheme {
 
 impl Default for AdminTheme {
     fn default() -> Self {
+        // 1.8.3 — defaults migrated to the Cobalt Blue palette from
+        // `docs/design-system.json` themes.light. Framework-default
+        // projects (those that don't call Admin::accent_color or
+        // Admin::theme) now inherit cobalt automatically — no per-
+        // project boilerplate required. Operators that opt into a
+        // custom palette via .theme(...) keep their override; this
+        // change only shifts the *unset* baseline.
+        //
+        // Mirror these values exactly with the JSON light theme. If
+        // either drifts, `make css-check` will keep input.css in
+        // sync but this struct must be hand-edited.
         Self {
-            accent:     "#0d9488".into(), // framework teal
-            bg:         "#f4f4f5".into(), // existing --rio-bg
-            surface:    "#ffffff".into(), // existing --rio-bg-surface-1
-            text:       "#111827".into(), // existing --rio-text
-            text_muted: "#4b5563".into(), // existing --rio-text-muted
-            // 1.8.3 — bumped from #e5e7eb to #d1d5db. The lighter shade
-            // made table row separators (.results td) practically
-            // invisible against most backgrounds; #d1d5db still reads
-            // as a hairline but is actually visible. Operators wanting
-            // the older lighter look can opt back via theme override.
-            border:     "#d1d5db".into(),
+            accent:     "#2563EB".into(), // Cobalt Blue (light theme accent)
+            bg:         "#F4F6FB".into(), // light theme background
+            surface:    "#FFFFFF".into(), // light theme surface
+            text:       "#111827".into(), // light theme body text
+            text_muted: "#4B5563".into(), // light theme muted text
+            border:     "#D1D5DB".into(), // light theme hairlines
         }
     }
 }

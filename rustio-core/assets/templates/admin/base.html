@@ -508,9 +508,15 @@
             box-shadow: 0 1px 2px color-mix(in srgb, var(--rio-accent) 22%, transparent);
             font-family: inherit; text-decoration: none;
         }
+        /* 1.8.3 — color is explicit on every button hover state. The
+           base rule sets color: #fff but a hover that only changes
+           background can theoretically be left text-less by a CSS
+           cascade change down the road; declaring color here makes
+           the contrast guarantee inviolate. */
         .btn-primary:hover {
             background: color-mix(in srgb, var(--rio-accent) 88%, black);
             border-color: color-mix(in srgb, var(--rio-accent) 88%, black);
+            color: #fff;
         }
         .btn-primary:focus-visible {
             outline: 3px solid color-mix(in srgb, var(--rio-accent) 30%, transparent);
@@ -523,7 +529,14 @@
             color: var(--rio-text-secondary); font-size: 15px; font-weight: 500;
             cursor: pointer; font-family: inherit; text-decoration: none;
         }
-        .btn-secondary:hover { background: var(--rio-bg-surface-2); border-color: var(--rio-text-faint); }
+        /* 1.8.3 — explicit hover color (was relying on inheritance from
+           the base rule). Light-on-light combinations are the most
+           likely place for a future regression to make text disappear. */
+        .btn-secondary:hover {
+            background: var(--rio-bg-surface-2);
+            border-color: var(--rio-text-faint);
+            color: var(--rio-text);
+        }
         .btn-text {
             display: inline-flex; align-items: center; gap: 6px;
             font-size: 15px; color: var(--rio-text-muted);
@@ -539,7 +552,12 @@
             color: #b91c1c; font-size: 15px; font-weight: 600;
             cursor: pointer; font-family: inherit; text-decoration: none;
         }
-        .btn-danger:hover { background: #fef2f2; }
+        /* 1.8.3 — explicit hover color so the dark-red label can never
+           drift to inherited muted text on the pale-red background. */
+        .btn-danger:hover {
+            background: #fef2f2;
+            color: #b91c1c;
+        }
 
         /* Save row */
         .save-row {
