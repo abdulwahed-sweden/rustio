@@ -86,6 +86,10 @@
     --ds-color-accent:          37  99 235; /* #2563EB — Cobalt Blue */
     --ds-color-accent-bg:      239 246 255; /* #EFF6FF */
     --ds-color-accent-border:  191 219 254; /* #BFDBFE */
+    /* 1.8.3 — table-only divider. Scoped to `.results` so form inputs,
+     * cards, and the sidebar keep the lighter `--ds-color-border`
+     * (#D1D5DB) while data tables get a clearly darker hairline. */
+    --ds-color-table-divider:  107 114 128; /* #6B7280 — gray-500, scoped */
     --ds-color-success:         22 163  74; /* #16A34A */
     --ds-color-warning:        217 119   6; /* #D97706 */
     --ds-color-danger:         220  38  38; /* #DC2626 */
@@ -111,6 +115,11 @@
     --ds-color-accent:          91 140 255; /* #5B8CFF */
     --ds-color-accent-bg:       30  42  74; /* #1E2A4A */
     --ds-color-accent-border:   42  61 107; /* #2A3D6B */
+    /* 1.8.3 — table-only divider. Same gray-500 as light/brand so the
+     * dividing-line weight is consistent across themes. The brief
+     * flagged that this can read a touch dim on dark surfaces; if so,
+     * bump to `156 163 175` (gray-400) for this block only. */
+    --ds-color-table-divider:  107 114 128; /* #6B7280 — gray-500 */
     --ds-color-success:         52 211 153; /* #34D399 */
     --ds-color-warning:        251 191  36; /* #FBBF24 */
     --ds-color-danger:         248 113 113; /* #F87171 */
@@ -131,6 +140,8 @@
     --ds-color-accent:         194  65  12; /* #C2410C — rust orange (themes.rust.accent) */
     --ds-color-accent-bg:      255 247 237; /* #FFF7ED */
     --ds-color-accent-border:  254 215 170; /* #FED7AA */
+    /* 1.8.3 — table-only divider, matching light theme. */
+    --ds-color-table-divider:  107 114 128; /* #6B7280 — gray-500 */
     --ds-color-success:         22 163  74; /* #16A34A */
     --ds-color-warning:        217 119   6; /* #D97706 */
     --ds-color-danger:         220  38  38; /* #DC2626 */
@@ -231,12 +242,17 @@
     @apply px-4 py-4 text-left;
   }
   .results th {
-    @apply bg-surface-muted text-gray-500 font-semibold text-caption uppercase tracking-wider border-b-2 border-border;
+    @apply bg-surface-muted text-gray-500 font-semibold text-caption uppercase tracking-wider;
+    /* 1.8.3 — scoped table-divider token. NOT --ds-color-border (which
+     * stays light for form inputs / cards / sidebar). Gray-500 here is
+     * deliberate — table rows need a clearly visible separator. */
+    border-bottom: 2px solid rgb(var(--ds-color-table-divider) / 1);
   }
   .results td {
-    @apply text-small border-b border-border transition-colors duration-100;
+    @apply text-small transition-colors duration-100;
+    border-bottom: 1px solid rgb(var(--ds-color-table-divider) / 1);
   }
-  .results tbody tr:last-child td { @apply border-b-0; }
+  .results tbody tr:last-child td { border-bottom-width: 0; }
   .results tbody tr:nth-child(even) td { @apply bg-surface-muted/50; }
   .results tr:hover td { @apply bg-surface-muted; }
   .results.row-clickable td { @apply p-0; }

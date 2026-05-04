@@ -1625,12 +1625,13 @@
         .actions button:hover {
             background-color: color-mix(in srgb, {{ accent_hex }} 88%, black) !important;
         }
-        /* 1.8.3 — table row separators. Tailwind shipped .results td
-           with `border-color: rgb(243 244 246)` — almost invisible
-           against most backgrounds. Use the theme border value so
-           dividers are obvious AND inherit the operator's palette. */
-        .results td { border-color: {{ theme_border }} !important; }
-        .results th { border-color: {{ theme_border }} !important; }
+        /* 1.8.3 — table row dividers used to be overridden here to
+           the operator's theme border, but that approach made
+           dividers too soft on light themes. Replaced with a scoped
+           `--ds-color-table-divider` token in input.css (gray-500,
+           globally darker than --ds-color-border so form inputs and
+           cards keep their light hairlines). The runtime override
+           for tables is intentionally removed so input.css wins. */
     </style>
     {% block extra_head %}{% endblock %}
 </head>
