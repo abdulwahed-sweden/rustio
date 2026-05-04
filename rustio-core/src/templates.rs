@@ -75,6 +75,14 @@ impl Templates {
                             "templates: project override `{name}` exists but cannot be read: {error}"
                         );
                     }
+                    OverrideValidation::OrphanAdminFile { path } => {
+                        log::warn!(
+                            "templates: `{path}` is in the admin namespace but does not \
+                             override any embedded template (typo? framework default \
+                             will be served unchanged). Project-specific admin pages \
+                             belong outside `templates/admin/`."
+                        );
+                    }
                 }
             }
         }
@@ -171,6 +179,13 @@ pub(crate) enum OverrideValidation {
     /// File exists on disk but `read_to_string` failed
     /// (permissions, encoding, IO error).
     Unreadable { name: &'static str, error: String },
+    /// 1.8.1 — file in `templates/admin/` whose name does NOT match any
+    /// embedded template, i.e. it overrides nothing. Most likely a typo
+    /// (`baes.html` instead of `base.html`) — the developer thinks they
+    /// have an override but the framework just serves the embedded
+    /// default. This variant catches the inverted version of the
+    /// silent-failure bug `Suspicious` was added for.
+    OrphanAdminFile { path: String },
 }
 
 /// Phase 12/c-fix — walk `EMBEDDED_TEMPLATES`, classify any project
@@ -207,6 +222,52 @@ pub(crate) fn validate_overrides(disk_root: &std::path::Path) -> Vec<OverrideVal
             }
         }
     }
+
+    // 1.8.1 — orphan-admin-file scan. The framework reserves
+    // `templates/admin/*.html` for overrides of embedded admin
+    // templates. A file in that namespace whose name doesn't match
+    // any embedded template overrides nothing — usually a typo
+    // (`baes.html` for `base.html`) or a misunderstanding (project
+    // admin UI should live under the project's namespace, not under
+    // `templates/admin/`). Either way the developer's intent and the
+    // runtime's behaviour disagree silently; this scan logs a WARN
+    // so the disagreement becomes observable.
+    let admin_dir = disk_root.join("admin");
+    if admin_dir.is_dir() {
+        let known: std::collections::HashSet<&'static str> = EMBEDDED_TEMPLATES
+            .iter()
+            .filter_map(|(n, _)| n.strip_prefix("admin/"))
+            .collect();
+        if let Ok(entries) = std::fs::read_dir(&admin_dir) {
+            // Sort for deterministic ordering — the loop visits files in
+            // arbitrary FS order otherwise, which makes log lines and
+            // tests non-deterministic.
+            let mut files: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.eq_ignore_ascii_case("html"))
+                        .unwrap_or(false)
+                })
+                .collect();
+            files.sort_by_key(|e| e.file_name());
+            for entry in files {
+                let file_name = entry.file_name();
+                let Some(stem_html) = file_name.to_str() else {
+                    continue;
+                };
+                if known.contains(stem_html) {
+                    continue;
+                }
+                results.push(OverrideValidation::OrphanAdminFile {
+                    path: format!("admin/{stem_html}"),
+                });
+            }
+        }
+    }
+
     results
 }
 
@@ -416,6 +477,78 @@ mod tests {
             .count();
         assert_eq!(suspicious_count, 1, "exactly one Suspicious: {v:?}");
         assert_eq!(loaded_count, 1, "exactly one Loaded: {v:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 1.8.1 — a file in `templates/admin/` whose name doesn't match
+    /// any embedded template (e.g. typo `baes.html` for `base.html`)
+    /// produces no override but the developer thinks it does. The
+    /// orphan-admin-file variant catches this inverted-typo case.
+    #[test]
+    fn validate_overrides_flags_orphan_admin_file() {
+        let dir = tempdir();
+        let admin_dir = dir.join("admin");
+        std::fs::create_dir_all(&admin_dir).unwrap();
+        // Typo for "base.html". Looks like an override, isn't.
+        std::fs::write(
+            admin_dir.join("baes.html"),
+            "{% extends \"admin/base.html\" %}\n{% block content %}hi{% endblock %}",
+        )
+        .unwrap();
+        let v = validate_overrides(&dir);
+        assert_eq!(v.len(), 1, "exactly one orphan: {v:?}");
+        match &v[0] {
+            OverrideValidation::OrphanAdminFile { path } => {
+                assert_eq!(path, "admin/baes.html");
+            }
+            other => panic!("expected OrphanAdminFile, got: {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 1.8.1 — a real override and an orphan in the same admin/ dir
+    /// classify independently. Real override gets Loaded, typo gets
+    /// OrphanAdminFile. Order of results is sorted by file name for
+    /// determinism, so we can index into the Vec.
+    #[test]
+    fn validate_overrides_handles_real_and_orphan_in_same_admin_dir() {
+        let dir = tempdir();
+        let admin_dir = dir.join("admin");
+        std::fs::create_dir_all(&admin_dir).unwrap();
+        std::fs::write(
+            admin_dir.join("base.html"),
+            "{% block content %}real override{% endblock %}",
+        )
+        .unwrap();
+        std::fs::write(admin_dir.join("typo.html"), "<h1>oops</h1>").unwrap();
+        let v = validate_overrides(&dir);
+        let loaded_count = v
+            .iter()
+            .filter(|x| matches!(x, OverrideValidation::Loaded { name, .. } if *name == "admin/base.html"))
+            .count();
+        let orphan_count = v
+            .iter()
+            .filter(|x| matches!(x, OverrideValidation::OrphanAdminFile { path } if path == "admin/typo.html"))
+            .count();
+        assert_eq!(loaded_count, 1, "real override must be Loaded: {v:?}");
+        assert_eq!(orphan_count, 1, "typo must be OrphanAdminFile: {v:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 1.8.1 — non-html files in `templates/admin/` are skipped (so a
+    /// `.gitkeep` or `.DS_Store` doesn't produce an orphan warning).
+    #[test]
+    fn validate_overrides_orphan_scan_skips_non_html() {
+        let dir = tempdir();
+        let admin_dir = dir.join("admin");
+        std::fs::create_dir_all(&admin_dir).unwrap();
+        std::fs::write(admin_dir.join(".gitkeep"), "").unwrap();
+        std::fs::write(admin_dir.join("notes.txt"), "draft").unwrap();
+        let v = validate_overrides(&dir);
+        assert!(
+            v.is_empty(),
+            "non-html files in admin/ must not produce orphans: {v:?}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
