@@ -1860,6 +1860,93 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
+    /// 1.8.3 — `rustio startapp <name>` must wire `pub mod <name>;` into
+    /// `src/apps/mod.rs`. Pre-1.8.3 it left the file untouched, so the
+    /// project would compile only after a manual edit — surprising for
+    /// any agent that followed `.ai/context.md`'s Do block literally.
+    #[test]
+    fn scaffold_app_with_cwd_wires_pub_mod_into_apps_modrs() {
+        let dir = tempdir_path();
+        write_rustio_cargo_toml(&dir);
+        std::fs::create_dir_all(dir.join("src").join("apps")).unwrap();
+        std::fs::write(dir.join("src").join("apps").join("mod.rs"), "").unwrap();
+        scaffold::app_with_cwd(&dir, "orders").expect("create should succeed");
+        let mod_rs = std::fs::read_to_string(
+            dir.join("src").join("apps").join("mod.rs"),
+        )
+        .unwrap();
+        assert!(
+            mod_rs.contains("pub mod orders;"),
+            "src/apps/mod.rs must contain `pub mod orders;` after startapp — actual:\n{mod_rs}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 1.8.3 — calling startapp twice for the same app errors on the
+    /// second call (existing behaviour) AND a hand-authored
+    /// `pub mod orders;` line stays unduplicated if the apps mod file
+    /// is already correctly populated. Idempotency on the wiring side.
+    #[test]
+    fn scaffold_app_with_cwd_does_not_duplicate_existing_pub_mod_line() {
+        let dir = tempdir_path();
+        write_rustio_cargo_toml(&dir);
+        std::fs::create_dir_all(dir.join("src").join("apps")).unwrap();
+        // Caller pre-populated mod.rs (e.g. they hand-edited before
+        // remembering startapp does it now). Then they delete the
+        // app dir and re-run startapp. The line must not duplicate.
+        std::fs::write(
+            dir.join("src").join("apps").join("mod.rs"),
+            "pub mod orders;\n",
+        )
+        .unwrap();
+        scaffold::app_with_cwd(&dir, "orders").expect("create should succeed");
+        let mod_rs = std::fs::read_to_string(
+            dir.join("src").join("apps").join("mod.rs"),
+        )
+        .unwrap();
+        let count = mod_rs.matches("pub mod orders;").count();
+        assert_eq!(
+            count, 1,
+            "pub mod line must appear exactly once, not {count} times — actual:\n{mod_rs}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 1.8.3 — wiring also works when `src/apps/mod.rs` doesn't end
+    /// with a newline (someone hand-edited carelessly). The wiring
+    /// must fix the trailing newline AND append the new line — not
+    /// glue them together as `pub mod foo;pub mod bar;`.
+    #[test]
+    fn scaffold_app_with_cwd_handles_missing_trailing_newline() {
+        let dir = tempdir_path();
+        write_rustio_cargo_toml(&dir);
+        std::fs::create_dir_all(dir.join("src").join("apps")).unwrap();
+        std::fs::write(
+            dir.join("src").join("apps").join("mod.rs"),
+            "pub mod existing;",  // no trailing newline
+        )
+        .unwrap();
+        scaffold::app_with_cwd(&dir, "orders").expect("create should succeed");
+        let mod_rs = std::fs::read_to_string(
+            dir.join("src").join("apps").join("mod.rs"),
+        )
+        .unwrap();
+        assert!(
+            mod_rs.contains("pub mod existing;\n"),
+            "existing line must keep its content with newline restored — actual:\n{mod_rs}"
+        );
+        assert!(
+            mod_rs.contains("pub mod orders;\n"),
+            "new line must be appended cleanly — actual:\n{mod_rs}"
+        );
+        // Sanity: no glue.
+        assert!(
+            !mod_rs.contains("pub mod existing;pub mod orders"),
+            "two lines must not be glued"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn scaffold_project_at_creates_expected_files() {
         let dir = tempdir_path();
@@ -2589,6 +2676,30 @@ mod scaffold {
         fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
         fs::write(app_dir.join("mod.rs"), "pub mod models;\n").map_err(|e| e.to_string())?;
         fs::write(app_dir.join("models.rs"), APP_MODELS_RS).map_err(|e| e.to_string())?;
+        // 1.8.3 — wire the new app into `src/apps/mod.rs`. Pre-1.8.3
+        // the scaffold left this file empty after `startapp`, so the
+        // app was un-imported and the project would compile only
+        // after a manual edit. Now `startapp` closes that loop.
+        // Idempotent: if the line is already present (re-run after
+        // a manual edit, or someone hand-added it earlier), we skip.
+        // Resilient: if `apps/mod.rs` is missing, we create it.
+        let apps_mod = project_root.join("src").join("apps").join("mod.rs");
+        let line = format!("pub mod {name};\n");
+        let existing = fs::read_to_string(&apps_mod).unwrap_or_default();
+        let already = existing
+            .lines()
+            .any(|l| l.trim() == format!("pub mod {name};"));
+        if !already {
+            // Ensure the existing file ends with a newline before
+            // appending — otherwise we'd glue the new line onto
+            // whatever was there last.
+            let mut next = existing;
+            if !next.is_empty() && !next.ends_with('\n') {
+                next.push('\n');
+            }
+            next.push_str(&line);
+            fs::write(&apps_mod, next).map_err(|e| e.to_string())?;
+        }
         println!("✓ created app {name}");
         println!();
         println!("next steps:");
