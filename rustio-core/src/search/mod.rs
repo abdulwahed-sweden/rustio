@@ -13,6 +13,12 @@
 //! - `traits.rs`  — `Searchable` trait that models implement to opt in.
 
 mod client;
+// Phase 14, commit 6 — bridge from `crate::contract::ModelSchema`
+// to a `SearchConfig`, gated by the runtime validator. Pure,
+// additive layer: the existing `Searchable` trait and the
+// `MeiliClient` / `Indexer` types are not modified, and models
+// that hand-implement `Searchable` keep working unchanged.
+pub mod from_schema;
 mod indexer;
 mod traits;
 
