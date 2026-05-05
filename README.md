@@ -1,10 +1,130 @@
 # RustIO
 
-[![release](https://img.shields.io/badge/release-v1.1.1-brightgreen)](https://github.com/abdulwahed-sweden/rustio/releases/tag/v1.1.1)
+[![release](https://img.shields.io/badge/release-v1.9.0-brightgreen)](https://github.com/abdulwahed-sweden/rustio/releases/tag/v1.9.0)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://www.rust-lang.org)
-[![schema](https://img.shields.io/badge/schema-v2-informational)](docs/architecture.md)
-[![tests](https://img.shields.io/badge/tests-402_passing-success)](#running-the-test-suite)
+[![schema](https://img.shields.io/badge/schema-contract-informational)](docs/architecture.md)
+[![tests](https://img.shields.io/badge/tests-610_passing-success)](#running-the-test-suite)
+
+> **Write one Rust struct. Get an admin UI, search, validation, and
+> CRUD — without glue code, without YAML, without a separate ORM
+> layer.**
+
+RustIO is a production-grade, strict-by-construction web framework
+for Rust. Its phase-14/15 **schema contract system** treats your
+model definition as the single source of truth: admin pages, search
+indexing, runtime DB validation, CLI doctoring, and migrations all
+flow from one `#[derive(RustioModel)]`. No manual `AdminModel`,
+no manual `Searchable`, no shadow registry.
+
+```text
+   Model (#[derive(RustioModel)])
+        │
+        ▼
+   T::SCHEMA  (compile-time contract)
+        │
+        ├─► Validator ──► Doctor CLI       (drift detection vs live PG)
+        ├─► Admin runtime                  (auto-generated UI + CRUD)
+        └─► Search runtime                 (Meili index, gated by validator)
+```
+
+## Try it in 30 seconds
+
+The `examples/freelance/` crate is a complete end-to-end demo of
+the schema-driven pipeline — three models (`Client`, `Project`,
+`Invoice`), three migrations, zero glue code:
+
+```bash
+git clone https://github.com/abdulwahed-sweden/rustio
+cd rustio/examples/freelance
+
+# Optional — if you have PostgreSQL handy:
+createdb rustio_freelance
+psql rustio_freelance -f migrations/0001_create_clients.sql
+psql rustio_freelance -f migrations/0002_create_projects.sql
+psql rustio_freelance -f migrations/0003_create_invoices.sql
+
+cargo run
+```
+
+Output (one block per model):
+
+```text
+=== projects ===
+validator: status=Ok errors=0 warnings=0
+search:    enabled (index=projects)
+           searchable = ["name", "description"]
+           filterable = ["client_id"]
+           sortable   = ["name", "client_id", "budget_cents", "created_at"]
+admin:     6 fields auto-generated
+           - id             label="Id"            editable=false flags=pk,readonly
+           - name           label="Name"          editable=true  flags=searchable,sortable
+           - description    label="Description"   editable=true  flags=searchable,textarea
+           - client_id      label="Client"        editable=true  flags=filterable,sortable
+           - budget_cents   label="Budget (cents)" editable=true flags=sortable
+           - created_at     label="Created At"    editable=false flags=sortable,readonly
+```
+
+That's the entire wiring: every label, every widget, every search
+attribute, every CRUD operation comes from the model declaration.
+No `AdminModel`, no `Searchable`, no glue.
+
+A schema-drift check is one CLI flag away:
+
+```bash
+rustio doctor --check-schema           # human-readable
+rustio doctor --check-schema --json    # CI-friendly JSON, exit 1 on errors
+```
+
+See `examples/freelance/README.md` for the full architecture walk-through.
+
+## Two examples, two flows
+
+| Example | Flow | Best for |
+|---|---|---|
+| **`examples/freelance/`** | Schema-driven (Phase 14/15). One `#[derive(RustioModel)]` per struct → admin + search + doctor are auto-wired. | New projects, the recommended starting point as of v1.8.2. |
+| `examples/blog/` | Classic flow (Phase 1–13). Manual `AdminModel` + `Searchable` + `Model` impls; full HTTP server with templates, RBAC bootstrap, demo users. | Reference for the full middleware / RBAC / templates / migrations stack. The two flows compose — a project can mix both. |
+
+What you write to add a model in the schema-driven flow:
+
+```rust
+#[derive(rustio_macros::RustioModel)]
+#[rustio(table = "projects")]
+pub struct Project {
+    #[rustio(sql = "BIGSERIAL PRIMARY KEY", readonly)]
+    pub id: i64,
+
+    #[rustio(sql = "TEXT NOT NULL", searchable, sortable)]
+    pub name: String,
+
+    #[rustio(sql = "TEXT", searchable, widget = "textarea")]
+    pub description: Option<String>,
+
+    #[rustio(sql = "BIGINT NOT NULL", filterable, sortable, references = "clients(id)")]
+    pub client_id: i64,
+
+    #[rustio(sql = "TIMESTAMPTZ NOT NULL DEFAULT NOW()", readonly, sortable)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+// At startup:
+let admin = rustio_core::admin::Admin::new()
+    .from_schemas(&[Project::SCHEMA, /* ... */]);
+
+let _indexer = rustio_core::search::from_schema::indexer_from_schema::<Project>(
+    meili_client, &db, 1024,
+).await;
+
+// `rustio doctor --check-schema` validates each schema against the live DB.
+```
+
+The `searchable` flag drives the Meili index. The `_id` suffix
+turns into a "Client" label automatically. `widget = "textarea"`
+overrides the default `<input type="text">`. Validator drift
+disables search before bad documents are indexed. None of this is
+configured anywhere else — the struct is the contract.
+
+---
 
 A production-grade, strict-by-construction web framework for Rust.
 
