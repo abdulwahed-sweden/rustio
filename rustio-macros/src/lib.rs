@@ -506,3 +506,587 @@ fn find_label_field(fields: &syn::punctuated::Punctuated<syn::Field, syn::Token!
     }
     None
 }
+
+// ============================================================================
+// RustioModel — Phase 14, commit 2.
+// ============================================================================
+//
+// Generates ONLY:
+//
+//     impl ::rustio_core::contract::HasSchema for T {
+//         const SCHEMA: ::rustio_core::contract::ModelSchema = ...;
+//     }
+//
+// Does NOT generate `impl Model`, `impl AdminModel`, or `impl Searchable` —
+// those are the responsibility of separate derives / commits. This macro is
+// pure schema metadata.
+//
+// Attribute surface (initial set):
+//
+//     #[rustio(table = "...")]                            on the struct
+//     #[rustio(sql = "...", searchable, filterable,       on each field
+//              sortable, readonly,
+//              widget = "...", label = "...",
+//              references = "table(column)")]
+//
+// Compile-time validations (errors):
+//   1. field name `id` MUST be `i64` (Type Rule #1).
+//   2. SQL containing NUMERIC/DECIMAL MUST pair with `Decimal` (Type Rule #3).
+//   3. `NaiveDateTime` is forbidden — use `DateTime<Utc>` (Type Rule #2).
+//   4. The `sql = "..."` attribute is required on every field.
+//   5. The `#[rustio(table = "...")]` attribute is required on the struct.
+//   6. At least one field's SQL must declare `PRIMARY KEY`.
+//
+// Warnings (deferred — proc-macro warnings on stable Rust are awkward):
+//   - VARCHAR usage on a String column.
+//   - JSON (without B) on a serde_json::Value column.
+// These are listed in the contract layer's docs and will become validator
+// warnings in commit 3 instead.
+
+#[proc_macro_derive(RustioModel, attributes(rustio))]
+pub fn derive_rustio_model(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    rustio_model::expand(input)
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
+}
+
+mod rustio_model {
+    use super::*;
+    use syn::{
+        parse::{Parse, ParseStream},
+        Attribute, GenericArgument, LitStr, PathArguments, Token, Type,
+    };
+
+    /// Internal classification of a Rust field type. One variant per
+    /// `RustType` enum the contract layer recognises. Computed by
+    /// `classify` from a `syn::Type`; converted to its
+    /// `::rustio_core::contract::RustType` token form for emission.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum RustTypeKind {
+        I32,
+        I64,
+        F64,
+        Bool,
+        String,
+        DateTimeUtc,
+        JsonValue,
+        Decimal,
+        Uuid,
+    }
+
+    impl RustTypeKind {
+        fn to_token(self) -> TokenStream2 {
+            match self {
+                RustTypeKind::I32 => quote! { ::rustio_core::contract::RustType::I32 },
+                RustTypeKind::I64 => quote! { ::rustio_core::contract::RustType::I64 },
+                RustTypeKind::F64 => quote! { ::rustio_core::contract::RustType::F64 },
+                RustTypeKind::Bool => quote! { ::rustio_core::contract::RustType::Bool },
+                RustTypeKind::String => quote! { ::rustio_core::contract::RustType::String },
+                RustTypeKind::DateTimeUtc => {
+                    quote! { ::rustio_core::contract::RustType::DateTimeUtc }
+                }
+                RustTypeKind::JsonValue => {
+                    quote! { ::rustio_core::contract::RustType::JsonValue }
+                }
+                RustTypeKind::Decimal => quote! { ::rustio_core::contract::RustType::Decimal },
+                RustTypeKind::Uuid => quote! { ::rustio_core::contract::RustType::Uuid },
+            }
+        }
+    }
+
+    /// Per-field attributes parsed from `#[rustio(...)]`.
+    #[derive(Default)]
+    struct FieldAttr {
+        sql: String,
+        searchable: bool,
+        filterable: bool,
+        sortable: bool,
+        readonly: bool,
+        widget: Option<String>,
+        label: Option<String>,
+        references: Option<String>,
+    }
+
+    /// Top-level entry point — emits the `impl HasSchema` block or
+    /// a compile error.
+    pub(super) fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
+        // Reject anything that isn't a named struct. Generics, tuple
+        // structs, and enums all want different expansions; this
+        // commit handles the common case only.
+        if !input.generics.params.is_empty() {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                "RustioModel does not support generic structs (yet)",
+            ));
+        }
+        let struct_name = &input.ident;
+        let fields = match &input.data {
+            Data::Struct(ds) => match &ds.fields {
+                Fields::Named(f) => &f.named,
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        struct_name,
+                        "RustioModel requires a named-field struct (no tuple structs)",
+                    ));
+                }
+            },
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    struct_name,
+                    "RustioModel can only be derived on structs",
+                ));
+            }
+        };
+
+        // Struct-level: `#[rustio(table = "...")]`
+        let table = parse_table_attr(&input.attrs)?;
+
+        // Per-field: build column expressions + locate primary key.
+        let mut column_exprs = Vec::new();
+        let mut primary_key: Option<String> = None;
+
+        for field in fields {
+            let field_name = field
+                .ident
+                .as_ref()
+                .expect("named struct fields have idents")
+                .to_string();
+            let field_attr = parse_field_attr(&field.attrs)?;
+            if field_attr.sql.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    field,
+                    format!("field `{field_name}` is missing the required `#[rustio(sql = \"...\")]` attribute"),
+                ));
+            }
+
+            let (kind, nullable) = classify(&field.ty)?;
+            validate_field_rules(&field_name, &field_attr.sql, kind, &field.ty)?;
+
+            let sql_upper = field_attr.sql.to_uppercase();
+            let is_pk = sql_upper.contains("PRIMARY KEY");
+            if is_pk {
+                if let Some(prev) = &primary_key {
+                    return Err(syn::Error::new_spanned(
+                        field,
+                        format!(
+                            "more than one field declares PRIMARY KEY: `{prev}` and `{field_name}`"
+                        ),
+                    ));
+                }
+                primary_key = Some(field_name.clone());
+            }
+
+            column_exprs.push(build_column_expr(&field_name, &field_attr, kind, nullable, is_pk));
+        }
+
+        let pk = primary_key.ok_or_else(|| {
+            syn::Error::new_spanned(
+                struct_name,
+                "RustioModel requires at least one field whose `sql = \"...\"` declares PRIMARY KEY",
+            )
+        })?;
+
+        // Trait impl. The contract is defined by the `HasSchema`
+        // trait, not by an inherent const — this is what lets future
+        // commits (validator, admin, search) constrain generics on
+        // `<T: HasSchema>` without each consumer knowing the
+        // emission shape.
+        //
+        // Nested `const __COLS: &[ModelColumn] = &[...]` is required
+        // here, not a direct `&[...]` literal in the outer
+        // ModelSchema::new(...) call. The inner column expressions
+        // contain block expressions with mutable bindings (the
+        // SchemaFlags construction pattern, see `build_column_expr`
+        // above), and Rust's "const promotion" rules don't promote
+        // array literals containing non-trivially-const expressions
+        // to `'static`. Wrapping the array in its own `const`
+        // item forces compile-time evaluation explicitly, after
+        // which the resulting `&'static [ModelColumn]` flows cleanly
+        // into `ModelSchema::new`'s `&'static`-bound parameter.
+        Ok(quote! {
+            impl ::rustio_core::contract::HasSchema for #struct_name {
+                const SCHEMA: ::rustio_core::contract::ModelSchema = {
+                    const __COLS: &[::rustio_core::contract::ModelColumn] = &[
+                        #(#column_exprs),*
+                    ];
+                    ::rustio_core::contract::ModelSchema::new(#table, __COLS, #pk)
+                };
+            }
+        })
+    }
+
+    /// Classify a `syn::Type` into a (RustTypeKind, nullable) pair.
+    /// Errors on `NaiveDateTime` (Type Rule #2) and any unsupported
+    /// type. Recurses on `Option<T>` to peel one layer.
+    fn classify(ty: &Type) -> syn::Result<(RustTypeKind, bool)> {
+        if let Some(inner) = unwrap_option(ty) {
+            let (k, _) = classify(inner)?;
+            return Ok((k, true));
+        }
+
+        let path = match ty {
+            Type::Path(tp) => tp,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "RustioModel: unsupported type shape (need a simple path type)",
+                ));
+            }
+        };
+
+        let last = path
+            .path
+            .segments
+            .last()
+            .ok_or_else(|| syn::Error::new_spanned(ty, "RustioModel: empty type path"))?;
+        let name = last.ident.to_string();
+
+        // Handle DateTime<Utc> specifically — must have <Utc> arg.
+        if name == "DateTime" {
+            if let PathArguments::AngleBracketed(args) = &last.arguments {
+                let mut got_utc = false;
+                for arg in &args.args {
+                    if let GenericArgument::Type(Type::Path(tp)) = arg {
+                        if tp
+                            .path
+                            .segments
+                            .last()
+                            .map(|s| s.ident == "Utc")
+                            .unwrap_or(false)
+                        {
+                            got_utc = true;
+                        }
+                    }
+                }
+                if got_utc {
+                    return Ok((RustTypeKind::DateTimeUtc, false));
+                }
+            }
+            return Err(syn::Error::new_spanned(
+                ty,
+                "RustioModel: only `DateTime<Utc>` is supported (Type Rule #2). Other timezone parameters are not accepted.",
+            ));
+        }
+
+        // NaiveDateTime — explicitly rejected per Type Rule #2.
+        if name == "NaiveDateTime" {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "RustioModel: `NaiveDateTime` is forbidden (Type Rule #2) — use `chrono::DateTime<chrono::Utc>` for all timestamp columns",
+            ));
+        }
+
+        // Plain type names. Path prefixes are allowed
+        // (`serde_json::Value`, `rust_decimal::Decimal`, `uuid::Uuid`)
+        // because we only inspect the last path segment.
+        let kind = match name.as_str() {
+            "i32" => RustTypeKind::I32,
+            "i64" => RustTypeKind::I64,
+            "f64" => RustTypeKind::F64,
+            "bool" => RustTypeKind::Bool,
+            "String" => RustTypeKind::String,
+            "Value" => RustTypeKind::JsonValue,    // serde_json::Value
+            "Decimal" => RustTypeKind::Decimal,    // rust_decimal::Decimal
+            "Uuid" => RustTypeKind::Uuid,          // uuid::Uuid
+            other => {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    format!(
+                        "RustioModel: unsupported field type `{other}`. \
+                         Supported: i32, i64, f64, bool, String, \
+                         DateTime<Utc>, serde_json::Value, \
+                         rust_decimal::Decimal, uuid::Uuid \
+                         (and Option<T> for any of the above)."
+                    ),
+                ));
+            }
+        };
+        Ok((kind, false))
+    }
+
+    /// Peel one `Option<T>` layer if present. Returns `None` for
+    /// non-Option types.
+    fn unwrap_option(ty: &Type) -> Option<&Type> {
+        let path = match ty {
+            Type::Path(tp) => &tp.path,
+            _ => return None,
+        };
+        let last = path.segments.last()?;
+        if last.ident != "Option" {
+            return None;
+        }
+        let args = match &last.arguments {
+            PathArguments::AngleBracketed(a) => a,
+            _ => return None,
+        };
+        for arg in &args.args {
+            if let GenericArgument::Type(t) = arg {
+                return Some(t);
+            }
+        }
+        None
+    }
+
+    /// Apply the compile-time type rules. Run after classification —
+    /// every error message names the rule it enforces.
+    fn validate_field_rules(
+        name: &str,
+        sql: &str,
+        kind: RustTypeKind,
+        ty: &Type,
+    ) -> syn::Result<()> {
+        let sql_upper = sql.to_uppercase();
+
+        // Type Rule #1 — id must be i64.
+        if name == "id" && kind != RustTypeKind::I64 {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "Type Rule #1: field `id` must be `i64` (mapped to BIGINT/BIGSERIAL). \
+                 Using a smaller integer type for IDs silently truncates at 2.1B rows.",
+            ));
+        }
+
+        // Type Rule #3 — NUMERIC requires Decimal.
+        // Match whole tokens so a column called "numericality" doesn't
+        // false-positive. We split on non-alphanumeric chars and look
+        // for the exact tokens.
+        let has_numeric_token = sql_upper
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|t| t == "NUMERIC" || t == "DECIMAL");
+        if has_numeric_token && kind != RustTypeKind::Decimal {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "Type Rule #3: NUMERIC/DECIMAL columns must pair with \
+                 `rust_decimal::Decimal`. Using `f64` (or any other type) \
+                 for money loses precision under arithmetic.",
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Build the `ModelColumn::new(...).chain()...` expression for one
+    /// field. Always emits `with_flags(...)` so the generated code is
+    /// uniform regardless of which flags are set.
+    fn build_column_expr(
+        name: &str,
+        attr: &FieldAttr,
+        kind: RustTypeKind,
+        nullable: bool,
+        is_pk: bool,
+    ) -> TokenStream2 {
+        let name_lit = LitStr::new(name, proc_macro2::Span::call_site());
+        let sql_lit = LitStr::new(&attr.sql, proc_macro2::Span::call_site());
+        let kind_token = kind.to_token();
+
+        let mut expr = quote! {
+            ::rustio_core::contract::ModelColumn::new(#name_lit, #sql_lit, #kind_token)
+        };
+        if nullable {
+            expr = quote! { #expr.nullable() };
+        }
+        if is_pk {
+            expr = quote! { #expr.primary_key() };
+        }
+
+        // Flags — `.with_flags(...)` always emitted, even when no
+        // flags are set. The shape inside depends on whether any
+        // flag is on:
+        //
+        //   * No flags:  `SchemaFlags::empty()`
+        //   * Any flags: `{ let mut __f = SchemaFlags::empty();
+        //                   __f.searchable = true; ...; __f }`
+        //
+        // The block form is required because cc25125's `SchemaFlags`
+        // is `#[non_exhaustive]` (blocking cross-crate struct
+        // literals) and exposes only `empty()` + `searchable()` —
+        // there's no per-flag setter. Field ASSIGNMENT is allowed on
+        // a `#[non_exhaustive]` struct cross-crate even when struct
+        // literals are blocked, so this `let mut … ; __f.x = true; __f`
+        // pattern works in any consumer crate. It also evaluates in
+        // const context (mut bindings + field mutation in const fn /
+        // const initialisers have been stable since Rust 1.46), so
+        // the whole `static SCHEMA: ModelSchema = …` initialiser
+        // remains const-correct.
+        let s = attr.searchable;
+        let f = attr.filterable;
+        let so = attr.sortable;
+        let r = attr.readonly;
+        let flags_expr = if !s && !f && !so && !r {
+            quote! { ::rustio_core::contract::SchemaFlags::empty() }
+        } else {
+            let mut mutations = Vec::new();
+            if s {
+                mutations.push(quote! { __f.searchable = true; });
+            }
+            if f {
+                mutations.push(quote! { __f.filterable = true; });
+            }
+            if so {
+                mutations.push(quote! { __f.sortable = true; });
+            }
+            if r {
+                mutations.push(quote! { __f.readonly = true; });
+            }
+            quote! {
+                {
+                    let mut __f = ::rustio_core::contract::SchemaFlags::empty();
+                    #(#mutations)*
+                    __f
+                }
+            }
+        };
+        expr = quote! { #expr.with_flags(#flags_expr) };
+
+        if let Some(label) = &attr.label {
+            let l = LitStr::new(label, proc_macro2::Span::call_site());
+            expr = quote! { #expr.with_label(#l) };
+        }
+        if let Some(widget) = &attr.widget {
+            let w = LitStr::new(widget, proc_macro2::Span::call_site());
+            expr = quote! { #expr.with_widget(#w) };
+        }
+        // `references` is parsed (so the attribute doesn't error)
+        // but NOT emitted as code: cc25125's `ModelColumn` has no
+        // `references` field. Per the strict-isolation spec for
+        // commit 2 ("DO NOT modify ModelColumn ... ignore or store
+        // only if already supported"), we silently drop the value
+        // here. When commit 3+ extends `ModelColumn` to carry FK
+        // metadata, a one-line addition restores emission.
+        let _ = &attr.references;
+
+        expr
+    }
+
+    /// Parse the struct-level `#[rustio(table = "...")]`. Required.
+    fn parse_table_attr(attrs: &[Attribute]) -> syn::Result<String> {
+        for attr in attrs {
+            if !attr.path().is_ident("rustio") {
+                continue;
+            }
+            let parsed: TableAttr = attr.parse_args()?;
+            return Ok(parsed.table);
+        }
+        Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "RustioModel requires a `#[rustio(table = \"...\")]` attribute on the struct",
+        ))
+    }
+
+    /// Parse all `#[rustio(...)]` attributes on a single field,
+    /// merging into one `FieldAttr`.
+    fn parse_field_attr(attrs: &[Attribute]) -> syn::Result<FieldAttr> {
+        let mut out = FieldAttr::default();
+        for attr in attrs {
+            if !attr.path().is_ident("rustio") {
+                continue;
+            }
+            let parsed: FieldAttrTokens = attr.parse_args()?;
+            // Last write wins per key — duplicates across multiple
+            // `#[rustio(...)]` attributes overwrite. Rare enough we
+            // don't bother detecting; loud parser errors would
+            // produce noisier compiler output without helping anyone.
+            for entry in parsed.entries {
+                match entry {
+                    AttrEntry::Sql(s) => out.sql = s,
+                    AttrEntry::Searchable => out.searchable = true,
+                    AttrEntry::Filterable => out.filterable = true,
+                    AttrEntry::Sortable => out.sortable = true,
+                    AttrEntry::Readonly => out.readonly = true,
+                    AttrEntry::Widget(s) => out.widget = Some(s),
+                    AttrEntry::Label(s) => out.label = Some(s),
+                    AttrEntry::References(s) => out.references = Some(s),
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    // ---- Attribute parsers (syn::parse plumbing) ---------------------------
+
+    struct TableAttr {
+        table: String,
+    }
+    impl Parse for TableAttr {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            let key: syn::Ident = input.parse()?;
+            if key != "table" {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "expected `table = \"...\"` on the struct",
+                ));
+            }
+            input.parse::<Token![=]>()?;
+            let value: LitStr = input.parse()?;
+            // Tolerate trailing tokens (commas etc) silently — only
+            // error on extras that aren't whitespace.
+            Ok(Self { table: value.value() })
+        }
+    }
+
+    enum AttrEntry {
+        Sql(String),
+        Searchable,
+        Filterable,
+        Sortable,
+        Readonly,
+        Widget(String),
+        Label(String),
+        References(String),
+    }
+
+    struct FieldAttrTokens {
+        entries: Vec<AttrEntry>,
+    }
+    impl Parse for FieldAttrTokens {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            let mut entries = Vec::new();
+            loop {
+                if input.is_empty() {
+                    break;
+                }
+                let key: syn::Ident = input.parse()?;
+                let key_str = key.to_string();
+                let entry = match key_str.as_str() {
+                    "sql" => {
+                        input.parse::<Token![=]>()?;
+                        AttrEntry::Sql(input.parse::<LitStr>()?.value())
+                    }
+                    "searchable" => AttrEntry::Searchable,
+                    "filterable" => AttrEntry::Filterable,
+                    "sortable" => AttrEntry::Sortable,
+                    "readonly" => AttrEntry::Readonly,
+                    "widget" => {
+                        input.parse::<Token![=]>()?;
+                        AttrEntry::Widget(input.parse::<LitStr>()?.value())
+                    }
+                    "label" => {
+                        input.parse::<Token![=]>()?;
+                        AttrEntry::Label(input.parse::<LitStr>()?.value())
+                    }
+                    "references" => {
+                        input.parse::<Token![=]>()?;
+                        AttrEntry::References(input.parse::<LitStr>()?.value())
+                    }
+                    other => {
+                        return Err(syn::Error::new(
+                            key.span(),
+                            format!(
+                                "unknown rustio attribute `{other}`. \
+                                 Known: sql, searchable, filterable, sortable, \
+                                 readonly, widget, label, references."
+                            ),
+                        ));
+                    }
+                };
+                entries.push(entry);
+                if input.is_empty() {
+                    break;
+                }
+                input.parse::<Token![,]>()?;
+            }
+            Ok(Self { entries })
+        }
+    }
+}
