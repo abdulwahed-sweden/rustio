@@ -3,6 +3,12 @@
 mod audit;
 mod builtin;
 mod entry_builder;
+// Phase 14, commit 5 — bridge from `crate::contract::ModelSchema` to
+// the existing admin types (`AdminField`, `FieldType`, `AdminEntry`).
+// Pure, additive conversion module: existing manual admin paths
+// (`#[derive(RustioAdmin)]`, hand-built `AdminModel` impls) are not
+// touched. See module docs for the mapping rules.
+pub mod from_schema;
 mod handlers;
 pub(crate) mod icons;
 mod intelligence;
