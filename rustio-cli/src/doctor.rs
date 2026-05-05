@@ -67,6 +67,13 @@ pub struct Args {
     /// renderer. quiet/verbose/no_color do not apply to JSON output.
     /// Exit code is unchanged: 0 for READY/DEGRADED, 1 for NOT READY.
     pub json: bool,
+    /// Phase 14, commit 4 — schema-contract validation mode. When
+    /// `true`, doctor short-circuits its regular check pipeline and
+    /// instead spawns the project binary as a subprocess to validate
+    /// Rust `ModelSchema` contracts against the live PostgreSQL
+    /// schema. `--json` controls subprocess output passthrough vs
+    /// human-readable rendering by the CLI.
+    pub check_schema: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,6 +91,15 @@ pub(crate) struct ParsedUrl {
 // ---------------------------------------------------------------------------
 
 pub async fn run(args: Args) -> ExitCode {
+    // Phase 14, commit 4 — schema-contract check mode short-circuits
+    // the regular doctor pipeline. The CLI doesn't know which models
+    // a project has registered, so it spawns the project's own binary
+    // (which does) with a magic flag and captures the JSON output.
+    // See `rustio-core::contract_doctor` for the project-side half.
+    if args.check_schema {
+        return run_schema_check(&args);
+    }
+
     // 1.8.1 — JSON mode suppresses the human banner; the heading would
     // contaminate the JSON document an external tool is parsing.
     if !args.quiet && !args.json {
@@ -166,6 +182,165 @@ pub async fn run(args: Args) -> ExitCode {
         ExitCode::from(1)
     } else {
         ExitCode::from(0)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Schema-contract check (Phase 14, commit 4)
+// ---------------------------------------------------------------------------
+//
+// `--check-schema` validates Rust `ModelSchema` contracts against
+// the live PostgreSQL schema. The CLI binary doesn't know which
+// models a project has registered, so it subprocesses
+// `cargo run --quiet -- --rustio-doctor-schema-check --json` —
+// which the project main.rs is expected to handle via
+// `rustio_core::contract_doctor::maybe_handle_subprocess`.
+//
+// The CLI captures the project's stdout (always JSON), then either
+// pretty-prints it (default) or passes it through (`--json`).
+
+/// The argv flag the CLI passes to the project binary. Must match
+/// `rustio_core::contract_doctor::SCHEMA_CHECK_FLAG`.
+const SCHEMA_CHECK_FLAG: &str = "--rustio-doctor-schema-check";
+
+/// The JSON-mode companion flag. Must match
+/// `rustio_core::contract_doctor::JSON_FLAG`.
+const SCHEMA_CHECK_JSON_FLAG: &str = "--json";
+
+/// Compute the args list the CLI will pass to `cargo` when
+/// subprocessing the project binary. Pure function so it can be
+/// unit-tested without spawning anything.
+fn schema_check_cargo_args() -> Vec<&'static str> {
+    vec![
+        "run",
+        "--quiet",
+        "--",
+        SCHEMA_CHECK_FLAG,
+        SCHEMA_CHECK_JSON_FLAG,
+    ]
+}
+
+fn run_schema_check(args: &Args) -> ExitCode {
+    use std::process::{Command, Stdio};
+
+    // Verify we're inside a project. If we're not, fail clearly
+    // rather than letting `cargo run` fail with a less helpful
+    // "could not find Cargo.toml" message.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if scaffold::find_project_root(&cwd).is_none() {
+        eprintln!(
+            "rustio doctor --check-schema: not inside a RustIO project.\n\n  \
+             Run from a directory containing a project Cargo.toml that depends on rustio-core."
+        );
+        return ExitCode::from(1);
+    }
+
+    // The project binary is expected to short-circuit on the magic
+    // flag — see `rustio_core::contract_doctor::maybe_handle_subprocess`.
+    // If the project hasn't installed the helper, this subprocess
+    // will start the server normally and never exit; the user can
+    // Ctrl+C. (Worth a UX warning at boot if/when we instrument
+    // detection — out of scope for this commit.)
+    let cargo_args = schema_check_cargo_args();
+    let output = Command::new("cargo")
+        .args(&cargo_args)
+        .stdout(Stdio::piped())
+        // cargo's compilation status messages go to stderr; let
+        // them flow through so the user sees what's happening.
+        .stderr(Stdio::inherit())
+        .output();
+
+    let output = match output {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("rustio doctor --check-schema: failed to spawn `cargo run`: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    if args.json {
+        // Pass-through mode: emit the project's JSON verbatim. The
+        // project always emits JSON when called with both flags.
+        print!("{stdout}");
+    } else {
+        // Human mode: parse the JSON and render with status symbols.
+        // Fall back to a "couldn't parse" message + raw passthrough
+        // when the project's output isn't JSON-shaped (e.g. project
+        // hasn't installed the contract_doctor helper).
+        match serde_json::from_str::<serde_json::Value>(stdout.trim()) {
+            Ok(doc) => render_schema_check_human(&doc),
+            Err(_) => {
+                eprintln!(
+                    "rustio doctor --check-schema: project did not emit a JSON \
+                     schema-check report. Make sure the project's main.rs calls\n  \
+                     rustio_core::contract_doctor::maybe_handle_subprocess(...)\n\
+                     before starting the server. Raw output below:\n"
+                );
+                eprintln!("{stdout}");
+                return ExitCode::from(1);
+            }
+        }
+    }
+
+    // Mirror the subprocess's exit code so CI gating works.
+    if output.status.success() {
+        ExitCode::from(0)
+    } else {
+        // `cargo` returns the child's exit code; either errors
+        // were found (1) or compilation/launch failed (other).
+        ExitCode::from(output.status.code().unwrap_or(1) as u8)
+    }
+}
+
+/// Render the project's JSON report as one line per table with
+/// status symbol + first issue. Mirrors the spec example:
+///
+/// ```text
+/// ✓ projects
+/// ✗ invoices (missing_column: ...)
+/// ⚠ clients (extra_db_column: ...)
+/// ```
+fn render_schema_check_human(doc: &serde_json::Value) {
+    let tables = match doc.get("tables").and_then(|v| v.as_array()) {
+        Some(t) => t,
+        None => {
+            eprintln!("rustio doctor --check-schema: malformed JSON (no `tables` array)");
+            return;
+        }
+    };
+
+    if tables.is_empty() {
+        println!("(no schemas registered for validation)");
+        return;
+    }
+
+    for table in tables {
+        let name = table.get("table").and_then(|v| v.as_str()).unwrap_or("?");
+        let status = table.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+        let symbol = match status {
+            "ok" => "✓",
+            "warning" => "⚠",
+            "error" => "✗",
+            _ => "?",
+        };
+        // Pull the first error (if any), else first warning, for
+        // the parenthetical detail.
+        let issues_key = if status == "error" { "errors" } else { "warnings" };
+        let detail = table
+            .get(issues_key)
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .map(|i| {
+                let kind = i.get("kind").and_then(|v| v.as_str()).unwrap_or("?");
+                let msg = i.get("message").and_then(|v| v.as_str()).unwrap_or("?");
+                format!("{kind}: {msg}")
+            });
+        match detail {
+            Some(d) => println!("{symbol} {name} ({d})"),
+            None => println!("{symbol} {name}"),
+        }
     }
 }
 
@@ -1526,6 +1701,42 @@ mod tests {
             r.headline.contains(env!("CARGO_PKG_VERSION")),
             "headline must also mention the installed version: {}",
             r.headline
+        );
+    }
+
+    // ----- Phase 14 / commit 4 — schema-check subprocess wiring -----
+
+    /// The CLI's subprocess args list is the wire contract with the
+    /// project's `contract_doctor::maybe_handle_subprocess` helper.
+    /// Locking the args here means the two sides can drift only via
+    /// a deliberate test update.
+    #[test]
+    fn schema_check_cargo_args_match_project_helper_contract() {
+        let args = super::schema_check_cargo_args();
+        assert_eq!(
+            args,
+            vec![
+                "run",
+                "--quiet",
+                "--",
+                "--rustio-doctor-schema-check",
+                "--json",
+            ],
+            "args list is the wire contract — drift here breaks the subprocess flow"
+        );
+    }
+
+    /// The flag literals on both sides must match exactly. Tripwire
+    /// for accidental drift between rustio-cli and rustio-core.
+    #[test]
+    fn schema_check_flag_literals_match_rustio_core() {
+        assert_eq!(
+            super::SCHEMA_CHECK_FLAG,
+            rustio_core::contract_doctor::SCHEMA_CHECK_FLAG,
+        );
+        assert_eq!(
+            super::SCHEMA_CHECK_JSON_FLAG,
+            rustio_core::contract_doctor::JSON_FLAG,
         );
     }
 }

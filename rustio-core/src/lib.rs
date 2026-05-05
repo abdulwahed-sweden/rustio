@@ -32,6 +32,10 @@ pub mod contract;
 // Read-only PG introspection only; no admin / search / CLI / migration
 // touchpoints.
 pub mod contract_validator;
+// Phase 14, commit 4 — `rustio doctor --check-schema`'s project-side
+// hook. Pure consumer of the validator; nothing in this module
+// touches the validator types or any other framework subsystem.
+pub mod contract_doctor;
 pub mod error;
 pub mod http;
 pub mod middleware;

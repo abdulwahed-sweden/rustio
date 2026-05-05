@@ -95,6 +95,14 @@ enum Command {
         /// machine-readable diagnostics.
         #[arg(long)]
         json: bool,
+        /// Phase 14, commit 4 — instead of running the regular doctor
+        /// checks, validate the project's Rust schema contracts
+        /// against the live PostgreSQL schema. Spawns the project
+        /// binary as a subprocess (the CLI doesn't know which models
+        /// are registered; the project does). Pairs with
+        /// `--json` for machine-readable output.
+        #[arg(long)]
+        check_schema: bool,
     },
 }
 
@@ -355,12 +363,13 @@ fn main() -> ExitCode {
     // Doctor returns its own ExitCode (0 = ready / ready-degraded, 1 = not
     // ready). Bypass the Result<(), String> mapping below — doctor's output
     // is already user-facing and shouldn't get wrapped in `error: ...`.
-    if let Command::Doctor { quiet, verbose, no_color, json } = &cli.command {
+    if let Command::Doctor { quiet, verbose, no_color, json, check_schema } = &cli.command {
         let args = doctor::Args {
             quiet: *quiet,
             verbose: *verbose,
             no_color: *no_color,
             json: *json,
+            check_schema: *check_schema,
         };
         let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
             Ok(rt) => rt,
