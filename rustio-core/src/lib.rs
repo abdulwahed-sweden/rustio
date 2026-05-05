@@ -26,6 +26,12 @@ pub mod cache;
 // `ModelSchema` ships in commit 2; the runtime validator that
 // introspects PostgreSQL ships in commit 3.
 pub mod contract;
+// Phase 14, commit 3 — Schema Contract runtime validator. Sibling
+// to the `contract` module (rather than a submodule) so commit 1's
+// `contract.rs` flat layout is preserved without refactoring.
+// Read-only PG introspection only; no admin / search / CLI / migration
+// touchpoints.
+pub mod contract_validator;
 pub mod error;
 pub mod http;
 pub mod middleware;
