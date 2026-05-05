@@ -1,0 +1,34 @@
+[package]
+name = "freelance"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Phase 14 / commit 7 — the freelance example is intentionally a
+# *separate* workspace, not a member of the parent
+# rustio-core/rustio-macros/rustio-cli workspace. Reason: the
+# commit 7 spec strictly forbids modifying the parent
+# `Cargo.toml`'s `members` list, but a standalone subdirectory
+# with its own `Cargo.toml` would otherwise produce a Cargo
+# warning about being "in the workspace but not in members".
+# Declaring its own `[workspace]` table makes Cargo treat this
+# directory as the root of a fresh workspace, disconnecting it
+# from the parent without touching parent files.
+[workspace]
+
+[dependencies]
+rustio-core = { path = "../../rustio-core" }
+rustio-macros = { path = "../../rustio-macros" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+env_logger = "0.11"
+log = "0.4"
+
+[lib]
+name = "freelance"
+path = "src/lib.rs"
+
+[[bin]]
+name = "freelance"
+path = "src/main.rs"
