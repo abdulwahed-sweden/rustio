@@ -131,25 +131,15 @@ pub struct Invoice {
 // Schema registry helpers
 // ---------------------------------------------------------------------------
 
-/// All schemas the example exposes, returned with `search_index`
-/// set so the bridges can demonstrate enabled search.
+/// All schemas the example exposes.
 ///
-/// Why the explicit `with_search_index` calls: the
-/// `#[derive(RustioModel)]` macro in commit 2 emits
-/// `ModelSchema::new(table, cols, pk)` with `search_index =
-/// None` — there's no `#[rustio(search_index = "...")]`
-/// attribute yet. The bridges in commit 6 only enable search
-/// when `search_index.is_some()`, so to demonstrate the search
-/// path end-to-end we set the index name once at registration
-/// time. A future macro extension that derives this from the
-/// presence of any `searchable` flag will eliminate this line;
-/// until then, this is the single non-derive registration step.
+/// Phase 14 / commit 8: `search_index` is now derived
+/// automatically by `#[derive(RustioModel)]` whenever any
+/// column declares `searchable`. The previous commit-7
+/// workaround (per-model `with_search_index(...)` calls) is
+/// gone — the macro emits the right shape directly.
 pub fn all_schemas() -> Vec<ModelSchema> {
-    vec![
-        Client::SCHEMA.with_search_index("clients"),
-        Project::SCHEMA.with_search_index("projects"),
-        Invoice::SCHEMA.with_search_index("invoices"),
-    ]
+    vec![Client::SCHEMA, Project::SCHEMA, Invoice::SCHEMA]
 }
 
 // ---------------------------------------------------------------------------
@@ -187,19 +177,28 @@ mod tests {
         assert_eq!(Invoice::SCHEMA.primary_key, "id");
     }
 
-    /// `all_schemas()` returns three schemas, each with the
-    /// expected `search_index` set.
+    /// `all_schemas()` returns three schemas. Phase 14 /
+    /// commit 8: `search_index` is auto-derived by the macro
+    /// from the presence of any `searchable` flag — so models
+    /// with at least one searchable column carry
+    /// `search_index = Some(table)`, models without any
+    /// searchable column stay `None` (search bridge returns
+    /// `NotSearchable`).
     #[test]
-    fn all_schemas_helper_sets_search_index_per_table() {
+    fn all_schemas_helper_search_index_follows_searchable_flag() {
         let schemas = all_schemas();
         assert_eq!(schemas.len(), 3);
 
         let by_table: std::collections::HashMap<&str, Option<&'static str>> =
             schemas.iter().map(|s| (s.table, s.search_index)).collect();
 
+        // `clients` and `projects` have searchable columns:
+        // macro auto-derives search_index.
         assert_eq!(by_table.get("clients"), Some(&Some("clients")));
         assert_eq!(by_table.get("projects"), Some(&Some("projects")));
-        assert_eq!(by_table.get("invoices"), Some(&Some("invoices")));
+        // `invoices` has no searchable column — opted out by
+        // omission, search_index remains None.
+        assert_eq!(by_table.get("invoices"), Some(&None));
     }
 
     // ----- Search bridge end-to-end --------------------------------------
@@ -209,7 +208,7 @@ mod tests {
     /// declaration order.
     #[test]
     fn project_search_config_matches_field_attributes() {
-        let schema = Project::SCHEMA.with_search_index("projects");
+        let schema = Project::SCHEMA;
         let cfg = search_bridge::search_config_from_schema(&schema)
             .expect("schema is searchable");
 
@@ -230,7 +229,7 @@ mod tests {
     /// Verifies the gate without needing a live database.
     #[test]
     fn search_disabled_on_validator_error() {
-        let schema = Project::SCHEMA.with_search_index("projects");
+        let schema = Project::SCHEMA;
         let report = SchemaReport {
             table: "projects".into(),
             status: ReportStatus::Error,
@@ -252,7 +251,7 @@ mod tests {
     /// `search_config_from_schema` output.
     #[test]
     fn search_enabled_on_validator_ok() {
-        let schema = Project::SCHEMA.with_search_index("projects");
+        let schema = Project::SCHEMA;
         let report = SchemaReport {
             table: "projects".into(),
             status: ReportStatus::Ok,
@@ -272,7 +271,7 @@ mod tests {
     /// `editable = !readonly` set.
     #[test]
     fn admin_bridge_produces_one_field_per_column_in_order() {
-        let schema = Client::SCHEMA.with_search_index("clients");
+        let schema = Client::SCHEMA;
         let bridged = admin_bridge::bridged_fields_from_schema(&schema);
 
         let names: Vec<&str> = bridged.iter().map(|b| b.field.name).collect();

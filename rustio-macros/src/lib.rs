@@ -645,6 +645,13 @@ mod rustio_model {
         // Per-field: build column expressions + locate primary key.
         let mut column_exprs = Vec::new();
         let mut primary_key: Option<String> = None;
+        // Phase 14, commit 8 — track whether any column declares
+        // `searchable` so the emitted ModelSchema can carry the
+        // matching `search_index` automatically. Pre-commit-8
+        // models had to do this manually via
+        // `T::SCHEMA.with_search_index(table)`; auto-deriving
+        // makes the schema → search bridge truly zero-config.
+        let mut has_searchable = false;
 
         for field in fields {
             let field_name = field
@@ -677,6 +684,10 @@ mod rustio_model {
                 primary_key = Some(field_name.clone());
             }
 
+            if field_attr.searchable {
+                has_searchable = true;
+            }
+
             column_exprs.push(build_column_expr(&field_name, &field_attr, kind, nullable, is_pk));
         }
 
@@ -704,13 +715,31 @@ mod rustio_model {
         // item forces compile-time evaluation explicitly, after
         // which the resulting `&'static [ModelColumn]` flows cleanly
         // into `ModelSchema::new`'s `&'static`-bound parameter.
+        // Phase 14, commit 8 — auto-derive `search_index`. When
+        // the model declares any `#[rustio(... searchable ...)]`
+        // column, default the index name to the table name —
+        // `search::from_schema::enable_search` then enables the
+        // bridge end-to-end with no per-call override. When no
+        // column is searchable, leave `search_index = None` so
+        // the bridge correctly returns `NotSearchable`.
+        let schema_init = if has_searchable {
+            quote! {
+                ::rustio_core::contract::ModelSchema::new(#table, __COLS, #pk)
+                    .with_search_index(#table)
+            }
+        } else {
+            quote! {
+                ::rustio_core::contract::ModelSchema::new(#table, __COLS, #pk)
+            }
+        };
+
         Ok(quote! {
             impl ::rustio_core::contract::HasSchema for #struct_name {
                 const SCHEMA: ::rustio_core::contract::ModelSchema = {
                     const __COLS: &[::rustio_core::contract::ModelColumn] = &[
                         #(#column_exprs),*
                     ];
-                    ::rustio_core::contract::ModelSchema::new(#table, __COLS, #pk)
+                    #schema_init
                 };
             }
         })

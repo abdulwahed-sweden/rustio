@@ -458,6 +458,48 @@ impl Admin {
         self
     }
 
+    /// Phase 14, commit 8 — register a model whose admin
+    /// behaviour is derived entirely from its `ModelSchema`. No
+    /// `AdminModel` impl required.
+    ///
+    /// The bridge in [`crate::admin::from_schema`] produces an
+    /// `AdminEntry` whose:
+    /// - field list comes from
+    ///   [`crate::admin::from_schema::admin_fields_from_schema`]
+    /// - CRUD goes through a generic `SchemaOps` that builds
+    ///   SQL from the schema's column list
+    /// - admin / display / singular names derive from
+    ///   `schema.table` (humanised + naive singular)
+    ///
+    /// Coexists with [`Self::model`] / [`Self::model_with_search`]
+    /// — projects can mix manual `AdminModel` impls with
+    /// schema-derived entries on the same `Admin`.
+    pub fn from_schema<T>(self) -> Self
+    where
+        T: crate::contract::HasSchema,
+    {
+        let entry = crate::admin::from_schema::admin_entry_from_type::<T>();
+        self.push_entry(entry)
+    }
+
+    /// Phase 14, commit 8 — bulk variant: register every
+    /// `ModelSchema` in the slice as a schema-derived entry.
+    /// Equivalent to calling [`Self::from_schema`] once per
+    /// element, but takes the schemas as values (clone-on-pass)
+    /// so a caller can pass `&freelance::all_schemas()` directly.
+    pub fn from_schemas(mut self, schemas: &[crate::contract::ModelSchema]) -> Self {
+        for schema in schemas {
+            let entry = crate::admin::from_schema::admin_entry_from_schema(schema.clone());
+            self.entries.push(entry);
+        }
+        self
+    }
+
+    fn push_entry(mut self, entry: AdminEntry) -> Self {
+        self.entries.push(entry);
+        self
+    }
+
     pub fn entries(&self) -> &[AdminEntry] {
         &self.entries
     }

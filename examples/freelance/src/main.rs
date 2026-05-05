@@ -84,21 +84,80 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // the admin bridge's per-column metadata.
 
     log::info!("--- Phase 14 pipeline demonstration ---");
-    // String literals here are `&'static str` — required by
-    // `ModelSchema::with_search_index`'s `&'static str` bound.
-    demonstrate::<Client>(&db, "clients").await;
-    demonstrate::<Project>(&db, "projects").await;
-    demonstrate::<Invoice>(&db, "invoices").await;
+    demonstrate::<Client>(&db).await;
+    demonstrate::<Project>(&db).await;
+    demonstrate::<Invoice>(&db).await;
 
-    // ----- Step 4 — Server bind (smoke) -----------------------------------
+    // ----- Step 4 — Admin runtime registration ----------------------------
     //
-    // The spec's required flow ends with `start_server()`. A full
-    // admin server requires `AdminModel` impls — those are
-    // intentionally absent from this example (Phase 14 commit 7
-    // forbids manual admin config), so the "server" here is a
-    // smoke step: log that bridges are ready and exit. Setting
-    // `RUSTIO_FREELANCE_HOLD=1` keeps the process alive so an
-    // operator can attach a debugger; otherwise we exit clean.
+    // Phase 14 / commit 8: `Admin::from_schemas(&[ModelSchema])`
+    // registers every schema as a fully-functional `AdminEntry`,
+    // backed by a generic `SchemaOps` that drives CRUD via raw
+    // SQL using only the schema's column metadata. No
+    // `AdminModel` trait impl required.
+    //
+    // The blog example registers entries via
+    // `Admin::new().model::<Post>()`, which in turn requires
+    // `Post: AdminModel + Model`. The freelance example
+    // intentionally never names either trait: every entry comes
+    // from the schema directly.
+
+    let admin = rustio_core::admin::Admin::new()
+        .site_branding(rustio_core::admin::SiteBranding {
+            site_title: "Freelance — RustIO Phase 14 demo".into(),
+            site_header: "Freelance".into(),
+            index_title: "Freelance administration".into(),
+            footer_copyright: format!("RustIO {} — freelance demo", env!("CARGO_PKG_VERSION")),
+            domain: "freelance.local".into(),
+        })
+        .from_schemas(&schemas);
+
+    log::info!(
+        "admin:     {} entries registered (schema-driven, no AdminModel impls)",
+        admin.entries().len()
+    );
+
+    // ----- Step 5 — Search runtime registration ---------------------------
+    //
+    // Phase 14 / commit 8: `Indexer::from_schema::<T>(client, db,
+    // capacity)` lives in `search::from_schema`. It validates the
+    // schema, configures the Meili index based on the bridge's
+    // attribute lists, and spawns the background indexer — all
+    // gated by the validator's verdict (Error → `None`).
+    //
+    // We attempt search registration only if `MEILI_URL` is set;
+    // running without Meili is the supported demo path.
+
+    if let Ok(meili_url) = std::env::var("MEILI_URL") {
+        let meili_key = std::env::var("MEILI_MASTER_KEY").ok();
+        let client = std::sync::Arc::new(rustio_core::search::MeiliClient::new(
+            &meili_url, meili_key,
+        )?);
+        match client.health().await {
+            Ok(()) => {
+                let _i_clients =
+                    search_bridge::indexer_from_schema::<Client>(client.clone(), &db, 1024).await;
+                let _i_projects =
+                    search_bridge::indexer_from_schema::<Project>(client.clone(), &db, 1024).await;
+                let _i_invoices =
+                    search_bridge::indexer_from_schema::<Invoice>(client.clone(), &db, 1024).await;
+                log::info!("search:    runtime indexers spawned per validator verdict");
+            }
+            Err(e) => log::warn!("search:    Meili at {meili_url} unreachable ({e}) — skipping indexer setup"),
+        }
+    } else {
+        log::info!("search:    MEILI_URL not set — runtime indexer skipped (set MEILI_URL to enable)");
+    }
+
+    // ----- Step 6 — Server bind (smoke) -----------------------------------
+    //
+    // The admin builder is fully populated; mounting it on a
+    // real router requires the `register_admin_routes` /
+    // `Templates` / migrations bootstrap that the blog example
+    // demonstrates. The freelance example stops at "admin
+    // builder ready" so the runtime path stays minimal — a
+    // future commit will add a one-line "serve schema-driven
+    // admin" helper.
 
     log::info!("freelance bridges initialised — pipeline complete.");
     if std::env::var("RUSTIO_FREELANCE_HOLD").ok().as_deref() == Some("1") {
@@ -112,8 +171,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 // Demonstration helper — one per model
 // ---------------------------------------------------------------------------
 
-async fn demonstrate<M: HasSchema>(db: &Db, label: &'static str) {
-    log::info!("\n=== {label} ===");
+async fn demonstrate<M: HasSchema>(db: &Db) {
+    let schema = M::SCHEMA;
+    log::info!("\n=== {} ===", schema.table);
 
     // Step A — validator
     let report = contract_validator::validate_schema::<M>(db).await;
@@ -131,9 +191,9 @@ async fn demonstrate<M: HasSchema>(db: &Db, label: &'static str) {
     }
 
     // Step B — search bridge (gated on validator verdict).
-    // Override `search_index` because the macro doesn't yet emit
-    // it (see lib.rs::all_schemas for the rationale).
-    let schema = M::SCHEMA.with_search_index(label);
+    // Phase 14 / commit 8: the macro auto-derives
+    // `search_index` from the searchable flag, so the bridge
+    // works on `M::SCHEMA` directly without overrides.
     let outcome = search_bridge::enablement_from(&schema, report.clone());
     if outcome.is_enabled() {
         let cfg = outcome.config().unwrap();

@@ -106,7 +106,10 @@ fn rustio_model_derive_happy_path() {
     assert_eq!(s.table, "projects");
     assert_eq!(s.primary_key, "id");
     assert_eq!(s.columns.len(), 2);
-    assert!(s.search_index.is_none()); // not auto-set in commit 2
+    // Phase 14 / commit 8 — the macro auto-derives
+    // `search_index = Some(table)` when any column declares
+    // the `searchable` flag (the `title` column does, here).
+    assert_eq!(s.search_index, Some("projects"));
 
     let id = s.column("id").expect("id column missing");
     assert_eq!(id.name, "id");

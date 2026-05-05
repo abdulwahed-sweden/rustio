@@ -131,33 +131,40 @@ This means:
 
 ---
 
-## What this example does NOT do
+## What this example does (after commit 8)
 
-To stay within the commit 7 constraint envelope (no
-`rustio-core` modifications, no `rustio-macros` modifications,
-no `rustio-cli` modifications), this example:
+The Phase 14 runtime integration unlocks a true zero-config
+flow:
 
-- Does **not** start a full admin HTTP server. The framework's
-  `Admin::new().model::<T>()` requires `T: AdminModel`, which is
-  manual config that the spec forbids. A future commit will add
-  `Admin::new().from_schema::<T>()` to wire `HasSchema` directly,
-  at which point this example's `main.rs` gets four extra lines
-  and a real admin UI.
-- Does **not** run a Meilisearch index. Same shape — the bridge
-  produces a `SearchConfig`, but plugging it into the existing
-  `Indexer` requires the still-pending macro extension that
-  emits `search_index` automatically. Until then, a one-line
-  `with_search_index("clients")` override (in `lib.rs::all_schemas`)
-  bridges the gap.
+- **Three models** with `#[derive(RustioModel)]` and `T::SCHEMA`
+  — no `AdminModel` impl, no `Searchable` impl, no `Model` impl.
+- **`search_index` is auto-derived** by the macro from the
+  presence of any `#[rustio(... searchable ...)]` flag — no
+  per-model `with_search_index(...)` override required.
+- **`Admin::new().from_schemas(&[ModelSchema])`** registers
+  every schema as a fully-functional `AdminEntry`, backed by a
+  generic `SchemaOps` that drives CRUD via raw SQL using only
+  the schema's column metadata.
+- **`search::from_schema::indexer_from_schema::<T>(...)`**
+  validates each schema against the live DB and spawns an
+  indexer only when the validator's verdict is `Ok` /
+  `Warning` — drift in PG silently disables indexing rather
+  than producing malformed Meili documents.
+- **Doctor subprocess hook** stays the same:
+  `rustio doctor --check-schema [--json]` invokes the binary
+  with the magic flag and intercepts before any server work.
 
-What it *does* do, end-to-end:
+## What it does *not* yet do
 
-- Three models with `#[derive(RustioModel)]` and `T::SCHEMA`.
-- Doctor subprocess hook (works today via
-  `rustio doctor --check-schema`).
-- Validator reports per model (works today against any live PG).
-- Search bridge `SearchConfig` (works today, demonstrably).
-- Admin bridge `BridgedField` list (works today, demonstrably).
+- Mount the populated `Admin` builder onto an HTTP router.
+  That's a one-liner via `register_admin_routes` (see the
+  `examples/blog/` example) — it's omitted here to keep the
+  runtime path minimal and avoid pulling in templates +
+  migrations bootstrap.
+- Auto-detect models for indexer registration. Each model
+  is registered explicitly via `indexer_from_schema::<T>`;
+  a future "register every `T: HasSchema` from a registry"
+  helper will collapse this further.
 
 ---
 

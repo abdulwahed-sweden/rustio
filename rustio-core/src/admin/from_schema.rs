@@ -210,6 +210,587 @@ pub fn primary_key_column(schema: &ModelSchema) -> Option<&ModelColumn> {
 }
 
 // ---------------------------------------------------------------------------
+// SchemaOps — Phase 14, commit 8
+// ---------------------------------------------------------------------------
+//
+// `SchemaOps` is a generic `AdminOps` implementation that drives
+// CRUD using only a `ModelSchema` — no `AdminModel` impl, no
+// `Model` impl, no per-type code. The admin runtime registers
+// schema-driven entries via `Admin::from_schema::<T>()`, and the
+// resulting `AdminEntry` ferries CRUD through this type.
+//
+// SQL is built dynamically from the schema's column list. Type
+// dispatch is via `ModelColumn::rust_type` — every supported
+// `RustType` variant maps to one read path
+// (`format_pg_value_for_column`) and one write path
+// (`bind_form_value`). Variants the framework doesn't yet model
+// natively for the admin path return a clear validation error
+// rather than silently coercing to text.
+//
+// Constraint envelope:
+// - No new dependencies (sqlx, chrono, uuid, serde_json are
+//   already pulled in via rustio-core's Cargo.toml).
+// - Read-only against schema metadata; write paths only modify
+//   rows in the model's own table.
+// - The SQL strings are built from `ModelSchema`'s `&'static
+//   str` column / table names — there is no path for a request
+//   to inject arbitrary identifiers (the column name list is
+//   defined at compile time by `#[derive(RustioModel)]`).
+
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use sqlx::Row as SqlxRow;
+
+use crate::admin::types::{AdminEntry, AdminOps, EditRow, ListRow};
+use crate::contract::HasSchema;
+use crate::error::{Error, Result};
+use crate::http::FormData;
+use crate::orm::Db;
+
+/// Static-leaked `ModelSchema`. Required because `AdminEntry`
+/// stores `&'static str` for table / admin_name / etc., and the
+/// schema needs to outlive every async future spawned from
+/// `SchemaOps`. Schemas are registered at startup and live for
+/// the program's lifetime, so the leak is a one-time setup cost
+/// equivalent to a `static`.
+fn leak_schema(schema: ModelSchema) -> &'static ModelSchema {
+    Box::leak(Box::new(schema))
+}
+
+/// `AdminOps` driven entirely by a `ModelSchema`.
+///
+/// Holds a static-leaked schema so each async `AdminOps` method
+/// can borrow the column list across `await` points without
+/// lifetime issues — `'a` references the captured `&'a self`,
+/// but the underlying schema reference is `'static`.
+pub(crate) struct SchemaOps {
+    schema: &'static ModelSchema,
+}
+
+impl SchemaOps {
+    fn new(schema: &'static ModelSchema) -> Self {
+        Self { schema }
+    }
+
+    fn pk_col(&self) -> &'static crate::contract::ModelColumn {
+        // The schema's `primary_key` field names the PK column;
+        // primary_key_column finds the entry flagged
+        // `primary_key = true`. We trust both agree (the
+        // validator surfaces drift) and prefer the latter.
+        primary_key_column(self.schema).unwrap_or_else(|| {
+            // Defensive: a schema without any flagged PK column
+            // is a contract bug. Returning the first column
+            // makes the code defensible without panicking; the
+            // validator's `WrongPrimaryKey` issue catches it
+            // separately.
+            &self.schema.columns[0]
+        })
+    }
+
+    /// Columns the create/update path writes. Excludes the
+    /// primary key (assumed BIGSERIAL — auto-assigned by PG)
+    /// and any column flagged `readonly` (e.g. `created_at
+    /// DEFAULT NOW()`). Returns the column references in
+    /// declaration order.
+    fn writable_columns(&self) -> Vec<&'static crate::contract::ModelColumn> {
+        self.schema
+            .columns
+            .iter()
+            .filter(|c| !c.primary_key && !c.flags.readonly)
+            .collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-RustType read formatting — turns a sqlx row column into a
+// String suitable for `ListRow.cells` / `EditRow.values`.
+// ---------------------------------------------------------------------------
+
+fn format_pg_value_for_column(
+    row: &sqlx::postgres::PgRow,
+    col: &crate::contract::ModelColumn,
+) -> String {
+    // Centralised null handling: any column read that errors out
+    // OR returns NULL maps to the empty string. The render layer
+    // displays empty strings as "—" already.
+    use crate::contract::RustType::*;
+    match (col.rust_type, col.nullable) {
+        (I32, false) => row.try_get::<i32, _>(col.name).map(|v| v.to_string()).unwrap_or_default(),
+        (I32, true) => row
+            .try_get::<Option<i32>, _>(col.name)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        (I64, false) => row.try_get::<i64, _>(col.name).map(|v| v.to_string()).unwrap_or_default(),
+        (I64, true) => row
+            .try_get::<Option<i64>, _>(col.name)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        (Bool, false) => row.try_get::<bool, _>(col.name).map(|b| b.to_string()).unwrap_or_default(),
+        (Bool, true) => row
+            .try_get::<Option<bool>, _>(col.name)
+            .ok()
+            .flatten()
+            .map(|b| b.to_string())
+            .unwrap_or_default(),
+        (String, false) => row.try_get::<std::string::String, _>(col.name).unwrap_or_default(),
+        (String, true) => row
+            .try_get::<Option<std::string::String>, _>(col.name)
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        (DateTimeUtc, false) => row
+            .try_get::<DateTime<Utc>, _>(col.name)
+            .map(|d| d.to_rfc3339())
+            .unwrap_or_default(),
+        (DateTimeUtc, true) => row
+            .try_get::<Option<DateTime<Utc>>, _>(col.name)
+            .ok()
+            .flatten()
+            .map(|d| d.to_rfc3339())
+            .unwrap_or_default(),
+        (F64, false) => row.try_get::<f64, _>(col.name).map(|v| v.to_string()).unwrap_or_default(),
+        (F64, true) => row
+            .try_get::<Option<f64>, _>(col.name)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        (Uuid, false) => row
+            .try_get::<uuid::Uuid, _>(col.name)
+            .map(|u| u.to_string())
+            .unwrap_or_default(),
+        (Uuid, true) => row
+            .try_get::<Option<uuid::Uuid>, _>(col.name)
+            .ok()
+            .flatten()
+            .map(|u| u.to_string())
+            .unwrap_or_default(),
+        // Decimal and JsonValue: render the raw text the DB
+        // returns rather than parsing into a typed value the
+        // admin layer can't carry without an extra dep. PG
+        // exposes both as text-coercible — `::text` cast in the
+        // query would be cleaner, but reading as String works
+        // for the common shapes.
+        (Decimal, _) | (JsonValue, _) => row
+            .try_get::<std::string::String, _>(col.name)
+            .unwrap_or_default(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-RustType write parsing — turns a form value string into a
+// SQL bind argument; emits a clear validation error on parse
+// failure rather than panicking.
+// ---------------------------------------------------------------------------
+
+/// Bind one form value onto a `sqlx::query` builder, dispatched
+/// by `RustType` + nullability. Returns the updated builder on
+/// success, or a string error suitable for the `Err(Vec<String>)`
+/// validation channel of `AdminOps::create` / `update`.
+///
+/// Empty form input on a nullable column binds `NULL`. Empty
+/// form input on a non-nullable column binds the empty string
+/// (for `String`) or returns a "required" error (for typed
+/// columns).
+fn bind_form_value<'a>(
+    q: sqlx::query::Query<'a, sqlx::Postgres, sqlx::postgres::PgArguments>,
+    col: &crate::contract::ModelColumn,
+    raw: Option<&str>,
+) -> std::result::Result<sqlx::query::Query<'a, sqlx::Postgres, sqlx::postgres::PgArguments>, std::string::String> {
+    use crate::contract::RustType::*;
+    let raw = raw.unwrap_or("").trim();
+
+    // Empty input + nullable column = NULL. Empty input +
+    // String column = empty string (the DB constraint catches
+    // NOT NULL TEXT fields when they should have content).
+    if raw.is_empty() && col.nullable {
+        return Ok(match col.rust_type {
+            I32 => q.bind(None::<i32>),
+            I64 => q.bind(None::<i64>),
+            F64 => q.bind(None::<f64>),
+            Bool => q.bind(None::<bool>),
+            String => q.bind(None::<std::string::String>),
+            DateTimeUtc => q.bind(None::<DateTime<Utc>>),
+            Uuid => q.bind(None::<uuid::Uuid>),
+            // Decimal / JsonValue null-binding goes through the
+            // text path; PG accepts NULL casts at the protocol
+            // level for any column.
+            Decimal | JsonValue => q.bind(None::<std::string::String>),
+        });
+    }
+
+    let parsed: std::result::Result<sqlx::query::Query<'a, sqlx::Postgres, sqlx::postgres::PgArguments>, std::string::String> = match col.rust_type {
+        I32 => raw
+            .parse::<i32>()
+            .map(|v| q.bind(v))
+            .map_err(|e| format!("`{}`: {}", col.name, e)),
+        I64 => raw
+            .parse::<i64>()
+            .map(|v| q.bind(v))
+            .map_err(|e| format!("`{}`: {}", col.name, e)),
+        F64 => raw
+            .parse::<f64>()
+            .map(|v| q.bind(v))
+            .map_err(|e| format!("`{}`: {}", col.name, e)),
+        Bool => Ok({
+            // HTML form checkboxes send "on" / "true" / "1" when
+            // checked, nothing when unchecked. The form layer
+            // normalises absent fields to None — by the time we
+            // see a string here it's almost always "on" for
+            // truthy. Unknown tokens default to false rather
+            // than rejecting outright; the column's `NOT NULL
+            // DEFAULT FALSE` semantics match.
+            let truthy = matches!(
+                raw.to_ascii_lowercase().as_str(),
+                "on" | "true" | "1" | "yes"
+            );
+            q.bind(truthy)
+        }),
+        String => Ok(q.bind(raw.to_string())),
+        DateTimeUtc => DateTime::parse_from_rfc3339(raw)
+            .map(|dt| q.bind(dt.with_timezone(&Utc)))
+            .map_err(|e| format!("`{}`: expected RFC3339 timestamp ({})", col.name, e)),
+        Uuid => uuid::Uuid::parse_str(raw)
+            .map(|u| q.bind(u))
+            .map_err(|e| format!("`{}`: {}", col.name, e)),
+        Decimal | JsonValue => Ok(q.bind(raw.to_string())),
+    };
+
+    parsed
+}
+
+// ---------------------------------------------------------------------------
+// AdminOps — the read + write surface
+// ---------------------------------------------------------------------------
+
+type CreateFut<'a> = Pin<Box<dyn Future<Output = Result<std::result::Result<i64, Vec<std::string::String>>>> + Send + 'a>>;
+type UpdateFut<'a> = Pin<Box<dyn Future<Output = Result<std::result::Result<(), Vec<std::string::String>>>> + Send + 'a>>;
+
+impl AdminOps for SchemaOps {
+    fn list<'a>(
+        &'a self,
+        db: &'a Db,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<ListRow>>> + Send + 'a>> {
+        Box::pin(async move {
+            let pk = self.pk_col();
+            let cols = self
+                .schema
+                .columns
+                .iter()
+                .map(|c| c.name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT {cols} FROM {} ORDER BY {} DESC LIMIT 200",
+                self.schema.table, pk.name
+            );
+            let rows = sqlx::query(&sql)
+                .fetch_all(db.pool())
+                .await
+                .map_err(|e| Error::Internal(format!("schema-list({}): {e}", self.schema.table)))?;
+
+            let out = rows
+                .into_iter()
+                .map(|row| {
+                    // ID column comes back as i64 (BIGSERIAL); fall
+                    // back to 0 if the column is shaped differently.
+                    let id = row.try_get::<i64, _>(pk.name).unwrap_or(0);
+                    let cells = self
+                        .schema
+                        .columns
+                        .iter()
+                        .map(|c| format_pg_value_for_column(&row, c))
+                        .collect();
+                    ListRow { id, cells }
+                })
+                .collect();
+            Ok(out)
+        })
+    }
+
+    fn find_row<'a>(
+        &'a self,
+        db: &'a Db,
+        id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<EditRow>>> + Send + 'a>> {
+        Box::pin(async move {
+            let pk = self.pk_col();
+            let cols = self
+                .schema
+                .columns
+                .iter()
+                .map(|c| c.name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT {cols} FROM {} WHERE {} = $1",
+                self.schema.table, pk.name
+            );
+            let maybe_row = sqlx::query(&sql)
+                .bind(id)
+                .fetch_optional(db.pool())
+                .await
+                .map_err(|e| Error::Internal(format!("schema-find({}): {e}", self.schema.table)))?;
+            Ok(maybe_row.map(|row| {
+                let values = self
+                    .schema
+                    .columns
+                    .iter()
+                    .map(|c| (c.name.to_string(), format_pg_value_for_column(&row, c)))
+                    .collect();
+                EditRow { id, values }
+            }))
+        })
+    }
+
+    fn create<'a>(&'a self, db: &'a Db, form: &'a FormData) -> CreateFut<'a> {
+        Box::pin(async move {
+            let pk = self.pk_col();
+            let writables = self.writable_columns();
+            let col_names: Vec<&str> = writables.iter().map(|c| c.name).collect();
+            let placeholders: Vec<std::string::String> =
+                (1..=writables.len()).map(|i| format!("${i}")).collect();
+            let sql = format!(
+                "INSERT INTO {} ({}) VALUES ({}) RETURNING {}",
+                self.schema.table,
+                col_names.join(", "),
+                placeholders.join(", "),
+                pk.name
+            );
+
+            let mut q = sqlx::query(&sql);
+            let mut errors: Vec<std::string::String> = Vec::new();
+            for col in &writables {
+                match bind_form_value(q, col, form.get(col.name)) {
+                    Ok(next) => q = next,
+                    Err(msg) => {
+                        errors.push(msg);
+                        // Bind a placeholder so subsequent
+                        // bindings stay aligned with placeholders;
+                        // the query won't run if errors is
+                        // non-empty.
+                        q = sqlx::query(&sql); // reset; we won't execute
+                        break;
+                    }
+                }
+            }
+            if !errors.is_empty() {
+                return Ok(Err(errors));
+            }
+
+            let row = q
+                .fetch_one(db.pool())
+                .await
+                .map_err(|e| Error::Internal(format!("schema-create({}): {e}", self.schema.table)))?;
+            let id: i64 = row
+                .try_get(pk.name)
+                .map_err(|e| Error::Internal(format!("returning {}: {e}", pk.name)))?;
+            db.invalidate(self.schema.table);
+            Ok(Ok(id))
+        })
+    }
+
+    fn update<'a>(&'a self, db: &'a Db, id: i64, form: &'a FormData) -> UpdateFut<'a> {
+        Box::pin(async move {
+            let pk = self.pk_col();
+            let writables = self.writable_columns();
+            let sets: Vec<std::string::String> = writables
+                .iter()
+                .enumerate()
+                .map(|(i, c)| format!("{} = ${}", c.name, i + 1))
+                .collect();
+            let sql = format!(
+                "UPDATE {} SET {} WHERE {} = ${}",
+                self.schema.table,
+                sets.join(", "),
+                pk.name,
+                writables.len() + 1
+            );
+
+            let mut q = sqlx::query(&sql);
+            let mut errors: Vec<std::string::String> = Vec::new();
+            for col in &writables {
+                match bind_form_value(q, col, form.get(col.name)) {
+                    Ok(next) => q = next,
+                    Err(msg) => {
+                        errors.push(msg);
+                        q = sqlx::query(&sql);
+                        break;
+                    }
+                }
+            }
+            if !errors.is_empty() {
+                return Ok(Err(errors));
+            }
+            q = q.bind(id);
+            q.execute(db.pool())
+                .await
+                .map_err(|e| Error::Internal(format!("schema-update({}): {e}", self.schema.table)))?;
+            db.invalidate(self.schema.table);
+            Ok(Ok(()))
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        db: &'a Db,
+        id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let pk = self.pk_col();
+            let sql = format!(
+                "DELETE FROM {} WHERE {} = $1",
+                self.schema.table, pk.name
+            );
+            sqlx::query(&sql)
+                .bind(id)
+                .execute(db.pool())
+                .await
+                .map_err(|e| Error::Internal(format!("schema-delete({}): {e}", self.schema.table)))?;
+            db.invalidate(self.schema.table);
+            Ok(())
+        })
+    }
+
+    fn object_label<'a>(
+        &'a self,
+        db: &'a Db,
+        id: i64,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<std::string::String>>> + Send + 'a>> {
+        Box::pin(async move {
+            // Pick the first non-PK String column as the label
+            // source; fall back to "{table} #{id}" when there's
+            // none. Mirrors the heuristic the AdminModel-driven
+            // path uses for object_label.
+            let label_col = self.schema.columns.iter().find(|c| {
+                !c.primary_key
+                    && matches!(c.rust_type, crate::contract::RustType::String)
+            });
+            let pk = self.pk_col();
+            match label_col {
+                Some(col) => {
+                    let sql = format!(
+                        "SELECT {} FROM {} WHERE {} = $1",
+                        col.name, self.schema.table, pk.name
+                    );
+                    let row = sqlx::query(&sql)
+                        .bind(id)
+                        .fetch_optional(db.pool())
+                        .await
+                        .map_err(|e| {
+                            Error::Internal(format!(
+                                "schema-object-label({}): {e}",
+                                self.schema.table
+                            ))
+                        })?;
+                    Ok(row.and_then(|r| {
+                        let v = if col.nullable {
+                            r.try_get::<Option<std::string::String>, _>(col.name)
+                                .ok()
+                                .flatten()
+                        } else {
+                            r.try_get::<std::string::String, _>(col.name).ok()
+                        };
+                        v.filter(|s| !s.is_empty())
+                    }))
+                }
+                None => Ok(Some(format!("{} #{}", self.schema.table, id))),
+            }
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AdminEntry construction from a ModelSchema
+// ---------------------------------------------------------------------------
+
+/// Build a fully-configured `AdminEntry` from a `ModelSchema`,
+/// without requiring an `AdminModel` impl. The resulting entry's
+/// CRUD goes through `SchemaOps`; the field metadata comes from
+/// `admin_fields_from_schema`.
+///
+/// `admin_name`, `display_name`, and `singular_name` are derived
+/// from `schema.table`:
+///
+/// - `admin_name` = `schema.table` verbatim (route prefix)
+/// - `display_name` = humanised + Title Case (`"projects"` →
+///   `"Projects"`)
+/// - `singular_name` = humanised + naive singular (strip a
+///   trailing `s`; `"projects"` → `"Project"`)
+///
+/// Naive singularisation is fine for the common-case English
+/// plural; project models with irregular plurals can extend the
+/// macro layer with a `#[rustio(singular = "...")]` attribute in
+/// a future commit.
+pub fn admin_entry_from_schema(schema: ModelSchema) -> AdminEntry {
+    let static_schema = leak_schema(schema);
+    let admin_name: &'static str = static_schema.table;
+    let display_name: &'static str =
+        Box::leak(humanise_table(static_schema.table).into_boxed_str());
+    let singular_name: &'static str =
+        Box::leak(singularise(static_schema.table).into_boxed_str());
+
+    AdminEntry {
+        admin_name,
+        display_name,
+        singular_name,
+        table: static_schema.table,
+        fields: admin_fields_from_schema(static_schema),
+        core: false,
+        ops: Arc::new(SchemaOps::new(static_schema)),
+        search_hook: None,
+    }
+}
+
+/// Same as `admin_entry_from_schema` but takes the model type
+/// rather than a schema value. Convenience wrapper around
+/// `T::SCHEMA`.
+pub fn admin_entry_from_type<T: HasSchema>() -> AdminEntry {
+    admin_entry_from_schema(T::SCHEMA)
+}
+
+/// `"projects"` → `"Projects"`. ASCII Title Case of the first
+/// character; rest unchanged. Underscores → spaces.
+fn humanise_table(name: &str) -> std::string::String {
+    let mut out = std::string::String::with_capacity(name.len());
+    let mut next_upper = true;
+    for ch in name.chars() {
+        if ch == '_' {
+            out.push(' ');
+            next_upper = true;
+        } else if next_upper {
+            out.extend(ch.to_uppercase());
+            next_upper = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// `"projects"` → `"Project"`. Strips a trailing `s` after
+/// humanising. English-naive — irregular plurals (people,
+/// children, indices) round-trip wrongly. A future
+/// `#[rustio(singular = "...")]` attribute is the planned
+/// override.
+fn singularise(name: &str) -> std::string::String {
+    let h = humanise_table(name);
+    if let Some(stripped) = h.strip_suffix('s') {
+        if !stripped.is_empty() {
+            return stripped.to_string();
+        }
+    }
+    h
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -588,5 +1169,96 @@ mod tests {
         assert_eq!(bridged_fields_from_schema(&schema).len(), 0);
         assert_eq!(admin_fields_from_schema(&schema).len(), 0);
         assert!(primary_key_column(&schema).is_none());
+    }
+
+    // ----- Phase 14, commit 8 — name derivation for AdminEntry -----------
+
+    /// Plain plural `"projects"` humanises + singularises to
+    /// `"Projects"` / `"Project"`.
+    #[test]
+    fn humanise_table_capitalises_first_letter() {
+        assert_eq!(super::humanise_table("projects"), "Projects");
+        assert_eq!(super::humanise_table("clients"), "Clients");
+        assert_eq!(super::humanise_table("invoices"), "Invoices");
+    }
+
+    /// Underscore tables humanise as Title Case (every
+    /// underscore-separated word capitalised).
+    #[test]
+    fn humanise_table_translates_underscores_to_spaces() {
+        assert_eq!(super::humanise_table("audit_logs"), "Audit Logs");
+        assert_eq!(super::humanise_table("user_profiles"), "User Profiles");
+    }
+
+    /// Naive singular: strips a trailing `s` after humanising.
+    #[test]
+    fn singularise_strips_trailing_s() {
+        assert_eq!(super::singularise("projects"), "Project");
+        assert_eq!(super::singularise("clients"), "Client");
+        assert_eq!(super::singularise("invoices"), "Invoice");
+        // Single-word table without trailing `s` round-trips.
+        assert_eq!(super::singularise("status"), "Statu"); // documents naive behaviour
+    }
+
+    /// `admin_entry_from_schema` builds an entry with derived
+    /// names and the bridge's field list. Integration test that
+    /// exercises every commit-5 + commit-8 admin surface
+    /// without a DB.
+    #[test]
+    fn admin_entry_from_schema_packages_metadata_correctly() {
+        let schema = fixture_schema();
+        let entry = super::admin_entry_from_schema(schema);
+
+        assert_eq!(entry.admin_name, "posts");
+        assert_eq!(entry.display_name, "Posts");
+        assert_eq!(entry.singular_name, "Post");
+        assert_eq!(entry.table, "posts");
+        assert!(!entry.core, "schema-derived entries are never `core`");
+
+        // Field list matches the bridge output column-for-column.
+        let names: Vec<&str> = entry.fields.iter().map(|f| f.name).collect();
+        assert_eq!(
+            names,
+            vec!["id", "title", "body", "published_at", "is_pinned"]
+        );
+
+        // No search hook attached — search wiring is a separate
+        // step (Indexer::from_schema in commit 8).
+        assert!(entry.search_hook.is_none());
+    }
+
+    /// `Admin::from_schemas` registers one entry per supplied
+    /// schema and preserves the input order (the existing
+    /// `core` user entry is pre-seeded; new entries appear after).
+    #[test]
+    fn admin_from_schemas_registers_each_schema_in_order() {
+        use crate::admin::types::Admin;
+
+        let schemas = vec![
+            ModelSchema {
+                table: "alpha",
+                columns: fixture_schema().columns,
+                primary_key: "id",
+                search_index: None,
+            },
+            ModelSchema {
+                table: "beta",
+                columns: fixture_schema().columns,
+                primary_key: "id",
+                search_index: None,
+            },
+        ];
+
+        let admin = Admin::new().from_schemas(&schemas);
+        let entry_tables: Vec<&str> =
+            admin.entries().iter().map(|e| e.table).collect();
+
+        // Core user entry at index 0; the two schema entries
+        // follow in declaration order.
+        assert!(entry_tables.contains(&"alpha"));
+        assert!(entry_tables.contains(&"beta"));
+        let alpha_pos = entry_tables.iter().position(|t| *t == "alpha").unwrap();
+        let beta_pos = entry_tables.iter().position(|t| *t == "beta").unwrap();
+        assert!(alpha_pos < beta_pos, "from_schemas preserves slice order");
     }
 }

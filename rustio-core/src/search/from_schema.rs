@@ -63,9 +63,12 @@
 //!   is its own answer to "no fields flagged"; the bridge honours
 //!   the empty list rather than synthesising defaults.
 
+use std::sync::Arc;
+
 use crate::contract::{HasSchema, ModelSchema};
 use crate::contract_validator::{validate_schema, ReportStatus, SchemaReport};
 use crate::orm::Db;
+use crate::search::{Indexer, MeiliClient};
 
 // ---------------------------------------------------------------------------
 // SearchConfig
@@ -228,6 +231,84 @@ pub fn enablement_from(schema: &ModelSchema, report: SchemaReport) -> SearchEnab
             Some(config) => SearchEnablement::Enabled { config, report },
             None => SearchEnablement::NotSearchable,
         },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14, commit 8 — runtime indexer integration
+// ---------------------------------------------------------------------------
+
+/// Validator-gated indexer construction. Combines:
+///
+/// 1. [`enable_search::<T>`] — produce a [`SearchEnablement`]
+///    by validating the schema.
+/// 2. When `Enabled`: configure the Meili index's
+///    searchable / filterable / sortable attributes
+///    (`MeiliClient::configure_index`).
+/// 3. Spawn an [`Indexer`] backed by `client`.
+///
+/// Returns `None` when:
+/// - The validator returned errors (`Disabled`) — fail-safe;
+///   indexing against a drifted schema produces malformed
+///   documents.
+/// - The schema isn't searchable (`NotSearchable`) — the
+///   contract opted out.
+///
+/// Errors during the `configure_index` call are logged and
+/// treated as non-fatal: the indexer is still spawned (so
+/// pending documents can queue up while Meili is reachable
+/// later), but a return of `Some(_)` does not guarantee the
+/// index settings are current. Operators should monitor logs
+/// for `meili configure_index` failures.
+pub async fn indexer_from_schema<T: HasSchema>(
+    client: Arc<MeiliClient>,
+    db: &Db,
+    capacity: usize,
+) -> Option<Indexer> {
+    let outcome = enable_search::<T>(db).await;
+    match outcome {
+        SearchEnablement::Enabled { config, report } => {
+            // Capture warnings so operators see them once at
+            // startup; errors don't reach this branch.
+            for w in &report.warnings {
+                log::warn!(
+                    "search: schema warning on `{}`: {}",
+                    report.table, w.message
+                );
+            }
+            let searchable: Vec<&str> = config.searchable_attributes.to_vec();
+            let filterable: Vec<&str> = config.filterable_attributes.to_vec();
+            let sortable: Vec<&str> = config.sortable_attributes.to_vec();
+            if let Err(e) = client
+                .configure_index(config.index, &searchable, &filterable, &sortable)
+                .await
+            {
+                log::warn!(
+                    "search: configure_index({}) failed at startup: {e} \
+                     (indexer still spawned; documents will queue)",
+                    config.index
+                );
+            } else {
+                log::info!(
+                    "search: index `{}` configured (searchable={} filterable={} sortable={})",
+                    config.index,
+                    searchable.len(),
+                    filterable.len(),
+                    sortable.len()
+                );
+            }
+            Some(Indexer::spawn(client, capacity))
+        }
+        SearchEnablement::Disabled { report } => {
+            log::warn!(
+                "search: disabled for `{}` — validator reported {} error(s); \
+                 indexer NOT spawned (fail-safe)",
+                report.table,
+                report.errors.len()
+            );
+            None
+        }
+        SearchEnablement::NotSearchable => None,
     }
 }
 
@@ -639,6 +720,35 @@ mod tests {
         assert_static_strs(&cfg.searchable_attributes);
         assert_static_strs(&cfg.filterable_attributes);
         assert_static_strs(&cfg.sortable_attributes);
+    }
+
+    // ----- Phase 14, commit 8 — runtime indexer integration -------------
+
+    /// `Indexer::from_schema` is exercised end-to-end by the
+    /// freelance example's runtime path; PG-gated tests cover
+    /// the live-DB branches. The pure / non-DB decision logic
+    /// is covered by `enablement_from` tests above. This test
+    /// pins the existence of the public symbol — a rename or
+    /// signature change fails to compile here rather than only
+    /// at downstream call sites.
+    #[test]
+    fn indexer_from_schema_symbol_visible() {
+        // Reference the function pointer to force symbol
+        // resolution. We never call it (would need a live DB
+        // + Meili); reaching this line proves the symbol is
+        // visible with the expected generic shape.
+        let _f = super::indexer_from_schema::<DummyHasSchema>;
+    }
+
+    // Stand-in `HasSchema` for the symbol-pinning test above.
+    struct DummyHasSchema;
+    impl crate::contract::HasSchema for DummyHasSchema {
+        const SCHEMA: ModelSchema = ModelSchema {
+            table: "dummy",
+            columns: &[],
+            primary_key: "id",
+            search_index: None,
+        };
     }
 
     /// `is_enabled` is the only branch that carries a config.
