@@ -107,16 +107,60 @@ pub fn field_type_for(col: &ModelColumn) -> FieldType {
 // Label resolution
 // ---------------------------------------------------------------------------
 
-/// Resolved admin label per the spec's fallback rule:
-/// `admin_label` when set, otherwise the column's name verbatim.
+/// Resolved admin label.
 ///
-/// Both branches return `&'static str` so the result drops
-/// directly into `AdminField.label` without a leak — explicit
-/// labels are already `&'static` (compile-time constants from
-/// the macro), and `col.name` is `&'static` by `ModelColumn`
-/// definition.
+/// Phase 15 / commit 9 polish: when no explicit
+/// `#[rustio(label = "...")]` is set, derive a friendly default
+/// rather than echoing the raw column name:
+///
+/// 1. Strip a trailing `_id` foreign-key suffix when the
+///    remainder is non-empty (`client_id` → `client` →
+///    `Client`). The bare `id` PK column is left intact.
+/// 2. Translate snake_case to Title Case
+///    (`full_name` → `Full Name`).
+///
+/// Explicit overrides win — projects that want lowercase or
+/// punctuated labels keep them by setting
+/// `#[rustio(label = "...")]`.
+///
+/// The derived string is `Box::leak`'d so the result stays
+/// `&'static str` for `AdminField.label`. One-time setup cost
+/// equivalent to a `static`.
 pub fn label_for(col: &ModelColumn) -> &'static str {
-    col.admin_label.unwrap_or(col.name)
+    if let Some(explicit) = col.admin_label {
+        return explicit;
+    }
+    let stem = strip_id_suffix(col.name);
+    let humanised = humanise_label(stem);
+    Box::leak(humanised.into_boxed_str())
+}
+
+/// Strip a trailing `_id` suffix only when the remainder is
+/// non-empty. The bare `id` PK column round-trips unchanged.
+fn strip_id_suffix(name: &str) -> &str {
+    name.strip_suffix("_id")
+        .filter(|s| !s.is_empty())
+        .unwrap_or(name)
+}
+
+/// snake_case → Title Case (every word capitalised). Mirrors
+/// `humanise_table` but kept separate so the column-label and
+/// table-name code paths can evolve independently.
+fn humanise_label(name: &str) -> std::string::String {
+    let mut out = std::string::String::with_capacity(name.len());
+    let mut next_upper = true;
+    for ch in name.chars() {
+        if ch == '_' {
+            out.push(' ');
+            next_upper = true;
+        } else if next_upper {
+            out.extend(ch.to_uppercase());
+            next_upper = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +201,49 @@ pub struct BridgedField {
     /// future renderer code consult it without altering
     /// `AdminField`'s shape.
     pub widget: Option<&'static str>,
+}
+
+impl BridgedField {
+    /// Phase 15 / commit 9 polish — effective form widget.
+    ///
+    /// Resolves to the first available answer:
+    /// 1. Explicit `admin_widget` from the source column.
+    /// 2. Name-based inference: `email` / `*_email` →
+    ///    `"email"`; `phone` / `tel` / `*_phone` / `*_tel` →
+    ///    `"tel"`; `url` / `*_url` / `*_uri` → `"url"`;
+    ///    `password` / `passwd` / `*_password` →
+    ///    `"password"`.
+    /// 3. `None` — the renderer falls back to
+    ///    `FieldType.widget()` (the existing default).
+    ///
+    /// Inference is intentionally conservative: only column
+    /// names that are *unambiguous* matches return a hint,
+    /// to avoid e.g. a column called `description` getting
+    /// "url" because someone embedded a URL in their schema
+    /// docs.
+    pub fn effective_widget(&self) -> Option<&'static str> {
+        if let Some(explicit) = self.widget {
+            return Some(explicit);
+        }
+        let name = self.field.name;
+        if name == "email" || name.ends_with("_email") {
+            return Some("email");
+        }
+        if name == "phone"
+            || name == "tel"
+            || name.ends_with("_phone")
+            || name.ends_with("_tel")
+        {
+            return Some("tel");
+        }
+        if name == "url" || name.ends_with("_url") || name.ends_with("_uri") {
+            return Some("url");
+        }
+        if name == "password" || name == "passwd" || name.ends_with("_password") {
+            return Some("password");
+        }
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -775,13 +862,25 @@ fn humanise_table(name: &str) -> std::string::String {
     out
 }
 
-/// `"projects"` → `"Project"`. Strips a trailing `s` after
-/// humanising. English-naive — irregular plurals (people,
-/// children, indices) round-trip wrongly. A future
-/// `#[rustio(singular = "...")]` attribute is the planned
-/// override.
+/// `"projects"` → `"Project"`. Phase 15 / commit 9 — handles
+/// the common English-plural endings:
+///
+/// - `-ies` → `-y`   (`companies` → `Company`)
+/// - `-s`   → strip  (`projects` → `Project`)
+///
+/// Irregular plurals (people, children, indices) round-trip
+/// wrongly; words that aren't actually plurals but happen to
+/// end in `s` (status, virus, news) come out shortened. A
+/// future `#[rustio(singular = "...")]` attribute is the
+/// planned override path; until then projects with awkward
+/// names should set the attribute manually.
 fn singularise(name: &str) -> std::string::String {
     let h = humanise_table(name);
+    if let Some(stripped) = h.strip_suffix("ies") {
+        if !stripped.is_empty() {
+            return format!("{stripped}y");
+        }
+    }
     if let Some(stripped) = h.strip_suffix('s') {
         if !stripped.is_empty() {
             return stripped.to_string();
@@ -967,23 +1066,73 @@ mod tests {
     }
 
     /// Spec gate: "label fallback works". When `admin_label`
-    /// is set, the bridge uses it verbatim; when `None`, the
-    /// fallback is the column's name string (per spec table:
-    /// "fallback = name").
+    /// is set, the bridge uses it verbatim; when `None`,
+    /// Phase 15 / commit 9 derives a friendly default
+    /// (humanise + strip `_id` suffix).
     #[test]
-    fn label_fallback_uses_column_name_when_no_override() {
+    fn label_fallback_humanises_column_name_when_no_override() {
         let schema = fixture_schema();
         let bridged = bridged_fields_from_schema(&schema);
 
         // Override case: `title` had `admin_label = Some("Headline")`.
         assert_eq!(bridged[1].field.label, "Headline");
 
-        // Fallback case: `id`, `body`, `published_at`, `is_pinned`
-        // all had `admin_label = None`.
-        assert_eq!(bridged[0].field.label, "id");
-        assert_eq!(bridged[2].field.label, "body");
-        assert_eq!(bridged[3].field.label, "published_at");
-        assert_eq!(bridged[4].field.label, "is_pinned");
+        // Fallback case (commit 9 polish): humanised Title Case.
+        assert_eq!(bridged[0].field.label, "Id");
+        assert_eq!(bridged[2].field.label, "Body");
+        assert_eq!(bridged[3].field.label, "Published At");
+        assert_eq!(bridged[4].field.label, "Is Pinned");
+    }
+
+    /// Phase 15 / commit 9 — `_id` foreign-key suffix is
+    /// stripped during label derivation so `client_id` reads
+    /// as "Client" in the admin UI rather than "Client Id".
+    /// The bare `id` PK column round-trips unchanged
+    /// (`"id"` → `"Id"`).
+    #[test]
+    fn label_fallback_strips_id_suffix_for_foreign_keys() {
+        static COLS: &[ModelColumn] = &[
+            ModelColumn {
+                name: "id",
+                sql_decl: "BIGSERIAL PRIMARY KEY",
+                rust_type: RustType::I64,
+                nullable: false,
+                primary_key: true,
+                flags: SchemaFlags::empty(),
+                admin_label: None,
+                admin_widget: None,
+            },
+            ModelColumn {
+                name: "client_id",
+                sql_decl: "BIGINT NOT NULL",
+                rust_type: RustType::I64,
+                nullable: false,
+                primary_key: false,
+                flags: SchemaFlags::empty(),
+                admin_label: None,
+                admin_widget: None,
+            },
+            ModelColumn {
+                name: "primary_address_id",
+                sql_decl: "BIGINT",
+                rust_type: RustType::I64,
+                nullable: true,
+                primary_key: false,
+                flags: SchemaFlags::empty(),
+                admin_label: None,
+                admin_widget: None,
+            },
+        ];
+        let schema = ModelSchema {
+            table: "scratch",
+            columns: COLS,
+            primary_key: "id",
+            search_index: None,
+        };
+        let bridged = bridged_fields_from_schema(&schema);
+        assert_eq!(bridged[0].field.label, "Id"); // bare id intact
+        assert_eq!(bridged[1].field.label, "Client"); // _id stripped
+        assert_eq!(bridged[2].field.label, "Primary Address"); // _id stripped + humanised
     }
 
     /// Spec gate: "widget override works". `admin_widget`
@@ -1190,14 +1339,91 @@ mod tests {
         assert_eq!(super::humanise_table("user_profiles"), "User Profiles");
     }
 
-    /// Naive singular: strips a trailing `s` after humanising.
+    /// Phase 15 / commit 9 singular rules: handles `-ies` →
+    /// `-y` and trailing `-s`. Words that aren't actually
+    /// plural but happen to end in `s` (status, virus) round-
+    /// trip wrongly; these need an explicit override.
     #[test]
-    fn singularise_strips_trailing_s() {
+    fn singularise_handles_common_plural_endings() {
         assert_eq!(super::singularise("projects"), "Project");
         assert_eq!(super::singularise("clients"), "Client");
         assert_eq!(super::singularise("invoices"), "Invoice");
-        // Single-word table without trailing `s` round-trips.
-        assert_eq!(super::singularise("status"), "Statu"); // documents naive behaviour
+        // -ies → -y (companies → Company).
+        assert_eq!(super::singularise("companies"), "Company");
+        assert_eq!(super::singularise("categories"), "Category");
+        // Single-word non-plural ending in `s` gets shortened —
+        // documents the known limitation.
+        assert_eq!(super::singularise("status"), "Statu");
+    }
+
+    /// Phase 15 / commit 9 — `effective_widget` resolution.
+    #[test]
+    fn effective_widget_returns_explicit_override_when_present() {
+        let schema = fixture_schema();
+        let bridged = bridged_fields_from_schema(&schema);
+        // `body` has `admin_widget = Some("textarea")`.
+        let body = bridged.iter().find(|b| b.field.name == "body").unwrap();
+        assert_eq!(body.effective_widget(), Some("textarea"));
+    }
+
+    /// Phase 15 / commit 9 — when no explicit widget, name-
+    /// based inference kicks in. Conservative: only column
+    /// names that unambiguously match a recognised pattern
+    /// produce a hint.
+    #[test]
+    fn effective_widget_infers_from_recognised_column_names() {
+        fn col(name: &'static str) -> ModelColumn {
+            ModelColumn {
+                name,
+                sql_decl: "TEXT NOT NULL",
+                rust_type: RustType::String,
+                nullable: false,
+                primary_key: false,
+                flags: SchemaFlags::empty(),
+                admin_label: None,
+                admin_widget: None,
+            }
+        }
+        let cases = [
+            ("email", Some("email")),
+            ("contact_email", Some("email")),
+            ("phone", Some("tel")),
+            ("home_phone", Some("tel")),
+            ("tel", Some("tel")),
+            ("url", Some("url")),
+            ("homepage_url", Some("url")),
+            ("api_uri", Some("url")),
+            ("password", Some("password")),
+            ("admin_password", Some("password")),
+            // Negatives — ambiguous names don't infer.
+            ("description", None),
+            ("notes", None),
+            ("title", None),
+        ];
+        for (name, expected) in cases {
+            let bf = BridgedField {
+                field: AdminField {
+                    name,
+                    label: name,
+                    field_type: FieldType::String,
+                    editable: true,
+                    relation: None,
+                    choices: None,
+                },
+                primary_key: false,
+                searchable: false,
+                filterable: false,
+                sortable: false,
+                readonly: false,
+                widget: None,
+            };
+            assert_eq!(
+                bf.effective_widget(),
+                expected,
+                "name-based inference for `{name}`"
+            );
+            let _ = col(name); // suppress unused warning if cases shrink
+        }
     }
 
     /// `admin_entry_from_schema` builds an entry with derived

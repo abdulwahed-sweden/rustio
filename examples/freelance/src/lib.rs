@@ -287,8 +287,9 @@ mod tests {
 
         // Explicit label override on `name`.
         assert_eq!(by_name["name"].field.label, "Client name");
-        // Fallback (no override) on `email` — label = column name verbatim.
-        assert_eq!(by_name["email"].field.label, "email");
+        // Fallback (no override) on `email` — Phase 15 / commit 9
+        // humanises to Title Case.
+        assert_eq!(by_name["email"].field.label, "Email");
     }
 
     /// Project's `description` column carries the `widget =

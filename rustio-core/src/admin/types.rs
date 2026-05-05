@@ -479,6 +479,7 @@ impl Admin {
         T: crate::contract::HasSchema,
     {
         let entry = crate::admin::from_schema::admin_entry_from_type::<T>();
+        log_admin_registration(&entry);
         self.push_entry(entry)
     }
 
@@ -490,6 +491,7 @@ impl Admin {
     pub fn from_schemas(mut self, schemas: &[crate::contract::ModelSchema]) -> Self {
         for schema in schemas {
             let entry = crate::admin::from_schema::admin_entry_from_schema(schema.clone());
+            log_admin_registration(&entry);
             self.entries.push(entry);
         }
         self
@@ -557,6 +559,21 @@ impl Admin {
         }
         Ok(())
     }
+}
+
+/// Phase 15 / commit 9 polish — log a one-line registration
+/// summary when a schema-driven entry is added to the admin.
+/// Surfaces what the operator can expect without scrolling
+/// the bridge's internal logs.
+fn log_admin_registration(entry: &AdminEntry) {
+    let editable = entry.fields.iter().filter(|f| f.editable).count();
+    log::info!(
+        "admin: registered `{}` ({} fields, {} editable, table=`{}`)",
+        entry.admin_name,
+        entry.fields.len(),
+        editable,
+        entry.table
+    );
 }
 
 // Concrete implementation of AdminOps for a given M.

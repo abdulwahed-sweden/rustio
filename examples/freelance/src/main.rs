@@ -56,6 +56,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // ----- Step 1 — Connect ------------------------------------------------
 
+    // Phase 15 / commit 9 — startup banner. Lets an operator
+    // see at a glance which models are wired and which
+    // subsystems are about to come online.
+    print_startup_banner();
+
     let db_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://postgres:dev@localhost/rustio_freelance".into());
     log::info!("connecting to {}", redacted(&db_url));
@@ -158,6 +163,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // builder ready" so the runtime path stays minimal — a
     // future commit will add a one-line "serve schema-driven
     // admin" helper.
+
+    // Phase 15 / commit 9 — final readiness summary.
+    print_readiness_summary(&admin, &schemas);
 
     log::info!("freelance bridges initialised — pipeline complete.");
     if std::env::var("RUSTIO_FREELANCE_HOLD").ok().as_deref() == Some("1") {
@@ -273,6 +281,54 @@ fn kind_str(k: rustio_core::contract_validator::IssueKind) -> &'static str {
         QueryFailed => "query_failed",
         _ => "unknown",
     }
+}
+
+// ---------------------------------------------------------------------------
+// Startup / readiness banners (Phase 15 / commit 9)
+// ---------------------------------------------------------------------------
+
+fn print_startup_banner() {
+    log::info!("┌─────────────────────────────────────────────────┐");
+    log::info!("│ RustIO — Phase 14/15 freelance demo              │");
+    log::info!("│ Schema → Validator → Doctor → Admin → Search     │");
+    log::info!("└─────────────────────────────────────────────────┘");
+    log::info!(
+        "models: {} ({}, {}, {})",
+        3,
+        Client::SCHEMA.table,
+        Project::SCHEMA.table,
+        Invoice::SCHEMA.table
+    );
+}
+
+fn print_readiness_summary(
+    admin: &rustio_core::admin::Admin,
+    schemas: &[rustio_core::contract::ModelSchema],
+) {
+    let total_fields: usize = admin.entries().iter().map(|e| e.fields.len()).sum();
+    let editable: usize = admin
+        .entries()
+        .iter()
+        .map(|e| e.fields.iter().filter(|f| f.editable).count())
+        .sum();
+    let searchable_models = schemas
+        .iter()
+        .filter(|s| s.search_index.is_some())
+        .count();
+
+    log::info!("─────────── system readiness ───────────");
+    log::info!(
+        "admin:    {} entries / {} fields ({} editable)",
+        admin.entries().len(),
+        total_fields,
+        editable
+    );
+    log::info!(
+        "search:   {}/{} models declared searchable (auto-derived from `searchable` flag)",
+        searchable_models,
+        schemas.len()
+    );
+    log::info!("───────────────────────────────────────");
 }
 
 /// Hide credentials from the connection-string log line.
