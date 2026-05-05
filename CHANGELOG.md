@@ -1,5 +1,136 @@
 # Changelog
 
+## [1.9.0] - 2026-05-05
+
+The schema contract system. One `#[derive(RustioModel)]` per
+struct now drives the admin UI, search indexing, runtime DB
+validation, doctor CLI, and per-column behaviour — without a
+manual `AdminModel` impl, `Searchable` impl, `Model` impl, or
+any glue. Phase 14 builds the contract + bridges + runtime
+integration; Phase 15 polishes the developer experience on top.
+
+The classic v1.x flow (manual `AdminModel` / `Searchable` /
+`Model`) is preserved verbatim. Both flows compose on the same
+`Admin` builder — no breaking changes.
+
+### Added
+
+- **Schema contract types** (`rustio_core::contract`,
+  Phase 14 commit 3 base extended through this release).
+  `RustType`, `ModelColumn`, `ModelSchema`, `SchemaFlags`, plus
+  the `HasSchema` trait. Five non-negotiable type rules
+  (`i64` for IDs, `DateTime<Utc>` for timestamps, `Decimal` for
+  money, `JSONB` only, `TEXT` default for strings) encoded as
+  `is_compatible_with` lookups against PG `data_type` /
+  `udt_name`.
+- **Runtime validator** (`rustio_core::contract_validator`,
+  commit 3). `validate_schema::<T>(&Db)` and
+  `validate_all(&db, &[&schema])` issue read-only `SELECT`s
+  against `information_schema.columns` + `key_column_usage` and
+  return a `SchemaReport` of typed `SchemaIssue`s
+  (`MissingTable`, `MissingColumn`, `TypeMismatch`,
+  `NullabilityMismatch`, `WrongPrimaryKey`, `ExtraDbColumn`,
+  `QueryFailed`).
+- **Doctor CLI** (`rustio doctor --check-schema [--json]`,
+  commit 4). Spawns the project binary with a magic flag
+  (`--rustio-doctor-schema-check`), captures the JSON output,
+  renders as human-readable or passes through. Exit `0` on
+  Ok / Warning, `1` on errors. Wire-contract tests on both
+  sides lock the magic flag literals against silent drift.
+  Project hook: `contract_doctor::maybe_handle_subprocess(&db,
+  &schemas)`.
+- **Admin bridge** (`rustio_core::admin::from_schema`,
+  commit 5). `bridged_fields_from_schema` + `BridgedField`
+  side-channel struct expose every column flag
+  (`searchable`, `filterable`, `sortable`, `readonly`,
+  `widget`, `primary_key`) without modifying the existing
+  `AdminField` shape. Existing manual `AdminModel` impls are
+  untouched.
+- **Search bridge** (`rustio_core::search::from_schema`,
+  commit 6). `SearchConfig` derived from `ModelSchema`;
+  `SearchEnablement` (`NotSearchable` / `Disabled` / `Enabled`)
+  resolved by `enable_search::<T>(&db)` or the pure
+  `enablement_from(&schema, report)`. Validator gate is
+  fail-safe: `Error` → search refused with diagnostics;
+  `Warning` and `Ok` enable search; `search_index = None`
+  short-circuits to `NotSearchable`.
+- **Freelance showcase** (`examples/freelance/`, commit 7
+  base, kept current through commit 9). Three realistic
+  models — `Client`, `Project`, `Invoice` — defined entirely
+  with `#[derive(RustioModel)]`. Self-contained workspace
+  (separate `[workspace]` block) so the parent gates stay
+  unaffected. Three migrations + a startup pipeline
+  demonstration + 10 tests covering every commit's behaviour.
+- **Admin runtime** (`Admin::from_schema::<T>` /
+  `Admin::from_schemas(&[ModelSchema])`, commit 8). Generic
+  `SchemaOps` provides full CRUD via raw SQL using only the
+  `ModelSchema`'s column metadata. List / find / create /
+  update / delete / object_label dispatch by `RustType`. SQL
+  identifiers come exclusively from `&'static str` schema
+  fields — no path for HTTP input to inject identifiers.
+- **Search runtime**
+  (`search::from_schema::indexer_from_schema::<T>`, commit 8).
+  Validator → `MeiliClient::configure_index` → `Indexer::spawn`
+  in one async call. Returns `Option<Indexer>`; `None` on
+  validator errors or `NotSearchable`.
+- **Macro auto-derives `search_index`** (commit 8). When any
+  field declares `#[rustio(... searchable ...)]`, the emitted
+  `ModelSchema` carries `search_index = Some(table)`
+  automatically. Eliminates the per-model
+  `with_search_index(...)` workaround the freelance example
+  used in commit 7.
+- **UX polish** (Phase 15 / commit 9). `label_for` humanises
+  column names to Title Case and strips trailing `_id` foreign-
+  key suffixes (`client_id` → `"Client"`, `published_at` →
+  `"Published At"`). `BridgedField::effective_widget()`
+  performs conservative name-based widget inference (email /
+  phone / url / password) on top of explicit overrides.
+  `singularise` handles `-ies → -y` (`companies` →
+  `"Company"`). `Admin::from_schemas` logs each registration
+  one-line. The freelance example prints a startup banner +
+  readiness summary.
+
+### Changed
+
+- **`rustio_core::admin::Admin` gained two builders**
+  (`from_schema::<T>`, `from_schemas(&[ModelSchema])`).
+  Existing `Admin::model::<M>()` /
+  `Admin::model_with_search::<M>(...)` still work unchanged;
+  the two flows compose on the same `Admin` instance.
+- **`rustio-macros`'s `RustioModel`** now emits
+  `with_search_index(table)` when any column is `searchable`.
+  Previous behaviour (no auto-`search_index`) was opaque to
+  downstream callers; the new behaviour matches what every
+  consumer would do manually.
+- **`rustio-core/tests/macro_rustio_model.rs`** updated to
+  expect the auto-derived `search_index` per the new macro
+  behaviour.
+
+### Notes
+
+- **No breaking changes.** Every v1.x API still works. The
+  schema-driven flow is purely additive — projects can mix
+  manual `AdminModel` impls with schema-driven entries on the
+  same builder.
+- **Test surface grew from 402 (v1.1.1) → 501 lib + 109 cli
+  = 610 across the workspace.** PG-gated integration tests
+  (`RUSTIO_TEST_DB=1 cargo test -- --ignored`) still 46 of
+  them, all green.
+- **No new dependencies** were added across all seven feature
+  commits. The schema-driven runtime reuses
+  `sqlx`, `chrono`, `uuid`, `serde_json`, `log` — all already
+  in the workspace.
+- **Forbidden modules respected** through every commit:
+  `rustio-core/src/contract.rs`,
+  `rustio-core/src/contract_validator.rs`,
+  `rustio-core/src/contract_doctor.rs` are each frozen after
+  the commit that introduced them, and the validator's logic
+  was never touched after commit 3.
+- **Single-binary deploy contract preserved.** No new asset
+  pipeline, no Tailwind rebuild for this release. Schema-
+  driven CRUD is pure SQL string building; SchemaOps holds
+  no template state.
+
 ## [1.8.2] - 2026-05-04
 
 Admin chrome theming. Driven by the v1.8.1 vetcare review: the
