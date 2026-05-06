@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.10.0] - 2026-05-06
 
 The admin chrome design system **v2** — every page that ships with
 the framework picks up a dramatically cleaner default look without

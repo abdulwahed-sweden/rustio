@@ -295,7 +295,7 @@ Inter font ships as four self-hosted woff2 weights under
 a path-wildcard, so the binary can't be tricked into serving
 arbitrary files from the assets dir).
 
-### Admin chrome v2 (Unreleased)
+### Admin chrome v2 (1.10.0)
 
 The framework's default `admin/base.html`, `admin/list.html`,
 `admin/index.html`, and `admin/user_view.html` ship a refreshed

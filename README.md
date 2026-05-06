@@ -1,6 +1,6 @@
 # RustIO
 
-[![release](https://img.shields.io/badge/release-v1.9.0-brightgreen)](https://github.com/abdulwahed-sweden/rustio/releases/tag/v1.9.0)
+[![release](https://img.shields.io/badge/release-v1.10.0-brightgreen)](https://github.com/abdulwahed-sweden/rustio/releases/tag/v1.10.0)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://www.rust-lang.org)
 [![schema](https://img.shields.io/badge/schema-contract-informational)](docs/architecture.md)
@@ -372,7 +372,7 @@ single accent value at render time via `color-mix` — no extra
 config, no Tailwind rebuild. See `docs/architecture.md → Theming`
 for the layered model.
 
-### Admin chrome v2 (Unreleased)
+### Admin chrome v2 (1.10.0)
 
 Every project that uses RustIO inherits a refreshed admin design
 system out of the box — no per-project copy required.
