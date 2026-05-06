@@ -49,6 +49,15 @@ any per-project work. Existing template overrides and the
   #faf8ff`) painted only inside `<form> .card-body` so input
   fields visibly float above a faintly tinted plane. Inputs
   themselves are forced back to pure white.
+- **Polished landing page** for new projects
+  (`rustio-cli` → `home_html()`). Self-contained, single-file
+  HTML matching the v2 admin chrome's design language: Geist +
+  Geist Mono fonts, Zinc + Cobalt + Violet palette, hero card
+  with cobalt status pulse, three-up feature grid, "First run"
+  setup card with violet decorative stripe and `rustio user
+  create` hint, footer with Admin / Documentation / Changelog
+  links. Replaces the previous bare `<style>system-ui</style>`
+  placeholder. Visible at `/` after `rustio startproject`.
 - **Secondary accent token.** `--rio-accent-2 = #8b5cf6` (violet)
   + `--rio-accent-2-bg` / `--rio-accent-2-border` / `--rio-form-bg`.
   Strict role separation: cobalt for actions (buttons, links,

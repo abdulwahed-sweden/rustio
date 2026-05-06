@@ -3303,46 +3303,200 @@ context = ".ai/context.md"
         )
     }
 
-    /// Phase 12/b — `templates/home.html` is now a build-time
-    /// substitution: the project name is interpolated into the file
-    /// at scaffold time, not at request time. The previous
-    /// `{{ project }}` minijinja variable is gone, and CSS braces
-    /// are doubled so `format!()` treats them as literals.
+    /// Phase 12/b + admin chrome v2 — `templates/home.html` is built
+    /// at scaffold time with the project name interpolated via
+    /// `format!()`. CSS braces are doubled so they pass through
+    /// as literals. The page is a self-contained landing — no
+    /// `extends "admin/base.html"`, no `/static/admin.css` dep —
+    /// so it stays correct even if the project later overrides the
+    /// admin chrome. The design language matches the v2 admin:
+    /// Geist + Geist Mono fonts, Zinc neutrals, Cobalt + Violet
+    /// accents with strict role separation (Cobalt = action,
+    /// Violet = decoration).
     fn home_html(name: &str) -> String {
+        let initial = name.chars().next().map(|c| c.to_ascii_uppercase()).unwrap_or('R');
         format!(
             r#"<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>{name}</title>
-  <!--
-    RustIO Project Page
-    This is your page. You can edit freely.
-    See: .ai/context.md
-  -->
-  <style>
-    body {{ font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 3rem auto; padding: 0 1.5rem; line-height: 1.6; color: #1a1a1a; }}
-    h1 {{ margin-bottom: 0.25rem; }}
-    .lede {{ color: #6b7280; margin-top: 0; }}
-    a {{ color: #b8431a; text-decoration: none; }}
-    a:hover {{ text-decoration: underline; }}
-    pre {{ background: #f4f4f5; padding: 0.75rem 1rem; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
-    ul {{ list-style: none; padding: 0; }}
-    li {{ margin: 0.25rem 0; }}
-  </style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{name} · powered by RustIO</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        :root {{
+            --bg:           #fafafa;
+            --surface:      #ffffff;
+            --surface-soft: #f4f4f5;
+            --side:         #f4f6fa;
+            --border:       #e4e4e7;
+            --border-strong:#d4d4d8;
+            --text:         #18181b;
+            --text-strong:  #09090b;
+            --text-muted:   #52525b;
+            --text-faint:   #71717a;
+            --accent:       #2563eb;
+            --accent-bg:    #eff6ff;
+            --accent-2:     #8b5cf6;
+            --shadow-sm:    0 1px 3px rgba(24, 24, 27, 0.06), 0 1px 2px rgba(24, 24, 27, 0.04);
+            --shadow-md:    0 4px 8px rgba(24, 24, 27, 0.05), 0 2px 4px rgba(24, 24, 27, 0.04);
+        }}
+        * {{ box-sizing: border-box; }}
+        html, body {{
+            margin: 0; padding: 0;
+            background: var(--bg); color: var(--text);
+            font-family: 'Geist', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 16px; line-height: 1.55;
+            font-feature-settings: "ss01", "cv11";
+            letter-spacing: -0.005em;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }}
+        a {{ color: var(--accent); text-decoration: none; }}
+        a:hover {{ text-decoration: underline; }}
+        code, kbd, pre {{ font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }}
+
+        .page {{ max-width: 1080px; margin: 0 auto; padding: 56px 32px 80px; }}
+        @media (max-width: 720px) {{ .page {{ padding: 40px 20px 48px; }} }}
+
+        .topbar {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 56px; }}
+        .brand {{ display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: var(--text-strong); letter-spacing: -0.014em; }}
+        .brand-mark {{ width: 32px; height: 32px; background: var(--accent); color: #ffffff; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; font-family: 'Geist Mono', monospace; }}
+        .topbar nav {{ display: flex; gap: 4px; }}
+        .topbar nav a {{ color: var(--text-muted); font-size: 14px; font-weight: 500; padding: 8px 12px; border-radius: 8px; }}
+        .topbar nav a:hover {{ color: var(--text); background: var(--surface-soft); text-decoration: none; }}
+
+        .hero {{ position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-sm); padding: 56px 48px; margin-bottom: 32px; overflow: hidden; }}
+        .hero::after {{ content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse 60% 70% at 100% 0%, rgba(37, 99, 235, 0.06), transparent 60%), radial-gradient(ellipse 60% 80% at 0% 100%, rgba(139, 92, 246, 0.05), transparent 60%); }}
+        .hero__inner {{ position: relative; z-index: 1; }}
+        .hero__eyebrow {{ display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.10em; color: var(--accent-2); margin-bottom: 18px; }}
+        .hero__pulse {{ width: 8px; height: 8px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); animation: pulse 2.4s ease-out infinite; }}
+        @keyframes pulse {{ 0% {{ box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }} 70% {{ box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); }} 100% {{ box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }} }}
+        .hero h1 {{ font-size: 48px; line-height: 1.1; font-weight: 700; letter-spacing: -0.028em; color: var(--text-strong); margin: 0 0 16px; }}
+        @media (max-width: 720px) {{ .hero h1 {{ font-size: 36px; }} }}
+        .hero h1 .accent {{ color: var(--accent); }}
+        .hero__lede {{ font-size: 18px; line-height: 1.55; color: var(--text-muted); margin: 0 0 32px; max-width: 640px; }}
+        .hero__cta {{ display: flex; gap: 12px; flex-wrap: wrap; }}
+
+        .btn {{ display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px; border-radius: 10px; font-size: 15px; font-weight: 600; font-family: inherit; text-decoration: none; transition: all 120ms ease; cursor: pointer; }}
+        .btn:hover {{ text-decoration: none; }}
+        .btn--primary {{ background: var(--accent); color: #ffffff; border: 1px solid var(--accent); box-shadow: 0 1px 2px rgba(37, 99, 235, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.10); }}
+        .btn--primary:hover {{ background: #1d4ed8; border-color: #1d4ed8; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.28); }}
+        .btn--secondary {{ background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04); }}
+        .btn--secondary:hover {{ background: var(--surface-soft); border-color: var(--text-faint); }}
+
+        .features {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }}
+        @media (max-width: 880px) {{ .features {{ grid-template-columns: 1fr; }} }}
+        .feature {{ background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-sm); transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease; }}
+        .feature:hover {{ transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-strong); }}
+        .feature__icon {{ width: 40px; height: 40px; background: var(--accent-bg); color: var(--accent); border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px; }}
+        .feature h3 {{ font-size: 16px; font-weight: 600; color: var(--text); margin: 0 0 6px; letter-spacing: -0.008em; }}
+        .feature p {{ font-size: 14.5px; color: var(--text-muted); line-height: 1.55; margin: 0; }}
+
+        .setup-card {{ background: var(--side); border: 1px solid var(--border); border-radius: 12px; padding: 24px 28px; margin-bottom: 28px; position: relative; }}
+        .setup-card::before {{ content: ""; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; border-radius: 12px 0 0 12px; background: var(--accent-2); }}
+        .setup-card__head {{ display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-2); margin-bottom: 10px; }}
+        .setup-card h3 {{ font-size: 16px; font-weight: 600; color: var(--text); margin: 0 0 6px; }}
+        .setup-card p {{ font-size: 14.5px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.55; }}
+        .setup-card pre {{ background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin: 0; overflow-x: auto; font-size: 13.5px; line-height: 1.5; color: var(--text); }}
+        .setup-card pre code {{ color: var(--accent-2); font-weight: 600; }}
+
+        footer {{ margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-faint); }}
+        footer .links {{ display: flex; gap: 18px; flex-wrap: wrap; }}
+        footer .links a {{ color: var(--text-muted); font-weight: 500; }}
+        footer .links a:hover {{ color: var(--text); text-decoration: none; }}
+    </style>
 </head>
 <body>
-  <h1>Welcome to {name}</h1>
-  <p class="lede">Your RustIO project is running.</p>
+<div class="page">
 
-  <p>Get started:</p>
-  <ul>
-    <li>→ <a href="/admin">/admin</a></li>
-    <li>→ <a href="https://github.com/abdulwahed-sweden/rustio">https://github.com/abdulwahed-sweden/rustio</a></li>
-  </ul>
+    <header class="topbar">
+        <a href="/" class="brand">
+            <span class="brand-mark">{initial}</span>
+            {name}
+        </a>
+        <nav>
+            <a href="/admin">Admin</a>
+            <a href="https://github.com/abdulwahed-sweden/rustio" target="_blank" rel="noopener">RustIO</a>
+        </nav>
+    </header>
 
-  <p>No admin user yet?</p>
-  <pre><code>rustio user create --email admin@{name}.local</code></pre>
+    <section class="hero">
+        <div class="hero__inner">
+            <span class="hero__eyebrow">
+                <span class="hero__pulse" aria-hidden="true"></span>
+                Powered by RustIO
+            </span>
+            <h1>Welcome to {name}</h1>
+            <p class="hero__lede">
+                Your RustIO project is up and running. The admin is wired,
+                migrations are applied, and the schema contract is enforced
+                end-to-end. Edit <code>templates/home.html</code> to make this
+                page your own.
+            </p>
+            <div class="hero__cta">
+                <a href="/admin" class="btn btn--primary">
+                    Open admin
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                </a>
+                <a href="https://github.com/abdulwahed-sweden/rustio" class="btn btn--secondary" target="_blank" rel="noopener">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.3-3.2-.1-.4-.6-1.6.1-3.3 0 0 1-.3 3.4 1.2a11.5 11.5 0 0 1 6.2 0c2.4-1.6 3.4-1.2 3.4-1.2.7 1.7.2 2.9.1 3.3.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+                    Source on GitHub
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <section class="features">
+        <article class="feature">
+            <div class="feature__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            </div>
+            <h3>Admin chrome v2</h3>
+            <p>Smart filter bar, redesigned dashboard, single-column user detail, column-priority defaults — out of the box.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+            </div>
+            <h3>Schema-driven contract</h3>
+            <p>One <code>#[derive(RustioModel)]</code> drives admin UI, search, validation, doctor CLI, and migrations.</p>
+        </article>
+
+        <article class="feature">
+            <div class="feature__icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3>Strict by construction</h3>
+            <p>Role + permission grammar, CSRF, rate-limit, security headers, gzip, and the audit log all built in.</p>
+        </article>
+    </section>
+
+    <section class="setup-card">
+        <div class="setup-card__head">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            First run
+        </div>
+        <h3>No admin user yet?</h3>
+        <p>Create one from the CLI in another terminal:</p>
+        <pre><code>rustio user create --email admin@{name}.local</code></pre>
+    </section>
+
+    <footer>
+        <div>Powered by RustIO &middot; edit <code>templates/home.html</code></div>
+        <div class="links">
+            <a href="/admin">Admin</a>
+            <a href="https://github.com/abdulwahed-sweden/rustio" target="_blank" rel="noopener">Documentation</a>
+            <a href="https://github.com/abdulwahed-sweden/rustio/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        </div>
+    </footer>
+
+</div>
 </body>
 </html>
 "#

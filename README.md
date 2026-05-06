@@ -372,6 +372,15 @@ single accent value at render time via `color-mix` — no extra
 config, no Tailwind rebuild. See `docs/architecture.md → Theming`
 for the layered model.
 
+### Polished landing page (1.10.0)
+
+`rustio startproject foo` now writes a self-contained
+`templates/home.html` matching the v2 admin chrome's design
+language — Geist + Geist Mono fonts, hero card with cobalt
+status pulse, three-up feature grid, "First run" setup card with
+the `rustio user create` hint. Visible at `/` from the moment
+the server boots; edit freely.
+
 ### Admin chrome v2 (1.10.0)
 
 Every project that uses RustIO inherits a refreshed admin design
