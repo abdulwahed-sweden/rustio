@@ -1,5 +1,103 @@
 # Changelog
 
+## [Unreleased]
+
+The admin chrome design system **v2** — every page that ships with
+the framework picks up a dramatically cleaner default look without
+any per-project work. Existing template overrides and the
+`AdminTheme` re-skin path keep working unchanged.
+
+### Added
+
+- **v2 design system** (`assets/templates/admin/base.html`). Geist
+  + Geist Mono fonts via Google Fonts; Zinc / Cobalt / Violet
+  token palette; layered shadow scale; 16-px-anchored type scale;
+  consolidated card / form / table / sidebar / topbar styling.
+  New CSS primitives: `.data-card`, `.form-card`,
+  `.card-section--inset`, `.filter-bar`, `.filter-chip`,
+  `.dropdown__menu`, `.model-card`, `.stat-card`, `.kbd-card`,
+  `.env-pill`.
+- **Smart filter bar** on every list page (`admin/list.html`).
+  Inset search input with `/` keyboard shortcut, Sort dropdown,
+  Add-filter dropdown (auto-populates from rendered rows for
+  `status` text columns), Columns dropdown (toggles column
+  visibility per-model, persisted to `localStorage`),
+  active-filter chip row with Clear-all.
+- **Column-priority defaults** per built-in model. `id` is hidden
+  by default; each model's remaining columns bucket into primary
+  (always shown) and tertiary (toggle-on via the Columns
+  dropdown). Cells get `data-col` / `data-kind` attributes so
+  future tooling can drive column behaviour declaratively.
+- **Redesigned dashboard** (`admin/index.html`). Hero greeting
+  card with date eyebrow, JS time-of-day greeting, friendly-name
+  derivation from email, "All systems operational" pulse. Single
+  unified data-models grid with `<article class="model-card">`
+  items that lazy-fetch their row count from `/admin/<model>/`.
+  Recent-activity card with empty state. System info card with
+  Environment + Database + Total-records.
+- **Single-column user-detail** (`admin/user_view.html`). 960-px
+  max-width card with `← Users` back-link, header (name + role +
+  Active badge + Edit), one-line meta (`email · N sessions · M
+  events · last seen X`), tab strip with cobalt active state,
+  2-column profile grid with violet decorative underline beneath
+  each section heading.
+- **Sidebar v2 treatment.** Cool-gray-blue side-panel background
+  (`--rio-bg-sidebar = #f4f6fa`, applied to the left nav and the
+  right aside on dashboard / form pages). Active link is a
+  pure-white pill with a 3-px violet decorative stripe.
+- **Form-body wash.** 4 % violet over white (`--rio-form-bg =
+  #faf8ff`) painted only inside `<form> .card-body` so input
+  fields visibly float above a faintly tinted plane. Inputs
+  themselves are forced back to pure white.
+- **Secondary accent token.** `--rio-accent-2 = #8b5cf6` (violet)
+  + `--rio-accent-2-bg` / `--rio-accent-2-border` / `--rio-form-bg`.
+  Strict role separation: cobalt for actions (buttons, links,
+  focus rings, active tabs); violet for decoration / selection
+  cues only (filter chips, sidebar stripe, code tint, section
+  underlines).
+
+### Changed
+
+- **Templates ported to v2 markup.** `admin/list.html`,
+  `admin/index.html`, `admin/user_view.html` rewritten on the new
+  primitives. Eight test assertions updated in lockstep
+  (`list_dispatches_cell_renderer_by_field_kind`,
+  `list_filter_only_empty_omits_cta`,
+  `list_filtered_empty_omits_cta`,
+  `list_numeric_dispatch_is_kind_driven_not_name_driven`,
+  `list_renders_rows_via_field_keyed_lookup`,
+  `list_template_has_no_per_page_inline_styles`,
+  `user_view_overview_renders_with_groups`,
+  `user_view_overview_without_groups_shows_empty_marker`).
+  All 501 sandbox tests still pass.
+- **Empty-state copy** on the list page: "No results match your
+  search" → "No results match your filters".
+
+### Backwards compatibility
+
+- The retired classes (`.splitview`, `.pane-list`, `.pane-detail`,
+  `.stat-strip`, `.stat-card`, `.show-grid`, `.dashboard-models`,
+  `.dashboard-recent`, `.toolbar-form`) keep their CSS rules in
+  `base.html`. Downstream projects that hand-wrote markup against
+  those classes continue to render correctly; only the
+  framework's default templates have moved to the v2 markup.
+- `Admin::theme(...)` and `Admin::accent_color(...)` keep working
+  unchanged; the runtime override block in `base.html` still
+  rewrites the same `--rio-*` tokens at render time.
+
+### Deferred (Phase 7+ work)
+
+- `infer_filters` / `handlers.rs` filter rendering logic is
+  unchanged: only **Bool** filter dropdowns render server-side.
+  The new UI surfaces distinct `status` text values
+  template-side, but other text columns (`level`, `priority`,
+  `room_type`, …), date ranges, numeric ranges, and FK relation
+  filters still need the Phase 7+ widget + relation plumbing.
+- Search is still the in-memory substring scan over all cells;
+  no fuzzy, no ranking, no Meili hookup on the list page.
+- Pagination still honours `?p=N` only; `?per_page=N` is not
+  read by the handler.
+
 ## [1.9.0] - 2026-05-05
 
 The schema contract system. One `#[derive(RustioModel)]` per

@@ -2,101 +2,244 @@
 
 {% block bodyclass %}dashboard{% endblock %}
 
+{% block breadcrumbs %}{% endblock %}
+
 {% block content %}
-<div class="page-head">
-    <div>
-        <h1>{{ index_title }}</h1>
-        <p class="lede">Welcome back. Pick a model to manage or jump to a recent change.</p>
+
+{% set ns = namespace(total=0) %}
+{% if apps %}{% for app in apps %}{% set ns.total = ns.total + (app.models|length) %}{% endfor %}{% endif %}
+{% if identity and identity.is_admin %}{% set ns.total = ns.total + 2 %}{% endif %}
+
+{# ── Hero — single source of identity, status, and "what to do". ── #}
+<section class="hero">
+    <div class="hero__bg" aria-hidden="true"></div>
+    <div class="hero__main">
+        <span class="hero__date" id="js-hero-date">&nbsp;</span>
+        <h1 class="hero__title" id="js-hero-greet">
+            <span id="js-hero-prefix">Welcome back</span><span class="hero__comma">{% if identity %}, {% endif %}</span><span class="hero__name" id="js-hero-name" data-raw="{{ identity.full_name|default(identity.email) }}">{{ identity.full_name|default(identity.email) }}</span>
+        </h1>
+        <p class="hero__sub">
+            {% if identity %}
+            Signed in as
+            <span class="hero__role role
+                {% if identity.is_developer %}developer
+                {% elif identity.is_admin %}administrator
+                {% endif %}">{{ identity.role|default('Administrator') }}</span>
+            <span class="hero__sep">·</span>
+            <span class="hero__fact"><span class="hero__pulse"></span> All systems operational</span>
+            {% endif %}
+        </p>
     </div>
-</div>
+</section>
 
-<div class="edit-grid">
-    <div>
+{# ── Two-column body: data models (left) + reference panel (right). ── #}
+<div class="dash-grid">
 
-    {% if apps %}
-    {% for app in apps %}
-    <div class="card">
-        <div class="card-head">
-            <h2>{{ app.label }}</h2>
-        </div>
-        <div class="card-body">
-            <div class="dashboard-models">
-                {% for model in app.models %}
-                <div class="dashboard-model">
-                    <a href="/admin/{{ model.admin_name }}/" class="dashboard-model-link">
-                        {{ icon("table", class="w-4 h-4") }}
-                        {{ model.display_name }}
-                    </a>
-                    <div class="dashboard-model-actions">
-                        <a href="/admin/{{ model.admin_name }}/new">+ Add</a>
-                        <a href="/admin/{{ model.admin_name }}/">Change</a>
-                    </div>
-                </div>
+    <div class="dash-grid__main">
+
+        {% if apps %}
+        <section class="section">
+            <div class="section__head">
+                <h2 class="section__eyebrow">Data models</h2>
+                <span class="section__hint">{{ ns.total }} model{% if ns.total != 1 %}s{% endif %}</span>
+            </div>
+            <div class="model-grid">
+                {% for app in apps %}
+                    {% for model in app.models %}
+                    <article class="model-card">
+                        <span class="model-card__count" data-count="{{ model.admin_name }}">
+                            <b>—</b> records
+                        </span>
+                        <div class="model-card__head">
+                            <span class="model-card__icon" aria-hidden="true">{{ model.display_name[:1]|upper }}</span>
+                            <div class="model-card__text">
+                                <h3 class="model-card__title">{{ model.display_name }}</h3>
+                                <p class="model-card__sub">In <code>{{ app.label|lower }}</code></p>
+                            </div>
+                        </div>
+                        <div class="model-card__actions">
+                            <a href="/admin/{{ model.admin_name }}/" class="btn-secondary btn-secondary--sm">Manage</a>
+                            <a href="/admin/{{ model.admin_name }}/new" class="btn-text btn-text--sm">+ Add</a>
+                        </div>
+                    </article>
+                    {% endfor %}
                 {% endfor %}
             </div>
+        </section>
+        {% else %}
+        <div class="empty">
+            <h3>No models registered yet</h3>
+            <p>Add a model with <code>#[derive(RustioAdmin)]</code> in your project, then register it via <code>Admin::new().model::&lt;T&gt;()</code>.</p>
         </div>
-    </div>
-    {% endfor %}
-    {% else %}
-    <div class="empty">
-        <h3>No models registered.</h3>
-        <p>Add one with <code class="code-pill">#[derive(RustioAdmin)]</code>.</p>
-    </div>
-    {% endif %}
+        {% endif %}
 
-    {% if identity and identity.is_admin %}
-    <div class="card" id="auth-app">
-        <div class="card-head">
-            <h2>Authentication &amp; authorization</h2>
-        </div>
-        <div class="card-body">
-            <div class="dashboard-models">
-                <div class="dashboard-model">
-                    <a href="/admin/users" class="dashboard-model-link">
-                        {{ icon("users", class="w-4 h-4") }} Users
-                    </a>
-                    <div class="dashboard-model-actions">
-                        <a href="/admin/users/new">+ Add</a>
-                        <a href="/admin/users">Change</a>
-                    </div>
-                </div>
-                <div class="dashboard-model">
-                    <a href="/admin/groups" class="dashboard-model-link">
-                        {{ icon("users-2", class="w-4 h-4") }} Groups
-                    </a>
-                    <div class="dashboard-model-actions">
-                        <a href="/admin/groups/new">+ Add</a>
-                        <a href="/admin/groups">Change</a>
-                    </div>
-                </div>
+        {% if identity and identity.is_admin %}
+        <section class="section">
+            <div class="section__head">
+                <h2 class="section__eyebrow">Authentication &amp; authorization</h2>
+                <span class="section__hint">User accounts &amp; permission groups</span>
             </div>
-        </div>
-    </div>
-    {% endif %}
-
-    </div>
-
-    <aside>
-        <div class="card">
-            <div class="card-head">
-                <h2>Recent activity</h2>
+            <div class="model-grid">
+                <article class="model-card">
+                    <span class="model-card__count" data-count="users"><b>—</b> records</span>
+                    <div class="model-card__head">
+                        <span class="model-card__icon model-card__icon--auth" aria-hidden="true">U</span>
+                        <div class="model-card__text">
+                            <h3 class="model-card__title">Users</h3>
+                            <p class="model-card__sub">Accounts, roles, sessions</p>
+                        </div>
+                    </div>
+                    <div class="model-card__actions">
+                        <a href="/admin/users" class="btn-secondary btn-secondary--sm">Manage</a>
+                        <a href="/admin/users/new" class="btn-text btn-text--sm">+ Add</a>
+                    </div>
+                </article>
+                <article class="model-card">
+                    <span class="model-card__count" data-count="groups"><b>—</b> records</span>
+                    <div class="model-card__head">
+                        <span class="model-card__icon model-card__icon--auth" aria-hidden="true">G</span>
+                        <div class="model-card__text">
+                            <h3 class="model-card__title">Groups</h3>
+                            <p class="model-card__sub">Permission groups</p>
+                        </div>
+                    </div>
+                    <div class="model-card__actions">
+                        <a href="/admin/groups" class="btn-secondary btn-secondary--sm">Manage</a>
+                        <a href="/admin/groups/new" class="btn-text btn-text--sm">+ Add</a>
+                    </div>
+                </article>
             </div>
-            <div class="card-body">
+        </section>
+        {% endif %}
+
+    </div>
+
+    <aside class="dash-grid__side">
+        <section class="section">
+            <div class="section__head">
+                <h2 class="section__eyebrow">Recent activity</h2>
+                {% if recent_actions %}<span class="section__hint">Last {{ recent_actions|length }}</span>{% endif %}
+            </div>
+            <div class="activity-card">
                 {% if recent_actions %}
-                <ul class="dashboard-recent">
+                <ul class="activity-list">
                     {% for entry in recent_actions %}
-                    <li>
-                        <span class="{{ entry.pill_class }}">{{ entry.label }}</span>
-                        <a href="/admin/{{ entry.model_name }}/{{ entry.object_id }}/edit">{{ entry.summary }}</a>
-                        <div class="meta">{{ entry.model_name }} · {{ entry.user_email }} · {{ entry.when_relative }}</div>
+                    <li class="activity-item">
+                        <span class="activity-pill {{ entry.pill_class }}">{{ entry.label }}</span>
+                        <div class="activity-body">
+                            <a class="activity-summary" href="/admin/{{ entry.model_name }}/{{ entry.object_id }}/edit">{{ entry.summary }}</a>
+                            <div class="activity-meta">
+                                <code>{{ entry.model_name }}</code>
+                                <span class="activity-sep">·</span>
+                                {{ entry.user_email }}
+                                <span class="activity-sep">·</span>
+                                {{ entry.when_relative }}
+                            </div>
+                        </div>
                     </li>
                     {% endfor %}
                 </ul>
                 {% else %}
-                <p class="muted">No recent activity yet.</p>
+                <div class="activity-empty">
+                    <div class="activity-empty__icon" aria-hidden="true">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <p class="activity-empty__title">Nothing yet</p>
+                    <p class="activity-empty__sub">Recent changes appear here.</p>
+                </div>
                 {% endif %}
             </div>
-        </div>
+        </section>
+
+        <section class="section">
+            <div class="section__head">
+                <h2 class="section__eyebrow">System</h2>
+            </div>
+            <div class="info-card">
+                <div class="info-row">
+                    <span class="info-row__k">Environment</span>
+                    <span class="info-row__v"><span class="env-pill"><span class="env-pill__dot"></span>Development</span></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__k">Database</span>
+                    <span class="info-row__v">PostgreSQL</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-row__k">Total records</span>
+                    <span class="info-row__v"><b id="js-total-records">—</b></span>
+                </div>
+            </div>
+        </section>
     </aside>
 </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    // Date + time-of-day greeting.
+    var dateEl   = document.getElementById('js-hero-date');
+    var prefixEl = document.getElementById('js-hero-prefix');
+    var nameEl   = document.getElementById('js-hero-name');
+    var totalEl  = document.getElementById('js-total-records');
+
+    if (dateEl) {
+        var d = new Date();
+        try {
+            dateEl.textContent = new Intl.DateTimeFormat(undefined, {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+            }).format(d).toUpperCase();
+        } catch (e) { dateEl.textContent = d.toDateString(); }
+    }
+    if (prefixEl) {
+        var h = (new Date()).getHours();
+        prefixEl.textContent =
+            h < 5  ? 'Good evening' :
+            h < 12 ? 'Good morning' :
+            h < 18 ? 'Good afternoon' : 'Good evening';
+    }
+    if (nameEl) {
+        var raw = (nameEl.getAttribute('data-raw') || nameEl.textContent || '').trim();
+        if (raw.indexOf('@') > -1) {
+            var local = raw.split('@')[0];
+            nameEl.textContent = local.replace(/[._-]+/g, ' ')
+                                      .replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        }
+    }
+
+    // Lazy-load row counts → small per-card badge + the System card's
+    // "Total records" line. The big stats row is gone; numbers live
+    // where they belong: next to the model that owns them.
+    var pending = 0, sum = 0;
+    document.querySelectorAll('[data-count]').forEach(function (el) {
+        var slug = el.getAttribute('data-count');
+        pending++;
+        fetch('/admin/' + slug + '/', { credentials: 'same-origin', headers: { 'Accept': 'text/html' } })
+            .then(function (r) { return r.ok ? r.text() : null; })
+            .then(function (html) {
+                if (html) {
+                    var m = html.match(/<span class="num">\s*(\d+)\s*<\/span>/);
+                    if (m) {
+                        var n = parseInt(m[1], 10);
+                        var b = el.querySelector('b');
+                        if (b) b.textContent = n.toLocaleString();
+                        else el.textContent = n.toLocaleString();
+                        el.classList.add('is-loaded');
+                        sum += n;
+                    } else {
+                        el.classList.add('is-loaded');
+                    }
+                }
+            })
+            .catch(function () { /* leave the dash */ })
+            .then(function () {
+                pending--;
+                if (pending === 0 && totalEl) {
+                    totalEl.textContent = sum.toLocaleString();
+                }
+            });
+    });
+})();
+</script>
 {% endblock %}

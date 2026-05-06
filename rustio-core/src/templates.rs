@@ -728,9 +728,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Phase 10/b — Overview tab renders the splitview shell + show-grid
-    /// profile + recent-activity timeline. Groups appear as `<code>` chips
-    /// in the show-grid Groups row.
+    /// v2 user-detail — single-column 960 px card with humanised
+    /// header, 2-column profile grid, recent-activity timeline. The
+    /// retired Phase 10/b classes (`splitview` / `show-grid` /
+    /// `stat-strip`) are gone; counts moved to the meta line under
+    /// the user's name and profile rows live in `.ud-profile-grid`.
     #[test]
     fn user_view_overview_renders_with_groups() {
         let t = Templates::new(None).unwrap();
@@ -738,25 +740,25 @@ mod tests {
         ctx["user"]["groups"] = serde_json::json!(["Auditors", "Content Editors"]);
         let body = t.render("admin/user_view.html", &ctx).unwrap();
 
-        // Splitview shell + Overview branch markers.
-        assert!(body.contains("class=\"splitview\""), "must render the splitview shell");
-        assert!(body.contains("class=\"show-grid\""), "Overview must render the show-grid");
-        assert!(body.contains("class=\"stat-strip\""), "Overview must render the stat-strip");
+        // v2 single-column shell + Overview branch markers.
+        assert!(body.contains("class=\"user-detail\""), "must render the .user-detail wrapper");
+        assert!(body.contains("class=\"ud-card\""), "must render the .ud-card surface");
+        assert!(body.contains("class=\"ud-profile-grid\""), "Overview must render the .ud-profile-grid");
 
-        // Groups row content — chips appear inside the show-grid.
+        // Groups row content — chips appear inside the profile grid.
         assert!(body.contains("<code>Auditors</code>"));
         assert!(body.contains("<code>Content Editors</code>"));
     }
 
-    /// Phase 10/b — empty groups render the muted "No groups" inline
-    /// in the Groups row of the show-grid.
+    /// v2 user-detail — empty groups render the muted "No groups"
+    /// inline inside the profile grid.
     #[test]
     fn user_view_overview_without_groups_shows_empty_marker() {
         let t = Templates::new(None).unwrap();
         let body = t.render("admin/user_view.html", &view_ctx_base()).unwrap();
         assert!(
             body.contains("No groups"),
-            "empty-groups copy must appear in the show-grid Groups row"
+            "empty-groups copy must appear in the profile grid Groups row"
         );
     }
 

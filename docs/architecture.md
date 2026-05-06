@@ -295,6 +295,34 @@ Inter font ships as four self-hosted woff2 weights under
 a path-wildcard, so the binary can't be tricked into serving
 arbitrary files from the assets dir).
 
+### Admin chrome v2 (Unreleased)
+
+The framework's default `admin/base.html`, `admin/list.html`,
+`admin/index.html`, and `admin/user_view.html` ship a refreshed
+"v2" design system: Geist + Geist Mono fonts, a Zinc neutral
+palette, Cobalt + Violet two-accent system with strict role
+separation (Cobalt = action, Violet = decoration), card / form /
+table primitives at `.data-card` / `.form-card` /
+`.card-section--inset`, a smart filter bar with sort + filter +
+columns dropdowns on every list page, a refreshed dashboard with
+a hero card and lazy-loaded model count badges, and a single-
+column user-detail page.
+
+The retired classes (`.splitview`, `.pane-list`, `.pane-detail`,
+`.stat-strip`, `.stat-card`, `.show-grid`, `.dashboard-models`,
+`.dashboard-recent`, `.toolbar-form`) keep their CSS rules in
+`base.html` so downstream projects that hand-wrote markup against
+them continue to render correctly. Only the framework's *default*
+templates moved to the v2 markup; per-project overrides at
+`templates/admin/<page>.html` win as before.
+
+The runtime theme override block (`<style id="rio-accent-override">`)
+still rewrites `--rio-bg`, `--rio-bg-surface-1`, `--rio-text`,
+`--rio-text-muted`, `--rio-border`, and `--rio-accent` from
+`Admin::theme(AdminTheme { … })`, so projects that drove the v1.8.x
+chrome with a custom `AdminTheme` keep the same single-call
+re-skin path.
+
 ### Icons (Phase 7a/2)
 
 A custom minijinja function `icon(name, class="...")` is registered

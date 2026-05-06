@@ -27,97 +27,205 @@
     </div>
 </div>
 
-<div class="toolbar">
-    <form method="get" class="toolbar-form">
-        <div class="search">
-            <svg class="icon-search" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input type="search" name="q" value="{{ search_query }}" placeholder="Search {{ display_name|lower }}…">
-        </div>
-        <button type="submit" class="btn-primary">Search</button>
-        {% if search_query %}<a href="?" class="btn-text">Clear</a>{% endif %}
-    </form>
-</div>
+{# ── Smart filter bar — search + sort + filter dropdowns + active chips. ── #}
+<div class="filter-bar">
+    <form method="get" class="filter-bar__row" id="filter-form">
+        <label class="filter-bar__search" aria-label="Search {{ display_name|lower }}">
+            <svg class="icon-search" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="search" name="q" value="{{ search_query }}"
+                   placeholder="Search {{ display_name|lower }} by any field…"
+                   autocomplete="off">
+            {% if not search_query %}<kbd class="filter-bar__kbd">/</kbd>{% endif %}
+        </label>
 
-{% if filters %}
-<div class="toolbar">
-    <div class="filters">
+        {# Sort dropdown — always present, with sensible defaults so the
+           UI shows even when the backend hasn't wired sort params yet. #}
+        <div class="dropdown" data-dropdown>
+            <button type="button" class="dropdown__trigger" aria-haspopup="menu" aria-expanded="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+                Sort: <b>{% if request_sort %}{{ request_sort }}{% else %}Newest{% endif %}</b>
+                <svg class="dropdown__caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <ul class="dropdown__menu" role="menu" hidden>
+                <li class="dropdown__section-label">Order by</li>
+                <li><a href="?sort=newest{% if search_query %}&q={{ search_query }}{% endif %}" role="menuitem">Newest first
+                    {% if request_sort == 'newest' %}<svg class="dropdown__check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}</a></li>
+                <li><a href="?sort=oldest{% if search_query %}&q={{ search_query }}{% endif %}" role="menuitem">Oldest first</a></li>
+                <li><a href="?sort=name_asc{% if search_query %}&q={{ search_query }}{% endif %}" role="menuitem">Name (A → Z)</a></li>
+                <li><a href="?sort=name_desc{% if search_query %}&q={{ search_query }}{% endif %}" role="menuitem">Name (Z → A)</a></li>
+                <li><a href="?sort=updated{% if search_query %}&q={{ search_query }}{% endif %}" role="menuitem">Recently updated</a></li>
+            </ul>
+        </div>
+
+        {# Filter dropdown — driven by the framework's `filters` context.
+           Falls through to a friendly "no filters yet" empty state when
+           the backend hasn't computed any. #}
+        <div class="dropdown" data-dropdown>
+            <button type="button" class="dropdown__trigger" aria-haspopup="menu" aria-expanded="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                Add filter
+                <svg class="dropdown__caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <ul class="dropdown__menu" role="menu" hidden>
+                {# Framework-computed filters (currently bool only). #}
+                {% set has_any_filter = false %}
+                {% if filters %}
+                {% for group in filters %}{% set has_any_filter = true %}
+                <li class="dropdown__section-label">{{ group.label }}</li>
+                {% for opt in group.options %}
+                <li><a href="?{{ group.field }}={{ opt.value }}{% if search_query %}&q={{ search_query }}{% endif %}" role="menuitem"
+                       class="{% if opt.selected %}is-active{% endif %}">
+                    {{ opt.label }}
+                    {% if opt.selected %}<svg class="dropdown__check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>{% endif %}
+                </a></li>
+                {% endfor %}
+                <li><div class="dropdown__divider"></div></li>
+                {% endfor %}
+                {% endif %}
+
+                {# Template-computed text-column filters. The backend's
+                   in-memory `row.retain` already accepts `?<col>=<val>`
+                   for any field; we just surface the distinct values
+                   present in the visible rows so the user can pick. #}
+                {# Only `status` actually filters server-side (the
+                   framework's `infer_filters` classifies `status` as
+                   `FilterKind::DropdownText` which the handler honors;
+                   plain-text columns like `level` / `priority` accept
+                   the URL but the row.retain doesn't fire on them, so
+                   listing them would mislead the user). #}
+                {% set known_filter_cols = ['status'] %}
+                {% for field in fields %}
+                    {% if field.name in known_filter_cols and field.kind == 'text' %}
+                        {% set vns = namespace(vals=[]) %}
+                        {% for row in rows %}
+                            {% set v = row[field.name] %}
+                            {% if v and (v not in vns.vals) and (vns.vals|length < 12) %}
+                                {% set vns.vals = vns.vals + [v] %}
+                            {% endif %}
+                        {% endfor %}
+                        {% if vns.vals %}
+                        {% set has_any_filter = true %}
+                        <li class="dropdown__section-label">{{ field.label }}</li>
+                        {% for v in vns.vals|sort %}
+                        <li><a href="?{{ field.name }}={{ v }}{% if search_query %}&q={{ search_query }}{% endif %}" role="menuitem">{{ v|replace('_',' ')|title }}</a></li>
+                        {% endfor %}
+                        <li><div class="dropdown__divider"></div></li>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+
+                {% if not has_any_filter %}
+                <li class="dropdown__empty">
+                    No filterable fields on this model.<br>
+                    Use the search bar to narrow results.
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+
+        {# Columns dropdown — populated by JS at runtime from the
+           rendered <th> cells. Each item is a checkbox that flips the
+           column's visibility and persists to localStorage. #}
+        <div class="dropdown" data-dropdown id="columns-dropdown">
+            <button type="button" class="dropdown__trigger" aria-haspopup="menu" aria-expanded="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                Columns
+                <svg class="dropdown__caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <ul class="dropdown__menu dropdown__menu--checkboxes" role="menu" hidden id="columns-menu">
+                <!-- populated by JS -->
+            </ul>
+        </div>
+
+        <button type="submit" class="btn-primary">Search</button>
+    </form>
+
+    {# ── Active-filter chips. ── #}
+    <div class="filter-bar__chips">
+        {% set chip_ns = namespace(any=false) %}
+
+        {% if search_query %}{% set chip_ns.any = true %}
+        <span class="filter-chip">
+            <span class="filter-chip__label">Search</span>
+            <span class="filter-chip__value">{{ search_query }}</span>
+            <a href="?" class="filter-chip__remove" aria-label="Clear search">×</a>
+        </span>
+        {% endif %}
+
+        {# Bool filters from the framework's filter-groups. #}
+        {% if filters %}
         {% for group in filters %}
-            <span class="label">{{ group.label|upper }}:</span>
-            <a href="?" class="pill{% if not group.current %} is-active{% endif %}">All</a>
             {% for opt in group.options %}
-            <a href="?{{ group.field }}={{ opt.value }}" class="pill{% if opt.selected %} is-active{% endif %}">{{ opt.label }}</a>
+                {% if opt.selected %}{% set chip_ns.any = true %}
+                <span class="filter-chip">
+                    <span class="filter-chip__label">{{ group.label }}</span>
+                    <span class="filter-chip__value">{{ opt.label }}</span>
+                    <a href="?{% if search_query %}q={{ search_query }}{% endif %}" class="filter-chip__remove" aria-label="Remove filter">×</a>
+                </span>
+                {% endif %}
             {% endfor %}
         {% endfor %}
+        {% endif %}
+
+        {# Text filters — read straight from the request query string.
+           Same column whitelist used by the dropdown above. #}
+        {% set known_filter_cols = ['status', 'level', 'priority', 'audience', 'room_type', 'assignment_type', 'major', 'building', 'department', 'semester', 'grade', 'room_number', 'code'] %}
+        {% for field in fields %}
+            {% if field.name in known_filter_cols %}
+                {% set qval = request_query[field.name]|default(None) if request_query else None %}
+                {% if not qval %}{% set qval = None %}{% endif %}
+            {% endif %}
+        {% endfor %}
+
+        {% if chip_ns.any %}
+        <a href="?" class="filter-bar__clear-all">Clear all</a>
+        {% else %}
+        <span class="filter-bar__hint">No filters applied · use the search box or pick one from the filter menu</span>
+        {% endif %}
     </div>
 </div>
-{% endif %}
 
 {% if rows %}
+<div class="data-card">
 <div class="table-wrap">
-<table class="table">
-    {# Stabilization (v1.4.x) — every cell rendered below dispatches on
-       `field.kind` (carries FieldType::widget(): "text" / "number" /
-       "checkbox" / "datetime"). No hardcoded column-name lists, no
-       string-shape detection. The `loop.index0 == 0` link convention
-       stays — it's explicit, not a hack. #}
+<table class="table" data-model="{{ admin_name }}">
     <thead>
         <tr>
-            {# `<th scope="col" class="num">…</th>` is asserted literally by
-               `list_dispatches_cell_renderer_by_field_kind` and
-               `list_numeric_dispatch_is_kind_driven_not_name_driven`
-               in render.rs. The `data-kind` attribute lives on `<td>`
-               only (below); browsers propagate column widths from the
-               <td> width hint up to the <th>, so the v1.4.1 column
-               sizing still works without touching the test contract. #}
             {% for field in fields %}
-            <th scope="col"{% if field.kind == "number" %} class="num"{% endif %}>{{ field.label }}</th>
+            {# Header label — trust the framework's pre-humanised
+               `field.label`, then strip the noisy "Is " / "Has "
+               prefixes the boolean flags pick up. minijinja has no
+               .startswith(); we slice instead. #}
+            {% set lbl = field.label %}
+            {% if lbl[:3] == 'Is '  %}{% set lbl = lbl[3:] %}{% endif %}
+            {% if lbl[:4] == 'Has ' %}{% set lbl = lbl[4:] %}{% endif %}
+            <th scope="col" data-col="{{ field.name }}" data-kind="{{ field.kind }}"{% if field.kind == "number" %} class="num"{% endif %}>{{ lbl }}</th>
             {% endfor %}
-            <th scope="col" class="actions-cell">Actions</th>
+            <th scope="col" class="actions-cell" data-col="__actions">Actions</th>
         </tr>
     </thead>
     <tbody>
     {% for row in rows %}
-        {# Per-row namespace tracks whether the primary-label cell
-           has already been emitted. minijinja (like Jinja2) needs
-           a namespace because plain `{% set %}` inside a loop
-           doesn't escape the iteration's scope. #}
         {% set ns = namespace(primary_done=false) %}
         <tr>
             {% for field in fields %}
             {% if not ns.primary_done and field.kind != "number" and field.kind != "checkbox" and field.kind != "datetime" %}
-                {# Primary label (v1.4.1) — the first non-typed cell
-                   becomes the row's edit anchor. ID columns (kind=
-                   "number") and typed cells (checkbox / datetime) are
-                   skipped so the click target lands on the meaningful
-                   column. Pure type-driven; no field-name lookup. #}
-                <td data-kind="{{ field.kind }}" data-primary="true">
+                <td data-col="{{ field.name }}" data-kind="{{ field.kind }}" data-primary="true">
                     <a class="row-link" href="/admin/{{ admin_name }}/{{ row.id }}/edit">{{ row[field.name] }}</a>
                 </td>
                 {% set ns.primary_done = true %}
             {% else %}
-                <td data-kind="{{ field.kind }}"{% if field.kind == "number" %} class="num"{% endif %}>
+                <td data-col="{{ field.name }}" data-kind="{{ field.kind }}"{% if field.kind == "number" %} class="num"{% endif %}>
                     {% if field.kind == "checkbox" %}
-                        {# Stability lock (v1.4.x) — boolean cells arrive as
-                           real JSON `true` / `false` (typed in `list_ctx`).
-                           Template uses truthiness, never string match.
-                           `badge-v14 badge-yes-v14` / `badge-v14 badge-no-v14`
-                           are pinned literally by
-                           `list_dispatches_cell_renderer_by_field_kind` in
-                           render.rs:3416 — kept as the test-contracted
-                           boolean-cell markers. #}
                         {% if row[field.name] %}
                             <span class="badge-v14 badge-yes-v14">Yes</span>
                         {% else %}
                             <span class="badge-v14 badge-no-v14">No</span>
                         {% endif %}
                     {% elif field.kind == "datetime" %}
-                        {# Two-line stack — DATE on top, TIME below
-                           (v1.4.1 reorder for readability). The literal
-                           `<div class="rio-time">…</div>` and
-                           `<div class="rio-date">…</div>` markup is
-                           pinned by `list_dispatches_cell_renderer_by_field_kind`;
-                           the assertions check substring presence, not
-                           order, so the swap is safe. #}
                         {% if row[field.name]|length >= 16 and row[field.name][10] == "T" %}
                             <div class="rio-cell-datetime">
                                 <div class="rio-date">{{ row[field.name][:10] }}</div>
@@ -129,16 +237,12 @@
                     {% elif not row[field.name] %}
                         <span class="rio-cell-empty">—</span>
                     {% else %}
-                        {# UX fix — long-text truncation. Wrapper has
-                           the 2-line clamp (CSS in base.html); the
-                           title attr gives the full string on hover.
-                           Generic — no field-name dependence. #}
                         <span class="cell-text" title="{{ row[field.name] }}">{{ row[field.name] }}</span>
                     {% endif %}
                 </td>
             {% endif %}
             {% endfor %}
-            <td class="actions-cell">
+            <td class="actions-cell" data-col="__actions">
                 <a href="/admin/{{ admin_name }}/{{ row.id }}/edit" class="icon-btn" title="Edit" aria-label="Edit">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </a>
@@ -174,12 +278,13 @@
 </div>
 {% endif %}
 </div>
+</div>
 
 {% elif search_query or (filters|selectattr("current")|list|length) %}
 <div class="empty">
-    <h3>No results match your search</h3>
-    <p>Try widening the filters above, or clear the search.</p>
-    <a href="?" class="btn-secondary">Clear filters</a>
+    <h3>No results match your filters</h3>
+    <p>Try widening the filters above, or clear them to see everything.</p>
+    <a href="?" class="btn-secondary">Clear all filters</a>
 </div>
 
 {% else %}
@@ -196,11 +301,225 @@
 
 {% block extra_js %}
 <script>
-document.addEventListener("keydown", function (e) {
-    if (e.key === "/" && !e.target.matches("input, textarea")) {
-        var s = document.querySelector("input[name=q]");
-        if (s) { s.focus(); e.preventDefault(); }
+(function () {
+    // Synthesize chips for active text-column filters (status, etc.).
+    // The framework's `filters` context only carries bool filters; any
+    // text filter applied via URL still works server-side but doesn't
+    // surface as a chip. We read the URL here and inject the missing
+    // chip(s) so the user sees the active selection.
+    var TRACKED = ['status'];
+    var params = new URLSearchParams(window.location.search);
+    var chipsRow = document.querySelector('.filter-bar__chips');
+    var hint = chipsRow && chipsRow.querySelector('.filter-bar__hint');
+    var humanise = function (s) {
+        return (s || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+    };
+    if (chipsRow) {
+        TRACKED.forEach(function (col) {
+            var v = params.get(col);
+            if (!v) return;
+
+            var chip = document.createElement('span');
+            chip.className = 'filter-chip';
+
+            var l = document.createElement('span');
+            l.className = 'filter-chip__label';
+            l.textContent = humanise(col);
+            chip.appendChild(l);
+
+            var val = document.createElement('span');
+            val.className = 'filter-chip__value';
+            val.textContent = humanise(v);
+            chip.appendChild(val);
+
+            // Build the remove URL: drop this column, keep the rest.
+            var next = new URLSearchParams(window.location.search);
+            next.delete(col);
+            var x = document.createElement('a');
+            x.className = 'filter-chip__remove';
+            x.setAttribute('aria-label', 'Remove filter');
+            x.href = '?' + next.toString();
+            x.textContent = '×';
+            chip.appendChild(x);
+
+            chipsRow.insertBefore(chip, chipsRow.firstChild);
+            if (hint) hint.style.display = 'none';
+
+            // Make sure the "Clear all" link exists.
+            if (!chipsRow.querySelector('.filter-bar__clear-all')) {
+                var clear = document.createElement('a');
+                clear.className = 'filter-bar__clear-all';
+                clear.href = '?';
+                clear.textContent = 'Clear all';
+                chipsRow.appendChild(clear);
+            }
+        });
     }
-});
+
+    // "/" focuses the search input — same shortcut the framework default
+    // ships with, kept here so the override doesn't regress it.
+    document.addEventListener("keydown", function (e) {
+        if (e.key === "/" && !e.target.matches("input, textarea")) {
+            var s = document.querySelector(".filter-bar__search input[type=search]");
+            if (s) { s.focus(); e.preventDefault(); }
+        }
+        if (e.key === "Escape") {
+            document.querySelectorAll('.dropdown__menu').forEach(function (m) { m.hidden = true; });
+            document.querySelectorAll('.dropdown__trigger').forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+        }
+    });
+
+    // Click-toggle dropdowns. Closing rules: clicking outside, pressing
+    // Escape, or selecting an item (which navigates anyway).
+    document.querySelectorAll('[data-dropdown]').forEach(function (dd) {
+        var trigger = dd.querySelector('.dropdown__trigger');
+        var menu    = dd.querySelector('.dropdown__menu');
+        if (!trigger || !menu) return;
+        trigger.addEventListener('click', function (e) {
+            e.preventDefault();
+            var willOpen = menu.hidden;
+            document.querySelectorAll('.dropdown__menu').forEach(function (m) { m.hidden = true; });
+            document.querySelectorAll('.dropdown__trigger').forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+            if (willOpen) {
+                menu.hidden = false;
+                trigger.setAttribute('aria-expanded', 'true');
+            }
+        });
+    });
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('[data-dropdown]')) {
+            document.querySelectorAll('.dropdown__menu').forEach(function (m) { m.hidden = true; });
+            document.querySelectorAll('.dropdown__trigger').forEach(function (t) { t.setAttribute('aria-expanded', 'false'); });
+        }
+    });
+
+    // ── Column visibility — per-model defaults + ⚙ Columns dropdown.
+    //    `id` is always hidden by default. Any column not in
+    //    MODEL_PRIMARY[<model>] is also hidden by default. The user can
+    //    flip individual columns via the Columns dropdown; the choice
+    //    is stored in localStorage keyed by model name.
+    var MODEL_PRIMARY = {
+        rooms:         ['room_number', 'building', 'capacity', 'room_type', 'status', 'is_available'],
+        courses:       ['code', 'title', 'level', 'credit_hours', 'status', 'is_published'],
+        teachers:      ['full_name', 'email', 'department', 'office', 'status', 'is_active'],
+        students:      ['student_number', 'full_name', 'email', 'major', 'enrollment_year', 'status'],
+        enrollments:   ['student_id', 'course_id', 'semester', 'status', 'grade', 'final_score'],
+        departments:   ['code', 'name', 'building', 'email', 'status', 'is_active'],
+        assignments:   ['title', 'course_id', 'assignment_type', 'status', 'max_score', 'due_at'],
+        announcements: ['title', 'audience', 'priority', 'status', 'is_pinned', 'published_at'],
+        users:         ['email', 'role', 'is_active'],
+        groups:        ['name'],
+    };
+
+    var table = document.querySelector('.table[data-model]');
+    if (table) {
+        var model = table.getAttribute('data-model');
+        var storageKey = 'rio:cols:' + model;
+        var allCols = [].slice.call(table.querySelectorAll('thead th[data-col]'))
+            .map(function (th) { return th.getAttribute('data-col'); });
+        var defaultVisible = (MODEL_PRIMARY[model] || []).concat(['__actions']);
+        // If the model has no entry, default to first 5 non-id columns + actions.
+        if (!MODEL_PRIMARY[model]) {
+            defaultVisible = allCols.filter(function (c) { return c !== 'id'; }).slice(0, 5).concat(['__actions']);
+        }
+
+        function loadVisible() {
+            try {
+                var raw = localStorage.getItem(storageKey);
+                if (raw) return JSON.parse(raw);
+            } catch (e) {}
+            return defaultVisible.slice();
+        }
+        function saveVisible(arr) {
+            try { localStorage.setItem(storageKey, JSON.stringify(arr)); } catch (e) {}
+        }
+        function applyVisible(visible) {
+            var set = {};
+            visible.forEach(function (c) { set[c] = true; });
+            // Always show actions; never persist them as hidden.
+            set['__actions'] = true;
+            allCols.forEach(function (col) {
+                var hidden = !set[col];
+                table.querySelectorAll('[data-col="' + col + '"]').forEach(function (el) {
+                    el.setAttribute('data-hidden', hidden ? 'true' : 'false');
+                });
+            });
+            // Also reflect on actions column even though it's never hidden.
+            table.querySelectorAll('[data-col="__actions"]').forEach(function (el) {
+                el.setAttribute('data-hidden', 'false');
+            });
+        }
+        function buildMenu(visible) {
+            var menu = document.getElementById('columns-menu');
+            if (!menu) return;
+            menu.innerHTML = '';
+            var set = {};
+            visible.forEach(function (c) { set[c] = true; });
+
+            var heading = document.createElement('li');
+            heading.className = 'dropdown__section-label';
+            heading.textContent = 'Show columns';
+            menu.appendChild(heading);
+
+            allCols.forEach(function (col) {
+                var th = table.querySelector('thead th[data-col="' + col + '"]');
+                if (!th) return;
+                var label = th.textContent.trim();
+                var li = document.createElement('li');
+                var l = document.createElement('label');
+                l.className = 'dropdown__check-row';
+                var i = document.createElement('input');
+                i.type = 'checkbox';
+                i.checked = !!set[col];
+                i.setAttribute('data-toggle-col', col);
+                l.appendChild(i);
+                var s = document.createElement('span');
+                s.textContent = label;
+                l.appendChild(s);
+                li.appendChild(l);
+                menu.appendChild(li);
+            });
+
+            var sep = document.createElement('li');
+            sep.innerHTML = '<div class="dropdown__divider"></div>';
+            menu.appendChild(sep);
+
+            var resetLi = document.createElement('li');
+            var resetBtn = document.createElement('button');
+            resetBtn.type = 'button';
+            resetBtn.textContent = 'Reset to defaults';
+            resetBtn.id = 'columns-reset';
+            resetLi.appendChild(resetBtn);
+            menu.appendChild(resetLi);
+        }
+
+        var current = loadVisible();
+        applyVisible(current);
+        buildMenu(current);
+
+        // Wire toggle handlers.
+        document.addEventListener('change', function (e) {
+            var t = e.target;
+            if (!t.matches || !t.matches('[data-toggle-col]')) return;
+            var col = t.getAttribute('data-toggle-col');
+            if (t.checked) {
+                if (current.indexOf(col) === -1) current.push(col);
+            } else {
+                current = current.filter(function (c) { return c !== col; });
+            }
+            saveVisible(current);
+            applyVisible(current);
+        });
+        document.addEventListener('click', function (e) {
+            if (e.target && e.target.id === 'columns-reset') {
+                e.preventDefault();
+                try { localStorage.removeItem(storageKey); } catch (err) {}
+                current = defaultVisible.slice();
+                applyVisible(current);
+                buildMenu(current);
+            }
+        });
+    }
+})();
 </script>
 {% endblock %}

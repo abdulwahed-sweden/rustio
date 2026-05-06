@@ -2,91 +2,200 @@
 
 {% block title %}{{ user.email }} — Users | {{ site_title }}{% endblock %}
 
-{% block breadcrumbs %}
-<div class="crumbs">
-    <a href="/admin">Home</a>
-    <span class="sep">/</span>
-    <a href="/admin/users">Users</a>
-    <span class="sep">/</span>
-    <span class="current">{{ user.full_name }}</span>
-</div>
+{# Replace the framework's breadcrumb with a single back link rendered
+   inside `content` below — keeps everything in one column. #}
+{% block breadcrumbs %}{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* ── Scoped to the user detail page only. List page, dashboard,
+       and other detail pages keep the framework defaults. ── */
+
+    .user-detail {
+        max-width: 960px;
+        margin: 0 auto;
+    }
+
+    .user-detail .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--rio-text-muted);
+        text-decoration: none;
+        margin-bottom: 16px;
+    }
+    .user-detail .back-link:hover { color: var(--rio-text); }
+
+    /* White card that holds the header, tabs, and body. Stronger border
+       so it stands out against the page's gray background. */
+    .user-detail .ud-card {
+        background: var(--rio-bg-surface-1);
+        border: 1px solid var(--rio-border);
+        border-radius: 12px;
+        box-shadow: 0 1px 2px rgba(17, 24, 39, 0.05), 0 6px 16px rgba(17, 24, 39, 0.06);
+        padding: 32px 40px;
+    }
+
+    /* ── Header — name + badges on the left, edit button on the right.
+       Meta line directly under the name. ── */
+    .user-detail .ud-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+    }
+    .user-detail .ud-header-text { min-width: 0; flex: 1; }
+    .user-detail .ud-title-row {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 14px;
+    }
+    .user-detail .ud-name {
+        margin: 0;
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--rio-text);
+        line-height: 1.2;
+    }
+    .user-detail .ud-meta-line {
+        margin: 10px 0 0;
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--rio-text-muted);
+    }
+    .user-detail .ud-meta-line .sep { margin: 0 8px; opacity: 0.5; }
+    .user-detail .ud-header .actions .btn-secondary {
+        font-size: 15px;
+        padding: 8px 16px;
+    }
+
+    /* ── Solid hairline separating the header from the tabs. ── */
+    .user-detail .ud-divider {
+        height: 1px;
+        background: var(--rio-border);
+        margin: 24px -40px 0;
+    }
+
+    /* ── Tabs — full-width strip, hairline bottom border. ── */
+    .user-detail .ud-tabs {
+        list-style: none;
+        margin: 0 -40px;
+        padding: 0 40px;
+        display: flex;
+        gap: 28px;
+        border-bottom: 1px solid var(--rio-border);
+    }
+    .user-detail .ud-tabs li { margin: 0; }
+    .user-detail .ud-tabs a {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 0;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--rio-text-muted);
+        text-decoration: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+    }
+    .user-detail .ud-tabs a:hover { color: var(--rio-text); }
+    .user-detail .ud-tabs a[aria-current="page"] {
+        color: var(--rio-accent);
+        border-bottom-color: var(--rio-accent);
+    }
+    .user-detail .ud-tabs .tab-count {
+        font-size: 12px;
+        font-weight: 600;
+        background: var(--rio-bg-soft);
+        color: var(--rio-text-muted);
+        padding: 2px 8px;
+        border-radius: 999px;
+    }
+
+    /* ── Body — section under the tabs. ── */
+    .user-detail .ud-section { padding-top: 28px; }
+    .user-detail .ud-section h2 {
+        margin: 0 0 20px;
+        padding-bottom: 12px;
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--rio-text);
+        border-bottom: 1px solid var(--rio-border);
+        position: relative;
+    }
+    /* Decorative accent underline beneath the section heading. Uses
+       the violet secondary so the cobalt is reserved for action cues
+       (links, buttons, tabs) and this one stays purely decorative. */
+    .user-detail .ud-section h2::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: -1px;
+        width: 48px;
+        height: 2px;
+        background: var(--rio-accent-2);
+        border-radius: 1px;
+    }
+
+    /* Profile — 2-column grid, comfortable rhythm. */
+    .user-detail .ud-profile-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px 32px;
+    }
+    @media (max-width: 700px) {
+        .user-detail .ud-profile-grid { grid-template-columns: 1fr; }
+    }
+    .user-detail .ud-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 14px 0;
+        border-bottom: 1px solid var(--rio-border-faint);
+    }
+    /* Strip the divider on the last row of each grid column so the
+       grid bottom doesn't carry orphaned hairlines. */
+    .user-detail .ud-profile-grid .ud-row:nth-last-child(-n+2) {
+        border-bottom: none;
+    }
+    .user-detail .ud-k {
+        font-size: 13px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--rio-text-faint);
+    }
+    .user-detail .ud-v {
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--rio-text);
+        word-break: break-word;
+    }
+    .user-detail .ud-v--muted { color: var(--rio-text-muted); }
+    .user-detail .ud-v--mono {
+        font-family: var(--rio-font-mono);
+        font-size: 14px;
+    }
+    .user-detail .ud-v a { color: var(--rio-accent); }
+</style>
 {% endblock %}
 
 {% block content %}
+<div class="user-detail">
 
-<div class="page-head">
-    <div>
-        <h1>Users</h1>
-        <p class="lede">Manage accounts, roles, and active sessions.</p>
-    </div>
-    <div class="actions">
-        <a href="/admin/users/new" class="btn-primary">
-            {{ icon("plus", class="w-4 h-4") }}
-            New user
-        </a>
-    </div>
-</div>
+    <a href="/admin/users" class="back-link">← Users</a>
 
-<div class="splitview">
+    <div class="ud-card">
 
-    {# ── List pane — 50 most-recent users; current selection highlighted. ── #}
-    <aside class="pane-list">
-        <div class="pane-head">
-            <div class="pane-title">
-                <h2>All users</h2>
-                <span class="count">{{ users|length }} of {{ total }}</span>
-            </div>
-            {# TODO(/b): client-side search wiring. Decorative in /b — input
-               carries `data-search-input` so the global Esc handler clears
-               it, but no live filter is attached yet. Wire fuzzy filter
-               in a follow-up phase. #}
-            <div class="pane-search">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="11" cy="11" r="7"/>
-                    <line x1="20" y1="20" x2="16.5" y2="16.5"/>
-                </svg>
-                <input type="search" placeholder="Search users..." data-search-input>
-            </div>
-        </div>
-
-        <div class="pane-rows">
-            {% for u in users %}
-            <a href="/admin/users/{{ u.id }}"
-               class="row {% if u.id == user.id %}is-active{% endif %}">
-                <div class="row-body">
-                    <div class="row-name">{{ u.full_name }}</div>
-                    <div class="row-meta">{{ u.email }}</div>
-                </div>
-                <div class="row-side">
-                    {% if u.is_active %}
-                    <span class="badge-v14 badge-yes-v14">Active</span>
-                    {% else %}
-                    <span class="badge-v14 badge-no-v14">Inactive</span>
-                    {% endif %}
-                    <span class="row-time">{{ u.last_seen_relative }}</span>
-                </div>
-            </a>
-            {% endfor %}
-        </div>
-
-        <div class="pane-foot">
-            <span>Showing 1–{{ users|length }} of {{ total }}</span>
-        </div>
-    </aside>
-
-    {# ── Detail pane ── #}
-    <section class="pane-detail">
-        <div class="detail-head">
-            <div class="detail-head-row">
-                <span>Users · {{ user.id }}</span>
-                <div class="actions">
-                    {% if can_edit %}
-                    <a href="/admin/users/{{ user.id }}/edit" class="btn-secondary">Edit</a>
-                    {% endif %}
-                </div>
-            </div>
-            <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;">
-                <span class="detail-id">{{ user.id }}</span>
+    {# ── Header — name, badges, edit. Email + counters in the meta line. ── #}
+    <header class="ud-header">
+        <div class="ud-header-text">
+            <div class="ud-title-row">
+                <h1 class="ud-name">{{ user.full_name }}</h1>
                 {% if user.is_developer %}<span class="role developer">Developer</span>
                 {% elif user.is_admin %}<span class="role administrator">Admin</span>
                 {% else %}<span class="role">{{ user.role }}</span>{% endif %}
@@ -99,226 +208,190 @@
                 <span class="badge-v14" style="background: var(--yellow-50); color: var(--yellow-800); box-shadow: inset 0 0 0 1px rgba(133, 77, 14, 0.2);">DEMO{% if user.demo_label %} · {{ user.demo_label }}{% endif %}</span>
                 {% endif %}
             </div>
-            <h1 class="detail-name">{{ user.full_name }}</h1>
-            <p class="detail-sub">{{ user.email }} · joined {{ user.created_at_iso }}</p>
+            <p class="ud-meta-line">
+                {{ user.email }}<span class="sep">·</span>{% if session_count == 1 %}1 session{% else %}{{ session_count }} sessions{% endif %}<span class="sep">·</span>{% if activity_count == 1 %}1 event{% else %}{{ activity_count }} events{% endif %}<span class="sep">·</span>last seen {{ user.last_seen_relative }}
+            </p>
         </div>
+        {% if can_edit %}
+        <div class="actions">
+            <a href="/admin/users/{{ user.id }}/edit" class="btn-secondary">Edit</a>
+        </div>
+        {% endif %}
+    </header>
 
-        {# ── Tabs — clicking a tab strips ?page; only the pager preserves it. ── #}
-        <ul class="tabs tabs--compact">
-            <li><a href="?tab=overview"{% if tab == "overview" %} aria-current="page"{% endif %}>Overview</a></li>
-            <li><a href="?tab=activity"{% if tab == "activity" %} aria-current="page"{% endif %}>
-                Activity
-                <span class="tab-count">{{ activity_count }}</span>
-            </a></li>
-            <li><a href="?tab=permissions"{% if tab == "permissions" %} aria-current="page"{% endif %}>
-                Permissions
-                <span class="tab-count">{{ permission_count }}</span>
-            </a></li>
-            <li><a href="?tab=sessions"{% if tab == "sessions" %} aria-current="page"{% endif %}>
-                Sessions
-                <span class="tab-count">{{ session_count }}</span>
-            </a></li>
+    {# Solid hairline divider between header and tabs. #}
+    <div class="ud-divider"></div>
+
+    {# ── Tabs — directly under the header, full-width, bottom border. ── #}
+    <ul class="ud-tabs">
+        <li><a href="?tab=overview"{% if tab == "overview" %} aria-current="page"{% endif %}>Overview</a></li>
+        <li><a href="?tab=activity"{% if tab == "activity" %} aria-current="page"{% endif %}>
+            Activity <span class="tab-count">{{ activity_count }}</span>
+        </a></li>
+        <li><a href="?tab=permissions"{% if tab == "permissions" %} aria-current="page"{% endif %}>
+            Permissions <span class="tab-count">{{ permission_count }}</span>
+        </a></li>
+        <li><a href="?tab=sessions"{% if tab == "sessions" %} aria-current="page"{% endif %}>
+            Sessions <span class="tab-count">{{ session_count }}</span>
+        </a></li>
+    </ul>
+
+    <div class="ud-section">
+
+        {% if tab == "activity" %}
+        <h2>Activity</h2>
+        <p class="sub">All admin actions performed by this user, newest first.</p>
+        <ul class="timeline" style="margin-top: 16px;">
+            {% for event in recent_events %}
+            <li class="tl-{{ event.kind }}">
+                <span class="tl-text">{{ event.message|safe }}</span>
+                <span class="tl-meta">{{ event.timestamp_relative }} · <code>{{ event.actor }}</code></span>
+            </li>
+            {% else %}
+            <li class="tl-muted"><span class="tl-text">No activity recorded.</span></li>
+            {% endfor %}
         </ul>
-
-        <div class="detail-body">
-
-            {% if tab == "activity" %}
-            {# ── Activity tab — paginated audit log, 50/page. ── #}
-            <h2>Activity</h2>
-            <p class="sub">All admin actions performed by this user, newest first.</p>
-            <ul class="timeline" style="margin-top: 16px;">
-                {% for event in recent_events %}
-                <li class="tl-{{ event.kind }}">
-                    <span class="tl-text">{{ event.message|safe }}</span>
-                    <span class="tl-meta">
-                        {{ event.timestamp_relative }} · <code>{{ event.actor }}</code>
-                    </span>
-                </li>
-                {% else %}
-                <li class="tl-muted">
-                    <span class="tl-text">No activity recorded.</span>
-                </li>
-                {% endfor %}
-            </ul>
-            {% if activity_total_pages > 1 %}
-            <div class="pager" style="margin-top: 24px;">
-                <span class="info">Page <b>{{ activity_page }}</b> of <b>{{ activity_total_pages }}</b></span>
-                <div class="nav">
-                    {% if activity_page > 1 %}
-                    <a href="?tab=activity&page={{ activity_page - 1 }}">← Prev</a>
-                    {% endif %}
-                    <span class="this">{{ activity_page }}</span>
-                    {% if activity_page < activity_total_pages %}
-                    <a href="?tab=activity&page={{ activity_page + 1 }}">Next →</a>
-                    {% endif %}
-                </div>
+        {% if activity_total_pages > 1 %}
+        <div class="pager" style="margin-top: 24px;">
+            <span class="info">Page <b>{{ activity_page }}</b> of <b>{{ activity_total_pages }}</b></span>
+            <div class="nav">
+                {% if activity_page > 1 %}<a href="?tab=activity&page={{ activity_page - 1 }}">← Prev</a>{% endif %}
+                <span class="this">{{ activity_page }}</span>
+                {% if activity_page < activity_total_pages %}<a href="?tab=activity&page={{ activity_page + 1 }}">Next →</a>{% endif %}
             </div>
-            {% endif %}
-
-            {% elif tab == "permissions" %}
-            {# ── Permissions tab — direct + inherited; source chip on each. ── #}
-            <h2>Permissions</h2>
-            <p class="sub">All effective permissions, including those inherited via group membership.</p>
-            {% if permissions %}
-            <div class="perm-grid" style="margin-top: 16px;">
-                {% for perm in permissions %}
-                <div class="perm-tile">
-                    <code style="background: none; padding: 0; flex: 1;">{{ perm.name }}</code>
-                    <span class="chip">{{ perm.source }}</span>
-                </div>
-                {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty" style="margin-top: 16px;">
-                <h3>No permissions</h3>
-                <p>This user has no direct or inherited permissions.</p>
-            </div>
-            {% endif %}
-
-            {% elif tab == "sessions" %}
-            {# ── Sessions tab — passive list. No revoke button (deferred). ── #}
-            <h2>Sessions</h2>
-            <p class="sub">Sessions for this account. IP and user-agent populate from new sign-ins; rows from before those columns existed show "—".</p>
-            {% if sessions %}
-            <div class="table-wrap" style="margin-top: 16px;">
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Created</th>
-                            <th>Last seen</th>
-                            <th>IP</th>
-                            <th>User agent</th>
-                            <th>Token</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in sessions %}
-                        <tr>
-                            <td>{{ s.created_at_iso }}</td>
-                            <td>{{ s.last_seen_relative }}</td>
-                            <td>{% if s.ip %}<code>{{ s.ip }}</code>{% else %}<span class="rio-cell-empty">—</span>{% endif %}</td>
-                            <td>{% if s.user_agent %}<span class="cell-text">{{ s.user_agent }}</span>{% else %}<span class="rio-cell-empty">—</span>{% endif %}</td>
-                            <td><code>{{ s.token_short }}</code></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="empty" style="margin-top: 16px;">
-                <h3>No active sessions</h3>
-                <p>This user has no current sessions in the database.</p>
-            </div>
-            {% endif %}
-
-            {% else %}
-            {# ── Overview (default) ── #}
-            <div class="stat-strip">
-                <div class="stat-card">
-                    <div class="stat-label">Sessions</div>
-                    <div class="stat-value">{{ session_count }}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Activity</div>
-                    <div class="stat-value">{{ activity_count }}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Last seen</div>
-                    <div class="stat-value" style="font-size: 16px;">{{ user.last_seen_relative }}</div>
-                </div>
-            </div>
-
-            <h2>Profile</h2>
-
-            <div class="show-grid">
-                <div class="show-row">
-                    <div class="show-k">Full name</div>
-                    <div class="show-v">
-                        {% if user.full_name_value %}{{ user.full_name_value }}
-                        {% else %}<span class="show-v--muted">{{ user.full_name }} (derived from email)</span>{% endif %}
-                    </div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">Email</div>
-                    <div class="show-v"><a href="mailto:{{ user.email }}">{{ user.email }}</a></div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">User ID</div>
-                    <div class="show-v"><code>{{ user.id }}</code></div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">Role</div>
-                    <div class="show-v">{{ user.role }}</div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">Groups</div>
-                    <div class="show-v">
-                        {% if user.groups %}{% for g in user.groups %}<code>{{ g }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-                        {% else %}<span class="show-v--muted">No groups</span>{% endif %}
-                    </div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">Locale</div>
-                    <div class="show-v">{% if user.locale %}<span class="show-v--mono">{{ user.locale }}</span>{% else %}<span class="show-v--muted">—</span>{% endif %}</div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">Timezone</div>
-                    <div class="show-v">{% if user.timezone %}<span class="show-v--mono">{{ user.timezone }}</span>{% else %}<span class="show-v--muted">—</span>{% endif %}</div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">Created</div>
-                    <div class="show-v show-v--mono">{{ user.created_at_iso }}</div>
-                </div>
-                <div class="show-row">
-                    <div class="show-k">Last login</div>
-                    <div class="show-v show-v--mono">{{ user.last_login_iso }}</div>
-                </div>
-            </div>
-
-            {# ── Phase 10/c extension point ─────────────────────────────
-               Default body renders any `project_fields` (Vec<UserProfileSection>)
-               returned by the closure registered via
-               `Admin::user_profile_extension`. A project with no extension
-               registered renders nothing — no orphan headings, no empty
-               <div>. Projects that need richer markup than key-value rows
-               override this block in their own `templates/admin/user_view.html`. #}
-            {% block project_user_fields %}
-                {% for section in project_fields %}
-                <h2 style="margin-top: 32px;">{{ section.label }}</h2>
-                <div class="show-grid">
-                    {% for row in section.rows %}
-                    <div class="show-row">
-                        <div class="show-k">{{ row.label }}</div>
-                        <div class="show-v">{{ row.value }}</div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endfor %}
-            {% endblock %}
-
-            <h2 style="margin-top: 32px;">Recent activity</h2>
-            <ul class="timeline">
-                {% for event in recent_events %}
-                <li class="tl-{{ event.kind }}">
-                    <span class="tl-text">{{ event.message|safe }}</span>
-                    <span class="tl-meta">
-                        {{ event.timestamp_relative }} · <code>{{ event.actor }}</code>
-                    </span>
-                </li>
-                {% else %}
-                <li class="tl-muted">
-                    <span class="tl-text">No activity recorded.</span>
-                </li>
-                {% endfor %}
-            </ul>
-            {% if activity_count > recent_events|length %}
-            <p style="margin-top: 12px;"><a href="?tab=activity">View all activity →</a></p>
-            {% endif %}
-
-            {% endif %}
-
         </div>
-    </section>
-</div>
+        {% endif %}
 
+        {% elif tab == "permissions" %}
+        <h2>Permissions</h2>
+        <p class="sub">All effective permissions, including those inherited via group membership.</p>
+        {% if permissions %}
+        <div class="perm-grid" style="margin-top: 16px;">
+            {% for perm in permissions %}
+            <div class="perm-tile">
+                <code style="background: none; padding: 0; flex: 1;">{{ perm.name }}</code>
+                <span class="chip">{{ perm.source }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty" style="margin-top: 16px;">
+            <h3>No permissions</h3>
+            <p>This user has no direct or inherited permissions.</p>
+        </div>
+        {% endif %}
+
+        {% elif tab == "sessions" %}
+        <h2>Sessions</h2>
+        <p class="sub">Sessions for this account. IP and user-agent populate from new sign-ins; rows from before those columns existed show "—".</p>
+        {% if sessions %}
+        <div class="table-wrap" style="margin-top: 16px;">
+            <table class="table">
+                <thead>
+                    <tr><th>Created</th><th>Last seen</th><th>IP</th><th>User agent</th><th>Token</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in sessions %}
+                    <tr>
+                        <td>{{ s.created_at_iso }}</td>
+                        <td>{{ s.last_seen_relative }}</td>
+                        <td>{% if s.ip %}<code>{{ s.ip }}</code>{% else %}<span class="rio-cell-empty">—</span>{% endif %}</td>
+                        <td>{% if s.user_agent %}<span class="cell-text">{{ s.user_agent }}</span>{% else %}<span class="rio-cell-empty">—</span>{% endif %}</td>
+                        <td><code>{{ s.token_short }}</code></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty" style="margin-top: 16px;">
+            <h3>No active sessions</h3>
+            <p>This user has no current sessions in the database.</p>
+        </div>
+        {% endif %}
+
+        {% else %}
+        {# ── Overview (default). No stat tiles — counts moved to header meta line. ── #}
+        <h2>Profile</h2>
+
+        <div class="ud-profile-grid">
+            <div class="ud-row">
+                <div class="ud-k">Full name</div>
+                <div class="ud-v">
+                    {% if user.full_name_value %}{{ user.full_name_value }}
+                    {% else %}<span class="ud-v--muted">{{ user.full_name }} (derived from email)</span>{% endif %}
+                </div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">Email</div>
+                <div class="ud-v"><a href="mailto:{{ user.email }}">{{ user.email }}</a></div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">User ID</div>
+                <div class="ud-v"><code>{{ user.id }}</code></div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">Role</div>
+                <div class="ud-v">{{ user.role }}</div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">Groups</div>
+                <div class="ud-v">
+                    {% if user.groups %}{% for g in user.groups %}<code>{{ g }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+                    {% else %}<span class="ud-v--muted">No groups</span>{% endif %}
+                </div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">Locale</div>
+                <div class="ud-v">{% if user.locale %}<span class="ud-v--mono">{{ user.locale }}</span>{% else %}<span class="ud-v--muted">—</span>{% endif %}</div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">Timezone</div>
+                <div class="ud-v">{% if user.timezone %}<span class="ud-v--mono">{{ user.timezone }}</span>{% else %}<span class="ud-v--muted">—</span>{% endif %}</div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">Created</div>
+                <div class="ud-v ud-v--mono">{{ user.created_at_iso }}</div>
+            </div>
+            <div class="ud-row">
+                <div class="ud-k">Last login</div>
+                <div class="ud-v ud-v--mono">{{ user.last_login_iso }}</div>
+            </div>
+        </div>
+
+        {% block project_user_fields %}
+            {% for section in project_fields %}
+            <h2 style="margin-top: 32px;">{{ section.label }}</h2>
+            <div class="ud-profile-grid">
+                {% for row in section.rows %}
+                <div class="ud-row">
+                    <div class="ud-k">{{ row.label }}</div>
+                    <div class="ud-v">{{ row.value }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        {% endblock %}
+
+        <h2 style="margin-top: 32px;">Recent activity</h2>
+        <ul class="timeline">
+            {% for event in recent_events %}
+            <li class="tl-{{ event.kind }}">
+                <span class="tl-text">{{ event.message|safe }}</span>
+                <span class="tl-meta">{{ event.timestamp_relative }} · <code>{{ event.actor }}</code></span>
+            </li>
+            {% else %}
+            <li class="tl-muted"><span class="tl-text">No activity recorded.</span></li>
+            {% endfor %}
+        </ul>
+        {% if activity_count > recent_events|length %}
+        <p style="margin-top: 12px;"><a href="?tab=activity">View all activity →</a></p>
+        {% endif %}
+
+        {% endif %}
+
+    </div>
+
+    </div> {# /ud-card #}
+</div>
 {% endblock %}

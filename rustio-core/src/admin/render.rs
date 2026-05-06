@@ -3520,10 +3520,12 @@ mod tests {
             .render("admin/list.html", &ctx)
             .expect("list renders");
 
-        // Header row: one <th> per field, label rendered.
-        assert!(body.contains(">title</th>"), "title header missing");
-        assert!(body.contains(">body</th>"), "body header missing");
-        assert!(body.contains(">author</th>"), "author header missing");
+        // Header row: one <th> per field, label rendered. The v2
+        // list template carries data-col and data-kind attributes, so
+        // we check loosely for the closing-tag boundary.
+        assert!(body.contains("title</th>"), "title header missing");
+        assert!(body.contains("body</th>"), "body header missing");
+        assert!(body.contains("author</th>"), "author header missing");
 
         // Row 7: first column wrapped in the edit anchor; subsequent
         // cells render as plain text.
@@ -3592,7 +3594,7 @@ mod tests {
             .expect("list renders");
 
         assert!(
-            body.contains("No results match your search"),
+            body.contains("No results match your filters"),
             "filtered-empty copy missing",
         );
         assert!(
@@ -3649,8 +3651,11 @@ mod tests {
             .expect("list renders");
 
         // Numeric column: th + td gain class="num" purely from kind.
+        // v2 template emits additional data-col / data-kind attrs on
+        // every <th>; assert that the kind-driven class is present
+        // alongside the visible label.
         assert!(
-            body.contains(r#"<th scope="col" class="num">Pages</th>"#),
+            body.contains(r#"data-kind="number""#) && body.contains(r#"class="num">Pages</th>"#),
             "numeric column header must carry class=\"num\" via field.kind, got fragment: {}",
             &body[..body.len().min(800)]
         );
@@ -3847,9 +3852,12 @@ mod tests {
         }
 
         // The component classes that replaced them must be present.
+        // v2 swap: `.toolbar-form` was retired in favour of the smarter
+        // `.filter-bar` component (search input + sort + filter +
+        // columns dropdowns + active-filter chip row).
         assert!(
-            body.contains(r#"class="toolbar-form""#),
-            "search form must use the .toolbar-form component class"
+            body.contains(r#"class="filter-bar""#),
+            "list page must use the .filter-bar component"
         );
         assert!(
             body.contains(r#"class="actions-cell""#),
@@ -3879,8 +3887,13 @@ mod tests {
         let body = templates
             .render("admin/list.html", &ctx)
             .expect("list renders");
+        // v2 list emits additional data-col / data-kind attrs on each
+        // <th>; assert the kind-driven class lands on the Score column
+        // regardless of column name.
         assert!(
-            body.contains(r#"<th scope="col" class="num">Score</th>"#),
+            body.contains(r#"data-col="score""#)
+                && body.contains(r#"data-kind="number""#)
+                && body.contains(r#"class="num">Score</th>"#),
             "numeric column with arbitrary name must still get class=\"num\""
         );
     }
@@ -3904,7 +3917,7 @@ mod tests {
             .expect("list renders");
 
         assert!(
-            body.contains("No results match your search"),
+            body.contains("No results match your filters"),
             "filter-only empty should still show 'No results match' copy",
         );
         assert!(

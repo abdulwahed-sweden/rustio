@@ -372,6 +372,52 @@ single accent value at render time via `color-mix` — no extra
 config, no Tailwind rebuild. See `docs/architecture.md → Theming`
 for the layered model.
 
+### Admin chrome v2 (Unreleased)
+
+Every project that uses RustIO inherits a refreshed admin design
+system out of the box — no per-project copy required.
+
+- **Type:** Geist + Geist Mono via Google Fonts; 16-px-anchored
+  scale; tabular numbers everywhere.
+- **Palette:** Zinc neutrals on a `#fafafa` page; pure-white
+  cards; pale cool gray-blue (`#f4f6fa`) for the left nav and
+  the right aside on dashboard / form pages.
+- **Two accents, strict roles:** Cobalt `#2563eb` for *actions*
+  (buttons, links, focus rings, active tabs) — Violet `#8b5cf6`
+  for *decoration* (filter chips, sidebar stripe, inline `<code>`,
+  section accent underlines). Form bodies sit on a 4 % violet
+  wash; the inputs themselves stay pure white so they float
+  visibly above it.
+- **Smart list page.** Search input with `/` shortcut, Sort
+  dropdown, Add-filter dropdown (auto-populates from rendered
+  rows for `status` text columns), **Columns** dropdown that
+  toggles column visibility and persists to `localStorage`,
+  active-filter chip row with Clear-all. The ID column is hidden
+  by default; each model's primary / tertiary columns bucket
+  through a small JS map.
+- **Redesigned dashboard.** Hero greeting card with date and
+  pulsing operational status; single unified data-models grid
+  with `<article class="model-card">` items that lazy-fetch
+  their row count via `fetch('/admin/<model>/')`; a Recent
+  activity card and a System info card on the side rail.
+- **Single-column user detail.** 960-px max-width card with a
+  back-link, header (name + role + Active + Edit), one-line meta
+  (`email · N sessions · M events · last seen X`), tab strip,
+  and a 2-column profile grid with a violet decorative underline
+  beneath each section heading.
+
+The retired classes (`.splitview`, `.pane-list`, `.dashboard-*`,
+`.toolbar-form`, `.stat-strip`, `.show-grid`) keep their CSS rules
+in `base.html` — any project that hand-wrote markup against them
+keeps rendering correctly. Only the framework's default templates
+have moved to the v2 markup.
+
+To override anything, drop a file at
+`templates/admin/<page>.html` in your project; the runtime template
+loader checks that path first and falls back to the embedded
+default. See `docs/architecture.md → Templates` for the override
+contract.
+
 ## Users, groups, permissions
 
 Two parallel grammars:
