@@ -1200,6 +1200,8 @@ pub async fn list_render(
                 .map(|(col_idx, col)| {
                     let raw = row.get(&col.name).cloned().unwrap_or_default();
                     if let Some(fk) = fk_lookups.iter().find(|f| f.column_index == col_idx) {
+                        // FK column: render as a clickable link to the
+                        // target row (or `#<id>` if the target is gone).
                         if raw.is_empty() {
                             return String::new();
                         }
@@ -1212,6 +1214,26 @@ pub async fn list_render(
                             ),
                             None => format!("#{}", html_escape(&raw)),
                         }
+                    } else if is_status_field_name(&col.name) {
+                        // Status-shaped column: wrap in a pill badge that
+                        // admin.css colours via `[data-status="<value>"]`.
+                        // SQLite boolean columns return "0"/"1"; we
+                        // normalise to "Active"/"Inactive" so the label
+                        // reads cleanly AND admin.css can colour the
+                        // pill via `[data-status="active|inactive"]`.
+                        // String statuses (todo / in_progress / done /
+                        // pending …) pass through with the raw value
+                        // lowercased for the data-status attribute.
+                        // Empty values render as empty cells, not pills.
+                        if raw.is_empty() {
+                            return String::new();
+                        }
+                        let (data_value, label) = normalize_status_pill(&raw);
+                        format!(
+                            r#"<span class="badge-status" data-status="{value}">{label}</span>"#,
+                            value = html_escape(&data_value),
+                            label = html_escape(&label),
+                        )
                     } else {
                         html_escape(&raw)
                     }
@@ -1742,6 +1764,50 @@ pub async fn password_change_done_render(
     }
 }
 
+/// Heuristic for "does this column look like a status?" — used by
+/// the list-page cell renderer to opt into the `badge-status` pill
+/// styling via a `data-status=<value>` attribute. Name-based only;
+/// the type check is implicit (`bool`s typically carry `is_` /
+/// `has_` prefixes already).
+///
+/// Examples that match: `status`, `state`, `task_status`,
+/// `is_active`, `is_published`, `has_paid`, `published`, `active`.
+/// Examples that don't: `title`, `description`, `priority`,
+/// `created_at`, `project_id`.
+fn is_status_field_name(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n == "status"
+        || n == "state"
+        || n == "active"
+        || n == "published"
+        || n.ends_with("_status")
+        || n.ends_with("_state")
+        || n.starts_with("is_")
+        || n.starts_with("has_")
+}
+
+/// Normalise a raw cell value for status-pill rendering.
+///
+/// Returns `(data_status_value, display_label)`:
+/// - `data_status_value` is what goes into the `data-status` attribute;
+///   admin.css uses it to pick the pill colour
+///   (`active`/`pending`/`inactive`/`info`).
+/// - `display_label` is the human-readable text shown inside the pill.
+///
+/// SQLite booleans round-trip as `"0"` / `"1"` strings through the
+/// persistence layer; we map those to the more readable `Active` /
+/// `Inactive` here. String statuses (`todo` / `in_progress` / `done`)
+/// pass through with the original casing for the label and lowercased
+/// for `data-status` so CSS matchers fire on `[data-status="done"]`.
+fn normalize_status_pill(raw: &str) -> (String, String) {
+    let lc = raw.trim().to_lowercase();
+    match lc.as_str() {
+        "1" | "true" | "yes" | "on" => ("active".to_string(), "Active".to_string()),
+        "0" | "false" | "no" | "off" => ("inactive".to_string(), "Inactive".to_string()),
+        _ => (lc, raw.to_string()),
+    }
+}
+
 fn dashboard_fallback(entries: &[DashboardEntry]) -> String {
     let mut out = String::from(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Dashboard</title></head><body style=\"font-family:system-ui\"><h1>Dashboard</h1><ul>",
@@ -1887,5 +1953,93 @@ mod tests {
 
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].count, 0);
+    }
+
+    #[test]
+    fn status_field_name_matches_known_patterns() {
+        // Bare names
+        assert!(is_status_field_name("status"));
+        assert!(is_status_field_name("state"));
+        assert!(is_status_field_name("active"));
+        assert!(is_status_field_name("published"));
+        // Case-insensitive
+        assert!(is_status_field_name("Status"));
+        assert!(is_status_field_name("STATE"));
+        // Suffix patterns
+        assert!(is_status_field_name("task_status"));
+        assert!(is_status_field_name("order_state"));
+        // Prefix patterns (booleans typically)
+        assert!(is_status_field_name("is_active"));
+        assert!(is_status_field_name("is_published"));
+        assert!(is_status_field_name("has_paid"));
+    }
+
+    #[test]
+    fn status_field_name_rejects_non_status_columns() {
+        // Title-like text columns
+        assert!(!is_status_field_name("title"));
+        assert!(!is_status_field_name("description"));
+        assert!(!is_status_field_name("name"));
+        // Numerics
+        assert!(!is_status_field_name("priority"));
+        assert!(!is_status_field_name("count"));
+        // Timestamps
+        assert!(!is_status_field_name("created_at"));
+        assert!(!is_status_field_name("due_at"));
+        // FK columns
+        assert!(!is_status_field_name("project_id"));
+        assert!(!is_status_field_name("user_id"));
+        // Edge case: substring "status" inside a word should NOT match
+        assert!(!is_status_field_name("statustown"));
+        assert!(!is_status_field_name("estatus_id"));
+    }
+
+    #[test]
+    fn normalize_status_pill_maps_boolean_encodings() {
+        // Truthy → active + "Active" label
+        for raw in ["1", "true", "TRUE", " True ", "yes", "on"] {
+            let (data, label) = normalize_status_pill(raw);
+            assert_eq!(
+                data, "active",
+                "truthy raw {raw:?} should map to data=active"
+            );
+            assert_eq!(label, "Active", "truthy raw {raw:?} should label as Active");
+        }
+        // Falsy → inactive + "Inactive" label
+        for raw in ["0", "false", "FALSE", "no", "off"] {
+            let (data, label) = normalize_status_pill(raw);
+            assert_eq!(
+                data, "inactive",
+                "falsy raw {raw:?} should map to data=inactive"
+            );
+            assert_eq!(
+                label, "Inactive",
+                "falsy raw {raw:?} should label as Inactive"
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_status_pill_passes_through_string_statuses() {
+        // String statuses keep their original casing in the label but
+        // lowercase in the data-status attribute (so admin.css matchers
+        // like `[data-status="done"]` fire reliably).
+        let (data, label) = normalize_status_pill("In_Progress");
+        assert_eq!(data, "in_progress");
+        assert_eq!(label, "In_Progress");
+
+        let (data, label) = normalize_status_pill("DONE");
+        assert_eq!(data, "done");
+        assert_eq!(label, "DONE");
+
+        let (data, label) = normalize_status_pill("todo");
+        assert_eq!(data, "todo");
+        assert_eq!(label, "todo");
+
+        // Unknown value: passes through. The base `[data-status]` rule
+        // still applies the pill shape; only the colour is missing.
+        let (data, label) = normalize_status_pill("custom");
+        assert_eq!(data, "custom");
+        assert_eq!(label, "custom");
     }
 }

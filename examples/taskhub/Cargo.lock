@@ -1065,7 +1065,7 @@ dependencies = [
 
 [[package]]
 name = "rustio-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "argon2",
  "bytes",
@@ -1084,7 +1084,7 @@ dependencies = [
 
 [[package]]
 name = "rustio-macros"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "proc-macro2",
  "quote",
