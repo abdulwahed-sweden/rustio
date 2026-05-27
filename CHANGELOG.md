@@ -7,174 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added — 0.9.1 Destructive-op gate
-
-Turns the `ExecuteOptions.allow_destructive` placeholder into real behaviour. `rustio ai apply <plan> --force` now lets reviewers opt into `remove_field` / `remove_relation` primitives. Critical-risk plans, developer-only primitives, and PII policy refusals stay bypass-proof — `--force` is scoped narrowly on purpose.
-
-- **`apply_remove_field`.** New executor path. Uses the existing recreate-table pattern (`CREATE TABLE t__new` → `INSERT … SELECT` → `DROP` → `RENAME`) so SQLite's "ALTER TABLE DROP COLUMN won't work on FK-bearing tables" limitation doesn't bite. Patches `models.rs` to remove the field from the struct, `COLUMNS`, `INSERT_COLUMNS`, `from_row`, and `insert_values`. Fails cleanly with `ExecutionError::UnsupportedPrimitive { op: "remove_field", reason: "cannot drop the id primary key …" }` when asked to drop `id`.
-- **`apply_remove_relation`.** Delegates to `apply_remove_field` on the `<via>` column; keeps the summary line honest as "Remove relation" rather than "Remove field".
-- **FK-aware recreate.** The migration preserves every *other* surviving FK on the table by re-emitting its `REFERENCES <parent>(id) ON DELETE <policy>` clause from the schema (extends the 0.9.0 `column_def_with_relation_context`). No collateral constraint loss.
-- **Multi-model file support.** `find_table_for_struct`, COLUMNS/INSERT_COLUMNS array removal, and `from_row` / `insert_values` patching are all now scoped to the matching `impl Model for <struct>` block. Medflow-style apps (multiple models per file) are first-class.
-- **`remove_model` still refused.** Dropping a struct + its admin registration + downstream FKs is 0.9.2 scope — `ExecutionError::UnsupportedPrimitive { op: "remove_model" }` even with `allow_destructive: true`.
-- **CLI.** `rustio ai apply <plan> [--yes] [--dry-run] [--force]`. `--force` sets `allow_destructive` on the executor. Preview prints "destructive gate open: --force" so operators see what changed about the pass.
-- **Tests.** +5 core (remove_field with `--force` drops column + patches models.rs; `remove_primary_key_id` refused; `remove_relation` refused without `--force`, works with it; `remove_model` refused even with `--force`); +3 CLI (arg parser accepts `--force`, defaults to `false`, composes with `--yes --dry-run`). Total 519 passing (499 baseline → 514 after 0.9.0 → 519 now).
-- **Verified against medflow.** `ai plan "remove allergies from patients"` + `ai apply --yes --force` drops `Patient.allergies` cleanly: struct field + COLUMNS + INSERT_COLUMNS + from_row + insert_values all stripped; migration `0020_drop_allergies_from_patients.sql` emits a recreate-table with every other Patient column preserved, wrapped in `PRAGMA foreign_keys OFF/BEGIN/COMMIT/ON`. Without `--force` the same apply refuses with `primitive `remove_field` is destructive — re-run … with `--force``.
-
-### Added — 0.9.0 FK enforcement
-
-Phase 2's final exit criterion: `AddRelation { kind: BelongsTo }` now emits a real SQL `FOREIGN KEY` constraint, and existing 0.8.x projects have a one-shot retrofit path. Replaces the 0.8.0 "soft linkage via `rustio.schema.json` only" stopgap.
-
-- **Primitive surface.** `ai::AddRelation` gains two serde-default fields — `required: bool` (default `false`) and `on_delete: OnDelete` (default `Restrict`). Saved 0.8.x plan documents still parse byte-identically because both fields are `#[serde(default)]`. New `ai::OnDelete` enum with `Restrict` / `Cascade` / `SetNull`.
-- **Schema surface.** `schema::Relation` gains `required: Option<bool>` and `on_delete: Option<String>`, both `skip_serializing_if = "Option::is_none"`. Schema JSON written by 0.8.x projects round-trips through 0.9.0 unchanged; only projects that adopt the new metadata start writing the new keys.
-- **Executor.** `apply_add_relation` now emits `ALTER TABLE <child> ADD COLUMN <via> INTEGER REFERENCES <parent>(id) ON DELETE <policy>;` plus `PRAGMA foreign_keys = ON;`. The generated column is nullable — SQLite cannot add a `NOT NULL + REFERENCES` column via `ALTER TABLE`. A `required: true` primitive refuses with a clear pointer at the retrofit CLI.
-- **Planner grammar.** Relation phrases accept trailing options: `link A to B required`, `link A to B on_delete:cascade`, `link A to B required on_delete:set_null`. Unknown options / policies refuse at plan time — no silent default.
-- **Review layer.** `AddRelation` risk is Low by default, Medium for either `required` or `on_delete: cascade`, High for both combined. New warnings: a required-FK hint to use the retrofit path, a cascade blast-radius note.
-- **CLI.** New `rustio migrate add-fks` subcommand. Default dry-run; `--write` commits one `NNNN_retrofit_fks_<table>.sql` per affected table, using the SQLite recreate-table pattern (`CREATE TABLE …__new` + `INSERT … SELECT` + `DROP` + `RENAME`). Reviewed against medflow: 13 migrations, 27 relations upgraded, every FK column keeps its existing nullability.
-- **Tests.** +15 on top of the 499 baseline, taking `cargo test --workspace --all-targets` to 514 passing. Covers every `OnDelete` variant, nullable/required combos, the `required` refusal + retrofit hint, grammar extension, risk reclassification, and the retrofit no-op path for already-annotated schemas.
-- **Upgrade path.** See `UPGRADING.md` § "0.8.x → 0.9.0".
-
-### Changed — 0.10.0 Admin rebuild (breaking, in progress on `feat/admin-templates-v2`)
-
-The admin UI is being rebuilt from the ground up on `minijinja` templates + Bootstrap 5 + a first-class RBAC layer. Tracking branch: `feat/admin-templates-v2`. Landed in stages; nothing in this section has shipped to `main` yet.
-
-- **Rendering.** Rust code in `rustio-core::admin` now passes typed context dicts to `minijinja`; it no longer concatenates HTML. Default templates ship bundled in `rustio-core/assets/templates/` via `include_str!`.
-- **Per-project override.** User projects can override any admin template by placing a file of the same relative path under their project's `templates/` directory. Override is additive by filename — no patch format. This reverses the 0.8.x rule that admin templates had no override hook.
-- **Bootstrap 5** bundled via `include_bytes!`, served under `/admin/static/…`. Accent colour still driven by `rustio.design.json`, now passed as template context.
-- **RBAC.** New `admin::rbac` module; `Role` enum (`SuperAdmin` / `Admin` / `Editor` / `Viewer`); per-model `view` / `create` / `edit` / `delete`. Migration for `roles` + `user_roles` tables. Lacking `view` hides a model from the sidebar entirely; lacking `create` / `edit` / `delete` disables the corresponding UI paths, and a direct URL returns 403.
-- **Removed.** Every admin page request now flows through `minijinja` — there is no string-concat HTML left in the live request path. The legacy `admin.rs` dashboard helpers (`dashboard_response`, `render_dashboard_alerts`, `fetch_model_row_counts`), the `admin/layout.rs` drawer/bulk-action chain (`admin_index_post`, `admin_index_bulk`, `admin_index_with_drawer`, the `render_users_*` / `render_bulk_*` / `build_filter_*` helpers, `render_layout`, `render_admin_sidebar_for`, `build_admin_sidebar`, `build_admin_form`), the bundled `THEME_CSS` / `COMPONENTS_CSS` / `ADMIN_JS` consts, and the hand-rolled CSS at `assets/admin-new/` are gone. Two commits land this on `feat/admin-templates-v2`:
-  - `3bd405d refactor(admin): stage 5 — delete unreferenced legacy renderers` — drops the `#[allow(dead_code)]` block (`dashboard_response`/`fetch_model_row_counts`/`render_dashboard_alerts`), `admin_dashboard_get`, `admin_index_get`, `build_drawer_for_get`, the three `demo_*` helpers, and the `User`/`impl FormModel` pair that backed `demo_auto_form`. **2 files, +17 / –694.**
-  - `2f01283 refactor(admin): remove orphaned POST /admin/:model + drawer/bulk chain` — drops the `POST /admin/:model` mount + handler, both `/admin-new/:model` aliases, the entire string-concat chain in `admin/layout.rs` (16 functions), and deletes `assets/admin-new/{theme.css,components.css,admin.js}`. **7 files, +19 / –2645.**
-  - `b198079 refactor(admin): trim admin/ui.rs orphans` — drops `TopbarConfig`/`render_topbar`, `SidebarGroup`/`SidebarItem`/`render_sidebar`, `Breadcrumb`/`PageAction`/`PageHeaderConfig`/`render_page_header` (orphaned once the chain above was removed). `admin/ui.rs` shrinks from ~255 lines to ~38 — only `html_escape` (still consumed by FK cell links in `list_render` + field controls in `form_render`) and its test remain. **1 file, +7 / –224.**
-  - The legacy `AdminEntry` registration path (`mount_model<T>`) is untouched — those models keep their literal `/admin/<NAME>/{create,bulk_action,:id/edit,:id/delete}` routes; the catch-all that's gone was the *new* admin engine's drawer-based POST, which no template ever submitted to.
-  - Bulk delete / bulk edit in the rebuilt admin is no longer wired and is *not* in 0.10.0 scope. If re-introduced it will be a fresh template feature: a checkbox column in `list.html`, a new `POST /admin/:model/bulk` route, and a handler that mutates and re-renders through `list_render`. Projects that relied on scraping admin HTML will break.
-- **Palette.** Default `Design::primary_color` / `accent_color` shifts from rust-orange `#B84318` to indigo. Projects with `rustio.design.json` pinning a colour are unaffected.
-
-This is a pre-1.0 breaking change, documented here before wiring.
-
-**Verification at HEAD of `feat/admin-templates-v2`** (commit `b198079`): `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace --all-targets` — **517 passed, 0 failed**. The 519 → 517 delta is exactly the two `render_topbar` / `render_sidebar` tests removed alongside the helpers they covered; no production test churn across the three cleanup commits.
-
-### Added — 0.9.0 Relation Intelligence Layer
-
-The admin stops treating foreign keys as anonymous integers. This is a
-framework-level feature — the runtime registry, compile-time macro
-validation, and every admin rendering / filter / delete-guard hook all
-read from the same declarative source (`#[rustio(belongs_to = "...")]`
-on a struct field). Additive: projects without annotations continue to
-render and behave exactly like 0.8.x.
-
-#### Schema
-
-- `Relation.display_field: Option<String>` — optional column on the
-  target whose value the admin renders as the human label for a FK.
-  `None` → admin renders `#<id>` and **never guesses** a column. No
-  inference, no fallback chain.
-- `SCHEMA_VERSION` bumped `1` → `2`. Additive (new optional field,
-  `#[serde(default)]` + `skip_serializing_if = "Option::is_none"`), so
-  0.8.x tools still parse the new schema — they just ignore the
-  `display_field` key.
-
-#### Macro (`#[derive(RustioAdmin)]`)
-
-- New field attribute: `#[rustio(belongs_to = "Model")]` and
-  `#[rustio(belongs_to = "Model", display = "column")]`.
-- **Two compile-time checks** per declaration:
-  1. The target type must exist and implement `Model` (forces
-     `<Target as Model>::TABLE` resolution — unknown targets fail the
-     build with Rust's normal "cannot find type" error).
-  2. When `display = "col"` is set, `col` must appear in the target's
-     `Model::COLUMNS`. Verified via a `const _: ()` assertion using
-     a byte-wise `const fn str_eq` — missing column fails at
-     const-eval with a readable message including the offending field
-     name.
-- The attribute is only legal on `i32` / `i64` fields; any other type
-  produces a compile error at the derive site.
-- `#[rustio(display = "…")]` without `belongs_to = "…"` is rejected.
-- Unknown keys inside `#[rustio(...)]` are rejected.
-
-#### Runtime — `admin/relations.rs`
-
-- New module `rustio_core::admin::relations`:
-  - `RelationRegistry` built pure-functionally from `&Schema`. No I/O,
-    no interior mutability, no background refresh.
-  - `ResolvedRelation { source_model, source_field, target_model,
-    target_table, target_admin_name, target_display_field, kind }`.
-  - `InverseRelation { source_model, source_table, source_admin_name,
-    source_display_name, source_field, target_model }`.
-  - `RegistryError::UnknownTarget` / `UnknownDisplayField` — surfaced
-    by `validate(&schema)` for hand-edited `rustio.schema.json` files
-    that reach past the macro's compile-time checks.
-  - `RELATION_FILTER_DROPDOWN_CAP = 500` — soft cap on filter
-    dropdown size.
-- `AdminRelation` (runtime mirror of `schema::Relation`) on
-  `AdminField`. Populated by the macro; consumed by
-  `SchemaField::from_admin_field` so `rustio schema` output always
-  matches the compiled types.
-
-#### Admin rendering (list + detail)
-
-- FK columns on list pages render as
-  `<a href="/admin/<target>/<id>">Display</a> <span>#id</span>` when
-  a `display_field` resolves.
-- Missing target row (stale schema, deleted row) or no `display_field`
-  declared: renders `<a href="...">#<id></a>` — link without name,
-  **never the raw integer**.
-- Label prefetch: one `SELECT id, display FROM target WHERE id IN (…)`
-  per FK column per list render — 1+K queries total, not N+1.
-  **v1 strategy; marked in code as a future JOIN optimisation point.**
-- Edit page shows a `Linked: <Name> (#id)` hint below every FK input.
-  Input itself stays numeric in this pass.
-
-#### Admin — inverse relation panels (Phase 4)
-
-- Edit page renders a "Related" card listing every `has_many` inverse
-  of the current model: `Appointments (12) · Invoices (3)`. Each card
-  links to the filtered list page. Counts only; future evolution
-  (preview rows, in-page drill-in) documented as extension points.
-
-#### Admin — relation-aware filters (Phase 5)
-
-- List toolbar carries one `<select>` per `belongs_to` relation on
-  the model, populated via `SELECT id, display FROM target ORDER BY
-  display LIMIT 501`.
-- When the target row count ≥ 500 or no `display_field` is declared,
-  the filter falls back to a numeric input with a visible muted-text
-  hint explaining which case fired. Cap value is
-  `relations::RELATION_FILTER_DROPDOWN_CAP`.
-- Query string support: `/admin/appointments?patient_id=7` filters
-  the in-memory list. Reset button clears all relation filters.
-
-#### Admin — FK-aware delete guard (Phase 6)
-
-- `POST /admin/<slug>/<id>/delete` pre-checks every `has_many` inverse
-  via `SELECT COUNT(*)`. If any count > 0, the admin returns
-  **HTTP 409 Conflict** with a page listing every blocker (model
-  name + count + link to the filtered list) instead of the previous
-  opaque 500.
-- Defence in depth: a SQLite FK constraint violation surfacing through
-  the driver (`"FOREIGN KEY constraint failed"`) is caught at the
-  DELETE site and rendered through the same 409 page, covering the
-  pre-check→delete race window.
-
-#### Example — `examples/medflow/`
-
-- Every FK column across `apps/{people,care,billing}/models.rs`
-  carries a `#[rustio(belongs_to, display)]` annotation.
-- `rustio.schema.json` regenerates with relation metadata on all 8
-  FKs.
-- Live admin:
-  - `/admin/appointments` renders `Ahmed Hassan (#23)` instead of `23`.
-  - `/admin/patients/1/edit` shows `Appointments (3) · Invoices (2) ·
-    Prescriptions (2)`.
-  - `/admin/appointments?patient_id=1` filters the list to 3 of 120.
-  - Deleting Cardiology (has 2 doctors) returns 409 with blockers
-    listed.
-
-#### Tests
-
-- `rustio-core`: 12 new tests in `admin/relations_tests.rs` covering
-  serde round-trip, registry indexing, inverse computation, dangling-
-  target and unknown-display-field handling, empty-schema safety, and
-  iteration determinism. Total 415 (up from 403).
+> The 0.5.0 → 0.8.0 entries below describe work that accumulated in this section without distinct release cuts at the time. They remain in `[Unreleased]` until each is retroactively tagged or rolled forward into a future release. The 0.9.0 / 0.9.1 / 0.10.0 work that was previously here has been promoted to dated releases below.
 
 ### Added — 0.8.0 Relations Layer (Foundational)
 
@@ -1465,6 +1298,181 @@ the `--dump-schema` and `build_admin` shape. Either:
 2. Hand-merge the two snippets from the generated templates — they are
    ~10 lines each.
 
+## [0.10.0] - 2026-05-27
+
+### Changed (breaking) — Admin rebuild
+
+The admin UI is rebuilt from the ground up on `minijinja` templates + Bootstrap 5 + a first-class RBAC layer. Landed in five stages on `feat/admin-templates-v2`; this is the first cut after merge to `main`.
+
+- **Rendering.** Rust code in `rustio-core::admin` now passes typed context dicts to `minijinja`; it no longer concatenates HTML. Default templates ship bundled in `rustio-core/assets/templates/` via `include_str!`.
+- **Per-project override.** User projects can override any admin template by placing a file of the same relative path under their project's `templates/` directory. Override is additive by filename — no patch format. This reverses the 0.8.x rule that admin templates had no override hook.
+- **Bootstrap 5** bundled via `include_bytes!`, served under `/admin/static/…`. Accent colour still driven by `rustio.design.json`, now passed as template context.
+- **RBAC.** New `admin::rbac` module; `Role` enum (`SuperAdmin` / `Admin` / `Editor` / `Viewer`); per-model `view` / `create` / `edit` / `delete`. Migration for `roles` + `user_roles` tables. Lacking `view` hides a model from the sidebar entirely; lacking `create` / `edit` / `delete` disables the corresponding UI paths, and a direct URL returns 403.
+- **Removed.** Every admin page request now flows through `minijinja` — there is no string-concat HTML left in the live request path. The legacy `admin.rs` dashboard helpers (`dashboard_response`, `render_dashboard_alerts`, `fetch_model_row_counts`), the `admin/layout.rs` drawer/bulk-action chain (`admin_index_post`, `admin_index_bulk`, `admin_index_with_drawer`, the `render_users_*` / `render_bulk_*` / `build_filter_*` helpers, `render_layout`, `render_admin_sidebar_for`, `build_admin_sidebar`, `build_admin_form`), the bundled `THEME_CSS` / `COMPONENTS_CSS` / `ADMIN_JS` consts, and the hand-rolled CSS at `assets/admin-new/` are gone. Two commits land this on `feat/admin-templates-v2`:
+  - `3bd405d refactor(admin): stage 5 — delete unreferenced legacy renderers` — drops the `#[allow(dead_code)]` block (`dashboard_response`/`fetch_model_row_counts`/`render_dashboard_alerts`), `admin_dashboard_get`, `admin_index_get`, `build_drawer_for_get`, the three `demo_*` helpers, and the `User`/`impl FormModel` pair that backed `demo_auto_form`. **2 files, +17 / –694.**
+  - `2f01283 refactor(admin): remove orphaned POST /admin/:model + drawer/bulk chain` — drops the `POST /admin/:model` mount + handler, both `/admin-new/:model` aliases, the entire string-concat chain in `admin/layout.rs` (16 functions), and deletes `assets/admin-new/{theme.css,components.css,admin.js}`. **7 files, +19 / –2645.**
+  - `b198079 refactor(admin): trim admin/ui.rs orphans` — drops `TopbarConfig`/`render_topbar`, `SidebarGroup`/`SidebarItem`/`render_sidebar`, `Breadcrumb`/`PageAction`/`PageHeaderConfig`/`render_page_header` (orphaned once the chain above was removed). `admin/ui.rs` shrinks from ~255 lines to ~38 — only `html_escape` (still consumed by FK cell links in `list_render` + field controls in `form_render`) and its test remain. **1 file, +7 / –224.**
+  - The legacy `AdminEntry` registration path (`mount_model<T>`) is untouched — those models keep their literal `/admin/<NAME>/{create,bulk_action,:id/edit,:id/delete}` routes; the catch-all that's gone was the *new* admin engine's drawer-based POST, which no template ever submitted to.
+  - Bulk delete / bulk edit in the rebuilt admin is no longer wired and is *not* in 0.10.0 scope. If re-introduced it will be a fresh template feature: a checkbox column in `list.html`, a new `POST /admin/:model/bulk` route, and a handler that mutates and re-renders through `list_render`. Projects that relied on scraping admin HTML will break.
+- **Palette.** Default `Design::primary_color` / `accent_color` shifts from rust-orange `#B84318` to indigo. Projects with `rustio.design.json` pinning a colour are unaffected.
+
+This is a pre-1.0 breaking change.
+
+**Verification at release** (commit `b198079`): `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace --all-targets` — **517 passed, 0 failed**. The 519 → 517 delta is exactly the two `render_topbar` / `render_sidebar` tests removed alongside the helpers they covered; no production test churn across the three cleanup commits.
+
+## [0.9.1] - 2026-05-27
+
+### Added — Destructive-op gate
+
+Turns the `ExecuteOptions.allow_destructive` placeholder into real behaviour. `rustio ai apply <plan> --force` now lets reviewers opt into `remove_field` / `remove_relation` primitives. Critical-risk plans, developer-only primitives, and PII policy refusals stay bypass-proof — `--force` is scoped narrowly on purpose.
+
+- **`apply_remove_field`.** New executor path. Uses the existing recreate-table pattern (`CREATE TABLE t__new` → `INSERT … SELECT` → `DROP` → `RENAME`) so SQLite's "ALTER TABLE DROP COLUMN won't work on FK-bearing tables" limitation doesn't bite. Patches `models.rs` to remove the field from the struct, `COLUMNS`, `INSERT_COLUMNS`, `from_row`, and `insert_values`. Fails cleanly with `ExecutionError::UnsupportedPrimitive { op: "remove_field", reason: "cannot drop the id primary key …" }` when asked to drop `id`.
+- **`apply_remove_relation`.** Delegates to `apply_remove_field` on the `<via>` column; keeps the summary line honest as "Remove relation" rather than "Remove field".
+- **FK-aware recreate.** The migration preserves every *other* surviving FK on the table by re-emitting its `REFERENCES <parent>(id) ON DELETE <policy>` clause from the schema (extends the 0.9.0 `column_def_with_relation_context`). No collateral constraint loss.
+- **Multi-model file support.** `find_table_for_struct`, COLUMNS/INSERT_COLUMNS array removal, and `from_row` / `insert_values` patching are all now scoped to the matching `impl Model for <struct>` block. Medflow-style apps (multiple models per file) are first-class.
+- **`remove_model` still refused.** Dropping a struct + its admin registration + downstream FKs is 0.9.2 scope — `ExecutionError::UnsupportedPrimitive { op: "remove_model" }` even with `allow_destructive: true`.
+- **CLI.** `rustio ai apply <plan> [--yes] [--dry-run] [--force]`. `--force` sets `allow_destructive` on the executor. Preview prints "destructive gate open: --force" so operators see what changed about the pass.
+- **Tests.** +5 core (remove_field with `--force` drops column + patches models.rs; `remove_primary_key_id` refused; `remove_relation` refused without `--force`, works with it; `remove_model` refused even with `--force`); +3 CLI (arg parser accepts `--force`, defaults to `false`, composes with `--yes --dry-run`). Total 519 passing (499 baseline → 514 after 0.9.0 → 519 now).
+- **Verified against medflow.** `ai plan "remove allergies from patients"` + `ai apply --yes --force` drops `Patient.allergies` cleanly: struct field + COLUMNS + INSERT_COLUMNS + from_row + insert_values all stripped; migration `0020_drop_allergies_from_patients.sql` emits a recreate-table with every other Patient column preserved, wrapped in `PRAGMA foreign_keys OFF/BEGIN/COMMIT/ON`. Without `--force` the same apply refuses with `primitive `remove_field` is destructive — re-run … with `--force``.
+
+## [0.9.0] - 2026-05-27
+
+### Added — FK enforcement (Phase 2 exit criterion)
+
+Phase 2's final exit criterion: `AddRelation { kind: BelongsTo }` now emits a real SQL `FOREIGN KEY` constraint, and existing 0.8.x projects have a one-shot retrofit path. Replaces the 0.8.0 "soft linkage via `rustio.schema.json` only" stopgap.
+
+- **Primitive surface.** `ai::AddRelation` gains two serde-default fields — `required: bool` (default `false`) and `on_delete: OnDelete` (default `Restrict`). Saved 0.8.x plan documents still parse byte-identically because both fields are `#[serde(default)]`. New `ai::OnDelete` enum with `Restrict` / `Cascade` / `SetNull`.
+- **Schema surface.** `schema::Relation` gains `required: Option<bool>` and `on_delete: Option<String>`, both `skip_serializing_if = "Option::is_none"`. Schema JSON written by 0.8.x projects round-trips through 0.9.0 unchanged; only projects that adopt the new metadata start writing the new keys.
+- **Executor.** `apply_add_relation` now emits `ALTER TABLE <child> ADD COLUMN <via> INTEGER REFERENCES <parent>(id) ON DELETE <policy>;` plus `PRAGMA foreign_keys = ON;`. The generated column is nullable — SQLite cannot add a `NOT NULL + REFERENCES` column via `ALTER TABLE`. A `required: true` primitive refuses with a clear pointer at the retrofit CLI.
+- **Planner grammar.** Relation phrases accept trailing options: `link A to B required`, `link A to B on_delete:cascade`, `link A to B required on_delete:set_null`. Unknown options / policies refuse at plan time — no silent default.
+- **Review layer.** `AddRelation` risk is Low by default, Medium for either `required` or `on_delete: cascade`, High for both combined. New warnings: a required-FK hint to use the retrofit path, a cascade blast-radius note.
+- **CLI.** New `rustio migrate add-fks` subcommand. Default dry-run; `--write` commits one `NNNN_retrofit_fks_<table>.sql` per affected table, using the SQLite recreate-table pattern (`CREATE TABLE …__new` + `INSERT … SELECT` + `DROP` + `RENAME`). Reviewed against medflow: 13 migrations, 27 relations upgraded, every FK column keeps its existing nullability.
+- **Tests.** +15 on top of the 499 baseline, taking `cargo test --workspace --all-targets` to 514 passing. Covers every `OnDelete` variant, nullable/required combos, the `required` refusal + retrofit hint, grammar extension, risk reclassification, and the retrofit no-op path for already-annotated schemas.
+- **Upgrade path.** See `UPGRADING.md` § "0.8.x → 0.9.0".
+
+### Added — Relation Intelligence Layer (admin)
+
+The admin stops treating foreign keys as anonymous integers. This is a
+framework-level feature — the runtime registry, compile-time macro
+validation, and every admin rendering / filter / delete-guard hook all
+read from the same declarative source (`#[rustio(belongs_to = "...")]`
+on a struct field). Additive: projects without annotations continue to
+render and behave exactly like 0.8.x.
+
+#### Schema
+
+- `Relation.display_field: Option<String>` — optional column on the
+  target whose value the admin renders as the human label for a FK.
+  `None` → admin renders `#<id>` and **never guesses** a column. No
+  inference, no fallback chain.
+- `SCHEMA_VERSION` bumped `1` → `2`. Additive (new optional field,
+  `#[serde(default)]` + `skip_serializing_if = "Option::is_none"`), so
+  0.8.x tools still parse the new schema — they just ignore the
+  `display_field` key.
+
+#### Macro (`#[derive(RustioAdmin)]`)
+
+- New field attribute: `#[rustio(belongs_to = "Model")]` and
+  `#[rustio(belongs_to = "Model", display = "column")]`.
+- **Two compile-time checks** per declaration:
+  1. The target type must exist and implement `Model` (forces
+     `<Target as Model>::TABLE` resolution — unknown targets fail the
+     build with Rust's normal "cannot find type" error).
+  2. When `display = "col"` is set, `col` must appear in the target's
+     `Model::COLUMNS`. Verified via a `const _: ()` assertion using
+     a byte-wise `const fn str_eq` — missing column fails at
+     const-eval with a readable message including the offending field
+     name.
+- The attribute is only legal on `i32` / `i64` fields; any other type
+  produces a compile error at the derive site.
+- `#[rustio(display = "…")]` without `belongs_to = "…"` is rejected.
+- Unknown keys inside `#[rustio(...)]` are rejected.
+
+#### Runtime — `admin/relations.rs`
+
+- New module `rustio_core::admin::relations`:
+  - `RelationRegistry` built pure-functionally from `&Schema`. No I/O,
+    no interior mutability, no background refresh.
+  - `ResolvedRelation { source_model, source_field, target_model,
+    target_table, target_admin_name, target_display_field, kind }`.
+  - `InverseRelation { source_model, source_table, source_admin_name,
+    source_display_name, source_field, target_model }`.
+  - `RegistryError::UnknownTarget` / `UnknownDisplayField` — surfaced
+    by `validate(&schema)` for hand-edited `rustio.schema.json` files
+    that reach past the macro's compile-time checks.
+  - `RELATION_FILTER_DROPDOWN_CAP = 500` — soft cap on filter
+    dropdown size.
+- `AdminRelation` (runtime mirror of `schema::Relation`) on
+  `AdminField`. Populated by the macro; consumed by
+  `SchemaField::from_admin_field` so `rustio schema` output always
+  matches the compiled types.
+
+#### Admin rendering (list + detail)
+
+- FK columns on list pages render as
+  `<a href="/admin/<target>/<id>">Display</a> <span>#id</span>` when
+  a `display_field` resolves.
+- Missing target row (stale schema, deleted row) or no `display_field`
+  declared: renders `<a href="...">#<id></a>` — link without name,
+  **never the raw integer**.
+- Label prefetch: one `SELECT id, display FROM target WHERE id IN (…)`
+  per FK column per list render — 1+K queries total, not N+1.
+  **v1 strategy; marked in code as a future JOIN optimisation point.**
+- Edit page shows a `Linked: <Name> (#id)` hint below every FK input.
+  Input itself stays numeric in this pass.
+
+#### Admin — inverse relation panels (Phase 4)
+
+- Edit page renders a "Related" card listing every `has_many` inverse
+  of the current model: `Appointments (12) · Invoices (3)`. Each card
+  links to the filtered list page. Counts only; future evolution
+  (preview rows, in-page drill-in) documented as extension points.
+
+#### Admin — relation-aware filters (Phase 5)
+
+- List toolbar carries one `<select>` per `belongs_to` relation on
+  the model, populated via `SELECT id, display FROM target ORDER BY
+  display LIMIT 501`.
+- When the target row count ≥ 500 or no `display_field` is declared,
+  the filter falls back to a numeric input with a visible muted-text
+  hint explaining which case fired. Cap value is
+  `relations::RELATION_FILTER_DROPDOWN_CAP`.
+- Query string support: `/admin/appointments?patient_id=7` filters
+  the in-memory list. Reset button clears all relation filters.
+
+#### Admin — FK-aware delete guard (Phase 6)
+
+- `POST /admin/<slug>/<id>/delete` pre-checks every `has_many` inverse
+  via `SELECT COUNT(*)`. If any count > 0, the admin returns
+  **HTTP 409 Conflict** with a page listing every blocker (model
+  name + count + link to the filtered list) instead of the previous
+  opaque 500.
+- Defence in depth: a SQLite FK constraint violation surfacing through
+  the driver (`"FOREIGN KEY constraint failed"`) is caught at the
+  DELETE site and rendered through the same 409 page, covering the
+  pre-check→delete race window.
+
+#### Example — `examples/medflow/`
+
+- Every FK column across `apps/{people,care,billing}/models.rs`
+  carries a `#[rustio(belongs_to, display)]` annotation.
+- `rustio.schema.json` regenerates with relation metadata on all 8
+  FKs.
+- Live admin:
+  - `/admin/appointments` renders `Ahmed Hassan (#23)` instead of `23`.
+  - `/admin/patients/1/edit` shows `Appointments (3) · Invoices (2) ·
+    Prescriptions (2)`.
+  - `/admin/appointments?patient_id=1` filters the list to 3 of 120.
+  - Deleting Cardiology (has 2 doctors) returns 409 with blockers
+    listed.
+
+#### Tests
+
+- `rustio-core`: 12 new tests in `admin/relations_tests.rs` covering
+  serde round-trip, registry indexing, inverse computation, dangling-
+  target and unknown-display-field handling, empty-schema safety, and
+  iteration determinism. Total 415 (up from 403).
+
 ## [0.3.1]
 
 ### Added
@@ -1765,7 +1773,10 @@ First public release.
 - `rustio-core = "x.y.z"` in generated projects is pinned to match CLI; lockstep
   releases expected until this stabilizes.
 
-[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.1...v0.9.0
 [0.3.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/abdulwahed-sweden/rustio/compare/v0.2.1...v0.2.2
