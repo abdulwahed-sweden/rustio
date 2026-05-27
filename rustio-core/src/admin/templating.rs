@@ -224,14 +224,15 @@ fn embedded(name: &str) -> Option<&'static str> {
 
 /// Framework CSS/JS served under `/admin/static/…`. The tuples are
 /// `(path_under_admin_static, content_type, bytes)`. As of 0.11.x the
-/// admin no longer ships Bootstrap — the design system is self-contained
-/// in `admin.css` (compiled from Tailwind v4 source by build.rs in
-/// Phase 2).
+/// admin no longer ships Bootstrap — the design system lives in
+/// `admin.css`, compiled at build time by `build.rs` from the Tailwind
+/// v4 source at `assets/static/admin.css`. The compiled bytes land in
+/// `OUT_DIR/admin.css` and are inlined here via `include_bytes!`.
 pub const BUNDLED_ASSETS: &[(&str, &str, &[u8])] = &[
     (
         "admin.css",
         "text/css; charset=utf-8",
-        include_bytes!("../../assets/static/admin.css"),
+        include_bytes!(concat!(env!("OUT_DIR"), "/admin.css")),
     ),
     (
         "app.js",
