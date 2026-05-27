@@ -1,68 +1,165 @@
 /* ============================================================================
- * RustIO admin — TERMINAL BRUTALISM
+ * RustIO admin — lifted-dark editorial design system
  *
- * Dark canvas, monospace everywhere, no cards, no shadows, no rounded corners.
- * Data dominates; chrome recedes. Status is bracket-text, not pills. The one
- * accent is electric lime (#cffd00) — used sparingly.
+ * A calm, neutral interface. Nine carefully spaced grays carry every
+ * structural decision; one warm orange (#FF6A3D) is the only chromatic
+ * colour in the entire system, used at 5–8% of any visible surface.
  *
- * Inspirations: Bloomberg Terminal · Wim Crouwel · Linear · Vercel
+ * Surface ladder (intentional two-step lift):
+ *   canvas  --bg-canvas    #1B1B1F   the page background
+ *   surface --bg-surface   #2A2A2F   cards sitting on the canvas
+ *   topbar  --bg-elevated  #36363C   lifted off the page
+ *
+ * Strict rules from the brief:
+ *   - no pure black, no pure white
+ *   - all borders 0.5px (never 1px / 2px); featured cards use accent border
+ *   - font weights 400 and 500 only (never 600+)
+ *   - sentence case everywhere, no Title Case, no ALL CAPS
+ *   - body text 16px / line-height 1.7 — no 13/14px paragraphs
+ *   - accent locations are budgeted: logo, hero word, primary CTA, status
+ *     dot, one featured card, link hover, input focus — nothing else
  * ============================================================================ */
 
 :root {
-  /* Canvas */
-  --rio-bg:            #0a0a0a;
-  --rio-surface:       #111111;
-  --rio-surface-2:     #161616;
-  --rio-surface-hover: #1c1c1c;
+  /* Grayscale ladder — 9 steps, all with a subtle purple-leaning undertone */
+  --gray-950: #1B1B1F;   /* page canvas */
+  --gray-900: #2A2A2F;   /* primary surface */
+  --gray-800: #36363C;   /* elevated surface */
+  --gray-700: #45454C;   /* default borders */
+  --gray-600: #5C5C64;   /* secondary borders */
+  --gray-500: #7A7A82;   /* muted icons, disabled states */
+  --gray-400: #9C9CA4;   /* subtitle text, secondary text */
+  --gray-300: #C4C4CA;   /* labels, tertiary emphasis */
+  --gray-100: #F0F0F4;   /* primary text */
 
-  /* Borders */
-  --rio-border:        #1f1f1f;
-  --rio-border-bright: #2a2a2a;
-  --rio-border-line:   #404040;
+  /* Single accent */
+  --accent:        #FF6A3D;
+  --accent-text:   #2A0A04;   /* text on accent background */
+  --accent-deep:   #5C2410;   /* secondary text on accent background */
 
-  /* Ink */
-  --rio-ink:           #fafafa;
-  --rio-ink-soft:      #a3a3a3;
-  --rio-ink-muted:     #525252;
-  --rio-ink-faint:     #2a2a2a;
+  /* Semantic aliases — components use these, not the raw scale */
+  --bg-canvas:      var(--gray-950);
+  --bg-surface:     var(--gray-900);
+  --bg-elevated:    var(--gray-800);
+  --border-default: var(--gray-700);
+  --border-strong:  var(--gray-600);
+  --text-primary:   var(--gray-100);
+  --text-secondary: var(--gray-400);
+  --text-tertiary:  var(--gray-300);
 
-  /* Accent (use sparingly — the one electric colour) */
-  --rio-accent:        #cffd00;
-  --rio-accent-soft:   rgba(207, 253, 0, .12);
-  --rio-accent-line:   rgba(207, 253, 0, .35);
+  /* Type scale */
+  --text-hero:  26px;   /* H1, hero headline */
+  --text-stat:  22px;   /* big numbers in stat cards */
+  --text-h2:    18px;   /* section headings */
+  --text-h3:    16px;   /* card titles, wordmark */
+  --text-body:  16px;   /* paragraphs, buttons */
+  --text-meta:  14px;   /* nav links, stat labels */
+  --text-small: 13px;   /* subtitles, helper text, tag pills */
+  --text-mono:  13px;   /* code, hex values */
+  --text-micro: 11px;   /* annotations only */
 
-  /* Status palette */
-  --rio-ok:            #00ff88;
-  --rio-warn:          #fbbf24;
-  --rio-cold:          #737373;
-  --rio-err:           #ff5252;
-  --rio-info:          #22d3ee;
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 
-  /* Type */
-  --rio-mono:          'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --rio-px:            14px;        /* baseline body size */
-  --rio-leading:       1.55;
+  /* Space scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 22px;
+  --space-6: 28px;
+  --space-7: 36px;
+  --space-8: 48px;
+
+  /* Fonts */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
-* { box-sizing: border-box; }
+/* ----------------------------------------------------------------------------
+ * Reset + base typography
+ * -------------------------------------------------------------------------- */
 
+* { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
 body.admin-shell,
 body.admin-auth {
-  background: var(--rio-bg);
-  color: var(--rio-ink);
-  font-family: var(--rio-mono);
-  font-size: var(--rio-px);
-  font-feature-settings: "ss01", "ss02", "tnum", "zero", "calt";
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  line-height: var(--rio-leading);
 }
 
-/* The minijinja templates extend base.html which loads Bootstrap before our
- * CSS. We don't want Bootstrap typography or palette here — neutralise the
- * classes the templates still emit. */
+/* Headings — weight 500, never heavier. Negative letter-spacing per spec. */
+body.admin-shell h1, body.admin-shell h2, body.admin-shell h3,
+body.admin-shell h4, body.admin-shell h5, body.admin-shell h6,
+body.admin-auth  h1, body.admin-auth  h2, body.admin-auth  h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 500;
+  font-family: var(--font-sans);
+}
+
+body.admin-shell h1, body.admin-auth h1 {
+  font-size: var(--text-hero);
+  line-height: 1.3;
+  letter-spacing: -0.5px;
+}
+body.admin-shell h2 {
+  font-size: var(--text-h2);
+  line-height: 1.35;
+  letter-spacing: -0.2px;
+}
+body.admin-shell h3 {
+  font-size: var(--text-h3);
+  line-height: 1.4;
+  letter-spacing: -0.2px;
+}
+
+body.admin-shell p,
+body.admin-auth  p {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+body.admin-shell a,
+body.admin-auth  a {
+  color: inherit;
+  text-decoration: none;
+  transition: color .15s ease;
+}
+body.admin-shell a:hover,
+body.admin-auth  a:hover {
+  color: var(--accent);
+}
+
+body.admin-shell code,
+body.admin-auth  code {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* ----------------------------------------------------------------------------
+ * Neutralise Bootstrap classes the templates still emit.
+ * Keeps the cascade predictable as we migrate page-by-page; eventually the
+ * templates will use only .rio-* classes and this block becomes redundant.
+ * -------------------------------------------------------------------------- */
+
 body.admin-shell .btn,
 body.admin-shell .form-label,
 body.admin-shell .form-control,
@@ -71,699 +168,10 @@ body.admin-shell .alert,
 body.admin-shell .text-muted,
 body.admin-shell .text-danger,
 body.admin-shell .small,
-body.admin-shell .display-6,
-body.admin-shell .h5,
-body.admin-shell .h6,
-body.admin-shell h1, body.admin-shell h2, body.admin-shell h3,
-body.admin-shell h4, body.admin-shell h5, body.admin-shell h6 {
-  font-family: var(--rio-mono);
+body.admin-shell .display-6 {
+  font-family: var(--font-sans);
+  font-weight: 400;
 }
 
-body.admin-shell a            { color: var(--rio-ink); text-decoration: none; }
-body.admin-shell a:hover      { color: var(--rio-accent); text-decoration: none; }
-
-/* Selection colour: lime on black. */
-::selection { background: var(--rio-accent); color: var(--rio-bg); }
-
-/* ----------------------------------------------------------------------------
- * Shell layout: top nav · main · status bar
- * -------------------------------------------------------------------------- */
-
-.rio-shell {
-  display: grid;
-  grid-template-rows: 56px 1fr 32px;
-  min-height: 100vh;
-}
-
-.rio-topnav {
-  display: flex;
-  align-items: center;
-  gap: 32px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--rio-border);
-  background: var(--rio-bg);
-  /* hide subtle scan stripe with a 1px tint */
-  position: sticky;
-  top: 0;
-  z-index: 50;
-}
-
-.rio-topnav__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 700;
-  letter-spacing: .04em;
-}
-
-.rio-topnav__mark {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--rio-accent);
-  color: var(--rio-bg);
-  font-weight: 800;
-  font-size: 12px;
-}
-
-.rio-topnav__sep {
-  color: var(--rio-ink-muted);
-}
-
-.rio-topnav__links {
-  display: flex;
-  gap: 4px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.rio-topnav__link {
-  display: inline-flex;
-  align-items: center;
-  height: 56px;
-  padding: 0 14px;
-  color: var(--rio-ink-soft);
-  font-size: 12.5px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  border-bottom: 2px solid transparent;
-  transition: color 100ms, border-color 100ms;
-}
-
-.rio-topnav__link:hover {
-  color: var(--rio-ink);
-}
-
-.rio-topnav__link--active {
-  color: var(--rio-accent);
-  border-bottom-color: var(--rio-accent);
-}
-
-.rio-topnav__spacer { flex: 1; }
-
-.rio-topnav__user {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--rio-ink-soft);
-  font-size: 12px;
-  letter-spacing: .05em;
-  text-transform: lowercase;
-}
-
-.rio-topnav__logout {
-  background: transparent;
-  border: 1px solid var(--rio-border-bright);
-  color: var(--rio-ink-soft);
-  font-family: var(--rio-mono);
-  font-size: 11.5px;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  padding: 4px 10px;
-  cursor: pointer;
-  transition: color 100ms, border-color 100ms, background 100ms;
-}
-
-.rio-topnav__logout:hover {
-  color: var(--rio-bg);
-  background: var(--rio-accent);
-  border-color: var(--rio-accent);
-}
-
-.rio-main {
-  padding: 56px 56px 80px;
-  max-width: 1400px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-/* ----------------------------------------------------------------------------
- * Page title block
- *   <PAGE TITLE>                              [+ NEW]
- *   ───────  5 records · 2 in-progress · 2 todo · 1 done
- * -------------------------------------------------------------------------- */
-
-.rio-page-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 48px;
-  flex-wrap: wrap;
-}
-
-.rio-title-block {
-  flex: 1;
-  min-width: 0;
-}
-
-.rio-title {
-  font-size: 64px;
-  line-height: 1.05;
-  font-weight: 700;
-  letter-spacing: -.02em;
-  margin: 0 0 18px;
-  color: var(--rio-ink);
-}
-
-.rio-rule {
-  display: inline-flex;
-  align-items: center;
-  gap: 16px;
-  font-size: 12px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--rio-ink-muted);
-}
-
-.rio-rule::before {
-  content: "";
-  display: inline-block;
-  width: 64px;
-  height: 1px;
-  background: var(--rio-ink);
-}
-
-.rio-rule__sep {
-  color: var(--rio-ink-faint);
-}
-
-.rio-rule__hl {
-  color: var(--rio-ink);
-}
-
-/* ----------------------------------------------------------------------------
- * Buttons
- *
- * Bracket-wrapped monospace text. No background. Hover flips to accent.
- *   [+ NEW]   [SAVE]   [DELETE]
- * -------------------------------------------------------------------------- */
-
-.rio-btn,
-body.admin-shell .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  color: var(--rio-ink);
-  border: 1px solid var(--rio-ink);
-  padding: 9px 16px;
-  font-family: var(--rio-mono);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background 100ms, color 100ms, border-color 100ms;
-  border-radius: 0;
-  text-decoration: none;
-}
-
-.rio-btn:hover,
-body.admin-shell .btn:hover {
-  background: var(--rio-ink);
-  color: var(--rio-bg);
-}
-
-.rio-btn--primary,
-body.admin-shell .btn-primary {
-  background: var(--rio-accent);
-  color: var(--rio-bg);
-  border-color: var(--rio-accent);
-}
-
-.rio-btn--primary:hover,
-body.admin-shell .btn-primary:hover,
-body.admin-shell .btn-primary:focus {
-  background: var(--rio-ink);
-  color: var(--rio-bg);
-  border-color: var(--rio-ink);
-}
-
-.rio-btn--danger,
-body.admin-shell .btn-link.text-danger {
-  color: var(--rio-err) !important;
-  border-color: var(--rio-err);
-  text-decoration: none;
-}
-
-.rio-btn--danger:hover {
-  background: var(--rio-err);
-  color: var(--rio-bg);
-}
-
-.rio-btn--ghost,
-body.admin-shell .btn-link {
-  background: transparent;
-  border-color: transparent;
-  color: var(--rio-ink-soft);
-  padding: 9px 4px;
-}
-
-.rio-btn--ghost:hover,
-body.admin-shell .btn-link:hover {
-  background: transparent;
-  color: var(--rio-accent);
-}
-
-/* ----------------------------------------------------------------------------
- * Tables — the centerpiece
- *
- * Hair borders, transparent header background, dense rows, tabular nums.
- * -------------------------------------------------------------------------- */
-
-.rio-table-wrap { overflow-x: auto; }
-
-.rio-table,
-body.admin-shell .admin-table,
-body.admin-shell table.table {
-  width: 100%;
-  border-collapse: collapse;
-  background: transparent;
-  margin: 0;
-  color: var(--rio-ink);
-}
-
-.rio-table thead th,
-body.admin-shell .admin-table > thead > tr > th {
-  background: transparent;
-  color: var(--rio-ink-muted);
-  text-align: left;
-  font-weight: 500;
-  font-size: 10.5px;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  padding: 14px 16px 14px 0;
-  border-top: 1px solid var(--rio-border-line);
-  border-bottom: 1px solid var(--rio-border-line);
-  white-space: nowrap;
-}
-
-.rio-table tbody td,
-body.admin-shell .admin-table > tbody > tr > td {
-  padding: 14px 16px 14px 0;
-  border-bottom: 1px solid var(--rio-border);
-  border-top: 0;
-  border-left: 0;
-  border-right: 0;
-  font-size: 13.5px;
-  vertical-align: middle;
-  color: var(--rio-ink);
-  white-space: nowrap;
-}
-
-.rio-table tbody tr:hover td,
-body.admin-shell .admin-table > tbody > tr:hover > td {
-  background: var(--rio-surface);
-}
-
-/* Last column doesn't need right padding — easier alignment with status bar */
-.rio-table thead th:last-child,
-.rio-table tbody td:last-child,
-body.admin-shell .admin-table > thead > tr > th:last-child,
-body.admin-shell .admin-table > tbody > tr > td:last-child {
-  padding-right: 0;
-}
-
-/* Tabular nums + ID-style mono everywhere */
-.rio-num,
-body.admin-shell .num,
-.rio-table td,
-.rio-table th {
-  font-variant-numeric: tabular-nums;
-}
-
-/* FK link cells */
-.rio-table a,
-body.admin-shell .admin-table a {
-  color: var(--rio-ink);
-  border-bottom: 1px dotted var(--rio-ink-muted);
-  text-decoration: none;
-}
-
-.rio-table a:hover,
-body.admin-shell .admin-table a:hover {
-  color: var(--rio-accent);
-  border-bottom-color: var(--rio-accent);
-}
-
-/* ----------------------------------------------------------------------------
- * Status tokens — bracket-text, not pills
- *
- * Markup is still `<span class="badge-status" data-status="done">done</span>`
- * (the renderer hasn't changed). CSS displays it as `[DONE]` in monospace.
- * -------------------------------------------------------------------------- */
-
-.badge-status,
-[data-status] {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--rio-mono);
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--rio-ink-soft);
-  white-space: nowrap;
-}
-
-.badge-status::before,
-[data-status]::before {
-  content: "[";
-  opacity: .45;
-  margin-right: 3px;
-}
-
-.badge-status::after,
-[data-status]::after {
-  content: "]";
-  opacity: .45;
-  margin-left: 3px;
-}
-
-.badge-status.active,
-[data-status="active"],
-[data-status="done"],
-[data-status="true"]      { color: var(--rio-ok); }
-
-.badge-status.pending,
-[data-status="pending"],
-[data-status="in_progress"],
-[data-status="in-progress"]{ color: var(--rio-warn); }
-
-.badge-status.inactive,
-[data-status="inactive"],
-[data-status="todo"],
-[data-status="false"]     { color: var(--rio-cold); }
-
-.badge-status.info,
-[data-status="info"]      { color: var(--rio-info); }
-
-/* ----------------------------------------------------------------------------
- * Dashboard — bento-style data windows
- *
- * Each model is its own composition: huge number, small label, decorative
- * rule. No box, no card. Hover: number flips to accent.
- * -------------------------------------------------------------------------- */
-
-.rio-dash {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1px;
-  background: var(--rio-border);
-  border: 1px solid var(--rio-border);
-}
-
-.rio-dash__cell {
-  background: var(--rio-bg);
-  padding: 32px 28px;
-  transition: background 120ms;
-  position: relative;
-  cursor: pointer;
-}
-
-.rio-dash__cell:hover {
-  background: var(--rio-surface);
-}
-
-.rio-dash__cell:hover .rio-dash__value {
-  color: var(--rio-accent);
-}
-
-.rio-dash__label {
-  display: block;
-  font-size: 10.5px;
-  letter-spacing: .18em;
-  text-transform: uppercase;
-  color: var(--rio-ink-muted);
-  margin-bottom: 16px;
-}
-
-.rio-dash__value {
-  display: block;
-  font-size: 56px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -.02em;
-  color: var(--rio-ink);
-  font-variant-numeric: tabular-nums;
-  transition: color 120ms;
-}
-
-.rio-dash__cell a,
-.rio-dash__cell a:hover { text-decoration: none; }
-
-/* Make the entire cell clickable when it wraps an anchor */
-.rio-dash__cell-link {
-  position: absolute;
-  inset: 0;
-}
-
-/* ----------------------------------------------------------------------------
- * Forms
- *
- * No card. Field block: tiny uppercase label above a bare-bottom-border input.
- * Bracket-wrapped submit.
- * -------------------------------------------------------------------------- */
-
-.rio-form {
-  max-width: 720px;
-}
-
-.rio-form__field {
-  margin-bottom: 28px;
-}
-
-body.admin-shell .form-label,
-.rio-form__label {
-  display: block;
-  font-size: 10.5px;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--rio-ink-muted);
-  margin-bottom: 8px;
-  font-weight: 500;
-}
-
-body.admin-shell .form-label .text-danger,
-.rio-form__required { color: var(--rio-accent); }
-
-body.admin-shell .form-control,
-body.admin-shell .form-select,
-.rio-form__input {
-  width: 100%;
-  background: transparent;
-  color: var(--rio-ink);
-  border: 0;
-  border-bottom: 1px solid var(--rio-border-line);
-  border-radius: 0;
-  padding: 8px 0;
-  font-family: var(--rio-mono);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 120ms;
-}
-
-body.admin-shell .form-control:focus,
-body.admin-shell .form-select:focus,
-.rio-form__input:focus {
-  border-bottom-color: var(--rio-accent);
-  box-shadow: none;
-}
-
-body.admin-shell .form-text {
-  color: var(--rio-ink-muted);
-  font-size: 12px;
-  margin-top: 6px;
-}
-
-body.admin-shell .alert {
-  background: transparent;
-  border: 1px solid var(--rio-err);
-  border-radius: 0;
-  color: var(--rio-err);
-  padding: 12px 16px;
-  font-size: 13px;
-}
-
-/* Style native select arrow on dark bg */
-body.admin-shell .form-select {
-  background-image: linear-gradient(45deg, transparent 50%, var(--rio-ink-soft) 50%),
-                    linear-gradient(135deg, var(--rio-ink-soft) 50%, transparent 50%);
-  background-position: calc(100% - 14px) center, calc(100% - 9px) center;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-  padding-right: 28px;
-}
-
-/* ----------------------------------------------------------------------------
- * Pagination — minimal mono
- * -------------------------------------------------------------------------- */
-
-body.admin-shell .pagination,
-.rio-pagination {
-  display: flex;
-  gap: 0;
-  margin: 32px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-body.admin-shell .page-link,
-.rio-pagination__link {
-  display: inline-flex;
-  min-width: 32px;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: var(--rio-ink-soft);
-  border: 1px solid var(--rio-border-bright);
-  border-radius: 0;
-  margin: 0 -1px 0 0;
-  font-size: 12px;
-  text-decoration: none;
-}
-
-body.admin-shell .page-item.active .page-link,
-.rio-pagination__link--active {
-  background: var(--rio-accent);
-  color: var(--rio-bg);
-  border-color: var(--rio-accent);
-  z-index: 1;
-}
-
-body.admin-shell .page-link:hover {
-  color: var(--rio-ink);
-  border-color: var(--rio-ink-soft);
-}
-
-/* ----------------------------------------------------------------------------
- * Status bar (bottom) — terminal vibe
- * -------------------------------------------------------------------------- */
-
-.rio-statusbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 24px;
-  border-top: 1px solid var(--rio-border);
-  background: var(--rio-bg);
-  color: var(--rio-ink-muted);
-  font-size: 11.5px;
-  letter-spacing: .06em;
-}
-
-.rio-statusbar__dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: var(--rio-ok);
-  margin-right: 6px;
-}
-
-.rio-statusbar__sep { color: var(--rio-ink-faint); }
-
-.rio-statusbar__spacer { flex: 1; }
-
-.rio-cursor {
-  display: inline-block;
-  width: 8px;
-  height: 14px;
-  background: var(--rio-accent);
-  vertical-align: -2px;
-  margin-left: 6px;
-  animation: rio-blink 1.1s steps(2, end) infinite;
-}
-
-@keyframes rio-blink {
-  0%, 50%   { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
-
-/* ----------------------------------------------------------------------------
- * Auth (sign-in) — terminal login screen
- * -------------------------------------------------------------------------- */
-
-body.admin-auth {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 24px;
-}
-
-.rio-auth {
-  width: 100%;
-  max-width: 380px;
-}
-
-.rio-auth__header {
-  margin-bottom: 32px;
-}
-
-.rio-auth__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: var(--rio-accent);
-  color: var(--rio-bg);
-  font-weight: 800;
-  font-size: 14px;
-  margin-bottom: 24px;
-}
-
-.rio-auth__title {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -.02em;
-  margin: 0;
-  color: var(--rio-ink);
-}
-
-.rio-auth__subtitle {
-  margin-top: 6px;
-  font-size: 12px;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--rio-ink-muted);
-}
-
-/* Form structure in auth pages reuses .rio-form__* + body.admin-shell rules
- * via .admin-shell class on the body. The login template uses body.admin-auth
- * only; ensure form inputs inherit the same dark style. */
-
-body.admin-auth .form-label    { font-family: var(--rio-mono); font-size: 10.5px;
-                                  letter-spacing: .14em; text-transform: uppercase;
-                                  color: var(--rio-ink-muted); margin-bottom: 8px; }
-body.admin-auth .form-control  { width: 100%; background: transparent; color: var(--rio-ink);
-                                  border: 0; border-bottom: 1px solid var(--rio-border-line);
-                                  border-radius: 0; padding: 8px 0; font-family: var(--rio-mono);
-                                  font-size: 14px; outline: none; }
-body.admin-auth .form-control:focus { border-bottom-color: var(--rio-accent); box-shadow: none; }
-body.admin-auth .btn-primary   { display: block; width: 100%; background: var(--rio-accent);
-                                  color: var(--rio-bg); border: 0; padding: 12px;
-                                  font-family: var(--rio-mono); font-size: 12px;
-                                  letter-spacing: .14em; text-transform: uppercase;
-                                  font-weight: 600; cursor: pointer; border-radius: 0; }
-body.admin-auth .btn-primary:hover { background: var(--rio-ink); }
-
-/* ----------------------------------------------------------------------------
- * Responsive collapse — keep monospace look but stack the top nav
- * -------------------------------------------------------------------------- */
-
-@media (max-width: 720px) {
-  .rio-topnav { flex-wrap: wrap; height: auto; padding: 12px 16px; }
-  .rio-topnav__link { height: 36px; padding: 0 10px; }
-  .rio-main { padding: 32px 20px 60px; }
-  .rio-title { font-size: 42px; }
-  .rio-shell { grid-template-rows: auto 1fr 32px; }
-}
+body.admin-shell .text-muted    { color: var(--text-secondary); }
+body.admin-shell .text-danger   { color: var(--accent); }
