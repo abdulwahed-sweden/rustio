@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > The 0.5.0 → 0.8.0 entries below describe work that accumulated in this section without distinct release cuts at the time. They remain in `[Unreleased]` until each is retroactively tagged or rolled forward into a future release. The 0.9.0 / 0.9.1 / 0.10.0 work that was previously here has been promoted to dated releases below.
 
+### Changed — Signed commits required on `main` (2026-05-27)
+
+The `main` branch ruleset now includes a `required_signatures` rule alongside the existing `non_fast_forward` / `deletion` / `required_status_checks` rules. Every commit landing on `main` must carry a signature GitHub can verify — direct pushes by repo admins still go through via the ruleset's admin bypass, but PRs from contributors need a valid signature on every commit.
+
+- **Setup (SSH, recommended on macOS / Linux).** `git config --global gpg.format ssh`, `git config --global user.signingkey ~/.ssh/<key>.pub`, `git config --global commit.gpgsign true`. Register the **same** public key as a *Signing Key* at <https://github.com/settings/ssh/new> — that's a separate slot from the auth key, even though the underlying material can be identical.
+- **Local signature verification** needs an `allowed_signers` file: write one line `you@example.com <pubkey contents>` to `~/.config/git/allowed_signers`, then `git config --global gpg.ssh.allowedSignersFile ~/.config/git/allowed_signers`. After that `git log --format='%G?'` resolves to `G` (good) instead of erroring.
+- **GPG works too** — the rule only requires "GitHub can verify it", not a specific signing format. Pick whichever you already have working.
+- **History is not rewritten.** Pre-existing unsigned commits stay unsigned; the rule only checks pushes going forward.
+- **The full `main` ruleset is now**: `non_fast_forward` + `deletion` + `required_status_checks(fmt + clippy + test, strict)` + `required_signatures`, with `RepositoryRole=Admin` bypass on `mode=always`. The `archive/**` ruleset stays at `non_fast_forward` + `deletion` only (frozen-history branches don't get a CI check or a signature requirement).
+
 ### Added — 0.8.0 Relations Layer (Foundational)
 
 First pass at first-class relations. Additive only — existing schemas,
