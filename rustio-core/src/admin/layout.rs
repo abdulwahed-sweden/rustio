@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use crate::admin::admin_form_bridge::{
     resolve_filter_type, AdminDataType, AdminUiField, AdminUiModel, FilterType,
 };
-use crate::admin::auto_form::{AutoField, FieldOverride, FormBuilder, FormModel};
-use crate::admin::form::{render_form, FieldConfig, FieldType, FormConfig};
+use crate::admin::auto_form::{FieldOverride, FormBuilder};
+use crate::admin::form::{render_form, FormConfig};
 use crate::admin::persistence;
 use crate::admin::ui::{
     html_escape, render_page_header, render_sidebar, render_topbar, PageAction, PageHeaderConfig,
@@ -87,7 +87,6 @@ pub fn render_layout(
 struct DashboardEntry {
     slug: &'static str,
     model_name: &'static str,
-    table_name: &'static str,
     count: i64,
 }
 
@@ -123,7 +122,6 @@ async fn collect_dashboard_entries(
         out.push(DashboardEntry {
             slug: model.slug(),
             model_name: model.model_name(),
-            table_name: table,
             count,
         });
     }
@@ -153,53 +151,6 @@ fn build_admin_sidebar(entries: &[DashboardEntry], active_slug: Option<&str>) ->
     }])
 }
 
-/// Render the admin dashboard: one stat card per registered model.
-/// Uses the same shell as per-model pages — sidebar shows every
-/// registered model with its live row count.
-pub async fn admin_dashboard_get(
-    db: &Db,
-    registry: &crate::admin::admin_form_bridge::AdminRegistry,
-    csrf_token: Option<&str>,
-) -> String {
-    use std::fmt::Write as _;
-    let entries = collect_dashboard_entries(db, registry).await;
-
-    let mut cards = String::new();
-    for e in &entries {
-        let model_href = format!("/admin/{}", e.slug);
-        let _ = write!(
-            cards,
-            r#"<a class="stat-card" href="{href}"><span class="stat-card-label">{label}</span><span class="stat-card-value">{count}</span><span class="stat-card-meta">{table}</span></a>"#,
-            href = html_escape(&model_href),
-            label = html_escape(&format!("{}s", e.model_name)),
-            count = e.count,
-            table = html_escape(e.table_name),
-        );
-    }
-
-    let topbar = render_topbar(&TopbarConfig {
-        title: "Dashboard".to_string(),
-        user_initials: "AM".to_string(),
-        user_email: "admin@rustio.dev".to_string(),
-        csrf_token: csrf_token.map(String::from),
-    });
-    let sidebar = build_admin_sidebar(&entries, None);
-
-    let header = render_page_header(&PageHeaderConfig {
-        eyebrow: Some("Overview".to_string()),
-        title: "Dashboard".to_string(),
-        subtitle: Some(format!(
-            "{} model{} registered",
-            entries.len(),
-            if entries.len() == 1 { "" } else { "s" }
-        )),
-        actions: Vec::new(),
-        breadcrumbs: Vec::new(),
-    });
-    let content = format!(r#"{header}<div class="stat-grid">{cards}</div>"#);
-    render_layout(topbar, sidebar, content, String::new())
-}
-
 /// Public entry point kept for backwards compat: expose the
 /// registry-driven sidebar so the per-model page path can call it.
 pub async fn render_admin_sidebar_for(
@@ -209,104 +160,6 @@ pub async fn render_admin_sidebar_for(
 ) -> String {
     let entries = collect_dashboard_entries(db, registry).await;
     build_admin_sidebar(&entries, active_slug)
-}
-
-// ---------------------------------------------------------------
-// Public entry point — handler body for /admin-new
-// ---------------------------------------------------------------
-
-/// GET orchestrator (model-driven): looks up the registered model
-/// by slug, ensures its table exists, loads the row identified by
-/// `editing_id` (if any) for prefill, fetches the table window +
-/// count, and renders the page. Every piece of behaviour comes from
-/// the model's metadata — no hardcoded column names, table names,
-/// or model logic.
-#[allow(clippy::too_many_arguments)]
-pub async fn admin_index_get(
-    db: &Db,
-    registry: &crate::admin::admin_form_bridge::AdminRegistry,
-    model: &dyn AdminUiModel,
-    editing_id: Option<&str>,
-    query: Option<&str>,
-    page: i64,
-    filters: &HashMap<String, String>,
-    sort: Option<&str>,
-    dir: Option<&str>,
-    advanced: bool,
-) -> String {
-    if let Some(sql) = model.ensure_table_sql() {
-        let _ = persistence::ensure_table(db, sql).await;
-    }
-
-    // Drawer mode:
-    //   editing_id = None         → drawer not rendered (list-only view)
-    //   editing_id = Some("new")  → drawer open, create mode (empty form)
-    //   editing_id = Some("<id>") → drawer open, edit mode (prefilled)
-    // A real id that doesn't match any row falls back to create mode
-    // so "+ Add" links don't dead-end on a racing delete.
-    let is_new = matches!(editing_id, Some("new"));
-    let prefill = if is_new {
-        None
-    } else {
-        match editing_id {
-            Some(id) if !id.is_empty() => {
-                match persistence::get_record_by_id(db, model.table_name(), id).await {
-                    Ok(map) if !map.is_empty() => Some(map),
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
-    };
-    let drawer = match editing_id {
-        Some(id) if !id.is_empty() => {
-            // id is present — render the drawer. prefill decides
-            // create vs edit mode.
-            let effective_id = if is_new { None } else { Some(id) };
-            build_drawer_for_get(model, prefill.as_ref(), effective_id)
-        }
-        _ => String::new(),
-    };
-
-    let (rows, total, current_page, total_pages, validated_sort, validated_dir) =
-        fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
-    let sidebar_html = render_admin_sidebar_for(db, registry, Some(model.slug())).await;
-    admin_index_with_drawer(
-        model,
-        sidebar_html,
-        drawer,
-        rows,
-        total,
-        query,
-        current_page,
-        total_pages,
-        filters,
-        validated_sort.as_deref(),
-        validated_dir.as_deref(),
-        advanced,
-        None,
-    )
-}
-
-/// Build the drawer for the GET path. Identical drawer for the
-/// same `(model, prefill, id)` whether the page came from a fresh
-/// load or a redirect.
-fn build_drawer_for_get(
-    model: &dyn AdminUiModel,
-    prefill: Option<&HashMap<String, String>>,
-    editing_id: Option<&str>,
-) -> String {
-    let mut form = build_admin_form(model);
-    if let Some(values) = prefill.filter(|v| !v.is_empty()) {
-        for field in form.fields.iter_mut() {
-            if let Some(v) = values.get(&field.name) {
-                field.value = Some(v.clone());
-            }
-        }
-    }
-    form.hidden_fields
-        .push(("id".to_string(), editing_id.unwrap_or("").to_string()));
-    render_form(&form)
 }
 
 /// Pull the users-table window + count from the demo table. When a
@@ -1392,7 +1245,7 @@ fn url_encode_value(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------
-// Bridge form construction (shared by GET demo + POST handler)
+// Bridge form construction (shared by the live POST handler).
 // ---------------------------------------------------------------
 
 /// Build a generic admin form for any `AdminUiModel`. The
@@ -1533,276 +1386,20 @@ impl AdminUiModel for UserAdmin {
     }
 }
 
-/// Render the bridge-driven form for [`UserAdmin`].
-///
-/// Two paths share one body, depending on whether the page was
-/// reached via GET (`submitted = None`) or POST (`submitted = Some`):
-///
-/// - **GET** seeds an invalid demo state so the page is self-explanatory
-///   on first load: `username` is left empty (required error),
-///   `email` is `"not-an-email"`, `salary_amount` is non-numeric.
-/// - **POST** binds values via [`crate::admin::form::bind_form`], then
-///   validates. Boolean fields submit as missing-when-unchecked, so
-///   `bind_form` derives them from key presence in `params`.
-///
-/// In both paths the same [`render_form`] runs, so the user sees a
-/// drawer with their values intact, error states (or success banner)
-/// on top, and `class="invalid"` on any field that failed.
-pub fn demo_admin_form(submitted: Option<&HashMap<String, String>>) -> String {
-    let mut form = build_admin_form(&UserAdmin);
-    // Always emit the hidden id field (empty when there's no
-    // editing target) so the POST body shape is identical between
-    // CREATE and UPDATE submissions.
-    form.hidden_fields.push(("id".to_string(), String::new()));
-
-    match submitted {
-        None => {
-            // GET: seed invalid demo values so the page is self-
-            // explanatory on first load (matches the previous
-            // step's behaviour exactly).
-            for field in form.fields.iter_mut() {
-                match field.name.as_str() {
-                    // `username` left as None → triggers "required".
-                    "email" => field.value = Some("not-an-email".into()),
-                    "salary_amount" => field.value = Some("twelve thousand".into()),
-                    _ => {}
-                }
-            }
-        }
-        Some(params) => {
-            // POST: bind real submitted values; flips the form's
-            // `submitted` flag, which the renderer uses to show the
-            // success banner when validation passes.
-            crate::admin::form::bind_form(&mut form, params);
-        }
-    }
-
-    crate::admin::form::validate_form(&mut form);
-    render_form(&form)
-}
-
-// ---------------------------------------------------------------
-// Auto-form demo model (still exported, no longer rendered)
-// ---------------------------------------------------------------
-
-/// Tag struct used purely as a type parameter for
-/// [`FormBuilder::from_model::<User>()`]. The model declares its
-/// form shape via [`FormModel`] instead of being hand-wired.
-struct User;
-
-impl FormModel for User {
-    fn form_title() -> &'static str {
-        "Edit user"
-    }
-
-    fn form_fields() -> Vec<AutoField> {
-        vec![
-            AutoField {
-                name: "username",
-                label: "Username",
-                field_type: None,
-                required: true,
-                is_foreign_key: false,
-                options: vec![],
-            },
-            AutoField {
-                name: "email",
-                label: "Email",
-                field_type: None,
-                required: true,
-                is_foreign_key: false,
-                options: vec![],
-            },
-            AutoField {
-                name: "is_active",
-                label: "Active — user can log in",
-                field_type: None,
-                required: false,
-                is_foreign_key: false,
-                options: vec![],
-            },
-            AutoField {
-                name: "doctor_id",
-                label: "Doctor",
-                field_type: None,
-                required: true,
-                is_foreign_key: true,
-                options: vec![
-                    ("1".into(), "Dr. Erik".into()),
-                    ("2".into(), "Dr. Sara".into()),
-                ],
-            },
-            AutoField {
-                name: "salary_amount",
-                label: "Salary",
-                field_type: None,
-                required: false,
-                is_foreign_key: false,
-                options: vec![],
-            },
-        ]
-    }
-}
-
-/// Render the auto-generated form for [`User`]. Demonstrates:
-/// - inference (`username` → Text, `email` → Email, `is_active` →
-///   Boolean switch, `salary_amount` → Number, `doctor_id` → FK
-///   dropdown);
-/// - the FK "no raw IDs" rule (options carry human labels);
-/// - the hybrid override path via [`FormBuilder::override_field`]
-///   (attaching `help` text post-generation).
-pub fn demo_auto_form() -> String {
-    let form = FormBuilder::from_model::<User>()
-        .override_field(
-            "email",
-            FieldOverride {
-                field_type: Some(FieldType::Email),
-                label: None,
-                help: Some("Work email only.".into()),
-            },
-        )
-        .override_field(
-            "doctor_id",
-            FieldOverride {
-                field_type: None,
-                label: None,
-                help: Some("Linked clinician — shown by name, never by id.".into()),
-            },
-        )
-        .build();
-    render_form(&form)
-}
-
-/// Manually-configured demo form retained from the previous step.
-/// Not rendered on `/admin-new` anymore, but still exported so
-/// callers can render it directly. Kept intact to satisfy the
-/// "don't break current demo form" rule.
-pub fn demo_form() -> String {
-    render_form(&FormConfig {
-        title: "Edit user".into(),
-        subtitle: "auth.User · id=1".into(),
-        submitted: false,
-        save_failed: false,
-        hidden_fields: Vec::new(),
-        fields: vec![
-            FieldConfig {
-                name: "username".into(),
-                label: "Username".into(),
-                field_type: FieldType::Text,
-                required: true,
-                readonly: false,
-                placeholder: Some("lowercase, max 32 chars".into()),
-                help: Some("Lowercase, alphanumeric, underscores.".into()),
-                value: Some("amansour".into()),
-                options: vec![],
-                error: None,
-            },
-            FieldConfig {
-                name: "email".into(),
-                label: "Email".into(),
-                field_type: FieldType::Email,
-                required: true,
-                readonly: false,
-                placeholder: None,
-                help: None,
-                value: Some("admin@rustio.dev".into()),
-                options: vec![],
-                error: None,
-            },
-            FieldConfig {
-                name: "doctor_id".into(),
-                label: "Doctor".into(),
-                field_type: FieldType::ForeignKey,
-                required: true,
-                readonly: false,
-                placeholder: None,
-                help: Some("Linked clinician — shown by name, never by id.".into()),
-                value: Some("1".into()),
-                options: vec![
-                    ("1".into(), "Dr. Erik".into()),
-                    ("2".into(), "Dr. Sara".into()),
-                ],
-                error: None,
-            },
-            FieldConfig {
-                name: "role".into(),
-                label: "Role".into(),
-                field_type: FieldType::Select,
-                required: true,
-                readonly: false,
-                placeholder: None,
-                help: None,
-                value: Some("editor".into()),
-                options: vec![
-                    ("viewer".into(), "Viewer".into()),
-                    ("editor".into(), "Editor".into()),
-                    ("admin".into(), "Admin".into()),
-                ],
-                error: None,
-            },
-            FieldConfig {
-                name: "is_active".into(),
-                label: "Active — user can log in".into(),
-                field_type: FieldType::Boolean,
-                required: false,
-                readonly: false,
-                placeholder: None,
-                help: None,
-                value: Some("true".into()),
-                options: vec![],
-                error: None,
-            },
-            FieldConfig {
-                name: "salary_amount".into(),
-                label: "Salary".into(),
-                field_type: FieldType::Number,
-                required: false,
-                readonly: false,
-                placeholder: Some("e.g. 65000".into()),
-                help: Some("Annual gross, in the org's base currency.".into()),
-                value: Some("72000".into()),
-                options: vec![],
-                error: None,
-            },
-            FieldConfig {
-                name: "starts_at".into(),
-                label: "Starts at".into(),
-                field_type: FieldType::DateTime,
-                required: false,
-                readonly: false,
-                placeholder: None,
-                help: None,
-                value: Some("2026-05-01T09:00".into()),
-                options: vec![],
-                error: None,
-            },
-            FieldConfig {
-                name: "notes".into(),
-                label: "Notes".into(),
-                field_type: FieldType::TextArea,
-                required: false,
-                readonly: false,
-                placeholder: Some("Internal notes — not visible to user.".into()),
-                help: None,
-                value: None,
-                options: vec![],
-                error: None,
-            },
-        ],
-    })
-}
-
 // The sample "Auth / Content / System" sidebar was retired 2026-04-23
 // — the sidebar now comes straight from the registered AdminUiModel
 // registry via `render_admin_sidebar_for`. No placeholder items, no
 // fake groupings. Only real models ship.
 
 // ---------------------------------------------------------------
-// 0.10.0 template-based renderers (stage 4d+)
+// 0.10.0 template-based renderers
 //
-// These replace the string-concat renderers above for pages ported to
-// `minijinja`. The old functions remain until stage 5 removes them;
-// both paths coexist while the port is in progress.
+// Every admin page below renders through `minijinja`. The legacy
+// string-concat helpers above (`admin_index_with_drawer`,
+// `render_users_*`, `render_bulk_*`, `build_filter_*`,
+// `render_admin_sidebar_for`, `render_layout`) remain only because
+// the POST `/admin/:model` drawer / bulk-action flow still uses them
+// — porting that submit path is a follow-up.
 // ---------------------------------------------------------------
 
 #[derive(serde::Serialize)]
@@ -2452,9 +2049,9 @@ impl AdminUiModel for LegacyEntryModel {
     }
 }
 
-/// 0.10+ dashboard renderer. Collects the same registry-driven entry
-/// list as the legacy `admin_dashboard_get`, but builds a typed
-/// context and lets `minijinja` render `admin/dashboard.html`.
+/// 0.10+ dashboard renderer. Collects the registry-driven entry list,
+/// builds a typed context, and lets `minijinja` render
+/// `admin/dashboard.html`.
 ///
 /// `csrf_token` is rendered as a hidden input inside the header's
 /// logout form (the only state-changing form on the dashboard). If
@@ -2544,12 +2141,10 @@ struct ListPermissionsView {
     delete: bool,
 }
 
-/// 0.10+ list-page renderer. Mirrors the data flow of the legacy
-/// `admin_index_get` — same searchable / filter / sort / paginate
-/// query under `fetch_users_table_state` — but renders through
-/// `minijinja`. Create / edit / delete actions are hidden at this
-/// stage (permissions are pinned to view-only); stage 4f will add the
-/// form routes and flip them on when RBAC allows.
+/// 0.10+ list-page renderer. Searchable / filter / sort / paginate
+/// query runs through `fetch_users_table_state`; the page renders via
+/// `minijinja`. Create / edit / delete actions are RBAC-gated by the
+/// caller.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_render(
     db: &Db,
