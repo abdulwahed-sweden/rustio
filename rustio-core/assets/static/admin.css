@@ -191,7 +191,12 @@ body.admin-shell .text-danger   { color: var(--accent); }
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
-  padding: var(--space-7) var(--space-6) var(--space-8);
+  /* 36px top · 28px sides · 28px bottom. The bottom was originally
+   * --space-8 (48px); trimmed to --space-6 so the pagination row on
+   * /admin/<model> sits closer to the viewport fold at typical
+   * monitor heights. Statusbar still anchors at the page bottom via
+   * the .rio-shell grid. */
+  padding: var(--space-7) var(--space-6) var(--space-6);
 }
 
 /* ----------------------------------------------------------------------------
