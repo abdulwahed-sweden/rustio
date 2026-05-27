@@ -66,7 +66,25 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         fi
         printf '%s✗%s pre-push: unsigned commits would land on %s%s%s:\n' \
             "$red" "$reset" "$bold" "$branch" "$reset" >&2
-        echo "$unsigned" | sed 's/^/    /' >&2
+
+        # Cap the listing to keep the error readable when the push
+        # range is unusually large — happens on first-push to an
+        # empty remote, where `remote_sha = 0000…` and the walk
+        # covers all reachable history. The real contributor case
+        # (pushing N new commits onto an ahead-of-them origin)
+        # usually has unsigned-count ≤ MAX_LIST so this branch is
+        # invisible in practice.
+        MAX_LIST=10
+        total=$(printf '%s\n' "$unsigned" | wc -l | tr -d ' ')
+        if [ "$total" -gt "$MAX_LIST" ]; then
+            printf '%s\n' "$unsigned" | head -n "$MAX_LIST" | sed 's/^/    /' >&2
+            printf '    … and %d more unsigned commit(s) — see all with:\n' \
+                "$((total - MAX_LIST))" >&2
+            echo "      git log --format='%h %G? %s' $range | awk '\$2 == \"N\"'" >&2
+        else
+            printf '%s\n' "$unsigned" | sed 's/^/    /' >&2
+        fi
+
         echo "" >&2
         echo "The 'Protect main' ruleset on origin will reject these." >&2
         echo "Sign them first, then push again:" >&2
