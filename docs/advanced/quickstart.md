@@ -1,3 +1,7 @@
+> **Advanced docs.** This file goes deep — APIs, internals, gotchas.
+> If you'''re new to RustIO, start at the [main README](../../README.md) first.
+> It walks you from zero to a running admin in 5 minutes.
+
 # Quickstart — 15 minutes to a running admin
 
 ## What you'll see at the end

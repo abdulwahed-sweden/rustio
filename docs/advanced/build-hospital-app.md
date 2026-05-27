@@ -1,3 +1,7 @@
+> **Advanced docs.** This file goes deep — APIs, internals, gotchas.
+> If you'''re new to RustIO, start at the [main README](../../README.md) first.
+> It walks you from zero to a running admin in 5 minutes.
+
 # Build a hospital management system
 
 A full four-model CRUD admin — **Departments · Doctors · Patients · Appointments** — in under an hour. Every feature shown is what RustIO generates from your Rust structs. You write models and migrations. RustIO writes the UI.

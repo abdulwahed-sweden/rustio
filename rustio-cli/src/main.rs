@@ -55,6 +55,19 @@ USERS
     user create [opts]          Create a user in the auth tables. Interactive when
                                   --email / --password / --role are omitted.
 
+HELP
+    (no args)                   Context-aware "what should I do next" for the
+                                  current directory.
+    doctor                      Health check the current project (toolchain,
+                                  apps, migrations, DB, schema). Prints
+                                  pass/warn/fail + a fix hint per check.
+    explain <topic>             Short inline docs on a concept. Topics:
+                                  model, migration, schema, app, admin,
+                                  route, ai, context, rbac.
+    --why                       Append to any command to print a one-paragraph
+                                  "what does this do" without running it.
+                                  Example: `rustio migrate apply --why`.
+
 META
     --help, -h                  Print this help.
     --version, -V               Print the CLI version.
@@ -72,32 +85,156 @@ const DEFAULT_DATABASE_URL: &str = "sqlite://app.db?mode=rwc";
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().collect();
+    let raw: Vec<String> = std::env::args().collect();
+    // Universal `--why` flag: strip it before parsing the command,
+    // then print the command's "why" blurb and exit success without
+    // running the action. Helps a new user check "what does this do?"
+    // without committing.
+    let (args, why_mode) = strip_why_flag(raw);
+
     let result = match parse_command(&args) {
         Ok(Command::Help) => {
-            print!("{USAGE}");
-            Ok(())
+            if why_mode {
+                why_for_help();
+                Ok(())
+            } else {
+                print!("{USAGE}");
+                Ok(())
+            }
         }
         Ok(Command::Version) => {
-            println!("rustio {}", env!("CARGO_PKG_VERSION"));
-            Ok(())
+            if why_mode {
+                why_for("version");
+                Ok(())
+            } else {
+                println!("rustio {}", env!("CARGO_PKG_VERSION"));
+                Ok(())
+            }
         }
-        Ok(Command::Init { name, preset, app }) => init_command(name, preset, app),
-        Ok(Command::NewProject(name)) => new_project(&name),
-        Ok(Command::NewApp(name)) => new_app(&name),
-        Ok(Command::Run) => run(),
-        Ok(Command::MigrateGenerate(name)) => migrate_generate(&name),
-        Ok(Command::MigrateApply { verbose }) => migrate_apply(verbose).await,
-        Ok(Command::MigrateStatus) => migrate_status().await,
-        Ok(Command::MigrateAddFks { write }) => migrate_add_fks(write),
-        Ok(Command::Schema) => schema_command(),
-        Ok(Command::Ai(sub)) => ai_command(sub),
-        Ok(Command::Context(sub)) => context_command(sub),
+        Ok(Command::Default) => {
+            if why_mode {
+                why_for("default");
+                Ok(())
+            } else {
+                default_action()
+            }
+        }
+        Ok(Command::Doctor) => {
+            if why_mode {
+                why_for("doctor");
+                Ok(())
+            } else {
+                doctor_command()
+            }
+        }
+        Ok(Command::Explain(topic)) => {
+            if why_mode {
+                why_for("explain");
+                Ok(())
+            } else {
+                explain_command(&topic)
+            }
+        }
+        Ok(Command::Init { name, preset, app }) => {
+            if why_mode {
+                why_for("init");
+                Ok(())
+            } else {
+                init_command(name, preset, app)
+            }
+        }
+        Ok(Command::NewProject(name)) => {
+            if why_mode {
+                why_for("new-project");
+                Ok(())
+            } else {
+                new_project(&name)
+            }
+        }
+        Ok(Command::NewApp(name)) => {
+            if why_mode {
+                why_for("new-app");
+                Ok(())
+            } else {
+                new_app(&name)
+            }
+        }
+        Ok(Command::Run) => {
+            if why_mode {
+                why_for("run");
+                Ok(())
+            } else {
+                run()
+            }
+        }
+        Ok(Command::MigrateGenerate(name)) => {
+            if why_mode {
+                why_for("migrate-generate");
+                Ok(())
+            } else {
+                migrate_generate(&name)
+            }
+        }
+        Ok(Command::MigrateApply { verbose }) => {
+            if why_mode {
+                why_for("migrate-apply");
+                Ok(())
+            } else {
+                migrate_apply(verbose).await
+            }
+        }
+        Ok(Command::MigrateStatus) => {
+            if why_mode {
+                why_for("migrate-status");
+                Ok(())
+            } else {
+                migrate_status().await
+            }
+        }
+        Ok(Command::MigrateAddFks { write }) => {
+            if why_mode {
+                why_for("migrate-add-fks");
+                Ok(())
+            } else {
+                migrate_add_fks(write)
+            }
+        }
+        Ok(Command::Schema) => {
+            if why_mode {
+                why_for("schema");
+                Ok(())
+            } else {
+                schema_command()
+            }
+        }
+        Ok(Command::Ai(sub)) => {
+            if why_mode {
+                why_for("ai");
+                Ok(())
+            } else {
+                ai_command(sub)
+            }
+        }
+        Ok(Command::Context(sub)) => {
+            if why_mode {
+                why_for("context");
+                Ok(())
+            } else {
+                context_command(sub)
+            }
+        }
         Ok(Command::UserCreate {
             email,
             password,
             role,
-        }) => user_create_command(email, password, role).await,
+        }) => {
+            if why_mode {
+                why_for("user-create");
+                Ok(())
+            } else {
+                user_create_command(email, password, role).await
+            }
+        }
         Err(msg) => {
             out::error_line(&msg);
             eprintln!();
@@ -117,6 +254,10 @@ async fn main() -> ExitCode {
 
 #[derive(Debug, PartialEq)]
 enum Command {
+    /// `rustio` with no args — print a context-aware "what should I do next"
+    /// for the current directory. Detects project state and suggests
+    /// the most useful command; never silently dumps the full help.
+    Default,
     /// `rustio init` — interactive wizard when no name is provided,
     /// non-interactive scaffold when a name is given.
     Init {
@@ -156,6 +297,15 @@ enum Command {
     /// `rustio context show` / `rustio context validate` — 0.6.0.
     /// Inspects `rustio.context.json`.
     Context(ContextCommand),
+    /// `rustio doctor` — health check for the current project.
+    /// Walks a fixed list of "is this set up correctly?" questions and
+    /// prints pass/warn/fail with a fix hint per check.
+    Doctor,
+    /// `rustio explain <topic>` — inline mini-docs. Prints a short,
+    /// jargon-free explanation of a framework concept + a runnable
+    /// example. Topics: model, migration, schema, app, admin, route,
+    /// ai, context, rbac.
+    Explain(String),
     Version,
     Help,
 }
@@ -207,8 +357,27 @@ pub(crate) enum AiCommand {
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
     match args.get(1).map(String::as_str) {
-        None | Some("--help") | Some("-h") | Some("help") => Ok(Command::Help),
+        None => Ok(Command::Default),
+        Some("--help") | Some("-h") | Some("help") => Ok(Command::Help),
         Some("--version") | Some("-V") | Some("version") => Ok(Command::Version),
+        Some("doctor") => {
+            if args.len() > 2 {
+                return Err(format!("unexpected argument `{}`", args[2]));
+            }
+            Ok(Command::Doctor)
+        }
+        Some("explain") => match args.get(2) {
+            Some(topic) => {
+                if args.len() > 3 {
+                    return Err(format!("unexpected argument `{}`", args[3]));
+                }
+                Ok(Command::Explain(topic.clone()))
+            }
+            None => Err(
+                "usage: rustio explain <topic>  (try `rustio explain model`, `rustio explain ai`, …)"
+                    .into(),
+            ),
+        },
         Some("run") => {
             if args.len() > 2 {
                 return Err(format!("unexpected argument `{}`", args[2]));
@@ -1508,6 +1677,541 @@ chrono = {{ version = "0.4", default-features = false, features = ["std", "clock
     )
 }
 
+// ---------------------------------------------------------------------------
+// Beginner-friendly CLI surface (`rustio` no-args / `doctor` / `explain` /
+// `--why`).
+// ---------------------------------------------------------------------------
+
+/// Strip a leading `--why` from anywhere in the arg list and return
+/// `(remaining_args, why_mode_was_set)`. Lets every command be invoked
+/// as `rustio <cmd> --why` to print "what does this do" without running
+/// the action. We strip pre-parse so the subcommand parsers don't have
+/// to know about the flag.
+fn strip_why_flag(mut args: Vec<String>) -> (Vec<String>, bool) {
+    let mut why = false;
+    args.retain(|a| {
+        if a == "--why" {
+            why = true;
+            false
+        } else {
+            true
+        }
+    });
+    (args, why)
+}
+
+/// Snapshot of what the CLI can see about the current directory.
+struct ProjectState {
+    in_project: bool,
+    has_apps: bool,
+    has_migrations_dir: bool,
+    has_db: bool,
+    has_schema: bool,
+}
+
+impl ProjectState {
+    fn detect() -> Self {
+        let in_project = Path::new("Cargo.toml").exists()
+            && Path::new("main.rs").exists()
+            && Path::new("apps").is_dir();
+        let has_apps = Path::new("apps").is_dir()
+            && Path::new("apps")
+                .read_dir()
+                .map(|d| {
+                    d.flatten().any(|e| {
+                        e.path().is_dir()
+                            && e.file_name().to_str().is_some_and(|n| !n.starts_with('.'))
+                    })
+                })
+                .unwrap_or(false);
+        let has_migrations_dir = Path::new("migrations").is_dir();
+        let has_db = Path::new("app.db").exists();
+        let has_schema = Path::new("rustio.schema.json").exists();
+        Self {
+            in_project,
+            has_apps,
+            has_migrations_dir,
+            has_db,
+            has_schema,
+        }
+    }
+}
+
+/// `rustio` (no args) — print a one-screen, context-aware "what should
+/// I do next" instead of dumping the full help. Always shows
+/// `rustio help` as a fallback at the bottom.
+fn default_action() -> Result<(), String> {
+    let s = ProjectState::detect();
+    let cwd = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| ".".into());
+
+    println!("rustio {}", env!("CARGO_PKG_VERSION"));
+
+    if !s.in_project {
+        println!();
+        println!("You're not inside a RustIO project right now.");
+        println!();
+        println!("To start a new project:");
+        out::hint("rustio init <name>          (e.g. `rustio init mysite`)");
+        out::hint("rustio init                 (interactive wizard)");
+        println!();
+        out::info("Or run `rustio help` to see every command.");
+        return Ok(());
+    }
+
+    println!();
+    println!("You're in a RustIO project: {cwd}");
+
+    // Detect the most useful next thing in priority order.
+    if !s.has_apps {
+        println!();
+        println!("This project has no apps yet. An app = one model (e.g. `notes`).");
+        out::hint("rustio new app <name>       create your first model");
+        out::hint("rustio explain app          if you're not sure what an app is");
+        return Ok(());
+    }
+
+    if !s.has_db || !s.has_migrations_dir {
+        println!();
+        println!("Your database hasn't been set up yet.");
+        out::hint("rustio migrate apply        create tables + run pending migrations");
+        out::hint("rustio explain migration    what a migration is");
+        return Ok(());
+    }
+
+    if !s.has_schema {
+        println!();
+        println!("`rustio.schema.json` is missing. The AI layer + external tools read it.");
+        out::hint("rustio schema               regenerate it from your models");
+        return Ok(());
+    }
+
+    // All set — suggest the daily-driver commands.
+    println!();
+    println!("Looks set up. Common next moves:");
+    out::hint("rustio run                  start the server on :8000");
+    out::hint("rustio migrate status       see what's applied / pending");
+    out::hint("rustio doctor               full health check");
+    out::hint("rustio new app <name>       add another model");
+    println!();
+    out::info(
+        "Run `rustio help` to see every command, or `rustio explain <topic>` for inline docs.",
+    );
+    Ok(())
+}
+
+/// `rustio doctor` — health check. Walks a fixed list of "is the
+/// project set up correctly?" questions and prints pass / warn / fail
+/// with a fix hint per item. Never fails (exit 0) even when checks
+/// warn — the goal is to surface fixes, not gate.
+fn doctor_command() -> Result<(), String> {
+    println!("{} Checking your RustIO setup …", out::dot());
+    println!();
+
+    let mut warnings = 0u32;
+    let mut failures = 0u32;
+
+    // Toolchain
+    match ProcessCommand::new("rustc").arg("--version").output() {
+        Ok(out_) if out_.status.success() => {
+            let v = String::from_utf8_lossy(&out_.stdout);
+            let trimmed = v.trim();
+            doctor_pass("Rust toolchain", trimmed);
+        }
+        _ => {
+            doctor_fail(
+                "Rust toolchain",
+                "not found",
+                "install Rust from https://rustup.rs/",
+            );
+            failures += 1;
+        }
+    }
+
+    // Are we in a project?
+    let s = ProjectState::detect();
+    if s.in_project {
+        doctor_pass("Project structure", "Cargo.toml + main.rs + apps/ present");
+    } else {
+        doctor_fail(
+            "Project structure",
+            "no Cargo.toml / main.rs / apps/ here",
+            "run `rustio init <name>` to scaffold, or `cd` into an existing project",
+        );
+        // Without a project the rest of the checks are moot.
+        println!();
+        println!("Stopped after the project-structure check — nothing else to verify.");
+        return Ok(());
+    }
+
+    // Apps registered
+    if s.has_apps {
+        doctor_pass("Apps registered", "at least one app exists under apps/");
+    } else {
+        doctor_warn(
+            "Apps registered",
+            "no apps yet",
+            "run `rustio new app <name>` to create your first model",
+        );
+        warnings += 1;
+    }
+
+    // Migrations directory
+    if s.has_migrations_dir {
+        doctor_pass("Migrations directory", "migrations/ exists");
+    } else {
+        doctor_warn(
+            "Migrations directory",
+            "no migrations/",
+            "run `rustio new app <name>` (creates the directory) or add an empty one",
+        );
+        warnings += 1;
+    }
+
+    // Database
+    if s.has_db {
+        doctor_pass("Database file", "app.db exists");
+    } else {
+        doctor_warn(
+            "Database file",
+            "no app.db",
+            "run `rustio migrate apply` to create it",
+        );
+        warnings += 1;
+    }
+
+    // Schema export
+    if s.has_schema {
+        doctor_pass("Schema export", "rustio.schema.json present");
+    } else {
+        doctor_warn(
+            "Schema export",
+            "no rustio.schema.json",
+            "run `rustio schema` (the AI layer + external tools read it)",
+        );
+        warnings += 1;
+    }
+
+    // Summary
+    println!();
+    if failures == 0 && warnings == 0 {
+        out::success("All checks pass", "you're good to go.");
+        out::hint("rustio run                  start the server on :8000");
+    } else if failures == 0 {
+        out::info(&format!(
+            "{} warning{} — your project still works, but the items above can be tightened up.",
+            warnings,
+            if warnings == 1 { "" } else { "s" }
+        ));
+    } else {
+        out::info(&format!(
+            "{} failure{}, {} warning{} — fix the failures first.",
+            failures,
+            if failures == 1 { "" } else { "s" },
+            warnings,
+            if warnings == 1 { "" } else { "s" }
+        ));
+    }
+    Ok(())
+}
+
+fn doctor_pass(name: &str, detail: &str) {
+    println!("  {} {name}  {}", out::check(), out::dim(detail));
+}
+
+fn doctor_warn(name: &str, detail: &str, fix: &str) {
+    println!("  {} {name}  {}", out::dot(), out::dim(detail));
+    println!("      {} {fix}", out::dim("→"));
+}
+
+fn doctor_fail(name: &str, detail: &str, fix: &str) {
+    println!("  {} {name}  {}", out::cross(), out::dim(detail));
+    println!("      {} {fix}", out::dim("→"));
+}
+
+/// `rustio explain <topic>` — short inline mini-docs. Saves the new
+/// dev from opening a browser to figure out what a "migration" or a
+/// "schema" actually is. Topic content lives in [`EXPLAIN_TOPICS`].
+fn explain_command(topic: &str) -> Result<(), String> {
+    let normalized = topic.trim().to_lowercase();
+    let entry = EXPLAIN_TOPICS
+        .iter()
+        .find(|(name, _)| *name == normalized.as_str());
+    match entry {
+        Some((_, body)) => {
+            println!("{body}");
+            Ok(())
+        }
+        None => {
+            let known: Vec<&str> = EXPLAIN_TOPICS.iter().map(|(n, _)| *n).collect();
+            Err(format!(
+                "no explainer for `{topic}` — try one of: {}",
+                known.join(", ")
+            ))
+        }
+    }
+}
+
+const EXPLAIN_TOPICS: &[(&str, &str)] = &[
+    (
+        "model",
+        "A model is a Rust struct that describes one \"thing\" in your project — a Note, a\n\
+         Customer, an Order. The struct is the source of truth: RustIO derives the admin UI,\n\
+         the database schema, and the JSON schema export from it.\n\
+         \n\
+         Example (apps/notes/models.rs):\n\
+         \n\
+         \x20\x20#[derive(RustioAdmin)]\n\
+         \x20\x20pub struct Note {\n\
+         \x20\x20    pub id: i64,\n\
+         \x20\x20    pub title: String,\n\
+         \x20\x20    pub body: String,\n\
+         \x20\x20    pub created_at: DateTime<Utc>,\n\
+         \x20\x20}\n\
+         \n\
+         Run `rustio new app <name>` to scaffold the struct + the matching migration in one\n\
+         step. Then edit the struct to add the fields you actually want.",
+    ),
+    (
+        "migration",
+        "A migration is one `.sql` file that changes the database schema. Filenames are\n\
+         numbered (0001_create_notes.sql, 0002_add_title_to_notes.sql) and RustIO applies\n\
+         them in order, remembering which ones already ran.\n\
+         \n\
+         You can write them by hand, or let the AI layer generate them:\n\
+         \n\
+         \x20\x20rustio migrate generate alter_notes        # creates an empty file\n\
+         \x20\x20$EDITOR migrations/000N_alter_notes.sql    # write the ALTER TABLE\n\
+         \x20\x20rustio migrate apply                       # actually run it\n\
+         \n\
+         `rustio migrate status` shows which migrations are applied vs pending.",
+    ),
+    (
+        "schema",
+        "`rustio.schema.json` is a JSON file at your project root that lists every model,\n\
+         every field, every type, and every relation. RustIO regenerates it on every\n\
+         `rustio migrate apply` (or by hand with `rustio schema`).\n\
+         \n\
+         It's the **only** contract external tools (including the AI layer) are allowed to\n\
+         use. Stable across patch releases — if you build something that reads it, your\n\
+         tool keeps working across upgrades.",
+    ),
+    (
+        "app",
+        "An app is one folder inside `apps/` — usually one model + one matching admin\n\
+         registration + one migration + a (probably empty) views file for public routes.\n\
+         \n\
+         You create one with:\n\
+         \n\
+         \x20\x20rustio new app notes\n\
+         \n\
+         That writes apps/notes/models.rs, apps/notes/admin.rs, apps/notes/views.rs, and\n\
+         migrations/000N_create_notes.sql. The app is registered in apps/mod.rs\n\
+         automatically.",
+    ),
+    (
+        "admin",
+        "The admin is the auto-generated web UI at /admin. RustIO renders it from your\n\
+         model structs — every field becomes a form input, every model becomes a sidebar\n\
+         entry, every row gets edit + delete buttons.\n\
+         \n\
+         Sign in: open http://127.0.0.1:8000/admin after starting the server. If you\n\
+         haven't created a user yet:\n\
+         \n\
+         \x20\x20rustio user create --email you@example.com --password secret --role admin\n\
+         \n\
+         The admin has RBAC built in: SuperAdmin / Admin / Editor / Viewer roles, each\n\
+         with per-model view/create/edit/delete permissions.",
+    ),
+    (
+        "route",
+        "A route is one URL path + HTTP method + handler function. RustIO registers admin\n\
+         routes automatically (GET /admin, GET /admin/:model, etc.). You add your own\n\
+         public routes inside `apps/<app>/views.rs`:\n\
+         \n\
+         \x20\x20pub fn register(router: Router) -> Router {\n\
+         \x20\x20    router.get(\"/notes\", |_req, _params| async move {\n\
+         \x20\x20        Ok::<Response, Error>(http::html(\"<h1>hello</h1>\"))\n\
+         \x20\x20    })\n\
+         \x20\x20}",
+    ),
+    (
+        "ai",
+        "The AI layer turns plain-English schema changes into typed file edits. Three\n\
+         steps, each refusal-first:\n\
+         \n\
+         \x20\x201. rustio ai plan \"add email to notes\" --save plan.json\n\
+         \x20\x202. rustio ai review plan.json     (risk / impact / warnings, no execution)\n\
+         \x20\x203. rustio ai apply  plan.json     (writes models.rs + a migration)\n\
+         \n\
+         If the request can't be expressed inside the fixed primitive vocabulary\n\
+         (AddField, RenameField, AddRelation, ChangeFieldType, etc.) the planner refuses\n\
+         instead of guessing.",
+    ),
+    (
+        "context",
+        "`rustio.context.json` is a small file at the project root that carries country,\n\
+         industry, and compliance flags (e.g. `{\"country\":\"SE\",\"industry\":\"healthcare\"}`).\n\
+         \n\
+         When present, the AI review layer picks up PII rules (personnummer is opaque,\n\
+         patient_id must be a String, monetary fields are i64 minor units) and refuses\n\
+         destructive operations on flagged fields. Optional — most projects don't need it.\n\
+         \n\
+         Inspect a context with:  rustio context show\n\
+         Validate it with:        rustio context validate",
+    ),
+    (
+        "rbac",
+        "Role-Based Access Control. RustIO ships four roles (SuperAdmin / Admin / Editor /\n\
+         Viewer) and per-model view / create / edit / delete permissions.\n\
+         \n\
+         Examples (read top-down — first match wins):\n\
+         \x20\x20- A Viewer doesn't see the `+ Add` button anywhere; opening /admin/X/new\n\
+         \x20\x20  returns the framework 403 page.\n\
+         \x20\x20- An Editor can edit existing rows but not delete them.\n\
+         \x20\x20- An Admin can do everything except manage roles.\n\
+         \x20\x20- A SuperAdmin can do everything.\n\
+         \n\
+         Assign a role on user creation:  rustio user create --role editor",
+    ),
+];
+
+/// `--why` blurbs — short "what does this command do" notes printed
+/// when a user passes `--why` to any command. Keep each one ≤ 5 lines.
+fn why_for(name: &str) {
+    let body = match name {
+        "default" => {
+            "`rustio` with no args prints a context-aware suggestion for what to do next in\n\
+             the current directory. It detects whether you're in a project, whether the DB\n\
+             is set up, and whether models are registered, then prints the most useful\n\
+             single next command.\n\
+             \n\
+             Run it without --why to actually see the suggestion."
+        }
+        "doctor" => {
+            "`rustio doctor` runs a health check on the current project: Rust toolchain,\n\
+             project structure, registered apps, migrations directory, database file, and\n\
+             schema export. Each check prints pass / warn / fail + a fix hint. Never fails\n\
+             the process even when checks warn — the goal is to surface fixes.\n\
+             \n\
+             Run it without --why to actually run the checks."
+        }
+        "explain" => {
+            "`rustio explain <topic>` prints a short inline explanation of a framework\n\
+             concept + a runnable example. Topics: model, migration, schema, app, admin,\n\
+             route, ai, context, rbac.\n\
+             \n\
+             Run it without --why to actually read an explainer."
+        }
+        "init" => {
+            "`rustio init <name>` scaffolds a new RustIO project: Cargo.toml, main.rs,\n\
+             apps/mod.rs, migrations/, the standard auth tables. With no name it starts an\n\
+             interactive wizard.\n\
+             \n\
+             Run it without --why to actually create the project."
+        }
+        "new-project" => {
+            "`rustio new project <name>` creates a new project non-interactively. Same\n\
+             result as `rustio init <name>` but never prompts.\n\
+             \n\
+             Run it without --why to create the project."
+        }
+        "new-app" => {
+            "`rustio new app <name>` adds a new app inside the current project: a model\n\
+             stub, an admin registration, an empty views file, and a matching migration.\n\
+             Updates apps/mod.rs to register it. Each app is usually one model.\n\
+             \n\
+             Run it without --why to create the app."
+        }
+        "run" => {
+            "`rustio run` is `cargo run` for your RustIO project: build the binary and\n\
+             start the server on :8000. First run takes ~1 minute (downloads + compiles\n\
+             dependencies). Subsequent runs are instant.\n\
+             \n\
+             Run it without --why to start the server."
+        }
+        "migrate-generate" => {
+            "`rustio migrate generate <name>` writes an empty SQL file under migrations/\n\
+             with the next sequential number. You fill in the CREATE TABLE / ALTER TABLE,\n\
+             then run `rustio migrate apply`.\n\
+             \n\
+             Run it without --why to create the file."
+        }
+        "migrate-apply" => {
+            "`rustio migrate apply` runs every pending migration against your database in\n\
+             filename order, inside a transaction per file. Already-applied migrations are\n\
+             skipped (RustIO remembers them in a tracking table). After success, it\n\
+             regenerates rustio.schema.json.\n\
+             \n\
+             Run it without --why to apply pending migrations."
+        }
+        "migrate-status" => {
+            "`rustio migrate status` lists every migration file under migrations/ and shows\n\
+             which ones are applied vs pending. Useful right before a deploy.\n\
+             \n\
+             Run it without --why to see the status."
+        }
+        "migrate-add-fks" => {
+            "`rustio migrate add-fks` retrofits SQL FOREIGN KEY clauses onto an existing\n\
+             0.8.x project. Default is dry-run; pass --write to actually commit the\n\
+             generated migrations. Idempotent — running it on an already-retrofitted\n\
+             project is a no-op.\n\
+             \n\
+             Run it without --why to see the preview."
+        }
+        "schema" => {
+            "`rustio schema` regenerates rustio.schema.json from your compiled admin. It's\n\
+             the only file external tools (including the AI layer) are allowed to read, so\n\
+             keep it in sync with your code.\n\
+             \n\
+             Run it without --why to regenerate the file."
+        }
+        "ai" => {
+            "`rustio ai <plan|review|apply>` is the AI layer. Three deterministic, refusal-\n\
+             first steps:\n\
+             \x20\x201. plan — parse plain English into a typed change document.\n\
+             \x20\x202. review — risk / impact / warnings, no execution.\n\
+             \x20\x203. apply — atomic file writes; never runs migrations itself.\n\
+             \n\
+             Run a subcommand without --why for actual usage."
+        }
+        "context" => {
+            "`rustio context <show|validate>` inspects rustio.context.json — the optional\n\
+             country / industry / compliance file that drives PII detection and policy\n\
+             refusals in the AI layer.\n\
+             \n\
+             Run a subcommand without --why to actually inspect or validate."
+        }
+        "user-create" => {
+            "`rustio user create` adds a row to rustio_users with an argon2-hashed\n\
+             password and a role (SuperAdmin / Admin / Editor / Viewer). Without args,\n\
+             prompts interactively for email, password, and role.\n\
+             \n\
+             Run it without --why to actually create the user."
+        }
+        "version" => {
+            "Prints the CLI's version. RustIO follows semver; the CLI and rustio-core\n\
+             ship in lockstep until 1.0.0."
+        }
+        _ => "No explanation available for this command.",
+    };
+    println!("{body}");
+}
+
+fn why_for_help() {
+    println!(
+        "`rustio help` prints the full command list, grouped by purpose. For a one-line\n\
+         explanation of any individual command, append --why (e.g. `rustio migrate apply\n\
+         --why`)."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Output helpers.
+// ---------------------------------------------------------------------------
+
 pub(crate) mod out {
     use std::io::{self, IsTerminal};
 
@@ -1537,6 +2241,10 @@ pub(crate) mod out {
 
     pub fn dot() -> String {
         colored("•", "33")
+    }
+
+    pub fn cross() -> String {
+        colored("✗", "31")
     }
 
     pub fn bold(s: &str) -> String {
@@ -1815,8 +2523,41 @@ mod tests {
     }
 
     #[test]
-    fn parse_no_args_is_help() {
-        assert_eq!(parse_command(&args(&[])).unwrap(), Command::Help);
+    fn parse_no_args_is_default_action() {
+        // `rustio` with no args routes to the context-aware default
+        // helper, NOT the full --help dump. Explicit `help` still maps
+        // to Command::Help (covered by `parse_help_flag`).
+        assert_eq!(parse_command(&args(&[])).unwrap(), Command::Default);
+    }
+
+    #[test]
+    fn parse_doctor_command() {
+        assert_eq!(parse_command(&args(&["doctor"])).unwrap(), Command::Doctor);
+    }
+
+    #[test]
+    fn parse_explain_requires_topic() {
+        assert!(parse_command(&args(&["explain"])).is_err());
+        assert_eq!(
+            parse_command(&args(&["explain", "migration"])).unwrap(),
+            Command::Explain("migration".to_string())
+        );
+    }
+
+    #[test]
+    fn strip_why_flag_pulls_it_anywhere() {
+        let (rest, why) = strip_why_flag(vec![
+            "rustio".into(),
+            "migrate".into(),
+            "apply".into(),
+            "--why".into(),
+        ]);
+        assert!(why);
+        assert_eq!(rest, vec!["rustio", "migrate", "apply"]);
+
+        let (rest2, why2) = strip_why_flag(vec!["rustio".into(), "doctor".into()]);
+        assert!(!why2);
+        assert_eq!(rest2, vec!["rustio", "doctor"]);
     }
 
     #[test]

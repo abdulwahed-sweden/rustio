@@ -1,3 +1,7 @@
+> **Advanced docs.** This file goes deep — APIs, internals, gotchas.
+> If you'''re new to RustIO, start at the [main README](../../README.md) first.
+> It walks you from zero to a running admin in 5 minutes.
+
 # RustIO Real-World Stress Test — Healthcare Admin
 
 A deliberately uncomfortable test of RustIO's admin under realistic relational complexity.
