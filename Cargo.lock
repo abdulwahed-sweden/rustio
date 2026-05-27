@@ -1166,7 +1166,7 @@ dependencies = [
 
 [[package]]
 name = "rustio-cli"
-version = "0.3.1"
+version = "0.10.0"
 dependencies = [
  "inquire",
  "rustio-core",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "rustio-core"
-version = "0.3.1"
+version = "0.10.0"
 dependencies = [
  "argon2",
  "bytes",
@@ -1195,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "rustio-macros"
-version = "0.3.1"
+version = "0.10.0"
 dependencies = [
  "proc-macro2",
  "quote",
