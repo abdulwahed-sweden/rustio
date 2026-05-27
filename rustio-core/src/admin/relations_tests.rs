@@ -42,6 +42,8 @@ fn fk_field(name: &str, target: &str, display: Option<&str>) -> SchemaField {
             field: "id".to_string(),
             kind: RelationKind::BelongsTo,
             display_field: display.map(|s| s.to_string()),
+            required: None,
+            on_delete: None,
         }),
     }
 }

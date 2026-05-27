@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — 0.9.1 Destructive-op gate
+
+Turns the `ExecuteOptions.allow_destructive` placeholder into real behaviour. `rustio ai apply <plan> --force` now lets reviewers opt into `remove_field` / `remove_relation` primitives. Critical-risk plans, developer-only primitives, and PII policy refusals stay bypass-proof — `--force` is scoped narrowly on purpose.
+
+- **`apply_remove_field`.** New executor path. Uses the existing recreate-table pattern (`CREATE TABLE t__new` → `INSERT … SELECT` → `DROP` → `RENAME`) so SQLite's "ALTER TABLE DROP COLUMN won't work on FK-bearing tables" limitation doesn't bite. Patches `models.rs` to remove the field from the struct, `COLUMNS`, `INSERT_COLUMNS`, `from_row`, and `insert_values`. Fails cleanly with `ExecutionError::UnsupportedPrimitive { op: "remove_field", reason: "cannot drop the id primary key …" }` when asked to drop `id`.
+- **`apply_remove_relation`.** Delegates to `apply_remove_field` on the `<via>` column; keeps the summary line honest as "Remove relation" rather than "Remove field".
+- **FK-aware recreate.** The migration preserves every *other* surviving FK on the table by re-emitting its `REFERENCES <parent>(id) ON DELETE <policy>` clause from the schema (extends the 0.9.0 `column_def_with_relation_context`). No collateral constraint loss.
+- **Multi-model file support.** `find_table_for_struct`, COLUMNS/INSERT_COLUMNS array removal, and `from_row` / `insert_values` patching are all now scoped to the matching `impl Model for <struct>` block. Medflow-style apps (multiple models per file) are first-class.
+- **`remove_model` still refused.** Dropping a struct + its admin registration + downstream FKs is 0.9.2 scope — `ExecutionError::UnsupportedPrimitive { op: "remove_model" }` even with `allow_destructive: true`.
+- **CLI.** `rustio ai apply <plan> [--yes] [--dry-run] [--force]`. `--force` sets `allow_destructive` on the executor. Preview prints "destructive gate open: --force" so operators see what changed about the pass.
+- **Tests.** +5 core (remove_field with `--force` drops column + patches models.rs; `remove_primary_key_id` refused; `remove_relation` refused without `--force`, works with it; `remove_model` refused even with `--force`); +3 CLI (arg parser accepts `--force`, defaults to `false`, composes with `--yes --dry-run`). Total 519 passing (499 baseline → 514 after 0.9.0 → 519 now).
+- **Verified against medflow.** `ai plan "remove allergies from patients"` + `ai apply --yes --force` drops `Patient.allergies` cleanly: struct field + COLUMNS + INSERT_COLUMNS + from_row + insert_values all stripped; migration `0020_drop_allergies_from_patients.sql` emits a recreate-table with every other Patient column preserved, wrapped in `PRAGMA foreign_keys OFF/BEGIN/COMMIT/ON`. Without `--force` the same apply refuses with `primitive `remove_field` is destructive — re-run … with `--force``.
+
+### Added — 0.9.0 FK enforcement
+
+Phase 2's final exit criterion: `AddRelation { kind: BelongsTo }` now emits a real SQL `FOREIGN KEY` constraint, and existing 0.8.x projects have a one-shot retrofit path. Replaces the 0.8.0 "soft linkage via `rustio.schema.json` only" stopgap.
+
+- **Primitive surface.** `ai::AddRelation` gains two serde-default fields — `required: bool` (default `false`) and `on_delete: OnDelete` (default `Restrict`). Saved 0.8.x plan documents still parse byte-identically because both fields are `#[serde(default)]`. New `ai::OnDelete` enum with `Restrict` / `Cascade` / `SetNull`.
+- **Schema surface.** `schema::Relation` gains `required: Option<bool>` and `on_delete: Option<String>`, both `skip_serializing_if = "Option::is_none"`. Schema JSON written by 0.8.x projects round-trips through 0.9.0 unchanged; only projects that adopt the new metadata start writing the new keys.
+- **Executor.** `apply_add_relation` now emits `ALTER TABLE <child> ADD COLUMN <via> INTEGER REFERENCES <parent>(id) ON DELETE <policy>;` plus `PRAGMA foreign_keys = ON;`. The generated column is nullable — SQLite cannot add a `NOT NULL + REFERENCES` column via `ALTER TABLE`. A `required: true` primitive refuses with a clear pointer at the retrofit CLI.
+- **Planner grammar.** Relation phrases accept trailing options: `link A to B required`, `link A to B on_delete:cascade`, `link A to B required on_delete:set_null`. Unknown options / policies refuse at plan time — no silent default.
+- **Review layer.** `AddRelation` risk is Low by default, Medium for either `required` or `on_delete: cascade`, High for both combined. New warnings: a required-FK hint to use the retrofit path, a cascade blast-radius note.
+- **CLI.** New `rustio migrate add-fks` subcommand. Default dry-run; `--write` commits one `NNNN_retrofit_fks_<table>.sql` per affected table, using the SQLite recreate-table pattern (`CREATE TABLE …__new` + `INSERT … SELECT` + `DROP` + `RENAME`). Reviewed against medflow: 13 migrations, 27 relations upgraded, every FK column keeps its existing nullability.
+- **Tests.** +15 on top of the 499 baseline, taking `cargo test --workspace --all-targets` to 514 passing. Covers every `OnDelete` variant, nullable/required combos, the `required` refusal + retrofit hint, grammar extension, risk reclassification, and the retrofit no-op path for already-annotated schemas.
+- **Upgrade path.** See `UPGRADING.md` § "0.8.x → 0.9.0".
+
 ### Changed — 0.10.0 Admin rebuild (breaking, in progress on `feat/admin-templates-v2`)
 
 The admin UI is being rebuilt from the ground up on `minijinja` templates + Bootstrap 5 + a first-class RBAC layer. Tracking branch: `feat/admin-templates-v2`. Landed in stages; nothing in this section has shipped to `main` yet.

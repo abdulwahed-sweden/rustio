@@ -487,6 +487,8 @@ fn relation_suggestion_disappears_once_relation_is_recorded() {
         field: "id".into(),
         kind: crate::schema::RelationKind::BelongsTo,
         display_field: None,
+        required: None,
+        on_delete: None,
     });
     let ss = derive_relation_suggestions(&schema);
     assert!(

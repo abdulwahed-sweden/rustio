@@ -668,8 +668,13 @@ fn add_relation_from_to_emits_belongs_to() {
         res.explanation,
     );
     assert!(
-        res.explanation.contains("foreign-key"),
-        "explanation should be honest about the FK gap: {}",
+        res.explanation.contains("FOREIGN KEY"),
+        "0.9.0 explanation should state the FK clause is emitted: {}",
+        res.explanation,
+    );
+    assert!(
+        res.explanation.contains("on_delete:restrict"),
+        "explanation should name the default on_delete policy: {}",
         res.explanation,
     );
 }
@@ -822,4 +827,98 @@ fn render_plan_human_reads_like_a_changelog() {
         "human summary shape: {text}",
     );
     assert!(text.contains("Explanation:"), "missing Explanation block");
+}
+
+// ---- 0.9.0 relation option grammar --------------------------------------
+
+#[test]
+fn link_accepts_trailing_required_option() {
+    let schema = housing_schema();
+    let res = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Applicant required"),
+    )
+    .expect("grammar should accept trailing `required`");
+    match &res.plan.steps[0] {
+        Primitive::AddRelation(r) => {
+            assert!(
+                r.required,
+                "required flag should propagate to the primitive"
+            );
+        }
+        other => panic!("expected AddRelation, got {other:?}"),
+    }
+}
+
+#[test]
+fn link_accepts_trailing_on_delete_cascade() {
+    let schema = housing_schema();
+    let res = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Applicant on_delete:cascade"),
+    )
+    .expect("grammar should accept trailing on_delete token");
+    match &res.plan.steps[0] {
+        Primitive::AddRelation(r) => {
+            assert_eq!(r.on_delete, crate::ai::OnDelete::Cascade);
+        }
+        other => panic!("expected AddRelation, got {other:?}"),
+    }
+}
+
+#[test]
+fn link_combines_required_and_on_delete_set_null() {
+    let schema = housing_schema();
+    let res = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Applicant required on_delete:set_null"),
+    )
+    .unwrap();
+    match &res.plan.steps[0] {
+        Primitive::AddRelation(r) => {
+            assert!(r.required);
+            assert_eq!(r.on_delete, crate::ai::OnDelete::SetNull);
+        }
+        other => panic!("expected AddRelation, got {other:?}"),
+    }
+}
+
+#[test]
+fn link_rejects_unknown_option_instead_of_guessing() {
+    let schema = housing_schema();
+    let err = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Applicant frobnicate"),
+    )
+    .expect_err("unknown option must refuse, not silently drop");
+    match err {
+        PlanError::InvalidIntent(msg) => {
+            assert!(
+                msg.contains("frobnicate"),
+                "error should name the bad token: {msg}"
+            );
+        }
+        other => panic!("expected InvalidIntent, got {other:?}"),
+    }
+}
+
+#[test]
+fn link_rejects_unknown_on_delete_policy() {
+    let schema = housing_schema();
+    let err = generate_plan(
+        &schema,
+        None,
+        PlanRequest::new("link Application to Applicant on_delete:nuke"),
+    )
+    .expect_err("unknown on_delete must refuse");
+    match err {
+        PlanError::InvalidIntent(msg) => {
+            assert!(msg.contains("on_delete") || msg.contains("nuke"));
+        }
+        other => panic!("expected InvalidIntent, got {other:?}"),
+    }
 }
