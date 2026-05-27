@@ -1,82 +1,79 @@
 {% extends "base_admin.html" %}
 
-{% block title %}{{ model.display_name }} · {{ design.project_name | default('RustIO') }}{% endblock %}
-{% block page_title %}{{ model.display_name }}{% endblock %}
+{% block title %}{{ model.display_name | upper }} · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <div class="card admin-card">
-
-    {# Header strip — title + count on the left, +Add on the right. #}
-    <div class="admin-card-top">
-      <div>
-        <h2 class="admin-card-title">All {{ model.display_name | lower }}</h2>
-        <div class="admin-card-subtitle admin-count-pill">
-          {{ total | default(0) }} {{ model.display_name | lower }}
-        </div>
+  <div class="rio-page-head">
+    <div class="rio-title-block">
+      <h1 class="rio-title">{{ model.display_name }}</h1>
+      <div class="rio-rule">
+        <span class="rio-rule__hl">{{ total | default(0) }} records</span>
+        {% if total | default(0) > 0 %}
+          <span class="rio-rule__sep">·</span>
+          <span>page {{ pagination.current | default(1) }}/{{ pagination.pages | default(1) }}</span>
+        {% endif %}
       </div>
-      {% if permissions.create %}
-        <div>
-          <a href="{{ model.new_url }}" class="btn btn-primary btn-sm">
-            + Add {{ model.singular_name }}
-          </a>
-        </div>
-      {% endif %}
     </div>
+    {% if permissions.create %}
+      <a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">
+        [+] new {{ model.singular_name | lower }}
+      </a>
+    {% endif %}
+  </div>
 
-    <div class="table-responsive">
-      <table class="admin-table align-middle mb-0">
-        <thead>
+  <div class="rio-table-wrap">
+    <table class="rio-table">
+      <thead>
+        <tr>
+          {% for col in columns %}
+            <th scope="col">{{ col.label }}</th>
+          {% endfor %}
+          {% if permissions.edit or permissions.delete %}
+            <th scope="col" style="text-align:right;">&nbsp;</th>
+          {% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
           <tr>
-            {% for col in columns %}
-              <th scope="col">{{ col.label }}</th>
+            {% for cell in row.cells %}
+              <td>{{ cell | safe }}</td>
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
-              <th scope="col" class="admin-table__actions">&nbsp;</th>
+              <td style="text-align:right;">
+                {% if permissions.edit %}
+                  <a class="rio-btn--ghost" href="{{ row.edit_url }}">edit</a>
+                {% endif %}
+                {% if permissions.delete %}
+                  <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">
+                    <button type="submit" class="rio-btn--ghost" style="color: var(--rio-err);">delete</button>
+                  </form>
+                {% endif %}
+              </td>
             {% endif %}
           </tr>
-        </thead>
-        <tbody>
-          {% for row in rows %}
-            <tr>
-              {% for cell in row.cells %}
-                <td>{{ cell | safe }}</td>
-              {% endfor %}
-              {% if permissions.edit or permissions.delete %}
-                <td class="admin-table__actions">
-                  {% if permissions.edit %}
-                    <a class="btn btn-sm btn-link" href="{{ row.edit_url }}">Edit</a>
-                  {% endif %}
-                  {% if permissions.delete %}
-                    <form method="post" action="{{ row.delete_url }}" class="d-inline m-0" data-confirm="Delete {{ model.singular_name | lower }}?">
-                      <button type="submit" class="btn btn-sm btn-link text-danger">Delete</button>
-                    </form>
-                  {% endif %}
-                </td>
-              {% endif %}
-            </tr>
-          {% else %}
-            <tr><td colspan="{{ columns | length + 1 }}" class="text-muted text-center py-5">No {{ model.display_name | lower }} yet.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    {% if pagination is defined and pagination.pages > 1 %}
-      <div class="admin-card-foot">
-        <span class="admin-count-pill">
-          Page {{ pagination.current }} of {{ pagination.pages }}
-        </span>
-        <nav aria-label="Pagination">
-          <ul class="pagination pagination-sm mb-0">
-            {% for page in pagination.links %}
-              <li class="page-item{% if page.active %} active{% endif %}{% if page.disabled %} disabled{% endif %}">
-                <a class="page-link" href="{{ page.href }}">{{ page.label }}</a>
-              </li>
-            {% endfor %}
-          </ul>
-        </nav>
-      </div>
-    {% endif %}
-
+        {% else %}
+          <tr>
+            <td colspan="{{ columns | length + 1 }}" style="text-align:center;padding:48px 0;color:var(--rio-ink-muted);">
+              No {{ model.display_name | lower }} yet. <a href="{{ model.new_url }}" style="color:var(--rio-accent);border-bottom-color:var(--rio-accent);">create the first one</a>.
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+
+  {% if pagination is defined and pagination.pages > 1 %}
+    <ul class="rio-pagination">
+      {% for page in pagination.links %}
+        <li>
+          <a class="rio-pagination__link{% if page.active %} rio-pagination__link--active{% endif %}"
+             href="{{ page.href }}"
+             {% if page.disabled %}style="pointer-events:none;opacity:.4;"{% endif %}>
+            {{ page.label }}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
 {% endblock %}

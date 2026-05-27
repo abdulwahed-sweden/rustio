@@ -1,19 +1,23 @@
 {% extends "base_admin.html" %}
 
-{% block title %}Dashboard · {{ design.project_name | default('RustIO') }}{% endblock %}
-{% block page_title %}Dashboard{% endblock %}
+{% block title %}DASHBOARD · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <div class="row g-3">
-    {% for card in dashboard_cards | default([]) %}
-      <div class="col-12 col-md-6 col-xl-3">
-        <div class="card admin-card h-100">
-          <div class="admin-stat-card">
-            <div class="admin-stat-card__label">{{ card.label }}</div>
-            <div class="admin-stat-card__value">{{ card.value }}</div>
-          </div>
-        </div>
+  <div class="rio-page-head">
+    <div class="rio-title-block">
+      <h1 class="rio-title">Overview</h1>
+      <div class="rio-rule">
+        <span>{{ dashboard_cards | length }} models registered</span>
       </div>
+    </div>
+  </div>
+
+  <div class="rio-dash">
+    {% for card in dashboard_cards | default([]) %}
+      <a class="rio-dash__cell" href="/admin/{{ card.label | lower }}">
+        <span class="rio-dash__label">{{ card.label }}</span>
+        <span class="rio-dash__value">{% if card.value < 10 %}0{% endif %}{{ card.value }}</span>
+      </a>
     {% endfor %}
   </div>
 {% endblock %}

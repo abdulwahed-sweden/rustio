@@ -1,472 +1,769 @@
-/* RustIO admin — 0.10.x visual refresh
+/* ============================================================================
+ * RustIO admin — TERMINAL BRUTALISM
  *
- * Borrows the design language of a clean slate-and-blue product-table
- * pattern: Sora display font + Source Sans 3 body, soft-shadow cards,
- * uppercase tracked column headers, pill status badges. Keeps the dark
- * sidebar that's been part of RustIO's identity since 0.10.0.
- */
+ * Dark canvas, monospace everywhere, no cards, no shadows, no rounded corners.
+ * Data dominates; chrome recedes. Status is bracket-text, not pills. The one
+ * accent is electric lime (#cffd00) — used sparingly.
+ *
+ * Inspirations: Bloomberg Terminal · Wim Crouwel · Linear · Vercel
+ * ============================================================================ */
 
 :root {
-  /* Brand */
-  --admin-accent:        #2563eb;
-  --admin-accent-hover:  #1d4ed8;
-  --admin-accent-tint:   #eff6ff;
-  --admin-accent-ring:   rgba(37, 99, 235, .15);
-
-  /* Sidebar */
-  --admin-sidebar-bg:           #0f172a;
-  --admin-sidebar-ink:          #e2e8f0;
-  --admin-sidebar-ink-muted:    #94a3b8;
-  --admin-sidebar-item-active:  #1e293b;
-
-  /* Surfaces */
-  --admin-content-bg:    #f1f5f9;
-  --admin-panel:         #ffffff;
-  --admin-panel-soft:    #fbfcfe;
+  /* Canvas */
+  --rio-bg:            #0a0a0a;
+  --rio-surface:       #111111;
+  --rio-surface-2:     #161616;
+  --rio-surface-hover: #1c1c1c;
 
   /* Borders */
-  --admin-border:        #e2e8f0;
-  --admin-border-soft:   #eef2f6;
+  --rio-border:        #1f1f1f;
+  --rio-border-bright: #2a2a2a;
+  --rio-border-line:   #404040;
 
-  /* Type */
-  --admin-ink:           #0f172a;
-  --admin-ink-soft:      #475569;
-  --admin-ink-faint:     #94a3b8;
+  /* Ink */
+  --rio-ink:           #fafafa;
+  --rio-ink-soft:      #a3a3a3;
+  --rio-ink-muted:     #525252;
+  --rio-ink-faint:     #2a2a2a;
+
+  /* Accent (use sparingly — the one electric colour) */
+  --rio-accent:        #cffd00;
+  --rio-accent-soft:   rgba(207, 253, 0, .12);
+  --rio-accent-line:   rgba(207, 253, 0, .35);
 
   /* Status palette */
-  --admin-status-green-bg:  #dcfce7;
-  --admin-status-green-ink: #166534;
-  --admin-status-amber-bg:  #fef9c3;
-  --admin-status-amber-ink: #854d0e;
-  --admin-status-slate-bg:  #f1f5f9;
-  --admin-status-slate-ink: #475569;
-  --admin-status-blue-bg:   #dbeafe;
-  --admin-status-blue-ink:  #1e40af;
+  --rio-ok:            #00ff88;
+  --rio-warn:          #fbbf24;
+  --rio-cold:          #737373;
+  --rio-err:           #ff5252;
+  --rio-info:          #22d3ee;
 
-  /* Shadows */
-  --admin-shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
-  --admin-shadow-md: 0 4px 14px rgba(15, 23, 42, .08);
-
-  /* Fonts */
-  --admin-font-body:    'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --admin-font-display: 'Sora', 'Source Sans 3', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Type */
+  --rio-mono:          'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --rio-px:            14px;        /* baseline body size */
+  --rio-leading:       1.55;
 }
 
-/* -----------------------------------------------------------------
- * Base typography
- * ----------------------------------------------------------------- */
+* { box-sizing: border-box; }
 
-body.admin-shell {
-  background: var(--admin-content-bg);
-  color: var(--admin-ink);
-  font-family: var(--admin-font-body);
-  font-size: 15px;
-  line-height: 1.6;
+html, body { margin: 0; padding: 0; }
+
+body.admin-shell,
+body.admin-auth {
+  background: var(--rio-bg);
+  color: var(--rio-ink);
+  font-family: var(--rio-mono);
+  font-size: var(--rio-px);
+  font-feature-settings: "ss01", "ss02", "tnum", "zero", "calt";
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  line-height: var(--rio-leading);
 }
 
-body.admin-shell h1,
-body.admin-shell h2,
-body.admin-shell h3,
-body.admin-shell h4,
-body.admin-shell h5,
-body.admin-shell h6,
-body.admin-shell .display-1,
-body.admin-shell .display-2,
-body.admin-shell .display-3,
-body.admin-shell .display-4,
-body.admin-shell .display-5,
-body.admin-shell .display-6 {
-  font-family: var(--admin-font-display);
-  letter-spacing: -.01em;
-  font-weight: 700;
-  color: var(--admin-ink);
+/* The minijinja templates extend base.html which loads Bootstrap before our
+ * CSS. We don't want Bootstrap typography or palette here — neutralise the
+ * classes the templates still emit. */
+body.admin-shell .btn,
+body.admin-shell .form-label,
+body.admin-shell .form-control,
+body.admin-shell .form-select,
+body.admin-shell .alert,
+body.admin-shell .text-muted,
+body.admin-shell .text-danger,
+body.admin-shell .small,
+body.admin-shell .display-6,
+body.admin-shell .h5,
+body.admin-shell .h6,
+body.admin-shell h1, body.admin-shell h2, body.admin-shell h3,
+body.admin-shell h4, body.admin-shell h5, body.admin-shell h6 {
+  font-family: var(--rio-mono);
 }
 
-/* -----------------------------------------------------------------
- * Layout shell (kept from 0.10.0)
- * ----------------------------------------------------------------- */
+body.admin-shell a            { color: var(--rio-ink); text-decoration: none; }
+body.admin-shell a:hover      { color: var(--rio-accent); text-decoration: none; }
 
-.admin-layout { align-items: stretch; }
+/* Selection colour: lime on black. */
+::selection { background: var(--rio-accent); color: var(--rio-bg); }
 
-.admin-sidebar {
-  width: 15rem;
-  background: var(--admin-sidebar-bg);
-  color: var(--admin-sidebar-ink);
-  display: flex;
-  flex-direction: column;
-  padding: 1.25rem 0;
-  position: sticky;
-  top: 0;
+/* ----------------------------------------------------------------------------
+ * Shell layout: top nav · main · status bar
+ * -------------------------------------------------------------------------- */
+
+.rio-shell {
+  display: grid;
+  grid-template-rows: 56px 1fr 32px;
   min-height: 100vh;
 }
 
-.admin-sidebar__brand {
+.rio-topnav {
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0 1.25rem 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 1rem;
+  gap: 32px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--rio-border);
+  background: var(--rio-bg);
+  /* hide subtle scan stripe with a 1px tint */
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
-.admin-sidebar__logo {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 0.5rem;
-  background: var(--admin-accent);
-  color: #fff;
+.rio-topnav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 700;
-  font-family: var(--admin-font-display);
+  letter-spacing: .04em;
+}
+
+.rio-topnav__mark {
+  width: 22px;
+  height: 22px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  background: var(--rio-accent);
+  color: var(--rio-bg);
+  font-weight: 800;
+  font-size: 12px;
 }
 
-.admin-sidebar__name {
-  font-family: var(--admin-font-display);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+.rio-topnav__sep {
+  color: var(--rio-ink-muted);
 }
 
-.admin-sidebar__list { list-style: none; padding: 0; margin: 0; }
-
-.admin-sidebar__link {
-  display: block;
-  padding: 0.5rem 1.25rem;
-  color: var(--admin-sidebar-ink-muted);
-  text-decoration: none;
-  font-size: 0.9rem;
-  font-weight: 500;
-  transition: background 120ms ease, color 120ms ease;
-}
-
-.admin-sidebar__link:hover {
-  background: var(--admin-sidebar-item-active);
-  color: var(--admin-sidebar-ink);
-}
-
-.admin-sidebar__item--active .admin-sidebar__link {
-  background: var(--admin-sidebar-item-active);
-  color: #fff;
-  border-left: 2px solid var(--admin-accent);
-  padding-left: calc(1.25rem - 2px);
-}
-
-.admin-main { min-width: 0; }
-
-.admin-header { background: #fff; }
-
-/* -----------------------------------------------------------------
- * Card pattern — used by dashboard, list page, form page
- * ----------------------------------------------------------------- */
-
-.admin-card,
-body.admin-shell .card {
-  background: var(--admin-panel);
-  border: 1px solid var(--admin-border);
-  border-radius: 16px;
-  box-shadow: var(--admin-shadow-md);
-  overflow: hidden;
-}
-
-/* Card title strip — a header inside the card with a title on the
- * left and action buttons on the right. Used on the list page. */
-.admin-card-top {
+.rio-topnav__links {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 24px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--admin-border-soft);
-  background: var(--admin-panel);
-}
-
-.admin-card-top h2,
-.admin-card-top .admin-card-title {
-  font-family: var(--admin-font-display);
-  font-size: 18px;
-  font-weight: 700;
+  gap: 4px;
+  list-style: none;
   margin: 0;
+  padding: 0;
 }
 
-.admin-card-top .admin-card-subtitle {
-  color: var(--admin-ink-faint);
-  font-size: 13px;
-  font-weight: 500;
-  margin-top: 4px;
-}
-
-/* Card footer — soft-tinted, used for pagination / totals */
-.admin-card-foot {
-  display: flex;
+.rio-topnav__link {
+  display: inline-flex;
   align-items: center;
+  height: 56px;
+  padding: 0 14px;
+  color: var(--rio-ink-soft);
+  font-size: 12.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  transition: color 100ms, border-color 100ms;
+}
+
+.rio-topnav__link:hover {
+  color: var(--rio-ink);
+}
+
+.rio-topnav__link--active {
+  color: var(--rio-accent);
+  border-bottom-color: var(--rio-accent);
+}
+
+.rio-topnav__spacer { flex: 1; }
+
+.rio-topnav__user {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--rio-ink-soft);
+  font-size: 12px;
+  letter-spacing: .05em;
+  text-transform: lowercase;
+}
+
+.rio-topnav__logout {
+  background: transparent;
+  border: 1px solid var(--rio-border-bright);
+  color: var(--rio-ink-soft);
+  font-family: var(--rio-mono);
+  font-size: 11.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color 100ms, border-color 100ms, background 100ms;
+}
+
+.rio-topnav__logout:hover {
+  color: var(--rio-bg);
+  background: var(--rio-accent);
+  border-color: var(--rio-accent);
+}
+
+.rio-main {
+  padding: 56px 56px 80px;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ----------------------------------------------------------------------------
+ * Page title block
+ *   <PAGE TITLE>                              [+ NEW]
+ *   ───────  5 records · 2 in-progress · 2 todo · 1 done
+ * -------------------------------------------------------------------------- */
+
+.rio-page-head {
+  display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 20px;
-  padding: 14px 24px;
-  background: var(--admin-panel-soft);
-  border-top: 1px solid var(--admin-border-soft);
+  gap: 24px;
+  margin-bottom: 48px;
   flex-wrap: wrap;
 }
 
-/* -----------------------------------------------------------------
- * Tables
- * ----------------------------------------------------------------- */
+.rio-title-block {
+  flex: 1;
+  min-width: 0;
+}
 
-.admin-table {
+.rio-title {
+  font-size: 64px;
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  margin: 0 0 18px;
+  color: var(--rio-ink);
+}
+
+.rio-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--rio-ink-muted);
+}
+
+.rio-rule::before {
+  content: "";
+  display: inline-block;
+  width: 64px;
+  height: 1px;
+  background: var(--rio-ink);
+}
+
+.rio-rule__sep {
+  color: var(--rio-ink-faint);
+}
+
+.rio-rule__hl {
+  color: var(--rio-ink);
+}
+
+/* ----------------------------------------------------------------------------
+ * Buttons
+ *
+ * Bracket-wrapped monospace text. No background. Hover flips to accent.
+ *   [+ NEW]   [SAVE]   [DELETE]
+ * -------------------------------------------------------------------------- */
+
+.rio-btn,
+body.admin-shell .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--rio-ink);
+  border: 1px solid var(--rio-ink);
+  padding: 9px 16px;
+  font-family: var(--rio-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 100ms, color 100ms, border-color 100ms;
+  border-radius: 0;
+  text-decoration: none;
+}
+
+.rio-btn:hover,
+body.admin-shell .btn:hover {
+  background: var(--rio-ink);
+  color: var(--rio-bg);
+}
+
+.rio-btn--primary,
+body.admin-shell .btn-primary {
+  background: var(--rio-accent);
+  color: var(--rio-bg);
+  border-color: var(--rio-accent);
+}
+
+.rio-btn--primary:hover,
+body.admin-shell .btn-primary:hover,
+body.admin-shell .btn-primary:focus {
+  background: var(--rio-ink);
+  color: var(--rio-bg);
+  border-color: var(--rio-ink);
+}
+
+.rio-btn--danger,
+body.admin-shell .btn-link.text-danger {
+  color: var(--rio-err) !important;
+  border-color: var(--rio-err);
+  text-decoration: none;
+}
+
+.rio-btn--danger:hover {
+  background: var(--rio-err);
+  color: var(--rio-bg);
+}
+
+.rio-btn--ghost,
+body.admin-shell .btn-link {
+  background: transparent;
+  border-color: transparent;
+  color: var(--rio-ink-soft);
+  padding: 9px 4px;
+}
+
+.rio-btn--ghost:hover,
+body.admin-shell .btn-link:hover {
+  background: transparent;
+  color: var(--rio-accent);
+}
+
+/* ----------------------------------------------------------------------------
+ * Tables — the centerpiece
+ *
+ * Hair borders, transparent header background, dense rows, tabular nums.
+ * -------------------------------------------------------------------------- */
+
+.rio-table-wrap { overflow-x: auto; }
+
+.rio-table,
+body.admin-shell .admin-table,
+body.admin-shell table.table {
   width: 100%;
   border-collapse: collapse;
+  background: transparent;
   margin: 0;
+  color: var(--rio-ink);
 }
 
-.admin-table > thead > tr > th {
-  background: #f8fafc;
-  font-family: var(--admin-font-display);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--admin-ink-soft);
+.rio-table thead th,
+body.admin-shell .admin-table > thead > tr > th {
+  background: transparent;
+  color: var(--rio-ink-muted);
   text-align: left;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--admin-border);
-  border-left: 0;
-  border-right: 0;
-  border-top: 0;
-  white-space: nowrap;
-}
-
-.admin-table > tbody > tr > td {
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--admin-border-soft);
-  border-left: 0;
-  border-right: 0;
-  font-size: 15px;
-  color: var(--admin-ink-soft);
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-.admin-table > tbody > tr:hover { background: #f8fafc; }
-.admin-table > tbody > tr:last-child > td { border-bottom: none; }
-
-.admin-table__actions {
-  width: 1%;
-  white-space: nowrap;
-  text-align: right;
-}
-
-/* Currency / count cells — use this class on numeric td's for
- * column alignment (tabular figures keep the digits in lockstep). */
-.admin-num,
-body.admin-shell .num {
-  font-variant-numeric: tabular-nums;
   font-weight: 500;
-  color: var(--admin-ink);
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 14px 16px 14px 0;
+  border-top: 1px solid var(--rio-border-line);
+  border-bottom: 1px solid var(--rio-border-line);
+  white-space: nowrap;
 }
 
-/* -----------------------------------------------------------------
- * Status badges — pill-shaped, low-saturation pastels
+.rio-table tbody td,
+body.admin-shell .admin-table > tbody > tr > td {
+  padding: 14px 16px 14px 0;
+  border-bottom: 1px solid var(--rio-border);
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  font-size: 13.5px;
+  vertical-align: middle;
+  color: var(--rio-ink);
+  white-space: nowrap;
+}
+
+.rio-table tbody tr:hover td,
+body.admin-shell .admin-table > tbody > tr:hover > td {
+  background: var(--rio-surface);
+}
+
+/* Last column doesn't need right padding — easier alignment with status bar */
+.rio-table thead th:last-child,
+.rio-table tbody td:last-child,
+body.admin-shell .admin-table > thead > tr > th:last-child,
+body.admin-shell .admin-table > tbody > tr > td:last-child {
+  padding-right: 0;
+}
+
+/* Tabular nums + ID-style mono everywhere */
+.rio-num,
+body.admin-shell .num,
+.rio-table td,
+.rio-table th {
+  font-variant-numeric: tabular-nums;
+}
+
+/* FK link cells */
+.rio-table a,
+body.admin-shell .admin-table a {
+  color: var(--rio-ink);
+  border-bottom: 1px dotted var(--rio-ink-muted);
+  text-decoration: none;
+}
+
+.rio-table a:hover,
+body.admin-shell .admin-table a:hover {
+  color: var(--rio-accent);
+  border-bottom-color: var(--rio-accent);
+}
+
+/* ----------------------------------------------------------------------------
+ * Status tokens — bracket-text, not pills
  *
- * Two ways to use:
- *   1. Apply the explicit class:
- *        <span class="badge-status active">Active</span>
- *   2. Use the attribute selector via data-status:
- *        <span data-status="active">Active</span>
- *
- * Variants: active · pending · inactive · info
- * ----------------------------------------------------------------- */
+ * Markup is still `<span class="badge-status" data-status="done">done</span>`
+ * (the renderer hasn't changed). CSS displays it as `[DONE]` in monospace.
+ * -------------------------------------------------------------------------- */
 
 .badge-status,
 [data-status] {
   display: inline-flex;
   align-items: center;
-  font-family: var(--admin-font-display);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 11px;
-  border-radius: 999px;
-  letter-spacing: .01em;
+  font-family: var(--rio-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--rio-ink-soft);
   white-space: nowrap;
+}
+
+.badge-status::before,
+[data-status]::before {
+  content: "[";
+  opacity: .45;
+  margin-right: 3px;
+}
+
+.badge-status::after,
+[data-status]::after {
+  content: "]";
+  opacity: .45;
+  margin-left: 3px;
 }
 
 .badge-status.active,
 [data-status="active"],
 [data-status="done"],
-[data-status="true"] {
-  background: var(--admin-status-green-bg);
-  color: var(--admin-status-green-ink);
-}
+[data-status="true"]      { color: var(--rio-ok); }
 
 .badge-status.pending,
 [data-status="pending"],
 [data-status="in_progress"],
-[data-status="in-progress"] {
-  background: var(--admin-status-amber-bg);
-  color: var(--admin-status-amber-ink);
-}
+[data-status="in-progress"]{ color: var(--rio-warn); }
 
 .badge-status.inactive,
 [data-status="inactive"],
 [data-status="todo"],
-[data-status="false"] {
-  background: var(--admin-status-slate-bg);
-  color: var(--admin-status-slate-ink);
-}
+[data-status="false"]     { color: var(--rio-cold); }
 
 .badge-status.info,
-[data-status="info"] {
-  background: var(--admin-status-blue-bg);
-  color: var(--admin-status-blue-ink);
+[data-status="info"]      { color: var(--rio-info); }
+
+/* ----------------------------------------------------------------------------
+ * Dashboard — bento-style data windows
+ *
+ * Each model is its own composition: huge number, small label, decorative
+ * rule. No box, no card. Hover: number flips to accent.
+ * -------------------------------------------------------------------------- */
+
+.rio-dash {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1px;
+  background: var(--rio-border);
+  border: 1px solid var(--rio-border);
 }
 
-/* -----------------------------------------------------------------
- * Buttons — refined Sora type, smoother transitions
- * ----------------------------------------------------------------- */
-
-body.admin-shell .btn {
-  font-family: var(--admin-font-display);
-  font-weight: 600;
-  font-size: 14px;
-  border-radius: 9px;
-  transition: background-color .15s ease, border-color .15s ease,
-              color .15s ease, box-shadow .15s ease;
+.rio-dash__cell {
+  background: var(--rio-bg);
+  padding: 32px 28px;
+  transition: background 120ms;
+  position: relative;
+  cursor: pointer;
 }
 
-body.admin-shell .btn-primary {
-  background-color: var(--admin-accent);
-  border-color: var(--admin-accent);
-  color: #fff;
+.rio-dash__cell:hover {
+  background: var(--rio-surface);
 }
 
-body.admin-shell .btn-primary:hover,
-body.admin-shell .btn-primary:focus {
-  background-color: var(--admin-accent-hover);
-  border-color: var(--admin-accent-hover);
-  color: #fff;
-  box-shadow: 0 0 0 3px var(--admin-accent-ring);
+.rio-dash__cell:hover .rio-dash__value {
+  color: var(--rio-accent);
 }
 
-body.admin-shell .btn-outline-secondary {
-  border-color: var(--admin-border);
-  color: var(--admin-ink-soft);
-  background: var(--admin-panel);
+.rio-dash__label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--rio-ink-muted);
+  margin-bottom: 16px;
 }
 
-body.admin-shell .btn-outline-secondary:hover {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  color: var(--admin-ink);
+.rio-dash__value {
+  display: block;
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.02em;
+  color: var(--rio-ink);
+  font-variant-numeric: tabular-nums;
+  transition: color 120ms;
 }
 
-body.admin-shell .btn-link {
-  font-weight: 600;
-  text-decoration: none;
-}
-body.admin-shell .btn-link:hover { text-decoration: underline; }
+.rio-dash__cell a,
+.rio-dash__cell a:hover { text-decoration: none; }
 
-/* Small badge near the +Add button on list pages — soft pill with
- * count, mirrors the reference design's "X products" label. */
-.admin-count-pill {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--admin-font-display);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--admin-ink-faint);
+/* Make the entire cell clickable when it wraps an anchor */
+.rio-dash__cell-link {
+  position: absolute;
+  inset: 0;
 }
 
-/* -----------------------------------------------------------------
- * Form fields — focus ring matches brand
- * ----------------------------------------------------------------- */
+/* ----------------------------------------------------------------------------
+ * Forms
+ *
+ * No card. Field block: tiny uppercase label above a bare-bottom-border input.
+ * Bracket-wrapped submit.
+ * -------------------------------------------------------------------------- */
+
+.rio-form {
+  max-width: 720px;
+}
+
+.rio-form__field {
+  margin-bottom: 28px;
+}
+
+body.admin-shell .form-label,
+.rio-form__label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--rio-ink-muted);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+body.admin-shell .form-label .text-danger,
+.rio-form__required { color: var(--rio-accent); }
 
 body.admin-shell .form-control,
-body.admin-shell .form-select {
-  border-color: var(--admin-border);
-  border-radius: 9px;
-  font-family: var(--admin-font-body);
-  transition: border-color .15s ease, box-shadow .15s ease;
+body.admin-shell .form-select,
+.rio-form__input {
+  width: 100%;
+  background: transparent;
+  color: var(--rio-ink);
+  border: 0;
+  border-bottom: 1px solid var(--rio-border-line);
+  border-radius: 0;
+  padding: 8px 0;
+  font-family: var(--rio-mono);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 120ms;
 }
 
 body.admin-shell .form-control:focus,
-body.admin-shell .form-select:focus {
-  border-color: var(--admin-accent);
-  box-shadow: 0 0 0 3px var(--admin-accent-ring);
+body.admin-shell .form-select:focus,
+.rio-form__input:focus {
+  border-bottom-color: var(--rio-accent);
+  box-shadow: none;
 }
 
-body.admin-shell .form-label {
-  font-family: var(--admin-font-display);
-  font-weight: 600;
+body.admin-shell .form-text {
+  color: var(--rio-ink-muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+body.admin-shell .alert {
+  background: transparent;
+  border: 1px solid var(--rio-err);
+  border-radius: 0;
+  color: var(--rio-err);
+  padding: 12px 16px;
   font-size: 13px;
-  color: var(--admin-ink);
-  margin-bottom: 6px;
 }
 
-/* -----------------------------------------------------------------
- * Auth (sign-in) card — reusing the panel pattern
- * ----------------------------------------------------------------- */
+/* Style native select arrow on dark bg */
+body.admin-shell .form-select {
+  background-image: linear-gradient(45deg, transparent 50%, var(--rio-ink-soft) 50%),
+                    linear-gradient(135deg, var(--rio-ink-soft) 50%, transparent 50%);
+  background-position: calc(100% - 14px) center, calc(100% - 9px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
 
-.auth-card__logo {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.5rem;
-  background: var(--admin-accent);
-  color: #fff;
+/* ----------------------------------------------------------------------------
+ * Pagination — minimal mono
+ * -------------------------------------------------------------------------- */
+
+body.admin-shell .pagination,
+.rio-pagination {
+  display: flex;
+  gap: 0;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+body.admin-shell .page-link,
+.rio-pagination__link {
+  display: inline-flex;
+  min-width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--rio-ink-soft);
+  border: 1px solid var(--rio-border-bright);
+  border-radius: 0;
+  margin: 0 -1px 0 0;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+body.admin-shell .page-item.active .page-link,
+.rio-pagination__link--active {
+  background: var(--rio-accent);
+  color: var(--rio-bg);
+  border-color: var(--rio-accent);
+  z-index: 1;
+}
+
+body.admin-shell .page-link:hover {
+  color: var(--rio-ink);
+  border-color: var(--rio-ink-soft);
+}
+
+/* ----------------------------------------------------------------------------
+ * Status bar (bottom) — terminal vibe
+ * -------------------------------------------------------------------------- */
+
+.rio-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  border-top: 1px solid var(--rio-border);
+  background: var(--rio-bg);
+  color: var(--rio-ink-muted);
+  font-size: 11.5px;
+  letter-spacing: .06em;
+}
+
+.rio-statusbar__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--rio-ok);
+  margin-right: 6px;
+}
+
+.rio-statusbar__sep { color: var(--rio-ink-faint); }
+
+.rio-statusbar__spacer { flex: 1; }
+
+.rio-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background: var(--rio-accent);
+  vertical-align: -2px;
+  margin-left: 6px;
+  animation: rio-blink 1.1s steps(2, end) infinite;
+}
+
+@keyframes rio-blink {
+  0%, 50%   { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ----------------------------------------------------------------------------
+ * Auth (sign-in) — terminal login screen
+ * -------------------------------------------------------------------------- */
+
+body.admin-auth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.rio-auth {
+  width: 100%;
+  max-width: 380px;
+}
+
+.rio-auth__header {
+  margin-bottom: 32px;
+}
+
+.rio-auth__mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--rio-accent);
+  color: var(--rio-bg);
+  font-weight: 800;
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.rio-auth__title {
+  font-size: 26px;
   font-weight: 700;
-  font-family: var(--admin-font-display);
-  font-size: 1.1rem;
-}
-
-/* -----------------------------------------------------------------
- * Dashboard cards — show one stat per registered model
- * ----------------------------------------------------------------- */
-
-.admin-stat-card {
-  padding: 22px 24px;
-  background: var(--admin-panel);
-}
-
-.admin-stat-card__label {
-  font-family: var(--admin-font-display);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--admin-ink-faint);
-}
-
-.admin-stat-card__value {
-  font-family: var(--admin-font-display);
-  font-size: 36px;
-  font-weight: 700;
-  color: var(--admin-ink);
-  line-height: 1.1;
-  margin-top: 8px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* -----------------------------------------------------------------
- * Pagination — subdued, matches the table footer band
- * ----------------------------------------------------------------- */
-
-body.admin-shell .pagination {
+  letter-spacing: -.02em;
   margin: 0;
+  color: var(--rio-ink);
 }
 
-body.admin-shell .page-link {
-  color: var(--admin-ink-soft);
-  border-color: var(--admin-border);
-  font-family: var(--admin-font-display);
-  font-weight: 600;
-  font-size: 13px;
+.rio-auth__subtitle {
+  margin-top: 6px;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--rio-ink-muted);
 }
 
-body.admin-shell .page-item.active .page-link {
-  background: var(--admin-accent);
-  border-color: var(--admin-accent);
+/* Form structure in auth pages reuses .rio-form__* + body.admin-shell rules
+ * via .admin-shell class on the body. The login template uses body.admin-auth
+ * only; ensure form inputs inherit the same dark style. */
+
+body.admin-auth .form-label    { font-family: var(--rio-mono); font-size: 10.5px;
+                                  letter-spacing: .14em; text-transform: uppercase;
+                                  color: var(--rio-ink-muted); margin-bottom: 8px; }
+body.admin-auth .form-control  { width: 100%; background: transparent; color: var(--rio-ink);
+                                  border: 0; border-bottom: 1px solid var(--rio-border-line);
+                                  border-radius: 0; padding: 8px 0; font-family: var(--rio-mono);
+                                  font-size: 14px; outline: none; }
+body.admin-auth .form-control:focus { border-bottom-color: var(--rio-accent); box-shadow: none; }
+body.admin-auth .btn-primary   { display: block; width: 100%; background: var(--rio-accent);
+                                  color: var(--rio-bg); border: 0; padding: 12px;
+                                  font-family: var(--rio-mono); font-size: 12px;
+                                  letter-spacing: .14em; text-transform: uppercase;
+                                  font-weight: 600; cursor: pointer; border-radius: 0; }
+body.admin-auth .btn-primary:hover { background: var(--rio-ink); }
+
+/* ----------------------------------------------------------------------------
+ * Responsive collapse — keep monospace look but stack the top nav
+ * -------------------------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .rio-topnav { flex-wrap: wrap; height: auto; padding: 12px 16px; }
+  .rio-topnav__link { height: 36px; padding: 0 10px; }
+  .rio-main { padding: 32px 20px 60px; }
+  .rio-title { font-size: 42px; }
+  .rio-shell { grid-template-rows: auto 1fr 32px; }
 }

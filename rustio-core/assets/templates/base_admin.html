@@ -3,16 +3,15 @@
 {% block body_class %}admin-shell{% endblock %}
 
 {% block body %}
-<div class="admin-layout d-flex min-vh-100">
-  {% include "includes/sidebar.html" %}
-  <div class="admin-main flex-grow-1 d-flex flex-column">
-    {% include "includes/header.html" %}
-    <main class="admin-content flex-grow-1">
-      <div class="container-fluid py-4">
-        {% block admin_content %}{% endblock %}
-      </div>
-    </main>
-    {% include "includes/footer.html" %}
-  </div>
+<div class="rio-shell">
+  {% include "includes/header.html" %}
+  <main class="rio-main">
+    {% block admin_content %}{% endblock %}
+  </main>
+  {% include "includes/footer.html" %}
 </div>
+{# Vestigial — kept so project overrides at this path still resolve.
+   The new shell carries navigation in the top bar; sidebar.html
+   renders nothing by default. #}
+{% include "includes/sidebar.html" %}
 {% endblock %}
