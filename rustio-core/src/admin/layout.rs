@@ -1786,25 +1786,42 @@ fn is_status_field_name(name: &str) -> bool {
         || n.starts_with("has_")
 }
 
-/// Normalise a raw cell value for status-pill rendering.
+/// Normalise a raw cell value for status rendering.
 ///
 /// Returns `(data_status_value, display_label)`:
-/// - `data_status_value` is what goes into the `data-status` attribute;
-///   admin.css uses it to pick the pill colour
-///   (`active`/`pending`/`inactive`/`info`).
-/// - `display_label` is the human-readable text shown inside the pill.
+/// - `data_status_value` is the lowercased value placed in the
+///   `data-status` attribute. The 0.10.x design system renders every
+///   status uniformly in `--text-secondary` regardless of the value,
+///   but the attribute is retained so a project can re-introduce
+///   colour-coding via its own `templates/static/admin.css` override.
+/// - `display_label` is the sentence-case text shown in the cell. The
+///   visual spec mandates sentence case everywhere — never `TODO`,
+///   never `In_Progress`. Underscores in the raw value are replaced
+///   with spaces and only the first letter is upper-cased.
 ///
 /// SQLite booleans round-trip as `"0"` / `"1"` strings through the
-/// persistence layer; we map those to the more readable `Active` /
-/// `Inactive` here. String statuses (`todo` / `in_progress` / `done`)
-/// pass through with the original casing for the label and lowercased
-/// for `data-status` so CSS matchers fire on `[data-status="done"]`.
+/// persistence layer; both are mapped to the readable `Active` /
+/// `Inactive` labels.
 fn normalize_status_pill(raw: &str) -> (String, String) {
     let lc = raw.trim().to_lowercase();
     match lc.as_str() {
         "1" | "true" | "yes" | "on" => ("active".to_string(), "Active".to_string()),
         "0" | "false" | "no" | "off" => ("inactive".to_string(), "Inactive".to_string()),
-        _ => (lc, raw.to_string()),
+        _ => (lc.clone(), humanize_status_label(raw)),
+    }
+}
+
+/// Turn a raw status value into a sentence-case display label:
+/// `"in_progress"` → `"In progress"`, `"TODO"` → `"Todo"`,
+/// `"done"` → `"Done"`. Underscores become spaces. Only the first
+/// character is upper-cased; the rest stay lower-case (sentence case,
+/// not Title Case).
+fn humanize_status_label(raw: &str) -> String {
+    let spaced = raw.trim().replace('_', " ").to_lowercase();
+    let mut chars = spaced.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
     }
 }
 
@@ -2020,26 +2037,37 @@ mod tests {
     }
 
     #[test]
-    fn normalize_status_pill_passes_through_string_statuses() {
-        // String statuses keep their original casing in the label but
-        // lowercase in the data-status attribute (so admin.css matchers
-        // like `[data-status="done"]` fire reliably).
+    fn normalize_status_pill_humanizes_string_statuses() {
+        // String statuses get sentence-case labels — never SCREAMING,
+        // never Title_Case. `data-status` stays lowercased for CSS
+        // matchers in projects that re-introduce colour coding.
         let (data, label) = normalize_status_pill("In_Progress");
         assert_eq!(data, "in_progress");
-        assert_eq!(label, "In_Progress");
+        assert_eq!(label, "In progress");
 
         let (data, label) = normalize_status_pill("DONE");
         assert_eq!(data, "done");
-        assert_eq!(label, "DONE");
+        assert_eq!(label, "Done");
 
         let (data, label) = normalize_status_pill("todo");
         assert_eq!(data, "todo");
-        assert_eq!(label, "todo");
+        assert_eq!(label, "Todo");
 
-        // Unknown value: passes through. The base `[data-status]` rule
-        // still applies the pill shape; only the colour is missing.
-        let (data, label) = normalize_status_pill("custom");
-        assert_eq!(data, "custom");
-        assert_eq!(label, "custom");
+        let (data, label) = normalize_status_pill("review");
+        assert_eq!(data, "review");
+        assert_eq!(label, "Review");
+
+        // Unknown value: still humanised the same way.
+        let (data, label) = normalize_status_pill("custom_state");
+        assert_eq!(data, "custom_state");
+        assert_eq!(label, "Custom state");
+    }
+
+    #[test]
+    fn humanize_status_label_handles_edges() {
+        assert_eq!(humanize_status_label(""), "");
+        assert_eq!(humanize_status_label("a"), "A");
+        assert_eq!(humanize_status_label(" trim "), "Trim");
+        assert_eq!(humanize_status_label("multi_word_status"), "Multi word status");
     }
 }

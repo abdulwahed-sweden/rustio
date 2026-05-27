@@ -8,20 +8,20 @@
   <div class="rio-auth__header">
     <div class="rio-auth__mark">{{ design.logo_initial | default('R') }}</div>
     <h1 class="rio-auth__title">Sign in</h1>
-    <div class="rio-auth__subtitle">{{ design.project_name | default('RustIO') }}//ADMIN</div>
+    <p class="rio-auth__subtitle">{{ design.project_name | default('RustIO') }}</p>
   </div>
 
   {% if error %}
-    <div class="alert" role="alert">[error] {{ error }}</div>
+    <div class="alert" role="alert">{{ error }}</div>
   {% endif %}
 
   <form method="post" action="/admin/login" novalidate>
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-    <div class="rio-form__field">
+    <div class="form-field">
       <label for="email" class="form-label">Email</label>
       <input type="email" class="form-control" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
     </div>
-    <div class="rio-form__field">
+    <div class="form-field">
       <label for="password" class="form-label">Password</label>
       <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
     </div>

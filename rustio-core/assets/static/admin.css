@@ -654,6 +654,121 @@ body.admin-shell .page-item.active .page-link,
   color: var(--accent);
 }
 
+/* ----------------------------------------------------------------------------
+ * Auth (sign-in) — centred card on the canvas
+ * -------------------------------------------------------------------------- */
+
+body.admin-auth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--space-6) var(--space-4);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.7;
+}
+
+.rio-auth {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-surface);
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7) var(--space-6);
+}
+
+.rio-auth__header {
+  text-align: center;
+  margin-bottom: var(--space-7);
+}
+
+.rio-auth__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 500;
+  font-size: var(--text-h3);
+  margin-bottom: var(--space-4);
+}
+
+.rio-auth__title {
+  font-size: var(--text-hero);
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+  margin: 0;
+}
+
+.rio-auth__subtitle {
+  margin-top: var(--space-1);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+body.admin-auth .form-control {
+  width: 100%;
+  height: 44px;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 0 14px;
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+}
+
+body.admin-auth .form-control:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: none;
+}
+
+body.admin-auth .form-label {
+  display: block;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+body.admin-auth .form-field { margin-bottom: var(--space-5); }
+
+body.admin-auth .btn-primary {
+  display: block;
+  width: 100%;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 12px;
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: var(--space-4);
+}
+
+body.admin-auth .btn-primary:hover { filter: brightness(1.05); }
+body.admin-auth .btn-primary:active { transform: scale(0.98); }
+
+body.admin-auth .alert {
+  background: transparent;
+  border: 0.5px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-body);
+  margin-bottom: var(--space-5);
+}
+
 .rio-form__field {
   margin-bottom: var(--space-6);
 }

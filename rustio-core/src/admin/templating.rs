@@ -279,7 +279,12 @@ mod tests {
                 dashboard_cards => Vec::<minijinja::Value>::new(),
             })
             .unwrap();
-        assert!(out.contains("Dashboard"));
+        // The 0.10.x design system titles the dashboard page
+        // "Your workspace" inside the page-head, and "Overview ·
+        // <project>" in the <title>. Either signals the template
+        // resolved + rendered with the design context dict.
+        assert!(out.contains("Overview"));
+        assert!(out.contains("workspace"));
         assert!(out.contains("Test"));
     }
 
