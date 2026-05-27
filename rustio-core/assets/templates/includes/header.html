@@ -1,12 +1,11 @@
-{# Top navigation bar.
-   Carries the brand mark, the model links (was: the sidebar), and the
-   logged-in user + logout. Replaces the old sidebar + page-title header. #}
+{# Lifted topbar. Sits on --bg-elevated so it visibly rises off the
+   canvas. Brand mark uses the only accent in the topbar; everything
+   else stays on the gray ladder. #}
 <nav class="rio-topnav" aria-label="Admin navigation">
   <a href="/admin" class="rio-topnav__brand">
     <span class="rio-topnav__mark">{{ design.logo_initial | default('R') }}</span>
-    <span>{{ design.project_name | default('RustIO') }}</span>
+    <span class="rio-topnav__name">{{ design.project_name | default('RustIO') }}</span>
   </a>
-  <span class="rio-topnav__sep">//</span>
 
   <ul class="rio-topnav__links">
     {% for entry in sidebar_entries | default([]) %}
@@ -21,14 +20,13 @@
     {% endfor %}
   </ul>
 
-  <span class="rio-topnav__spacer"></span>
-
   {% if current_user is defined and current_user %}
-    <div class="rio-topnav__user">
-      <span>{{ current_user.display_name | default(current_user.email) }}</span>
-      <form method="post" action="/admin/logout" class="m-0" style="display:inline">
+    <div class="rio-topnav__status">
+      <span class="rio-topnav__dot"></span>
+      <span class="rio-topnav__email">{{ current_user.email }}</span>
+      <form method="post" action="/admin/logout" class="m-0" style="display:inline;margin:0;">
         {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-        <button type="submit" class="rio-topnav__logout">Log&nbsp;out</button>
+        <button type="submit" class="rio-topnav__logout">Log out</button>
       </form>
     </div>
   {% endif %}

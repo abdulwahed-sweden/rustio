@@ -1,18 +1,10 @@
-{# Bottom status bar — terminal-style. Always visible at the bottom
-   of the admin shell. Carries presence dot, user, version, and a
-   blinking accent cursor. #}
+{# Subdued status bar at the bottom of every admin page. Neutral
+   gray ladder only — no accent, no cursor, no blink. #}
 <footer class="rio-statusbar">
-  <span><span class="rio-statusbar__dot"></span>READY</span>
-  <span class="rio-statusbar__sep">·</span>
-  {% if current_user is defined and current_user %}
-    <span>{{ current_user.email }}</span>
-    <span class="rio-statusbar__sep">·</span>
-  {% endif %}
   <span>{{ design.project_name | default('RustIO') }}</span>
   {% if rustio_version is defined and rustio_version %}
     <span class="rio-statusbar__sep">·</span>
     <span>v{{ rustio_version }}</span>
   {% endif %}
   <span class="rio-statusbar__spacer"></span>
-  <span class="rio-cursor" aria-hidden="true"></span>
 </footer>
