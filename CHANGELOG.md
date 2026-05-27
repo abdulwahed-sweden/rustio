@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > The 0.5.0 → 0.8.0 entries below describe work that accumulated in this section without distinct release cuts at the time. They remain in `[Unreleased]` until each is retroactively tagged or rolled forward into a future release. The 0.9.0 / 0.9.1 / 0.10.0 work that was previously here has been promoted to dated releases below.
 
+### Changed — Admin visual refresh (2026-05-27)
+
+Cherry-picks the design language of a slate-and-blue product-table reference into the admin: Sora display + Source Sans 3 body, soft-shadow rounded cards (16 px radius), uppercase tracked column headers, tabular numeric figures, pill-shaped status badge utility, refined buttons + form focus rings.
+
+![Tasks list with the new Sora + Source Sans typography, blue-600 brand, soft-shadow card, and uppercase tracked column headers](docs/screenshots/admin-tasks-list.png)
+
+- **Typography.** `base.html` adds a Google Fonts link for **Sora** (400/500/600/700) and **Source Sans 3** (400/500/600/700). `admin.css` sets `--admin-font-display: 'Sora'` for headings, table-column labels, button text, and stat-card values; `--admin-font-body: 'Source Sans 3'` for everything else. Falls back to system sans if the fonts fail to load.
+- **Brand colour.** Default `Design::primary_color` / `accent_color` shifts from indigo-600 (`#4f46e5`) to **blue-600 (`#2563eb`)** to match the reference. Projects with `rustio.design.json` pinning a colour continue to override. The existing `default_palette_is_indigo_as_of_0_10` test is renamed to `default_palette_is_blue_as_of_0_10_1` and updated.
+- **Cards.** New `.admin-card` baseline — 16 px radius, soft `0 4px 14px rgba(15,23,42,.08)` shadow, optional `.admin-card-top` header strip and `.admin-card-foot` band (replaces the old `card-foot` shape). The list page uses the card-top for "All <model> · N <model>" + the +Add button; the card-foot holds pagination.
+- **Tables.** `.admin-table` heading row gets `#f8fafc` background, uppercase 12 px Sora with `.04em` letter-spacing. Body rows get hover shading + 1 px soft border between rows. New `.admin-num` / `.num` class applies `font-variant-numeric: tabular-nums` so currency / count columns line up.
+- **Status badges.** New utility — `<span class="badge-status active">…</span>` or `<span data-status="todo">…</span>`. Variants: active (green) · pending / in_progress (amber) · inactive / todo (slate) · info (blue). Ready to wire into Rust-side list renderers in a follow-up; meanwhile any template that wants a badge can use them today.
+- **Buttons + forms.** All Bootstrap `.btn` variants pick up Sora 14 px 600. Primary buttons gain a focus glow that matches the brand (`box-shadow: 0 0 0 3px rgba(37,99,235,.15)`). `.form-control` / `.form-select` use the same focus ring. Labels switch to Sora 13 px 600.
+- **Dashboard.** New `.admin-stat-card` markup — uppercase tracked label + large Sora-bold value (36 px). Replaces the previous `.display-6 text-muted text-uppercase` Bootstrap combo with first-class styles.
+
+What stayed:
+- The dark slate sidebar (`#0f172a`) and active-row indicator are unchanged — that's part of RustIO's identity since 0.10.0.
+- Bootstrap 5 is still the base; the refresh layers on top via targeted CSS, not a full framework swap.
+- Template structure is unchanged for `form.html`, `actions.html`, `profile.html`, etc. Only `base.html` (font link), `admin/list.html` (card-top + card-foot), and `admin/dashboard.html` (stat-card markup) were touched.
+
+Verification: cargo fmt / clippy -D warnings clean; cargo test --workspace --all-targets — **524 passed, 0 failed**.
+
 ### Changed — Signed commits required on `main` (2026-05-27)
 
 The `main` branch ruleset now includes a `required_signatures` rule alongside the existing `non_fast_forward` / `deletion` / `required_status_checks` rules. Every commit landing on `main` must carry a signature GitHub can verify — direct pushes by repo admins still go through via the ruleset's admin bypass, but PRs from contributors need a valid signature on every commit.

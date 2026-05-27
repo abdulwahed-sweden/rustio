@@ -58,14 +58,14 @@ impl Default for Design {
         Self {
             project_name: "RustIO".to_string(),
             logo_initial: "R".to_string(),
-            // Indigo-600 (#4f46e5). Matches the 0.10 template-based
-            // admin's default accent (see
-            // `rustio-core/assets/static/admin.css` — `--admin-accent`).
-            // Legacy rust-orange `#B84318` is the pre-0.10 default;
-            // projects with `rustio.design.json` pinning a colour
-            // continue to override.
-            primary_color: "#4f46e5".to_string(),
-            accent_color: "#4f46e5".to_string(),
+            // Blue-600 (#2563eb) — the 0.10.1 visual refresh moved the
+            // default off indigo-600 (#4f46e5) onto a slightly cooler
+            // blue to match the Sora/Source-Sans card design. The
+            // accompanying admin.css uses the same value as
+            // `--admin-accent`. Projects with `rustio.design.json`
+            // pinning a colour continue to override.
+            primary_color: "#2563eb".to_string(),
+            accent_color: "#2563eb".to_string(),
             density: Density::Comfortable,
         }
     }
@@ -142,13 +142,15 @@ mod tests {
         assert_eq!(d.primary_color, "#1e40af");
         // Missing fields fall back to defaults.
         assert_eq!(d.logo_initial, "R");
-        assert_eq!(d.accent_color, "#4f46e5");
+        assert_eq!(d.accent_color, "#2563eb");
     }
 
     #[test]
-    fn default_palette_is_indigo_as_of_0_10() {
+    fn default_palette_is_blue_as_of_0_10_1() {
+        // 0.10.1 visual refresh: indigo-600 → blue-600 to match the
+        // Sora/Source-Sans card design (see admin.css `--admin-accent`).
         let d = Design::default();
-        assert_eq!(d.primary_color, "#4f46e5");
-        assert_eq!(d.accent_color, "#4f46e5");
+        assert_eq!(d.primary_color, "#2563eb");
+        assert_eq!(d.accent_color, "#2563eb");
     }
 }

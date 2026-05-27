@@ -4,18 +4,27 @@
 {% block page_title %}{{ model.display_name }}{% endblock %}
 
 {% block admin_content %}
-  <div class="d-flex align-items-center justify-content-between mb-3">
-    <div class="text-muted small">
-      {{ total | default(0) }} {{ model.display_name | lower }}
-    </div>
-    {% if permissions.create %}
-      <a href="{{ model.new_url }}" class="btn btn-primary btn-sm">+ Add {{ model.singular_name }}</a>
-    {% endif %}
-  </div>
-
   <div class="card admin-card">
+
+    {# Header strip — title + count on the left, +Add on the right. #}
+    <div class="admin-card-top">
+      <div>
+        <h2 class="admin-card-title">All {{ model.display_name | lower }}</h2>
+        <div class="admin-card-subtitle admin-count-pill">
+          {{ total | default(0) }} {{ model.display_name | lower }}
+        </div>
+      </div>
+      {% if permissions.create %}
+        <div>
+          <a href="{{ model.new_url }}" class="btn btn-primary btn-sm">
+            + Add {{ model.singular_name }}
+          </a>
+        </div>
+      {% endif %}
+    </div>
+
     <div class="table-responsive">
-      <table class="table admin-table align-middle mb-0">
+      <table class="admin-table align-middle mb-0">
         <thead>
           <tr>
             {% for col in columns %}
@@ -33,7 +42,7 @@
                 <td>{{ cell | safe }}</td>
               {% endfor %}
               {% if permissions.edit or permissions.delete %}
-                <td class="admin-table__actions text-end">
+                <td class="admin-table__actions">
                   {% if permissions.edit %}
                     <a class="btn btn-sm btn-link" href="{{ row.edit_url }}">Edit</a>
                   {% endif %}
@@ -51,17 +60,23 @@
         </tbody>
       </table>
     </div>
-  </div>
 
-  {% if pagination is defined and pagination.pages > 1 %}
-    <nav class="admin-pagination mt-3" aria-label="Pagination">
-      <ul class="pagination pagination-sm mb-0">
-        {% for page in pagination.links %}
-          <li class="page-item{% if page.active %} active{% endif %}{% if page.disabled %} disabled{% endif %}">
-            <a class="page-link" href="{{ page.href }}">{{ page.label }}</a>
-          </li>
-        {% endfor %}
-      </ul>
-    </nav>
-  {% endif %}
+    {% if pagination is defined and pagination.pages > 1 %}
+      <div class="admin-card-foot">
+        <span class="admin-count-pill">
+          Page {{ pagination.current }} of {{ pagination.pages }}
+        </span>
+        <nav aria-label="Pagination">
+          <ul class="pagination pagination-sm mb-0">
+            {% for page in pagination.links %}
+              <li class="page-item{% if page.active %} active{% endif %}{% if page.disabled %} disabled{% endif %}">
+                <a class="page-link" href="{{ page.href }}">{{ page.label }}</a>
+              </li>
+            {% endfor %}
+          </ul>
+        </nav>
+      </div>
+    {% endif %}
+
+  </div>
 {% endblock %}
