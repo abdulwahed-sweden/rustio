@@ -21,6 +21,10 @@ You write the data — fields, types, relationships — as plain Rust structs. R
 
 If you've never touched Rust before, you should still finish this page in 5 minutes with a running website.
 
+![Admin list page — FK column renders project names as clickable links](docs/screenshots/admin-tasks-list.png)
+
+<sub>↑ The taskhub example's `/admin/tasks` page. The `project_id` column displays each project's name (a clickable link), not a raw integer — that's what `#[rustio(belongs_to, display)]` buys you. <a href="examples/taskhub/">→ See the full example</a></sub>
+
 ---
 
 ## Your first project (5 minutes)
@@ -49,6 +53,14 @@ rustio run
 ```
 
 Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for the `Note` model. Click **+ Add Note** to create one. Click the row to edit it. That's the entire loop.
+
+<p align="center">
+  <img src="docs/screenshots/admin-login.png" alt="Sign-in page" width="49%">
+  &nbsp;
+  <img src="docs/screenshots/admin-task-edit.png" alt="Edit form with every input type — text, integer, foreign-key select, datetime" width="49%">
+</p>
+
+<sub>Left: the framework's sign-in page. Right: the edit form RustIO generates from your struct — every field type maps to the right input automatically (foreign keys become `<select>`s populated from the target table, `DateTime` becomes a date-time picker, `Option<T>` fields become nullable).</sub>
 
 > **Stuck?** Run `rustio doctor` from inside the project — it checks every common "why isn't this working" cause and tells you what to fix.
 
