@@ -1,22 +1,31 @@
 {% extends "base_admin.html" %}
 
-{% block title %}DASHBOARD · {{ design.project_name | default('RustIO') }}{% endblock %}
+{% block title %}Overview · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <div class="rio-page-head">
-    <div class="rio-title-block">
-      <h1 class="rio-title">Overview</h1>
-      <div class="rio-rule">
-        <span>{{ dashboard_cards | length }} models registered</span>
-      </div>
-    </div>
-  </div>
+  {% set total = namespace(records=0, max=0) %}
+  {% for card in dashboard_cards | default([]) %}
+    {% set total.records = total.records + card.value %}
+    {% if card.value > total.max %}{% set total.max = card.value %}{% endif %}
+  {% endfor %}
 
-  <div class="rio-dash">
+  <header class="rio-page-head">
+    <h1>Your <span class="rio-accent-word">workspace</span></h1>
+    <p>
+      {% if dashboard_cards | length == 0 %}
+        No models registered yet. Add one with <code>rustio new app &lt;name&gt;</code>.
+      {% else %}
+        {{ dashboard_cards | length }} model{% if dashboard_cards | length != 1 %}s{% endif %} registered, {{ total.records }} record{% if total.records != 1 %}s{% endif %} across all of them.
+      {% endif %}
+    </p>
+  </header>
+
+  <div class="rio-stats">
     {% for card in dashboard_cards | default([]) %}
-      <a class="rio-dash__cell" href="/admin/{{ card.label | lower }}">
-        <span class="rio-dash__label">{{ card.label }}</span>
-        <span class="rio-dash__value">{% if card.value < 10 %}0{% endif %}{{ card.value }}</span>
+      <a class="rio-stat-card{% if card.value == total.max and total.max > 0 %} rio-stat-card--featured{% endif %}"
+         href="/admin/{{ card.label | lower }}">
+        <div class="rio-stat-card__number">{{ card.value }}</div>
+        <div class="rio-stat-card__label">{{ card.label }}</div>
       </a>
     {% endfor %}
   </div>

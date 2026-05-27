@@ -1,27 +1,21 @@
 {% extends "base_admin.html" %}
 
-{% block title %}{{ model.display_name | upper }} · {{ design.project_name | default('RustIO') }}{% endblock %}
+{% block title %}{{ model.display_name }} · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <div class="rio-page-head">
-    <div class="rio-title-block">
-      <h1 class="rio-title">{{ model.display_name }}</h1>
-      <div class="rio-rule">
-        <span class="rio-rule__hl">{{ total | default(0) }} records</span>
-        {% if total | default(0) > 0 %}
-          <span class="rio-rule__sep">·</span>
-          <span>page {{ pagination.current | default(1) }}/{{ pagination.pages | default(1) }}</span>
-        {% endif %}
-      </div>
+  <header class="rio-page-head rio-page-head--with-action">
+    <div>
+      <h1>{{ model.display_name }}</h1>
+      <p>
+        {{ total | default(0) }} record{% if total != 1 %}s{% endif %}{% if pagination is defined and pagination.pages > 1 %} · Page {{ pagination.current }} of {{ pagination.pages }}{% endif %}.
+      </p>
     </div>
     {% if permissions.create %}
-      <a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">
-        [+] new {{ model.singular_name | lower }}
-      </a>
+      <a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">Add {{ model.singular_name | lower }}</a>
     {% endif %}
-  </div>
+  </header>
 
-  <div class="rio-table-wrap">
+  <div class="rio-card">
     <table class="rio-table">
       <thead>
         <tr>
@@ -29,7 +23,7 @@
             <th scope="col">{{ col.label }}</th>
           {% endfor %}
           {% if permissions.edit or permissions.delete %}
-            <th scope="col" style="text-align:right;">&nbsp;</th>
+            <th scope="col">&nbsp;</th>
           {% endif %}
         </tr>
       </thead>
@@ -40,13 +34,13 @@
               <td>{{ cell | safe }}</td>
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
-              <td style="text-align:right;">
+              <td>
                 {% if permissions.edit %}
-                  <a class="rio-btn--ghost" href="{{ row.edit_url }}">edit</a>
+                  <a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>
                 {% endif %}
                 {% if permissions.delete %}
                   <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">
-                    <button type="submit" class="rio-btn--ghost" style="color: var(--rio-err);">delete</button>
+                    <button type="submit" class="rio-btn rio-btn--ghost">Delete</button>
                   </form>
                 {% endif %}
               </td>
@@ -54,8 +48,8 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="{{ columns | length + 1 }}" style="text-align:center;padding:48px 0;color:var(--rio-ink-muted);">
-              No {{ model.display_name | lower }} yet. <a href="{{ model.new_url }}" style="color:var(--rio-accent);border-bottom-color:var(--rio-accent);">create the first one</a>.
+            <td colspan="{{ columns | length + 1 }}" style="text-align:center;padding:48px 0;color:var(--text-secondary);">
+              No {{ model.display_name | lower }} yet. <a href="{{ model.new_url }}">Create the first one</a>.
             </td>
           </tr>
         {% endfor %}

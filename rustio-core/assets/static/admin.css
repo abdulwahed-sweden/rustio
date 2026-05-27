@@ -457,6 +457,203 @@ body.admin-shell .btn-link.text-danger:hover {
   border-top: 0.5px solid var(--border-default);
 }
 
+/* ----------------------------------------------------------------------------
+ * Tables — live inside a .rio-card. No outer borders on the table itself;
+ * only inter-row dividers. Sentence-case headers in --text-secondary.
+ * -------------------------------------------------------------------------- */
+
+.rio-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+}
+
+.rio-table thead th {
+  text-align: left;
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 0 var(--space-3) var(--space-3) 0;
+  border-bottom: 0.5px solid var(--border-default);
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.rio-table tbody td {
+  padding: var(--space-4) var(--space-3) var(--space-4) 0;
+  border-bottom: 0.5px solid var(--border-default);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+.rio-table thead th:last-child,
+.rio-table tbody td:last-child {
+  padding-right: 0;
+  text-align: right;
+}
+
+.rio-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* FK links inside table cells */
+.rio-table a {
+  color: var(--text-primary);
+  border-bottom: 0.5px solid var(--border-default);
+  text-decoration: none;
+  transition: color .15s ease, border-color .15s ease;
+}
+.rio-table a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Tabular-num utility for currency / count columns */
+.rio-num,
+body.admin-shell .num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------------------------
+ * Status cells — no pills, no brackets, no colour differentiation.
+ *
+ * The Rust renderer still emits `<span class="badge-status" data-status="…">`
+ * but the spec bans coloured pills and non-accent text colours. So every
+ * status renders as sentence-case --text-secondary text. Information is
+ * preserved (you can read the value); colour-coding is not.
+ * -------------------------------------------------------------------------- */
+
+.badge-status,
+[data-status] {
+  display: inline;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.badge-status::before,
+.badge-status::after,
+[data-status]::before,
+[data-status]::after {
+  content: none;
+}
+
+/* ----------------------------------------------------------------------------
+ * Stat cards — dashboard
+ *
+ * Auto-fit grid of cards: --bg-surface fill, 0.5px border, 8px radius,
+ * 16x18px padding. Numbers 22px weight 500.
+ *
+ * One card per row can be marked "featured" (the model with the most
+ * records); that card gets a 0.5px --accent border and an --accent number.
+ * Within the 5-8% accent budget.
+ * -------------------------------------------------------------------------- */
+
+.rio-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-3);
+}
+
+.rio-stat-card {
+  display: block;
+  background: var(--bg-surface);
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) 18px;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color .15s ease;
+}
+
+.rio-stat-card:hover {
+  border-color: var(--border-strong);
+}
+
+.rio-stat-card__number {
+  font-size: var(--text-stat);
+  font-weight: 500;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+  line-height: 1.2;
+}
+
+.rio-stat-card__label {
+  font-size: var(--text-meta);
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-top: var(--space-1);
+}
+
+.rio-stat-card--featured {
+  border-color: var(--accent);
+}
+
+.rio-stat-card--featured .rio-stat-card__number {
+  color: var(--accent);
+}
+
+/* ----------------------------------------------------------------------------
+ * Pagination — small, unobtrusive
+ * -------------------------------------------------------------------------- */
+
+body.admin-shell .pagination,
+.rio-pagination {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  list-style: none;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+}
+
+body.admin-shell .page-link,
+.rio-pagination__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  background: transparent;
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  margin-right: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: 400;
+  text-decoration: none;
+  transition: color .15s ease, border-color .15s ease;
+}
+
+body.admin-shell .page-link:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+body.admin-shell .page-item.active .page-link,
+.rio-pagination__link--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* Highlight word in a hero — used by the dashboard headline. The single
+ * place inside body copy where the accent appears. */
+.rio-accent-word {
+  color: var(--accent);
+}
+
 .rio-form__field {
   margin-bottom: var(--space-6);
 }
