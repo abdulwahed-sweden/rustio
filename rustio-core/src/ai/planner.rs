@@ -911,36 +911,33 @@ fn infer_field_type(
             return Ok(("String".to_string(), false));
         }
         // Industry rules.
-        match ctx.industry.as_deref() {
-            Some(i) if i.eq_ignore_ascii_case("healthcare") => {
-                // Patient IDs must be opaque strings — sequential
-                // integers leak enrolment order and are refused by
-                // the planner under this industry.
-                if n == "patient_id"
-                    || n == "patient"
-                    || n.ends_with("_patient_id")
-                    || n == "medical_record_number"
-                    || n == "mrn"
-                {
-                    return Ok(("String".to_string(), false));
-                }
-            }
-            Some(i) if i.eq_ignore_ascii_case("banking") => {
-                // Account numbers must be String (international formats
-                // overflow i32). Monetary amounts are stored as i64
-                // minor units.
-                if n == "account_number" || n == "iban" || n == "bic" {
-                    return Ok(("String".to_string(), false));
-                }
-                if n == "balance"
-                    || n == "amount"
-                    || n.ends_with("_amount")
-                    || n.ends_with("_balance")
-                {
-                    return Ok(("i64".to_string(), phrase_is_optional(phrase)));
-                }
-            }
-            _ => {}
+        //
+        // Patient IDs (healthcare) must be opaque strings — sequential
+        // integers leak enrolment order. Account numbers (banking) must
+        // be String (international formats overflow i32). Monetary
+        // amounts (banking) are stored as i64 minor units.
+        let industry = ctx.industry.as_deref();
+        let is_healthcare = industry.is_some_and(|i| i.eq_ignore_ascii_case("healthcare"));
+        let is_banking = industry.is_some_and(|i| i.eq_ignore_ascii_case("banking"));
+        if is_healthcare
+            && (n == "patient_id"
+                || n == "patient"
+                || n.ends_with("_patient_id")
+                || n == "medical_record_number"
+                || n == "mrn")
+        {
+            return Ok(("String".to_string(), false));
+        }
+        if is_banking && (n == "account_number" || n == "iban" || n == "bic") {
+            return Ok(("String".to_string(), false));
+        }
+        if is_banking
+            && (n == "balance"
+                || n == "amount"
+                || n.ends_with("_amount")
+                || n.ends_with("_balance"))
+        {
+            return Ok(("i64".to_string(), phrase_is_optional(phrase)));
         }
     }
 
