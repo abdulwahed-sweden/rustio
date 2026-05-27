@@ -44,10 +44,12 @@ pub mod form;
 pub mod intelligence;
 pub mod layout;
 pub mod persistence;
+pub mod rbac;
 pub mod relations;
 pub mod schema_cache;
 pub mod schema_introspect;
 pub mod suggestions;
+pub mod templating;
 pub mod ui;
 
 #[cfg(test)]
@@ -461,9 +463,20 @@ impl Admin {
             Ok::<Response, Error>(admin_favicon_response())
         });
 
+        // 0.10+ bundled assets for the template-based admin. Served
+        // under the new `/admin/static/…` namespace (the legacy
+        // `/admin/assets/` routes above keep working for the
+        // pre-template pages until stage 5 removes them).
+        for &(path, content_type, bytes) in crate::admin::templating::BUNDLED_ASSETS {
+            let full_path = format!("/admin/static/{path}");
+            router = router.get(&full_path, move |_req, _params| async move {
+                Ok::<Response, Error>(bundled_asset_response(bytes, content_type))
+            });
+        }
+
         // Build the AdminUiModel registry first — both the dashboard
         // (GET /admin) and the per-model routes (/admin/:model and
-        // the temporary /admin-new/:model alias) read from it.
+        // its create/edit/delete variants) read from it.
         let admin_new_registry = std::sync::Arc::new({
             let mut reg = crate::admin::admin_form_bridge::AdminRegistry::new();
             reg.register("users", crate::admin::layout::new_user_admin);
@@ -475,49 +488,33 @@ impl Admin {
         // (one card per registered AdminUiModel). Uses the same shell
         // / topbar / sidebar / CSS as the per-model pages so the
         // visual identity stays consistent across the admin surface.
-        // The legacy `dashboard_response` (built on AdminEntry) is no
-        // longer mounted; its renderer remains in the file for
-        // reference but is dead code from this commit on.
-        let _ = entries.clone(); // retained so the surrounding scope still compiles
         let index_db = db.clone();
         let index_registry = admin_new_registry.clone();
+        let index_entries = entries.clone();
         router = router.get("/admin", move |req, _params| {
             let db = index_db.clone();
             let registry = index_registry.clone();
+            let legacy_entries = index_entries.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
+                // 0.10+ template render. Identity is cloned out of the
+                // request context so the borrow ends before the async
+                // `dashboard_render` awaits on DB queries.
+                let identity = crate::auth::identity(req.ctx()).cloned();
                 let csrf = ctx_csrf(req.ctx()).map(str::to_string);
-                let html =
-                    crate::admin::layout::admin_dashboard_get(&db, &registry, csrf.as_deref())
-                        .await;
+                let html = crate::admin::layout::dashboard_render(
+                    &db,
+                    &registry,
+                    legacy_entries.as_slice(),
+                    identity.as_ref(),
+                    csrf.as_deref(),
+                )
+                .await;
                 Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
-        // /admin-new/:model is a temporary alias kept for verification
-        // during the migration to /admin/:model. Both routes call the
-        // same shared handler. Remove this block once parity is
-        // confirmed and bookmarks are migrated.
-        {
-            let db = db.clone();
-            let registry = admin_new_registry.clone();
-            router = router.get("/admin-new/:model", move |req, params| {
-                let db = db.clone();
-                let registry = registry.clone();
-                async move { admin_model_index_get(&db, &registry, req, params).await }
-            });
-        }
-        {
-            let db = db.clone();
-            let registry = admin_new_registry.clone();
-            router = router.post("/admin-new/:model", move |req, params| {
-                let db = db.clone();
-                let registry = registry.clone();
-                async move { admin_model_index_post(&db, &registry, req, params).await }
-            });
-        }
-
         // Login + logout. Unauthenticated users *need* to reach
         // /admin/login; POST /admin/logout is CSRF-protected inside
         // the handler. GET /admin/logout is **public** — Django uses
@@ -553,66 +550,108 @@ impl Admin {
         // Password change (self-service). GET renders the form, POST
         // validates + rotates the hash + re-issues the session cookie.
         let pw_get_entries = entries.clone();
+        let pw_get_db = db.clone();
+        let pw_get_registry = admin_new_registry.clone();
         router = router.get("/admin/password_change", move |req, _params| {
-            let entries = pw_get_entries.clone();
+            let legacy_entries = pw_get_entries.clone();
+            let db = pw_get_db.clone();
+            let registry = pw_get_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(password_change_response(&shell, None))
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let html = crate::admin::layout::password_change_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    csrf.as_deref(),
+                    None,
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
         let pw_post_entries = entries.clone();
         let pw_post_db = db.clone();
+        let pw_post_registry = admin_new_registry.clone();
         router = router.post("/admin/password_change", move |req, _params| {
-            let entries = pw_post_entries.clone();
+            let legacy_entries = pw_post_entries.clone();
             let db = pw_post_db.clone();
+            let registry = pw_post_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                handle_password_change_post(req, &db, &entries).await
+                handle_password_change_post(req, &db, &registry, &legacy_entries).await
             }
         });
         let pw_done_entries = entries.clone();
+        let pw_done_db = db.clone();
+        let pw_done_registry = admin_new_registry.clone();
         router = router.get("/admin/password_change/done", move |req, _params| {
-            let entries = pw_done_entries.clone();
+            let legacy_entries = pw_done_entries.clone();
+            let db = pw_done_db.clone();
+            let registry = pw_done_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(password_change_done_response(&shell))
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let html = crate::admin::layout::password_change_done_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    csrf.as_deref(),
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
 
         // Profile (self-service identity card).
         let profile_entries = entries.clone();
         let profile_db = db.clone();
+        let profile_registry = admin_new_registry.clone();
         router = router.get("/admin/profile", move |req, _params| {
-            let entries = profile_entries.clone();
+            let legacy_entries = profile_entries.clone();
             let db = profile_db.clone();
+            let registry = profile_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                let user_id = req.ctx().get::<crate::auth::Identity>().map(|i| i.user_id);
-                let user = match user_id {
-                    Some(id) => crate::auth::user::find_by_id(&db, id).await?,
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let user = match identity.as_ref() {
+                    Some(id) => crate::auth::user::find_by_id(&db, id.user_id).await?,
                     None => None,
                 };
-                Ok::<Response, Error>(profile_response(&shell, user.as_ref()))
+                let html = crate::admin::layout::profile_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    user.as_ref(),
+                    csrf.as_deref(),
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
 
         // Recent actions (project-wide audit timeline).
         let actions_entries = entries.clone();
         let actions_db = db.clone();
+        let actions_registry = admin_new_registry.clone();
         router = router.get("/admin/actions", move |req, _params| {
-            let entries = actions_entries.clone();
+            let legacy_entries = actions_entries.clone();
             let db = actions_db.clone();
+            let registry = actions_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
@@ -631,13 +670,20 @@ impl Admin {
                 let actions =
                     audit::recent(&db, 200, model_filter.as_deref(), action_filter.as_deref())
                         .await?;
-                let shell = Shell::from_ctx(&entries, Some(NAV_ACTIONS), req.ctx());
-                Ok::<Response, Error>(recent_actions_response(
-                    &shell,
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                let html = crate::admin::layout::actions_render(
+                    &db,
+                    &registry,
+                    &legacy_entries,
+                    identity.as_ref(),
+                    csrf.as_deref(),
                     &actions,
                     model_filter.as_deref(),
                     action_filter.as_deref(),
-                ))
+                )
+                .await;
+                Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
 
@@ -645,27 +691,42 @@ impl Admin {
         // GET shows the proposed plan + review; POST (CSRF) commits
         // through the executor. No bypass of planner/review/executor.
         let sugg_get_entries = entries.clone();
+        let sugg_get_db = db.clone();
+        let sugg_get_registry = admin_new_registry.clone();
         router = router.get("/admin/suggestions/:admin/:field", move |req, params| {
-            let entries = sugg_get_entries.clone();
+            let legacy_entries = sugg_get_entries.clone();
+            let db = sugg_get_db.clone();
+            let registry = sugg_get_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
                 }
                 let admin_name = params.get("admin").unwrap_or("").to_string();
                 let field = params.get("field").unwrap_or("").to_string();
-                let shell = Shell::from_ctx(&entries, None, req.ctx());
-                Ok::<Response, Error>(suggestion_review_response(
-                    &shell,
-                    &entries,
-                    &admin_name,
-                    &field,
-                    None,
-                ))
+                let identity = crate::auth::identity(req.ctx()).cloned();
+                let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+                Ok::<Response, Error>(
+                    suggestion_review_response(
+                        &db,
+                        &registry,
+                        &legacy_entries,
+                        identity.as_ref(),
+                        csrf.as_deref(),
+                        &admin_name,
+                        &field,
+                        None,
+                    )
+                    .await,
+                )
             }
         });
         let sugg_post_entries = entries.clone();
+        let sugg_post_db = db.clone();
+        let sugg_post_registry = admin_new_registry.clone();
         router = router.post("/admin/suggestions/:admin/:field", move |req, params| {
-            let entries = sugg_post_entries.clone();
+            let legacy_entries = sugg_post_entries.clone();
+            let db = sugg_post_db.clone();
+            let registry = sugg_post_registry.clone();
             async move {
                 if let Err(resp) = admin_guard(req.ctx()) {
                     return Ok(resp);
@@ -675,13 +736,20 @@ impl Admin {
                 let (_, body, ctx) = req.into_parts();
                 let form = read_form_from_parts(body).await?;
                 require_csrf(&ctx, &form)?;
-                let shell = Shell::from_ctx(&entries, None, &ctx);
-                Ok::<Response, Error>(suggestion_apply_response(
-                    &shell,
-                    &entries,
-                    &admin_name,
-                    &field,
-                ))
+                let identity = crate::auth::identity(&ctx).cloned();
+                let csrf = ctx_csrf(&ctx).map(str::to_string);
+                Ok::<Response, Error>(
+                    suggestion_apply_response(
+                        &db,
+                        &registry,
+                        &legacy_entries,
+                        identity.as_ref(),
+                        csrf.as_deref(),
+                        &admin_name,
+                        &field,
+                    )
+                    .await,
+                )
             }
         });
 
@@ -710,24 +778,104 @@ impl Admin {
         // (login, logout, profile, password_change, actions,
         // suggestions, schema, assets) bound to their dedicated
         // handlers. Anything else under /admin/<slug> resolves into
-        // the new admin engine via the same shared helper that
-        // /admin-new/:model uses.
+        // the template-based list page. Form submits go to the
+        // dedicated /admin/:model/new and /admin/:model/:id/edit
+        // routes mounted below — there is no catch-all POST.
         {
             let db = db.clone();
             let registry = admin_new_registry.clone();
-            router = router.get("/admin/:model", move |req, params| {
+            let model_entries = entries.clone();
+            router =
+                router.get("/admin/:model", move |req, params| {
+                    let db = db.clone();
+                    let registry = registry.clone();
+                    let legacy_entries = model_entries.clone();
+                    async move {
+                        admin_model_index_get(&db, &registry, &legacy_entries, req, params).await
+                    }
+                });
+        }
+
+        // 0.10 stage 4f-a: GET /admin/:model/new and
+        // /admin/:model/:id/edit route through the template-based
+        // `form_render`. Registered BEFORE the `for registrar` loop
+        // below so the generic routes shadow any legacy literals like
+        // `/admin/patients/:id/edit` — unified template styling for
+        // both registration surfaces.
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let form_new_entries = entries.clone();
+            router = router.get("/admin/:model/new", move |req, params| {
                 let db = db.clone();
                 let registry = registry.clone();
-                async move { admin_model_index_get(&db, &registry, req, params).await }
+                let legacy_entries = form_new_entries.clone();
+                async move {
+                    admin_model_form_get(&db, &registry, &legacy_entries, req, params, None).await
+                }
             });
         }
         {
             let db = db.clone();
             let registry = admin_new_registry.clone();
-            router = router.post("/admin/:model", move |req, params| {
+            let form_edit_entries = entries.clone();
+            router = router.get("/admin/:model/:id/edit", move |req, params| {
                 let db = db.clone();
                 let registry = registry.clone();
-                async move { admin_model_index_post(&db, &registry, req, params).await }
+                let legacy_entries = form_edit_entries.clone();
+                async move {
+                    let id = params.get("id").map(str::to_string);
+                    admin_model_form_get(
+                        &db,
+                        &registry,
+                        &legacy_entries,
+                        req,
+                        params,
+                        id.as_deref(),
+                    )
+                    .await
+                }
+            });
+        }
+
+        // Stage 4f-b: matching POST handlers.
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let create_entries = entries.clone();
+            router = router.post("/admin/:model/new", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = create_entries.clone();
+                async move {
+                    admin_model_create_post(&db, &registry, &legacy_entries, req, params).await
+                }
+            });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let update_entries = entries.clone();
+            router = router.post("/admin/:model/:id/edit", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = update_entries.clone();
+                async move {
+                    admin_model_update_post(&db, &registry, &legacy_entries, req, params).await
+                }
+            });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let delete_entries = entries.clone();
+            router = router.post("/admin/:model/:id/delete", move |req, params| {
+                let db = db.clone();
+                let registry = registry.clone();
+                let legacy_entries = delete_entries.clone();
+                async move {
+                    admin_model_delete_post(&db, &registry, &legacy_entries, req, params).await
+                }
             });
         }
 
@@ -1509,6 +1657,43 @@ fn env_chip_html() -> String {
     }
 }
 
+/// Generic static-asset response for the 0.10+ `/admin/static/…` bundle.
+/// The bytes are pinned to the compiled binary, so a long-ish cache is
+/// safe — when the binary redeploys, the content-length changes and
+/// the etag changes with it. `nosniff` for the same reason every other
+/// admin asset has it.
+fn bundled_asset_response(bytes: &'static [u8], content_type: &'static str) -> Response {
+    use hyper::header::HeaderValue;
+    let etag = {
+        let len = bytes.len();
+        let head = u32::from_le_bytes([
+            *bytes.first().unwrap_or(&0),
+            *bytes.get(1).unwrap_or(&0),
+            *bytes.get(2).unwrap_or(&0),
+            *bytes.get(3).unwrap_or(&0),
+        ]);
+        let tail = u32::from_le_bytes([
+            *bytes.get(len.saturating_sub(4)).unwrap_or(&0),
+            *bytes.get(len.saturating_sub(3)).unwrap_or(&0),
+            *bytes.get(len.saturating_sub(2)).unwrap_or(&0),
+            *bytes.get(len.saturating_sub(1)).unwrap_or(&0),
+        ]);
+        format!("W/\"rio-{len}-{head:x}-{tail:x}\"")
+    };
+    let mut resp = hyper::Response::builder()
+        .status(200)
+        .header("content-type", content_type)
+        .header("cache-control", "public, max-age=3600")
+        .header("etag", etag)
+        .body(Full::new(Bytes::from_static(bytes)))
+        .expect("valid static asset response");
+    resp.headers_mut().insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    resp
+}
+
 fn admin_favicon_response() -> Response {
     use hyper::header::HeaderValue;
     let mut resp = hyper::Response::builder()
@@ -1988,151 +2173,6 @@ fn build_orders_config() -> crate::admin::admin_generator::AdminModelConfig {
         )
 }
 
-/// Query `SELECT COUNT(*)` on every user-facing admin entry. Returns
-/// a `HashMap<admin_name, count>`. A failure on any single model
-/// leaves that model out of the map; the dashboard renders it
-/// without a count rather than 500-ing the whole page.
-///
-/// **Dead code retained.** GET /admin now renders the new-engine
-/// dashboard; this helper was only consumed by `dashboard_response`.
-/// Kept as a reference for the upcoming Phase 6 cleanup pass that
-/// removes the legacy AdminEntry-driven dashboard renderers entirely.
-#[allow(dead_code)]
-async fn fetch_model_row_counts(
-    db: &Db,
-    entries: &[AdminEntry],
-) -> std::collections::HashMap<String, i64> {
-    use sqlx::Row;
-    let mut out: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
-    for e in entries.iter().filter(|e| !e.core) {
-        let sql = format!(
-            "SELECT COUNT(*) AS rio_count FROM \"{table}\"",
-            table = e.table,
-        );
-        if let Ok(row) = sqlx::query(&sql).fetch_one(db.pool()).await {
-            let count: i64 = row.try_get::<i64, _>("rio_count").unwrap_or_default();
-            out.insert(e.admin_name.to_string(), count);
-        }
-    }
-    out
-}
-
-/// **Dead code retained.** Legacy dashboard renderer (AdminEntry +
-/// admin.css). GET /admin now uses `layout::admin_dashboard_get`.
-/// Kept until the Phase 6 alias-removal cleanup.
-#[allow(dead_code)]
-fn dashboard_response(
-    shell: Shell<'_>,
-    schema_reload_flash: Option<&str>,
-    row_counts: &std::collections::HashMap<String, i64>,
-) -> Response {
-    let user_facing: Vec<&AdminEntry> = shell.entries.iter().filter(|e| !e.core).collect();
-
-    // Schema-reload flash banner + form. Rendered inside every
-    // dashboard response so operators always have the refresh
-    // affordance nearby.
-    let reload_flash = match schema_reload_flash {
-        Some("ok") => format!(
-            r#"<div class="rio-alert rio-alert-info">{icon}<div>Schema reloaded from <code>rustio.schema.json</code>.</div></div>"#,
-            icon = icon_triangle_alert(),
-        ),
-        Some("err") => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<div>Schema reload failed — check that <code>rustio.schema.json</code> exists and parses cleanly.</div></div>"#,
-            icon = icon_triangle_alert(),
-        ),
-        _ => String::new(),
-    };
-    let reload_row = {
-        let cached_line = match schema_cache::snapshot() {
-            Some(c) => format!(
-                "Schema loaded at {}",
-                schema_cache::format_loaded_at(c.loaded_at),
-            ),
-            None => "Schema not yet loaded (no rustio.schema.json found).".into(),
-        };
-        format!(
-            r#"<div class="rio-schema-reload">
-<span class="rio-schema-reload-meta">{cached}</span>
-<form class="rio-inline-form" method="post" action="/admin/schema/reload">{csrf}<button class="rio-btn rio-btn-sm" type="submit">Reload schema</button></form>
-</div>"#,
-            cached = escape_html(&cached_line),
-            csrf = csrf_input(shell.csrf),
-        )
-    };
-
-    let body_core = if user_facing.is_empty() {
-        format!(
-            r#"<div class="rio-card">
-<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
-<h3>No models registered yet</h3>
-<p>Register a model with <code>Admin::new().model::&lt;YourModel&gt;()</code> or scaffold a new app via <code>rustio new app &lt;name&gt;</code> to get started.</p>
-</div>
-</div>"#,
-            icon = icon_inbox(),
-        )
-    } else {
-        // Model cards: a plain `<div>` container with the whole-card
-        // "open list" affordance delegated to an <h3><a>…</a></h3>
-        // title and two real `<a>` buttons. The previous `<a>` card
-        // with `<span>` buttons looked clickable but the span buttons
-        // weren't tab-stoppable and didn't have their own href.
-        let cards: String = user_facing
-            .iter()
-            .map(|e| {
-                // Count line prefers the live `COUNT(*)` so the
-                // operator can tell at a glance which tables are
-                // populated. If the query failed (missing table,
-                // permission problem) we fall back to the table
-                // name so the card still renders meaningfully.
-                let count_line = match row_counts.get(e.admin_name) {
-                    Some(&1) => "1 record".to_string(),
-                    Some(&n) => format!("{n} records"),
-                    None => format!("Table <code>{}</code>", escape_html(e.table)),
-                };
-                format!(
-                    r#"<div class="rio-model-card">
-<div class="rio-model-card-head">
-<div class="rio-model-card-icon">{icon}</div>
-<h3 class="rio-model-name"><a href="/admin/{name}">{display}</a></h3>
-</div>
-<p class="rio-model-count">{count}</p>
-<div class="rio-model-card-actions">
-<a class="rio-btn rio-btn-sm" href="/admin/{name}">View</a>
-<a class="rio-btn rio-btn-sm rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add</span></a>
-</div>
-</div>"#,
-                    name = escape_html(e.admin_name),
-                    display = escape_html(&humanise_model_label(e.display_name)),
-                    count = count_line,
-                    icon = icon_layers(),
-                    plus = icon_plus(),
-                )
-            })
-            .collect();
-        let grid = format!(r#"<div class="rio-grid">{cards}</div>"#);
-        let alerts = render_dashboard_alerts(&user_facing);
-        format!("{grid}{alerts}")
-    };
-
-    let body = format!("{reload_flash}{reload_row}{body_core}");
-
-    // Dashboard is the "root" — it still gets an `Admin` crumb so the
-    // topbar is never visually empty. Without this the topbar rendered
-    // as a lone env-chip floating on a hairline strip.
-    let crumbs: &[Crumb<'_>] = &[("Admin", None)];
-    render_shell_page(
-        &shell,
-        200,
-        "Dashboard",
-        "Dashboard",
-        Some("Manage your data. Click a model to list, search, and edit."),
-        crumbs,
-        "",
-        &body,
-    )
-}
-
 /// Context-aware hint shown on an empty list page. Combines the
 /// country (e.g. "In Sweden…") with the active industry conventions
 /// (e.g. "…usually include personnummer and income"). Returns `None`
@@ -2167,130 +2207,6 @@ fn empty_state_hint<T: AdminModel>(context: Option<&crate::ai::ContextConfig>) -
         singular = singular_lower,
         fields = fields_list,
     ))
-}
-
-/// Generate context-aware alerts shown under the model grid. Each
-/// alert is justified by a concrete `(context, schema)` fact — no
-/// speculative warnings. Returns an empty string when there's
-/// nothing to say.
-///
-/// 0.7.3: iterates the *effective* entries built by
-/// [`entry_builder::entries_effective`] — when the schema cache has
-/// a fresh `rustio.schema.json`, alerts (and the suggestion buttons
-/// they carry) reflect the on-disk schema, not the compiled slice.
-/// After an apply + `rustio schema` + `[Reload schema]`, the just-
-/// added field stops showing up as a suggestion on the next
-/// dashboard render, no restart required.
-///
-/// **Dead code retained** along with `dashboard_response` until
-/// Phase 6 cleanup.
-#[allow(dead_code)]
-fn render_dashboard_alerts(entries: &[&AdminEntry]) -> String {
-    let ctx = match intelligence::context_global() {
-        Some(c) => c,
-        None => return String::new(),
-    };
-    let mut alerts: Vec<String> = Vec::new();
-
-    // Project the input to owned entries, then let entries_effective
-    // decide whether to read the cache or the compile-time list.
-    let compiled: Vec<AdminEntry> = entries.iter().copied().cloned().collect();
-    let effective = entry_builder::entries_effective(&compiled);
-
-    // Industry convention gaps: when an industry is declared, check
-    // every model for the required-field list. A model that covers
-    // ≥ one required field but is missing others is flagged. Each
-    // missing field surfaces as an actionable suggestion the user
-    // can review and apply — routed through the normal planner /
-    // review / executor chain.
-    if let Some(schema) = ctx.industry_schema() {
-        let suggestions = suggestions::derive_suggestions_from_entries(&effective, Some(ctx));
-        for entry in effective.iter().filter(|e| !e.core) {
-            let field_names: Vec<&str> = entry.fields.iter().map(|f| f.name.as_str()).collect();
-            let covers_any = schema
-                .required_fields
-                .iter()
-                .any(|req| field_names.contains(&req.as_str()));
-            if !covers_any {
-                continue;
-            }
-            let missing: Vec<&str> = schema
-                .required_fields
-                .iter()
-                .filter(|req| !field_names.contains(&req.as_str()))
-                .map(|s| s.as_str())
-                .collect();
-            if missing.is_empty() {
-                continue;
-            }
-            // Action buttons for exactly this model's missing fields.
-            // URL points at the suggestion review handler; CSRF lives
-            // on the POST step inside the review page, so GETs here
-            // are free to render as plain links.
-            let actions: String = suggestions
-                .iter()
-                .filter(|s| s.admin_name == entry.admin_name)
-                .map(|s| {
-                    format!(
-                        r#"<a class="rio-btn rio-btn-sm rio-btn-primary rio-suggestion-action" href="{href}">Add {field}</a><span class="{conf_cls}" title="Confidence — explicit industry convention">{conf_label}</span>"#,
-                        href = escape_html(&s.url_path()),
-                        field = escape_html(&s.field),
-                        conf_cls = s.confidence.pill_class(),
-                        conf_label = escape_html(&format!(
-                            "{} confidence",
-                            s.confidence.as_str()
-                        )),
-                    )
-                })
-                .collect();
-            alerts.push(format!(
-                "<div class=\"rio-suggestion-card\">\
-                 <p><strong>{model}</strong> is missing {missing_n} {industry} convention \
-                 field{s}: <code>{missing}</code>. Consider adding \
-                 or justify the deviation in code review.</p>\
-                 <div class=\"rio-suggestion-actions\">{actions}</div>\
-                 </div>",
-                model = escape_html(&entry.display_name),
-                missing_n = missing.len(),
-                industry = escape_html(ctx.industry.as_deref().unwrap_or("")),
-                s = if missing.len() == 1 { "" } else { "s" },
-                missing = escape_html(&missing.join(", ")),
-                actions = actions,
-            ));
-        }
-    }
-
-    // GDPR: surface every model that carries a PII field so the
-    // operator knows where retention obligations apply.
-    if ctx.requires_gdpr() {
-        for entry in entries {
-            let pii_fields: Vec<&str> = entry
-                .fields
-                .iter()
-                .filter(|f| intelligence::field_ui_metadata(f, Some(ctx)).sensitive)
-                .map(|f| f.name)
-                .collect();
-            if pii_fields.is_empty() {
-                continue;
-            }
-            alerts.push(format!(
-                "<strong>{model}</strong> stores personal data \
-                 (<code>{fields}</code>) under GDPR. Review retention + access-log \
-                 obligations.",
-                model = escape_html(entry.display_name),
-                fields = escape_html(&pii_fields.join(", ")),
-            ));
-        }
-    }
-
-    if alerts.is_empty() {
-        return String::new();
-    }
-    let items: String = alerts
-        .iter()
-        .map(|a| format!(r#"<li class="rio-dashboard-alert">{a}</li>"#))
-        .collect();
-    format!(r#"<section class="rio-dashboard-alerts"><h2>Alerts</h2><ul>{items}</ul></section>"#)
 }
 
 // ---------------------------------------------------------------------------
@@ -4627,38 +4543,42 @@ fn error_shell<'a>(
     }
 }
 
+/// 404 page rendered via `minijinja` against `auth/not_found.html`.
+/// Called by the admin error middleware when any `/admin/*` handler
+/// returns `Err(Error::NotFound)`. Unused callbacks (`entries`,
+/// `email`) are kept in the signature to match the existing call
+/// site — stage 5 cleanup retires the argument list.
 fn admin_not_found_response(
-    entries: &[AdminEntry],
-    email: Option<&str>,
+    _entries: &[AdminEntry],
+    _email: Option<&str>,
     csrf: Option<&str>,
 ) -> Response {
-    let shell = error_shell(entries, email, csrf);
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
-<h3>We couldn't find that page</h3>
-<p>The URL you requested doesn't match any admin route or record. It may have been moved, deleted, or you may have arrived via a stale link.</p>
-<div class="rio-error-actions">
-<a class="rio-btn" href="/admin">{back}<span>Back to dashboard</span></a>
-<a class="rio-btn" href="/admin/actions">View recent actions</a>
-</div>
-</div>
-</div>"#,
-        icon = icon_inbox(),
-        back = icon_arrow_left(),
-    );
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Not found", None)];
-    render_shell_page(
-        &shell,
-        404,
-        "404 Not Found",
-        "404 · Not found",
-        Some("We couldn't find that page or record."),
-        crumbs,
-        "",
-        &body,
-    )
+    let design = design::Design::global();
+    let env = crate::admin::templating::env();
+    let body = match env.get_template("auth/not_found.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => minijinja::context! {
+                project_name => design.project_name.as_str(),
+                logo_initial => design.logo_initial.as_str(),
+            },
+            csrf_token => csrf.unwrap_or(""),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin not-found template render failed: {err}");
+            format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>404 Not Found · {p}</title></head><body style=\"font-family:system-ui;max-width:28rem;margin:4rem auto;padding:0 1rem;text-align:center\"><p>404 Not Found</p><h1>We couldn't find that page.</h1><p><a href=\"/admin\">Back to dashboard</a></p></body></html>",
+                p = escape_html(&design.project_name),
+            )
+        }
+    };
+    let resp = hyper::Response::builder()
+        .status(404)
+        .header("content-type", "text/html; charset=utf-8")
+        .body(Full::new(Bytes::from(body)))
+        .expect("valid response");
+    with_admin_headers(resp)
 }
 
 fn admin_server_error_response(
@@ -4725,6 +4645,7 @@ The admin could not complete your request. The detail has been logged server-sid
 async fn admin_model_index_get(
     db: &Db,
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
     req: Request,
     params: crate::router::Params,
 ) -> Result<Response, Error> {
@@ -4732,7 +4653,23 @@ async fn admin_model_index_get(
         return Ok(resp);
     }
     let model_slug = params.get("model").unwrap_or("").to_string();
-    let Some(model) = registry.get(&model_slug) else {
+
+    // Resolve the model: new registry first, then fall back to
+    // a legacy `AdminEntry` (wrapped in a `LegacyEntryModel` adapter
+    // so the template-based renderer doesn't care which source it
+    // came from). If neither source knows the slug, 404.
+    enum ResolvedModel {
+        New(Box<dyn crate::admin::admin_form_bridge::AdminUiModel>),
+        Legacy(crate::admin::layout::LegacyEntryModel),
+    }
+    let resolved = if let Some(model) = registry.get(&model_slug) {
+        ResolvedModel::New(model)
+    } else if let Some(entry) = legacy_entries
+        .iter()
+        .find(|e| !e.core && e.admin_name == model_slug)
+    {
+        ResolvedModel::Legacy(crate::admin::layout::LegacyEntryModel::new(entry))
+    } else {
         return Err(Error::NotFound);
     };
     let q_map = req.query().into_map();
@@ -4762,29 +4699,203 @@ async fn admin_model_index_get(
         })
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    let advanced = q_map
+    let _ = q_map
         .get("advanced")
         .map(|s| !s.is_empty())
         .unwrap_or(false);
-    let html = crate::admin::layout::admin_index_get(
-        db,
-        registry,
-        &*model,
-        id.as_deref(),
-        query.as_deref(),
-        page,
-        &filters,
-        sort.as_deref(),
-        dir.as_deref(),
-        advanced,
-    )
-    .await;
+    // Stage 4e: route to the template-based list renderer. The `id`
+    // query param (drawer-edit in the legacy flow) is intentionally
+    // ignored here; stage 4f adds dedicated /admin/:model/:id/edit
+    // routes as the replacement.
+    let _ = id;
+    let identity = crate::auth::identity(req.ctx()).cloned();
+    let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+    let html = match &resolved {
+        ResolvedModel::New(model) => {
+            crate::admin::layout::list_render(
+                db,
+                registry,
+                legacy_entries,
+                &**model,
+                None,
+                query.as_deref(),
+                page,
+                &filters,
+                sort.as_deref(),
+                dir.as_deref(),
+                identity.as_ref(),
+                csrf.as_deref(),
+            )
+            .await
+        }
+        ResolvedModel::Legacy(model) => {
+            let source = model.source_entry().clone();
+            crate::admin::layout::list_render(
+                db,
+                registry,
+                legacy_entries,
+                model,
+                Some(&source),
+                query.as_deref(),
+                page,
+                &filters,
+                sort.as_deref(),
+                dir.as_deref(),
+                identity.as_ref(),
+                csrf.as_deref(),
+            )
+            .await
+        }
+    };
     Ok(with_admin_headers(crate::http::html(html)))
 }
 
-async fn admin_model_index_post(
+/// GET handler for both `/admin/:model/new` and
+/// `/admin/:model/:id/edit`. Resolves the slug through the same
+/// new-registry → legacy-entries fallback that
+/// `admin_model_index_get` uses, then delegates to
+/// `layout::form_render`. No mutation — stage 4f-b wires POST.
+async fn admin_model_form_get(
     db: &Db,
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+    editing_id: Option<&str>,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+
+    enum ResolvedModel {
+        New(Box<dyn crate::admin::admin_form_bridge::AdminUiModel>),
+        Legacy(crate::admin::layout::LegacyEntryModel),
+    }
+    let resolved = if let Some(model) = registry.get(&model_slug) {
+        ResolvedModel::New(model)
+    } else if let Some(entry) = legacy_entries
+        .iter()
+        .find(|e| !e.core && e.admin_name == model_slug)
+    {
+        ResolvedModel::Legacy(crate::admin::layout::LegacyEntryModel::new(entry))
+    } else {
+        return Err(Error::NotFound);
+    };
+
+    let identity = crate::auth::identity(req.ctx()).cloned();
+    let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+    let html = match &resolved {
+        ResolvedModel::New(model) => {
+            crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                &**model,
+                None,
+                editing_id,
+                identity.as_ref(),
+                csrf.as_deref(),
+                None,
+            )
+            .await
+        }
+        ResolvedModel::Legacy(model) => {
+            let source = model.source_entry().clone();
+            crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                model,
+                Some(&source),
+                editing_id,
+                identity.as_ref(),
+                csrf.as_deref(),
+                None,
+            )
+            .await
+        }
+    };
+    Ok(with_admin_headers(crate::http::html(html)))
+}
+
+// 0.10 stage 4f-b: POST handlers for the new form routes.
+//
+// Each handler resolves the `:model` slug through the same
+// new-registry → legacy-entries fallback the GET handlers use,
+// validates CSRF against the session, then mutates via
+// `admin::persistence`. Success → 303 redirect to the list page
+// (Post/Redirect/Get). Failure → re-render the form with an error
+// banner (no input preservation yet — see TODO in `form_render`).
+
+fn resolve_form_model(
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    slug: &str,
+) -> Result<FormResolvedModel, Error> {
+    if let Some(model) = registry.get(slug) {
+        return Ok(FormResolvedModel::New(model));
+    }
+    if let Some(entry) = legacy_entries
+        .iter()
+        .find(|e| !e.core && e.admin_name == slug)
+    {
+        return Ok(FormResolvedModel::Legacy(
+            crate::admin::layout::LegacyEntryModel::new(entry),
+        ));
+    }
+    Err(Error::NotFound)
+}
+
+enum FormResolvedModel {
+    New(Box<dyn crate::admin::admin_form_bridge::AdminUiModel>),
+    Legacy(crate::admin::layout::LegacyEntryModel),
+}
+
+impl FormResolvedModel {
+    fn as_ui_model(&self) -> &dyn crate::admin::admin_form_bridge::AdminUiModel {
+        match self {
+            FormResolvedModel::New(m) => &**m,
+            FormResolvedModel::Legacy(m) => m,
+        }
+    }
+
+    /// `Some(entry)` when the model came from a legacy registration,
+    /// so the form layer can populate FK `<select>` options from the
+    /// entry's relation metadata. `None` for new-engine models —
+    /// they pre-populate `AdminUiField.options` at registration time.
+    fn legacy_source(&self) -> Option<&AdminEntry> {
+        match self {
+            FormResolvedModel::New(_) => None,
+            FormResolvedModel::Legacy(m) => Some(m.source_entry()),
+        }
+    }
+}
+
+/// Build a `column → value` map from a submitted form body, scoped
+/// to the model's declared fields. The PK is excluded so a client
+/// can't overwrite it. Readonly fields are excluded too — they
+/// display on the edit form but must not be accepted as inputs.
+fn build_mutation_data(
+    model: &dyn crate::admin::admin_form_bridge::AdminUiModel,
+    form: &FormData,
+) -> std::collections::HashMap<String, String> {
+    let pk = model.primary_key();
+    let mut out = std::collections::HashMap::new();
+    for field in model.fields() {
+        if field.name == pk || field.readonly {
+            continue;
+        }
+        let value = form.get(field.name).unwrap_or("");
+        out.insert(field.name.to_string(), value.to_string());
+    }
+    out
+}
+
+async fn admin_model_create_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
     req: Request,
     params: crate::router::Params,
 ) -> Result<Response, Error> {
@@ -4792,88 +4903,126 @@ async fn admin_model_index_post(
         return Ok(resp);
     }
     let model_slug = params.get("model").unwrap_or("").to_string();
-    let Some(model) = registry.get(&model_slug) else {
-        return Err(Error::NotFound);
-    };
-    // Extract URL state before consuming the body — `read_form` takes
-    // ownership of the request.
-    let q_map = req.query().into_map();
-    let query = q_map
-        .get("q")
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    let page = q_map
-        .get("page")
-        .and_then(|p| p.parse::<i64>().ok())
-        .filter(|p| *p > 0)
-        .unwrap_or(1);
-    let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
-    let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
-    let filters: std::collections::HashMap<String, String> = q_map
-        .iter()
-        .filter(|(k, v)| {
-            !v.is_empty()
-                && k.as_str() != "q"
-                && k.as_str() != "page"
-                && k.as_str() != "id"
-                && k.as_str() != "sort"
-                && k.as_str() != "dir"
-                && k.as_str() != "advanced"
-        })
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    let advanced = q_map
-        .get("advanced")
-        .map(|s| !s.is_empty())
-        .unwrap_or(false);
-    let form_data = read_form(req).await?;
-    let bulk_action = form_data
-        .get("bulk_action")
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    let bulk_ids: Vec<String> = form_data
-        .get_all("ids")
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect();
-    let body_params = form_data.into_map();
-    let html = if let Some(action) = bulk_action.as_deref() {
-        crate::admin::layout::admin_index_bulk(
-            db,
-            registry,
-            &*model,
-            action,
-            &bulk_ids,
-            query.as_deref(),
-            &filters,
-            sort.as_deref(),
-            dir.as_deref(),
-            advanced,
-        )
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    let data = build_mutation_data(resolved.as_ui_model(), &form);
+    match crate::admin::persistence::insert_record(db, resolved.as_ui_model().table_name(), &data)
         .await
-    } else {
-        let editing_id = body_params
-            .get("id")
-            .map(String::as_str)
-            .filter(|s| !s.is_empty());
-        crate::admin::layout::admin_index_post(
-            db,
-            registry,
-            &*model,
-            &body_params,
-            editing_id,
-            query.as_deref(),
-            page,
-            &filters,
-            sort.as_deref(),
-            dir.as_deref(),
-            advanced,
-        )
-        .await
-    };
-    Ok(with_admin_headers(crate::http::html(html)))
+    {
+        Ok(_) => Ok(with_admin_headers(redirect(&format!(
+            "/admin/{model_slug}"
+        )))),
+        Err(e) => {
+            let identity = crate::auth::identity(&ctx).cloned();
+            let csrf = ctx_csrf(&ctx).map(str::to_string);
+            let error_msg = format!("Could not create: {e}");
+            let source = resolved.legacy_source().cloned();
+            let html = crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                resolved.as_ui_model(),
+                source.as_ref(),
+                None,
+                identity.as_ref(),
+                csrf.as_deref(),
+                Some(&error_msg),
+            )
+            .await;
+            Ok(with_admin_headers(crate::http::html(html)))
+        }
+    }
+}
+
+async fn admin_model_update_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let id = params.get("id").unwrap_or("").to_string();
+    if id.is_empty() {
+        return Err(Error::BadRequest("missing id".into()));
+    }
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    let data = build_mutation_data(resolved.as_ui_model(), &form);
+    match crate::admin::persistence::update_record(
+        db,
+        resolved.as_ui_model().table_name(),
+        &id,
+        &data,
+    )
+    .await
+    {
+        Ok(_) => Ok(with_admin_headers(redirect(&format!(
+            "/admin/{model_slug}"
+        )))),
+        Err(e) => {
+            let identity = crate::auth::identity(&ctx).cloned();
+            let csrf = ctx_csrf(&ctx).map(str::to_string);
+            let error_msg = format!("Could not update: {e}");
+            let source = resolved.legacy_source().cloned();
+            let html = crate::admin::layout::form_render(
+                db,
+                registry,
+                legacy_entries,
+                resolved.as_ui_model(),
+                source.as_ref(),
+                Some(&id),
+                identity.as_ref(),
+                csrf.as_deref(),
+                Some(&error_msg),
+            )
+            .await;
+            Ok(with_admin_headers(crate::http::html(html)))
+        }
+    }
+}
+
+async fn admin_model_delete_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let id = params.get("id").unwrap_or("").to_string();
+    if id.is_empty() {
+        return Err(Error::BadRequest("missing id".into()));
+    }
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    crate::admin::persistence::bulk_delete(
+        db,
+        resolved.as_ui_model().table_name(),
+        std::slice::from_ref(&id),
+    )
+    .await?;
+    Ok(with_admin_headers(redirect(&format!(
+        "/admin/{model_slug}"
+    ))))
 }
 
 // ---------------------------------------------------------------------------
@@ -4892,73 +5041,33 @@ fn admin_guard(ctx: &crate::context::Context) -> Result<(), Response> {
 
 /// Render the login page. Status 401 on a pure auth-gate hit; 400 on
 /// missing fields; 403 on inactive account; 429 on rate-limit trip.
+///
+/// Rendered via `minijinja` against `auth/login.html` (bundled in
+/// `rustio-core/assets/templates/`; user projects can override by
+/// placing a same-named file under their own `templates/auth/`). If
+/// the template fails to render for any reason — parse error, missing
+/// include, IO error on an override — the renderer falls back to a
+/// minimal inline HTML shell that still serves the same form. The
+/// server never crashes on a bad template.
 fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response {
-    // Standalone page rendered with the v3 design system. Inline
-    // theme.css + components.css via the layout module so the login
-    // shares typography and palette with the rest of the admin —
-    // no `/admin/assets/admin.css` dependency.
-    const THEME_CSS: &str = include_str!("../assets/admin-new/theme.css");
-    const COMPONENTS_CSS: &str = include_str!("../assets/admin-new/components.css");
-
     let design = design::Design::global();
-    let project = escape_html(&design.project_name);
-
-    let error_html = match error {
-        Some(msg) => format!(
-            r#"<div class="form-banner form-banner-error" role="alert">{}</div>"#,
-            escape_html(msg),
-        ),
-        None => String::new(),
+    let env = crate::admin::templating::env();
+    let body = match env.get_template("auth/login.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => minijinja::context! {
+                project_name => design.project_name.as_str(),
+                logo_initial => design.logo_initial.as_str(),
+            },
+            email => email.unwrap_or(""),
+            error => error,
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin login template render failed: {err}");
+            login_page_fallback(&design.project_name, email, error)
+        }
     };
-    let email_value = email.map(escape_html).unwrap_or_default();
-    let footer_hint = if crate::auth::in_production() {
-        r#"<p class="page-subtitle" style="margin-top: var(--space-6); text-align: center;"><strong>production</strong> · only real user accounts sign in here.</p>"#.to_string()
-    } else {
-        r#"<p class="page-subtitle" style="margin-top: var(--space-6); text-align: center;">No admin user yet? Run <kbd>rustio user create</kbd> in your project.</p>"#.to_string()
-    };
-
-    let body = format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in · {project}</title>
-<style>{theme}{components}</style>
-</head>
-<body class="login-page">
-  <div class="login-card">
-    <div class="login-brand">
-      <span class="sidebar-brand-mark">R</span>
-      {project}
-    </div>
-    <h1 class="login-title">Sign in</h1>
-    <p class="login-subtitle">Enter your credentials to access the admin.</p>
-    {error}
-    <form method="post" action="/admin/login" autocomplete="on">
-      <div class="field">
-        <label class="field-label" for="login-email">Email</label>
-        <input id="login-email" type="email" name="email" value="{email}" autocomplete="username" autofocus required>
-      </div>
-      <div class="field">
-        <label class="field-label" for="login-password">Password</label>
-        <input id="login-password" type="password" name="password" autocomplete="current-password" required>
-      </div>
-      <div class="login-actions">
-        <button class="btn btn-primary btn-lg btn-block" type="submit">Sign in</button>
-      </div>
-    </form>
-    {footer}
-  </div>
-</body>
-</html>"#,
-        project = project,
-        theme = THEME_CSS,
-        components = COMPONENTS_CSS,
-        error = error_html,
-        email = email_value,
-        footer = footer_hint,
-    );
 
     let resp = hyper::Response::builder()
         .status(status)
@@ -4968,51 +5077,49 @@ fn login_page(status: u16, email: Option<&str>, error: Option<&str>) -> Response
     with_admin_headers(resp)
 }
 
+/// Emergency login page used when the template engine can't render
+/// `auth/login.html`. Deliberately self-contained — no CSS links, no
+/// includes, no `env()` call — so a broken template environment still
+/// lets an operator sign in and fix it.
+fn login_page_fallback(project_name: &str, email: Option<&str>, error: Option<&str>) -> String {
+    let project = escape_html(project_name);
+    let email = email.map(escape_html).unwrap_or_default();
+    let error_block = match error {
+        Some(msg) => format!(r#"<p style="color:#b91c1c">{}</p>"#, escape_html(msg)),
+        None => String::new(),
+    };
+    format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Sign in · {project}</title></head><body style="font-family:system-ui;max-width:20rem;margin:4rem auto;padding:0 1rem">
+<h1>Sign in</h1><p>{project}</p>{error_block}
+<form method="post" action="/admin/login">
+<p><label>Email<br><input type="email" name="email" value="{email}" autofocus required></label></p>
+<p><label>Password<br><input type="password" name="password" required></label></p>
+<p><button type="submit">Sign in</button></p>
+</form></body></html>"#,
+    )
+}
+
+/// Render the 403 page. Rendered via `minijinja` against
+/// `auth/forbidden.html`; falls back to a minimal inline shell with
+/// the same sign-out form if the template render fails.
 fn forbidden_page(csrf: Option<&str>) -> Response {
     let design = design::Design::global();
-    let csrf_hidden = csrf_input(csrf);
-
-    let theme_style = format!(
-        "\n:root {{\n  --rio-primary: {p};\n}}\n",
-        p = escape_css_color(&design.primary_color),
-    );
-
-    let body = format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>403 Forbidden · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
-<link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
-<style>{theme}</style>
-</head>
-<body>
-<div class="rio-error-shell">
-<div class="rio-error-card">
-<div class="rio-error-icon">{icon}</div>
-<p class="rio-error-status">403 Forbidden</p>
-<h1 class="rio-error-title">You're signed in, but you don't have admin access.</h1>
-<p class="rio-error-body">Ask an administrator to promote your account, or sign out and come back with different credentials.</p>
-<div class="rio-error-actions">
-<form class="rio-inline-form" method="post" action="/admin/logout">
-{csrf}
-<button class="rio-btn" type="submit">{logout}<span>Sign out</span></button>
-</form>
-</div>
-</div>
-</div>
-</body>
-</html>"#,
-        project = escape_html(&design.project_name),
-        theme = theme_style,
-        icon = icon_shield_alert(),
-        csrf = csrf_hidden,
-        logout = icon_logout(),
-        css_ver = ADMIN_CSS_VER,
-    );
-
+    let env = crate::admin::templating::env();
+    let body = match env.get_template("auth/forbidden.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => minijinja::context! {
+                project_name => design.project_name.as_str(),
+                logo_initial => design.logo_initial.as_str(),
+            },
+            csrf_token => csrf.unwrap_or(""),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin forbidden template render failed: {err}");
+            forbidden_page_fallback(&design.project_name, csrf)
+        }
+    };
     let resp = hyper::Response::builder()
         .status(403)
         .header("content-type", "text/html; charset=utf-8")
@@ -5021,193 +5128,37 @@ fn forbidden_page(csrf: Option<&str>) -> Response {
     with_admin_headers(resp)
 }
 
+/// Emergency 403 shell used when `auth/forbidden.html` can't render.
+/// Self-contained — no CSS link, no includes, so a broken template
+/// still lets the operator sign out.
+fn forbidden_page_fallback(project_name: &str, csrf: Option<&str>) -> String {
+    let project = escape_html(project_name);
+    let csrf_input_html = match csrf {
+        Some(token) if !token.is_empty() => format!(
+            r#"<input type="hidden" name="_csrf" value="{}">"#,
+            escape_html(token)
+        ),
+        _ => String::new(),
+    };
+    format!(
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><title>403 Forbidden · {project}</title></head><body style="font-family:system-ui;max-width:28rem;margin:4rem auto;padding:0 1rem;text-align:center">
+<p>403 Forbidden</p><h1>You're signed in, but you don't have admin access.</h1>
+<form method="post" action="/admin/logout">{csrf_input_html}<button type="submit">Sign out</button></form>
+</body></html>"#,
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Password change (self-service) — Django parity
 // ---------------------------------------------------------------------------
 
-/// Render the `/admin/password_change` form. `error` is rendered in
-/// an inline alert when the previous submission failed; the email-like
-/// prefill behaviour of the login form doesn't apply because passwords
-/// are never preserved across renders.
-fn password_change_response(shell: &Shell<'_>, error: Option<&str>) -> Response {
-    let csrf = csrf_input(shell.csrf);
-    let error_html = match error {
-        Some(msg) => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<span>{msg}</span></div>"#,
-            icon = icon_triangle_alert(),
-            msg = escape_html(msg),
-        ),
-        None => String::new(),
-    };
-
-    let body = format!(
-        r#"<form class="rio-card rio-form" method="post" action="/admin/password_change" autocomplete="off">
-{csrf}
-<div class="rio-form-section">
-<p class="rio-form-section-hint">For security, enter your current password first. Then choose a new password and enter it twice to confirm.</p>
-{error_html}
-<div class="rio-field">
-<label for="_old_password">Current password</label>
-<input class="rio-input" id="_old_password" type="password" name="old_password" autocomplete="current-password" autofocus required>
-</div>
-<div class="rio-field">
-<label for="_new_password1">New password</label>
-<input class="rio-input" id="_new_password1" type="password" name="new_password1" autocomplete="new-password" minlength="8" required>
-<p class="rio-field-hint">At least 8 characters. All other active sessions on your account will be signed out.</p>
-</div>
-<div class="rio-field">
-<label for="_new_password2">New password confirmation</label>
-<input class="rio-input" id="_new_password2" type="password" name="new_password2" autocomplete="new-password" minlength="8" required>
-</div>
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn" href="/admin/profile">Cancel</a>
-<div class="rio-footer-actions">
-<button class="rio-btn rio-btn-primary" type="submit">Change password</button>
-</div>
-</div>
-</form>"#,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[
-        ("Admin", Some("/admin")),
-        ("Profile", Some("/admin/profile")),
-        ("Change password", None),
-    ];
-
-    render_shell_page(
-        shell,
-        200,
-        "Change password",
-        "Change password",
-        Some("Pick a new password for your account."),
-        crumbs,
-        "",
-        &body,
-    )
-}
-
-/// Success confirmation shown after a password change. Mirrors
-/// Django's `password_change_done.html`.
-fn password_change_done_response(shell: &Shell<'_>) -> Response {
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-<div class="rio-alert rio-alert-info">
-{icon}
-<div><strong>Your password was changed.</strong>
-All other sessions for your account have been signed out; this one was re-issued so you stay logged in here.</div>
-</div>
-<p style="margin: 16px 0 0"><a class="rio-btn rio-btn-primary" href="/admin">Return to the admin</a></p>
-</div>
-</div>"#,
-        icon = icon_triangle_alert(),
-    );
-
-    let crumbs: &[Crumb<'_>] = &[
-        ("Admin", Some("/admin")),
-        ("Profile", Some("/admin/profile")),
-        ("Change password", Some("/admin/password_change")),
-        ("Done", None),
-    ];
-
-    render_shell_page(
-        shell,
-        200,
-        "Password change done",
-        "Password changed",
-        None,
-        crumbs,
-        "",
-        &body,
-    )
-}
+// Password-change pages: ported to `admin::layout::password_change_render`
+// and `admin::layout::password_change_done_render` in stage 4h-ii.
 
 // ---------------------------------------------------------------------------
-// Profile (self-service) — mirrors Django's "Welcome, name" header options
+// Profile: ported to `admin::layout::profile_render` in stage 4h.
+// The legacy string-concat renderer that lived here is gone.
 // ---------------------------------------------------------------------------
-
-/// Per-user profile page. Read-only view of the caller's own account,
-/// plus links to change their password or sign out.
-fn profile_response(shell: &Shell<'_>, user: Option<&crate::auth::User>) -> Response {
-    let (email, role, user_id, is_active) = match user {
-        Some(u) => (
-            u.email.clone(),
-            u.role.clone(),
-            u.id.to_string(),
-            u.is_active,
-        ),
-        None => (
-            "unknown".to_string(),
-            "?".to_string(),
-            "?".to_string(),
-            false,
-        ),
-    };
-    let role_pill = match role.as_str() {
-        "admin" => r#"<span class="rio-pill rio-pill-emerald">admin</span>"#,
-        "user" => r#"<span class="rio-pill rio-pill-slate">user</span>"#,
-        _ => r#"<span class="rio-pill rio-pill-slate">unknown</span>"#,
-    };
-    let status_pill = if is_active {
-        r#"<span class="rio-pill rio-pill-emerald">active</span>"#
-    } else {
-        r#"<span class="rio-pill rio-pill-rose">inactive</span>"#
-    };
-
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-header">
-<div>
-<h2 class="rio-card-title">Your account</h2>
-<p class="rio-card-subtitle">Identity, role, and account actions.</p>
-</div>
-</div>
-<div class="rio-meta" style="margin:0;border:0;border-radius:0">
-<div class="rio-meta-item">
-<span class="rio-meta-label">Email</span>
-<span class="rio-meta-value">{email}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">User ID</span>
-<span class="rio-meta-value">#{user_id}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Role</span>
-<span class="rio-meta-value">{role_pill}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Status</span>
-<span class="rio-meta-value">{status_pill}</span>
-</div>
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn" href="/admin">Back to admin</a>
-<div class="rio-footer-actions">
-<a class="rio-btn" href="/admin/logout">Sign out</a>
-<a class="rio-btn rio-btn-primary" href="/admin/password_change">Change password</a>
-</div>
-</div>
-</div>"#,
-        email = escape_html(&email),
-        user_id = escape_html(&user_id),
-        role_pill = role_pill,
-        status_pill = status_pill,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Profile", None)];
-
-    render_shell_page(
-        shell,
-        200,
-        "Profile",
-        "Your profile",
-        Some("Identity, role, and account actions."),
-        crumbs,
-        "",
-        &body,
-    )
-}
 
 // ---------------------------------------------------------------------------
 // Logout confirmation (GET /admin/logout) — Django parity
@@ -5384,32 +5335,45 @@ fn object_history_response<T: AdminModel>(
 /// `error` is populated on POST-flow re-renders (executor refusal,
 /// policy violation, etc.) so the operator sees the reason beside
 /// the plan rather than on a separate page.
-fn suggestion_review_response(
-    shell: &Shell<'_>,
-    entries: &[AdminEntry],
+/// 0.10+ template-based suggestion review renderer.
+///
+/// Runs the exact same planner / reviewer chain as the legacy
+/// version; differences are confined to the final HTML assembly,
+/// which now flows through `admin::layout::suggestion_review_render`
+/// + `admin/suggestion_review.html`.
+#[allow(clippy::too_many_arguments)]
+async fn suggestion_review_response(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf: Option<&str>,
     admin_name: &str,
     field: &str,
     error: Option<&str>,
 ) -> Response {
     let ctx = intelligence::context_global();
-    // 0.7.3: resolve the suggestion against the effective entries —
-    // when the schema cache is warm, that's the on-disk schema, so
-    // a field just applied + schema regenerated + cache reloaded
-    // correctly 404s here instead of re-offering the suggestion.
-    let effective = entry_builder::entries_effective(entries);
+    let effective = entry_builder::entries_effective(legacy_entries);
     let Some(suggestion) =
         suggestions::find_suggestion_from_entries(&effective, ctx, admin_name, field)
     else {
-        // Either the URL is crafted or the schema has changed since
-        // the dashboard rendered. Either way: 404 in-shell.
-        return admin_not_found_response(entries, shell.user_email, shell.csrf);
+        return admin_not_found_response(legacy_entries, None, csrf);
     };
 
-    // Run the planner + review chain. Any failure becomes an
-    // operator-visible block with a clear reason — no silent retry.
     let plan_result = match run_planner(&suggestion.prompt, ctx) {
         Ok(pr) => pr,
-        Err(msg) => return suggestion_error_response(shell, entries, &suggestion, &msg),
+        Err(msg) => {
+            return suggestion_error_response(
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
+                &suggestion,
+                &msg,
+            )
+            .await;
+        }
     };
     let review = match crate::ai::review_plan(
         plan_result.schema_ref(),
@@ -5419,194 +5383,137 @@ fn suggestion_review_response(
         Ok(r) => r,
         Err(e) => {
             return suggestion_error_response(
-                shell,
-                entries,
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
                 &suggestion,
                 &format!("review layer refused: {e}"),
-            );
+            )
+            .await;
         }
     };
 
     let can_apply = matches!(review.validation, crate::ai::ValidationOutcome::Valid)
         && review.risk != crate::ai::RiskLevel::Critical;
 
-    let csrf_hidden = csrf_input(shell.csrf);
-
-    let changes_html: String = plan_result
+    let step_descriptions: Vec<String> = plan_result
         .plan_result
         .plan
         .steps
         .iter()
         .map(|p| match p {
             crate::ai::Primitive::AddField(a) => format!(
-                "<li>+ Add field <code>{}</code> (<code>{}</code>{}) to <code>{}</code></li>",
+                "+ Add field <code>{}</code> (<code>{}</code>{}) to <code>{}</code>",
                 escape_html(&a.field.name),
                 escape_html(&a.field.ty),
                 if a.field.nullable { ", nullable" } else { "" },
                 escape_html(&a.model),
             ),
-            other => format!("<li>{}</li>", escape_html(&format!("{:?}", other)),),
+            other => escape_html(&format!("{other:?}")),
         })
         .collect();
 
-    // Visual before/after diff of the target model's fields.
     let schema_diff_html =
         render_schema_diff(plan_result.schema_ref(), &plan_result.plan_result.plan);
 
-    let warnings_html = if review.warnings.is_empty() {
-        r#"<p class="rio-field-hint">None</p>"#.to_string()
-    } else {
-        let items: String = review
-            .warnings
-            .iter()
-            .map(|w| format!("<li>{}</li>", escape_html(w)))
-            .collect();
-        format!("<ul>{items}</ul>")
+    let (risk_label, risk_class) = match review.risk {
+        crate::ai::RiskLevel::Low => ("Low", "success"),
+        crate::ai::RiskLevel::Medium => ("Medium", "warning"),
+        crate::ai::RiskLevel::High => ("High", "danger"),
+        crate::ai::RiskLevel::Critical => ("Critical", "danger"),
     };
 
-    let risk_tag = risk_badge_html(&review.risk);
-    let validation_msg = match &review.validation {
-        crate::ai::ValidationOutcome::Valid => {
-            r#"<p class="rio-field-hint">Plan passes validation against the current schema.</p>"#
-                .to_string()
-        }
-        crate::ai::ValidationOutcome::Invalid { step, reason } => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<div>Plan fails at step {step}: {reason}. Regenerate the schema or adjust the plan before applying.</div></div>"#,
-            icon = icon_triangle_alert(),
-            step = step,
-            reason = escape_html(&reason.to_string()),
+    let (validation_ok, validation_message) = match &review.validation {
+        crate::ai::ValidationOutcome::Valid => (true, None),
+        crate::ai::ValidationOutcome::Invalid { step, reason } => (
+            false,
+            Some(format!(
+                "Plan fails at step {step}: {reason}. Regenerate the schema or adjust the plan before applying."
+            )),
         ),
     };
 
-    let error_banner = match error {
-        Some(msg) => format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<div>{msg}</div></div>"#,
-            icon = icon_triangle_alert(),
-            msg = escape_html(msg),
-        ),
-        None => String::new(),
+    let confidence_class = match suggestion.confidence.as_str() {
+        "High" => "success",
+        "Medium" => "warning",
+        _ => "secondary",
     };
 
-    let apply_button = if can_apply {
-        format!(
-            r#"<form method="post" action="{href}" style="margin:0;display:inline-block">{csrf}<button class="rio-btn rio-btn-primary" type="submit">Approve and apply</button></form>"#,
-            href = escape_html(&suggestion.url_path()),
-            csrf = csrf_hidden,
-        )
-    } else {
-        r#"<button class="rio-btn rio-btn-primary" type="button" disabled aria-disabled="true" title="Risk is Critical or plan is invalid — apply is blocked">Approve and apply</button>"#.to_string()
+    let view = crate::admin::layout::SuggestionReviewView {
+        model: suggestion.model_display.clone(),
+        field: suggestion.field.clone(),
+        industry: ctx
+            .and_then(|c| c.industry.as_deref())
+            .unwrap_or("")
+            .to_string(),
+        confidence_label: suggestion.confidence.as_str().to_string(),
+        confidence_class: confidence_class.to_string(),
+        apply_url: suggestion.url_path(),
+        can_apply,
+        step_descriptions,
+        schema_diff_html,
+        explanation: plan_result.plan_result.explanation.clone(),
+        risk_label: risk_label.to_string(),
+        risk_class: risk_class.to_string(),
+        adds_fields: review.impact.adds_fields as u32,
+        destructive: review.impact.destructive,
+        validation_ok,
+        validation_message,
+        warnings: review.warnings.clone(),
+        error: error.map(str::to_string),
     };
 
-    let confidence_badge = format!(
-        r#"<span class="{cls}" title="Confidence — explicit industry convention">{label} confidence</span>"#,
-        cls = suggestion.confidence.pill_class(),
-        label = suggestion.confidence.as_str(),
-    );
-
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-{error_banner}
-<p class="rio-form-section-hint">
-<strong>{model}</strong> is missing the <code>{field}</code> convention for
-<code>{industry}</code>. {confidence}. The planner proposes the following
-change — review before applying.
-</p>
-<div class="rio-plan-preview">
-<h3 style="margin:0 0 8px;font-size:14px;font-weight:500">Planned changes</h3>
-<ul style="margin:0;padding-left:22px">{changes}</ul>
-</div>
-{schema_diff}
-<p style="margin-top:16px"><strong>Explanation.</strong> {explanation}</p>
-<div class="rio-meta">
-<div class="rio-meta-item">
-<span class="rio-meta-label">Risk</span>
-<span class="rio-meta-value">{risk}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Impact</span>
-<span class="rio-meta-value">Add {adds} field{adds_s}{destructive}</span>
-</div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Validation</span>
-<span class="rio-meta-value">{validation}</span>
-</div>
-</div>
-<p style="margin-top:14px;font-weight:500">Warnings</p>
-{warnings}
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn rio-btn-ghost" href="/admin">{back} Cancel</a>
-<div class="rio-footer-actions">{apply_button}</div>
-</div>
-</div>"#,
-        error_banner = error_banner,
-        model = escape_html(&suggestion.model_display),
-        field = escape_html(&suggestion.field),
-        industry = escape_html(ctx.and_then(|c| c.industry.as_deref()).unwrap_or("")),
-        confidence = confidence_badge,
-        changes = changes_html,
-        schema_diff = schema_diff_html,
-        explanation = escape_html(&plan_result.plan_result.explanation),
-        risk = risk_tag,
-        adds = review.impact.adds_fields,
-        adds_s = if review.impact.adds_fields == 1 {
-            ""
-        } else {
-            "s"
-        },
-        destructive = if review.impact.destructive {
-            "; includes a destructive step"
-        } else {
-            ""
-        },
-        validation = validation_msg,
-        warnings = warnings_html,
-        back = icon_arrow_left(),
-        apply_button = apply_button,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Suggestion review", None)];
-    render_shell_page(
-        shell,
-        200,
-        &format!("Review: add {}", suggestion.field),
-        &format!(
-            "Review: add `{}` to {}",
-            suggestion.field, suggestion.model_display
-        ),
-        Some("Every suggestion runs through plan → review → apply. You're looking at the review."),
-        crumbs,
-        "",
-        &body,
+    let html = crate::admin::layout::suggestion_review_render(
+        db,
+        registry,
+        legacy_entries,
+        identity,
+        csrf,
+        view,
     )
+    .await;
+    with_admin_headers(crate::http::html(html))
 }
 
 /// POST handler for `/admin/suggestions/<admin>/<field>`.
 ///
 /// Re-runs the planner, runs the review layer, runs the executor.
-/// Any refusal at any step renders the review page with an inline
-/// error banner — the executor never writes unless every gate
-/// returned `Ok`.
-fn suggestion_apply_response(
-    shell: &Shell<'_>,
-    entries: &[AdminEntry],
+/// Any refusal at any step re-renders the review page (template
+/// form) with an inline error banner — the executor never writes
+/// unless every gate returned `Ok`.
+#[allow(clippy::too_many_arguments)]
+async fn suggestion_apply_response(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf: Option<&str>,
     admin_name: &str,
     field: &str,
 ) -> Response {
     let ctx = intelligence::context_global();
-    let effective = entry_builder::entries_effective(entries);
+    let effective = entry_builder::entries_effective(legacy_entries);
     let Some(suggestion) =
         suggestions::find_suggestion_from_entries(&effective, ctx, admin_name, field)
     else {
-        return admin_not_found_response(entries, shell.user_email, shell.csrf);
+        return admin_not_found_response(legacy_entries, None, csrf);
     };
-    // Build a fresh plan document on every apply so the executor
-    // sees exactly what the reviewer saw a moment ago.
     let plan_result = match run_planner(&suggestion.prompt, ctx) {
         Ok(pr) => pr,
         Err(msg) => {
-            return suggestion_review_response(shell, entries, admin_name, field, Some(&msg));
+            return suggestion_review_response(
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
+                admin_name,
+                field,
+                Some(&msg),
+            )
+            .await;
         }
     };
     let doc = match crate::ai::build_plan_document(
@@ -5618,25 +5525,30 @@ fn suggestion_apply_response(
         Ok(d) => d,
         Err(e) => {
             return suggestion_review_response(
-                shell,
-                entries,
+                db,
+                registry,
+                legacy_entries,
+                identity,
+                csrf,
                 admin_name,
                 field,
                 Some(&format!("plan document rejected: {e}")),
-            );
+            )
+            .await;
         }
     };
-    // Critical-risk + developer-only gates are also inside the
-    // executor; surfacing them here lets the UI show the same
-    // message on the review page.
     if doc.risk == crate::ai::RiskLevel::Critical {
         return suggestion_review_response(
-            shell,
-            entries,
+            db,
+            registry,
+            legacy_entries,
+            identity,
+            csrf,
             admin_name,
             field,
             Some("Plan risk is Critical — the safe executor refuses to apply it."),
-        );
+        )
+        .await;
     }
     let options = crate::ai::ExecuteOptions::default();
     let result =
@@ -5644,33 +5556,24 @@ fn suggestion_apply_response(
             Ok(r) => r,
             Err(e) => {
                 return suggestion_review_response(
-                    shell,
-                    entries,
+                    db,
+                    registry,
+                    legacy_entries,
+                    identity,
+                    csrf,
                     admin_name,
                     field,
                     Some(&format!("executor refused: {e}")),
-                );
+                )
+                .await;
             }
         };
 
-    // Auto-reload the schema cache. A successful apply writes a new
-    // migration + models.rs but not `rustio.schema.json`; a best-
-    // effort refresh is still worthwhile because the project may
-    // have run `rustio schema` in the background, and the reload
-    // is cheap.
     schema_cache::refresh_best_effort();
 
-    // Per-step bullets extracted from the plan so the success page
-    // says exactly *what* happened ("Added field \"annual_income\"
-    // (i64) to Applicant"), not just "Applied 1 step".
-    let change_bullets: String = doc
-        .plan
-        .steps
-        .iter()
-        .map(|p| format!("<li>{}</li>", describe_applied_step(p)))
-        .collect();
+    let change_lines: Vec<String> = doc.plan.steps.iter().map(describe_applied_step).collect();
 
-    let files_html: String = result
+    let files: Vec<crate::admin::layout::AppliedFileView> = result
         .generated_files
         .iter()
         .map(|f| {
@@ -5681,66 +5584,85 @@ fn suggestion_apply_response(
             } else {
                 "Wrote"
             };
-            format!("<li>{kind} <code>{}</code></li>", escape_html(f))
+            crate::admin::layout::AppliedFileView {
+                kind: kind.to_string(),
+                path: f.clone(),
+            }
         })
         .collect();
 
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-<div class="rio-alert rio-alert-info">{ok}<div><strong>Changes applied.</strong> The planner wrote the files below atomically. The live admin continues serving the old compiled binary until you restart.</div></div>
-<p style="margin-top:16px"><strong>Summary</strong></p>
-<ul class="rio-apply-summary">{changes}</ul>
-<p style="margin-top:16px"><strong>Files written</strong></p>
-<ul class="rio-apply-summary">{files}</ul>
-<p style="margin-top:16px"><strong>Next</strong></p>
-<ol>
-<li>Stop this admin server.</li>
-<li>Run <code>rustio migrate apply</code> to apply the new migration to the database.</li>
-<li>Run <code>cargo build</code> (or <code>rustio run</code>) to recompile against the updated <code>models.rs</code>.</li>
-<li>Run <code>rustio schema</code> so <code>rustio.schema.json</code> reflects the new shape, then click <a href="/admin">Reload schema</a> on the dashboard.</li>
-</ol>
-</div>
-<div class="rio-form-footer">
-<a class="rio-btn rio-btn-ghost" href="/admin">{back} Back to dashboard</a>
-<div class="rio-footer-actions">
-<a class="rio-btn" href="/admin/actions">View recent actions</a>
-</div>
-</div>
-</div>"#,
-        ok = icon_triangle_alert(),
-        changes = change_bullets,
-        files = files_html,
-        back = icon_arrow_left(),
-    );
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Suggestion applied", None)];
-    render_shell_page(
-        shell,
-        200,
-        "Suggestion applied",
-        &format!(
-            "Applied: add `{}` to {}",
-            suggestion.field, suggestion.model_display
-        ),
-        Some("Files were written atomically. Restart the server to pick them up."),
-        crumbs,
-        "",
-        &body,
+    let applied = crate::admin::layout::SuggestionAppliedView {
+        change_lines,
+        files,
+    };
+    let html = crate::admin::layout::suggestion_applied_render(
+        db,
+        registry,
+        legacy_entries,
+        identity,
+        csrf,
+        applied,
     )
+    .await;
+    with_admin_headers(crate::http::html(html))
 }
 
 /// Short-circuit renderer for the rare case where we can't even
-/// build a plan (e.g. schema fails to parse). Re-uses the review
-/// page with the error banner populated.
-fn suggestion_error_response(
-    shell: &Shell<'_>,
-    entries: &[AdminEntry],
+/// build a plan (planner or reviewer itself failed). Renders the
+/// review page with just the suggestion metadata + the error
+/// banner — no plan steps, no schema diff, no risk. Deliberately
+/// *doesn't* re-enter `suggestion_review_response` (that would
+/// create a recursive async call and also risk looping through the
+/// planner on every retry).
+#[allow(clippy::too_many_arguments)]
+async fn suggestion_error_response(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    identity: Option<&crate::auth::Identity>,
+    csrf: Option<&str>,
     suggestion: &suggestions::Suggestion,
     msg: &str,
 ) -> Response {
-    let admin_name = suggestion.admin_name.clone();
-    let field = suggestion.field.clone();
-    suggestion_review_response(shell, entries, &admin_name, &field, Some(msg))
+    let ctx = intelligence::context_global();
+    let confidence_class = match suggestion.confidence.as_str() {
+        "High" => "success",
+        "Medium" => "warning",
+        _ => "secondary",
+    };
+    let view = crate::admin::layout::SuggestionReviewView {
+        model: suggestion.model_display.clone(),
+        field: suggestion.field.clone(),
+        industry: ctx
+            .and_then(|c| c.industry.as_deref())
+            .unwrap_or("")
+            .to_string(),
+        confidence_label: suggestion.confidence.as_str().to_string(),
+        confidence_class: confidence_class.to_string(),
+        apply_url: suggestion.url_path(),
+        can_apply: false,
+        step_descriptions: Vec::new(),
+        schema_diff_html: String::new(),
+        explanation: String::new(),
+        risk_label: "?".into(),
+        risk_class: "secondary".into(),
+        adds_fields: 0,
+        destructive: false,
+        validation_ok: false,
+        validation_message: None,
+        warnings: Vec::new(),
+        error: Some(msg.to_string()),
+    };
+    let html = crate::admin::layout::suggestion_review_render(
+        db,
+        registry,
+        legacy_entries,
+        identity,
+        csrf,
+        view,
+    )
+    .await;
+    with_admin_headers(crate::http::html(html))
 }
 
 /// Coloured risk pill reusing the existing pill classes.
@@ -5844,16 +5766,6 @@ fn describe_applied_step(p: &crate::ai::Primitive) -> String {
     }
 }
 
-fn risk_badge_html(risk: &crate::ai::RiskLevel) -> String {
-    let (cls, label) = match risk {
-        crate::ai::RiskLevel::Low => ("rio-pill rio-pill-emerald rio-risk-badge", "Low"),
-        crate::ai::RiskLevel::Medium => ("rio-pill rio-pill-amber rio-risk-badge", "Medium"),
-        crate::ai::RiskLevel::High => ("rio-pill rio-pill-rose rio-risk-badge", "High"),
-        crate::ai::RiskLevel::Critical => ("rio-pill rio-pill-rose rio-risk-badge", "Critical"),
-    };
-    format!(r#"<span class="{cls}">{label}</span>"#)
-}
-
 /// Wrap the planner call with the surrounding project I/O so the
 /// suggestion review + apply handlers read the schema / context the
 /// same way.
@@ -5892,118 +5804,10 @@ fn run_planner(
     })
 }
 
-/// Project-wide audit timeline at `GET /admin/actions`. Mirrors
-/// Django's "Recent actions" sidebar block but as a dedicated page
-/// with filters by model and action type.
-fn recent_actions_response(
-    shell: &Shell<'_>,
-    actions: &[audit::AdminAction],
-    model_filter: Option<&str>,
-    action_filter: Option<&str>,
-) -> Response {
-    // Build a model-name dropdown from the registered user-facing
-    // entries so operators can pick anything they have admin for.
-    let model_options: String =
-        std::iter::once(r#"<option value="">All models</option>"#.to_string())
-            .chain(shell.entries.iter().filter(|e| !e.core).map(|e| {
-                let selected = if model_filter == Some(e.admin_name) {
-                    " selected"
-                } else {
-                    ""
-                };
-                format!(
-                    r#"<option value="{v}"{selected}>{label}</option>"#,
-                    v = escape_html(e.admin_name),
-                    label = escape_html(e.display_name),
-                )
-            }))
-            .collect();
-
-    let action_options: String = [
-        ("", "All actions"),
-        ("create", "Created"),
-        ("update", "Updated"),
-        ("delete", "Deleted"),
-    ]
-    .iter()
-    .map(|(value, label)| {
-        let is_selected = match value {
-            &"" => action_filter.is_none(),
-            v => action_filter == Some(*v),
-        };
-        let selected = if is_selected { " selected" } else { "" };
-        format!(
-            r#"<option value="{v}"{selected}>{label}</option>"#,
-            v = escape_html(value),
-            label = escape_html(label),
-        )
-    })
-    .collect();
-
-    let active = model_filter.is_some() || action_filter.is_some();
-    let reset = if active {
-        r#"<a class="rio-btn rio-btn-ghost" href="/admin/actions">Reset</a>"#.to_string()
-    } else {
-        String::new()
-    };
-
-    let count_label = if actions.len() == 1 {
-        "1 action".to_string()
-    } else {
-        format!("{} actions", actions.len())
-    };
-
-    let toolbar = format!(
-        r#"<form class="rio-table-toolbar" method="get" action="/admin/actions" aria-label="Filter actions">
-<select class="rio-select" name="model" aria-label="Filter by model">{model_options}</select>
-<select class="rio-select" name="action" aria-label="Filter by action type">{action_options}</select>
-<div class="rio-toolbar-actions">
-<button type="submit" class="rio-btn"><span>Apply</span></button>
-{reset}
-</div>
-<div class="rio-count">{count}</div>
-</form>"#,
-        count = escape_html(&count_label),
-    );
-
-    let body_inner = if actions.is_empty() {
-        format!(
-            r#"<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
-<h3>No actions match these filters</h3>
-<p>Once operators start creating, editing, or deleting records through the admin, their actions will show up here.</p>
-</div>"#,
-            icon = icon_inbox(),
-        )
-    } else {
-        render_actions_timeline(actions, /* show_object_link = */ true)
-    };
-
-    let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-header">
-<div>
-<h2 class="rio-card-title">Recent actions</h2>
-<p class="rio-card-subtitle">Every create, update, and delete performed through the admin, newest first.</p>
-</div>
-</div>
-{toolbar}
-{body_inner}
-</div>"#,
-    );
-
-    let crumbs: &[Crumb<'_>] = &[("Admin", Some("/admin")), ("Recent actions", None)];
-    render_shell_page(
-        shell,
-        200,
-        "Recent actions",
-        "Recent actions",
-        Some("Project-wide audit timeline across every model."),
-        crumbs,
-        "",
-        &body,
-    )
-}
+// `/admin/actions` audit timeline: ported to
+// `admin::layout::actions_render` in stage 4h-iii. The per-object
+// `render_actions_timeline` helper below is still used by the
+// per-object history page.
 
 /// Render a list of audit actions as a compact timeline. Used by both
 /// the per-object history page and the project-wide `/admin/actions`
@@ -6195,7 +5999,8 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
 async fn handle_password_change_post(
     req: Request,
     db: &crate::orm::Db,
-    entries: &[AdminEntry],
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
 ) -> Result<Response, Error> {
     use crate::auth;
 
@@ -6209,30 +6014,66 @@ async fn handle_password_change_post(
         Some(i) => i.user_id,
         None => return Ok(login_page(401, None, None)),
     };
-    let shell = Shell::from_ctx(entries, None, &ctx);
+    let identity = crate::auth::identity(&ctx).cloned();
+    let csrf = ctx_csrf(&ctx).map(str::to_string);
 
     let old = form.get("old_password").unwrap_or("").to_string();
     let new1 = form.get("new_password1").unwrap_or("").to_string();
     let new2 = form.get("new_password2").unwrap_or("").to_string();
 
     // Validation. All re-renders return the form with an inline alert.
+    async fn render_err(
+        db: &crate::orm::Db,
+        registry: &crate::admin::admin_form_bridge::AdminRegistry,
+        legacy_entries: &[AdminEntry],
+        identity: Option<&crate::auth::Identity>,
+        csrf: Option<&str>,
+        msg: &str,
+    ) -> Response {
+        let html = crate::admin::layout::password_change_render(
+            db,
+            registry,
+            legacy_entries,
+            identity,
+            csrf,
+            Some(msg),
+        )
+        .await;
+        with_admin_headers(crate::http::html(html))
+    }
+
     if old.is_empty() || new1.is_empty() || new2.is_empty() {
-        return Ok(password_change_response(
-            &shell,
-            Some("All three fields are required."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "All three fields are required.",
+        )
+        .await);
     }
     if new1 != new2 {
-        return Ok(password_change_response(
-            &shell,
-            Some("The two new password fields did not match. Try again."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "The two new password fields did not match. Try again.",
+        )
+        .await);
     }
     if new1.len() < 8 {
-        return Ok(password_change_response(
-            &shell,
-            Some("Your new password must be at least 8 characters."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "Your new password must be at least 8 characters.",
+        )
+        .await);
     }
 
     // Verify old password against the current hash. Fetch fresh
@@ -6242,10 +6083,15 @@ async fn handle_password_change_post(
         None => return Ok(login_page(401, None, None)),
     };
     if !auth::password::verify(&old, &user.password_hash) {
-        return Ok(password_change_response(
-            &shell,
-            Some("Your old password was entered incorrectly. Please try again."),
-        ));
+        return Ok(render_err(
+            db,
+            registry,
+            legacy_entries,
+            identity.as_ref(),
+            csrf.as_deref(),
+            "Your old password was entered incorrectly. Please try again.",
+        )
+        .await);
     }
 
     // Rotate the hash + wipe every session for this user. Then

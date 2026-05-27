@@ -139,6 +139,17 @@ pub struct Relation {
     /// declared a display field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_field: Option<String>,
+    /// 0.9.0 — whether the FK column is `NOT NULL`. `None` is treated
+    /// the same as `Some(false)` (nullable) — the Option lets 0.8.x
+    /// schema files round-trip byte-identically when they don't know
+    /// about this key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    /// 0.9.0 — SQL `ON DELETE` policy. Stored as the serialised form
+    /// (`"restrict"` / `"cascade"` / `"set_null"`) so older tooling
+    /// just sees a string. Missing → treat as `restrict`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_delete: Option<String>,
 }
 
 /// Typed relation direction. Kept `#[non_exhaustive]` so a later
@@ -449,6 +460,11 @@ impl SchemaField {
             field: "id".to_string(),
             kind: r.kind,
             display_field: r.display_field.map(|s| s.to_string()),
+            // 0.9.0 fields — only populated from primitives / retrofits.
+            // `Schema::from_admin` cannot see the FK metadata yet, so
+            // leave them as `None` (treated as "nullable + restrict").
+            required: None,
+            on_delete: None,
         });
         Self {
             name: f.name.to_string(),

@@ -373,8 +373,14 @@ fn try_add_relation(
             "relation prompt expects `<model> to <target>`: got {raw:?}"
         )));
     };
+    // 0.9.0 — optional trailing tokens let the user override the FK defaults:
+    //   "link A to B required"
+    //   "link A to B on_delete:cascade"
+    //   "link A to B required on_delete:set_null"
+    // Everything after the first whitespace of `to_hint` is options.
+    let (to_hint, required, on_delete) = parse_relation_options(to_hint, raw)?;
     let from = resolve_model(schema, from_hint)?;
-    let to = resolve_model(schema, to_hint)?;
+    let to = resolve_model(schema, to_hint.as_str())?;
 
     // Singularised admin slug of the target, suffixed with `_id`.
     // `applicants` → `applicant_id`; `posts` → `post_id`.
@@ -404,14 +410,20 @@ fn try_add_relation(
         kind: crate::schema::RelationKind::BelongsTo,
         to: to.name.clone(),
         via: via.clone(),
+        required,
+        on_delete,
     });
     validate_primitive(&primitive).map_err(PlanError::Validation)?;
 
+    let nullability = if required { "required" } else { "nullable" };
     let explanation = format!(
-        "Adds a `belongs_to` relation from `{}` to `{}` via column `{}` (i64). \
-         The executor will add the column but not a SQL foreign-key \
-         constraint — enforcement lands in 0.9.0.",
-        from.name, to.name, via,
+        "Adds a `belongs_to` relation from `{}` to `{}` via column `{}` \
+         (i64, {nullability}, on_delete:{}). The executor emits a SQL \
+         FOREIGN KEY.",
+        from.name,
+        to.name,
+        via,
+        on_delete.as_str(),
     );
     Ok(Some(PlanResult {
         plan: Plan::new(vec![primitive]),
@@ -899,36 +911,33 @@ fn infer_field_type(
             return Ok(("String".to_string(), false));
         }
         // Industry rules.
-        match ctx.industry.as_deref() {
-            Some(i) if i.eq_ignore_ascii_case("healthcare") => {
-                // Patient IDs must be opaque strings — sequential
-                // integers leak enrolment order and are refused by
-                // the planner under this industry.
-                if n == "patient_id"
-                    || n == "patient"
-                    || n.ends_with("_patient_id")
-                    || n == "medical_record_number"
-                    || n == "mrn"
-                {
-                    return Ok(("String".to_string(), false));
-                }
-            }
-            Some(i) if i.eq_ignore_ascii_case("banking") => {
-                // Account numbers must be String (international formats
-                // overflow i32). Monetary amounts are stored as i64
-                // minor units.
-                if n == "account_number" || n == "iban" || n == "bic" {
-                    return Ok(("String".to_string(), false));
-                }
-                if n == "balance"
-                    || n == "amount"
-                    || n.ends_with("_amount")
-                    || n.ends_with("_balance")
-                {
-                    return Ok(("i64".to_string(), phrase_is_optional(phrase)));
-                }
-            }
-            _ => {}
+        //
+        // Patient IDs (healthcare) must be opaque strings — sequential
+        // integers leak enrolment order. Account numbers (banking) must
+        // be String (international formats overflow i32). Monetary
+        // amounts (banking) are stored as i64 minor units.
+        let industry = ctx.industry.as_deref();
+        let is_healthcare = industry.is_some_and(|i| i.eq_ignore_ascii_case("healthcare"));
+        let is_banking = industry.is_some_and(|i| i.eq_ignore_ascii_case("banking"));
+        if is_healthcare
+            && (n == "patient_id"
+                || n == "patient"
+                || n.ends_with("_patient_id")
+                || n == "medical_record_number"
+                || n == "mrn")
+        {
+            return Ok(("String".to_string(), false));
+        }
+        if is_banking && (n == "account_number" || n == "iban" || n == "bic") {
+            return Ok(("String".to_string(), false));
+        }
+        if is_banking
+            && (n == "balance"
+                || n == "amount"
+                || n.ends_with("_amount")
+                || n.ends_with("_balance"))
+        {
+            return Ok(("i64".to_string(), phrase_is_optional(phrase)));
         }
     }
 
@@ -1011,6 +1020,56 @@ fn slice_original<'a>(raw: &'a str, prefix_lower: &str) -> Option<&'a str> {
         return None;
     }
     Some(&raw[prefix_lower.len()..])
+}
+
+/// 0.9.0 — parse the trailing option tokens after the target model in a
+/// relation phrase. Accepts any whitespace-separated combination of:
+///
+///   - `required`    — non-nullable FK (error surfaces at executor / retrofit)
+///   - `optional`    — explicit nullable, same as omitting (here for clarity)
+///   - `on_delete:<restrict|cascade|set_null>`
+///
+/// Returns (cleaned_target, required, on_delete). Unknown tokens fail
+/// the parse — silent ignoring would be exactly the "close enough"
+/// behaviour the AI-boundary rule forbids.
+fn parse_relation_options(
+    to_hint: &str,
+    original_prompt: &str,
+) -> Result<(String, bool, super::OnDelete), PlanError> {
+    let mut parts = to_hint.split_whitespace();
+    let target = parts.next().ok_or_else(|| {
+        PlanError::InvalidIntent(format!(
+            "relation prompt missing a target model: {original_prompt:?}"
+        ))
+    })?;
+
+    let mut required = false;
+    let mut on_delete = super::OnDelete::Restrict;
+    for token in parts {
+        match token.to_ascii_lowercase().as_str() {
+            "required" => required = true,
+            "optional" => required = false,
+            t if t.starts_with("on_delete:") => {
+                on_delete = match &t["on_delete:".len()..] {
+                    "restrict" => super::OnDelete::Restrict,
+                    "cascade" => super::OnDelete::Cascade,
+                    "set_null" | "setnull" => super::OnDelete::SetNull,
+                    other => {
+                        return Err(PlanError::InvalidIntent(format!(
+                            "unknown on_delete policy `{other}` (want restrict|cascade|set_null): {original_prompt:?}"
+                        )));
+                    }
+                };
+            }
+            other => {
+                return Err(PlanError::InvalidIntent(format!(
+                    "unknown relation option `{other}` (want required|optional|on_delete:<policy>): {original_prompt:?}"
+                )));
+            }
+        }
+    }
+
+    Ok((target.to_string(), required, on_delete))
 }
 
 /// Case-insensitive split on the first occurrence of any of the given

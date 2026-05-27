@@ -82,8 +82,17 @@ pub struct User {
 }
 
 impl User {
+    /// `true` when the user's `role` column grants admin access.
+    ///
+    /// Pre-0.10 this was a binary check against [`ROLE_ADMIN`]
+    /// (`"admin"`). From 0.10.0 the gate consults
+    /// [`crate::admin::rbac::Role::from_role_string`], so the legacy
+    /// `"admin"` value continues to grant access (resolves to
+    /// `SuperAdmin`) and the new role names (`"superadmin"`,
+    /// `"restricted_admin"`, `"editor"`, `"viewer"`) are recognised.
+    /// Unknown values, empty, or `"user"` still return `false`.
     pub fn is_admin(&self) -> bool {
-        self.role == ROLE_ADMIN
+        crate::admin::rbac::Role::from_role_string(&self.role).is_some()
     }
 }
 
@@ -1014,6 +1023,31 @@ mod tests {
             .unwrap();
         assert_eq!(lookup.id, u.id);
         assert!(password::verify("hunter2", &lookup.password_hash));
+    }
+
+    #[test]
+    fn is_admin_recognises_0_10_role_strings() {
+        // Pre-0.10 values continue to work.
+        assert!(user_with_role("admin").is_admin());
+        assert!(!user_with_role("user").is_admin());
+        assert!(!user_with_role("").is_admin());
+        // 0.10+ role strings grant admin access.
+        assert!(user_with_role("superadmin").is_admin());
+        assert!(user_with_role("restricted_admin").is_admin());
+        assert!(user_with_role("editor").is_admin());
+        assert!(user_with_role("viewer").is_admin());
+        // Unknown values do not.
+        assert!(!user_with_role("nobody").is_admin());
+    }
+
+    fn user_with_role(role: &str) -> User {
+        User {
+            id: 1,
+            email: "t@example.com".into(),
+            password_hash: "x".into(),
+            is_active: true,
+            role: role.into(),
+        }
     }
 
     #[tokio::test]

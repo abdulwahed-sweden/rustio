@@ -760,6 +760,8 @@ fn add_relation_plan_review(from: &str, to: &str, via: &str) -> Plan {
         kind: crate::schema::RelationKind::BelongsTo,
         to: to.into(),
         via: via.into(),
+        required: false,
+        on_delete: super::OnDelete::Restrict,
     })])
 }
 
@@ -833,6 +835,95 @@ fn add_relation_to_non_pii_target_does_not_raise_gdpr_warning() {
     assert!(
         !review.warnings.iter().any(|w| w.contains("GDPR")),
         "no GDPR warning should fire when target has no PII: {:?}",
+        review.warnings,
+    );
+}
+
+// ---- 0.9.0 FK-policy risk / warnings --------------------------------------
+
+fn add_relation_plan_with_policy(
+    from: &str,
+    to: &str,
+    via: &str,
+    required: bool,
+    on_delete: super::OnDelete,
+) -> Plan {
+    Plan::new(vec![Primitive::AddRelation(super::AddRelation {
+        from: from.into(),
+        kind: crate::schema::RelationKind::BelongsTo,
+        to: to.into(),
+        via: via.into(),
+        required,
+        on_delete,
+    })])
+}
+
+#[test]
+fn review_cascade_policy_warns_about_blast_radius() {
+    let schema = housing_schema_for_review();
+    let plan = add_relation_plan_with_policy(
+        "Application",
+        "Applicant",
+        "applicant_id",
+        false,
+        super::OnDelete::Cascade,
+    );
+    let review = review_plan(&schema, &plan, None).unwrap();
+    assert!(
+        review.warnings.iter().any(|w| w.contains("CASCADE")),
+        "cascade should produce a blast-radius warning: {:?}",
+        review.warnings,
+    );
+}
+
+#[test]
+fn review_required_fk_warns_about_retrofit() {
+    let schema = housing_schema_for_review();
+    let plan = add_relation_plan_with_policy(
+        "Application",
+        "Applicant",
+        "applicant_id",
+        true,
+        super::OnDelete::Restrict,
+    );
+    let review = review_plan(&schema, &plan, None).unwrap();
+    assert!(
+        review
+            .warnings
+            .iter()
+            .any(|w| w.contains("add-fks") || w.contains("recreate-table")),
+        "required FK should hint at the retrofit path: {:?}",
+        review.warnings,
+    );
+}
+
+#[test]
+fn review_required_plus_cascade_is_high_risk() {
+    let schema = housing_schema_for_review();
+    let plan = add_relation_plan_with_policy(
+        "Application",
+        "Applicant",
+        "applicant_id",
+        true,
+        super::OnDelete::Cascade,
+    );
+    let review = review_plan(&schema, &plan, None).unwrap();
+    assert!(
+        review.risk >= RiskLevel::High,
+        "required+cascade must be at least High: got {:?}",
+        review.risk,
+    );
+}
+
+#[test]
+fn review_default_fk_is_low_risk() {
+    let schema = housing_schema_for_review();
+    let plan = add_relation_plan_review("Application", "Applicant", "applicant_id");
+    let review = review_plan(&schema, &plan, None).unwrap();
+    assert_eq!(
+        review.risk,
+        RiskLevel::Low,
+        "nullable + restrict should still be Low: {:?}",
         review.warnings,
     );
 }

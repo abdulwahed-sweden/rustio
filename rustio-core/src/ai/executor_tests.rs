@@ -481,10 +481,12 @@ fn remove_field_is_refused_as_destructive() {
 }
 
 #[test]
-fn remove_field_is_still_refused_even_with_allow_destructive() {
-    // The flag exists in the type but 0.5.2 ignores it — the executor
-    // refuses regardless. If this ever changes, the test below is the
-    // canary that forces an update to the 0.5.2 contract.
+fn remove_field_with_allow_destructive_drops_column_and_writes_migration() {
+    // 0.9.1: the destructive gate opens on `allow_destructive = true`.
+    // The executor patches models.rs (struct field + COLUMNS +
+    // INSERT_COLUMNS + from_row + insert_values lines all dropped) and
+    // emits a SQLite recreate-table migration that rebuilds the table
+    // without the column.
     let schema = task_schema();
     let project = project_with_task("/p");
     let plan = Plan::new(vec![Primitive::RemoveField(RemoveField {
@@ -495,12 +497,97 @@ fn remove_field_is_still_refused_even_with_allow_destructive() {
     let opts = ExecuteOptions {
         allow_destructive: true,
     };
+    let preview = unwrap_preview(plan_execution(&schema, &project, &doc, &opts, None));
+    assert_eq!(preview.applied_steps, 1);
+    assert_eq!(preview.file_changes.len(), 2);
+
+    // models.rs update — every mention of `title` is gone.
+    let models = &preview.file_changes[0];
+    assert_eq!(models.kind, FileChangeKind::Update);
+    assert!(
+        !models.new_contents.contains("pub title"),
+        "struct field `title` should be removed:\n{}",
+        models.new_contents,
+    );
+    assert!(
+        !models.new_contents.contains("\"title\""),
+        "no literal \"title\" should remain in the updated file:\n{}",
+        models.new_contents,
+    );
+
+    // Migration — recreate-table SQL with the column omitted.
+    let mig = &preview.file_changes[1];
+    assert_eq!(mig.kind, FileChangeKind::Create);
+    assert!(
+        mig.new_contents.contains("CREATE TABLE tasks__new"),
+        "migration uses the recreate-table pattern:\n{}",
+        mig.new_contents,
+    );
+    assert!(
+        !mig.new_contents.contains(" title "),
+        "the `title` column must not be in the new table definition:\n{}",
+        mig.new_contents,
+    );
+    assert!(
+        preview.summary.contains("Remove field"),
+        "summary should name the operation: {}",
+        preview.summary,
+    );
+}
+
+#[test]
+fn remove_primary_key_id_is_refused_even_with_force() {
+    // Dropping `id` would orphan the primary key — UnsupportedPrimitive.
+    let schema = task_schema();
+    let project = project_with_task("/p");
+    let plan = Plan::new(vec![Primitive::RemoveField(RemoveField {
+        model: "Task".into(),
+        field: "id".into(),
+    })]);
+    let doc = doc_for(&schema, "remove id from tasks", plan);
+    let opts = ExecuteOptions {
+        allow_destructive: true,
+    };
+    let err =
+        plan_execution(&schema, &project, &doc, &opts, None).expect_err("id removal must refuse");
+    match err {
+        ExecutionError::UnsupportedPrimitive { op, reason } => {
+            assert_eq!(op, "remove_field");
+            assert!(
+                reason.contains("id"),
+                "reason should mention the PK: {reason}"
+            );
+        }
+        other => panic!("expected UnsupportedPrimitive, got {other:?}"),
+    }
+}
+
+#[test]
+fn remove_model_still_refused_with_force() {
+    // 0.9.1 scope cap: `remove_model` is deferred to 0.9.2 regardless
+    // of `allow_destructive`. The whole-model delete touches the admin
+    // registration + downstream FK dependencies; that's its own ship.
+    let schema = task_schema();
+    let project = project_with_task("/p");
+    let plan = Plan::new(vec![Primitive::RemoveModel(super::RemoveModel {
+        name: "Task".into(),
+    })]);
+    let doc = doc_for(&schema, "remove Task", plan);
+    let opts = ExecuteOptions {
+        allow_destructive: true,
+    };
     let err = plan_execution(&schema, &project, &doc, &opts, None)
-        .expect_err("0.5.2 should still refuse destructive ops");
-    assert!(matches!(
-        err,
-        ExecutionError::DestructiveWithoutConfirmation { .. }
-    ));
+        .expect_err("remove_model refused even with allow_destructive");
+    match err {
+        ExecutionError::UnsupportedPrimitive { op, reason } => {
+            assert_eq!(op, "remove_model");
+            assert!(
+                reason.contains("0.9.2") || reason.contains("scheduled"),
+                "reason should say this is a future version: {reason}",
+            );
+        }
+        other => panic!("expected UnsupportedPrimitive, got {other:?}"),
+    }
 }
 
 #[test]
@@ -777,11 +864,33 @@ fn add_relation_plan(from: &str, to: &str, via: &str) -> Plan {
         kind: crate::schema::RelationKind::BelongsTo,
         to: to.into(),
         via: via.into(),
+        required: false,
+        on_delete: super::OnDelete::Restrict,
+    })])
+}
+
+fn add_relation_plan_with(
+    from: &str,
+    to: &str,
+    via: &str,
+    required: bool,
+    on_delete: super::OnDelete,
+) -> Plan {
+    Plan::new(vec![Primitive::AddRelation(super::AddRelation {
+        from: from.into(),
+        kind: crate::schema::RelationKind::BelongsTo,
+        to: to.into(),
+        via: via.into(),
+        required,
+        on_delete,
     })])
 }
 
 #[test]
-fn add_relation_generates_fk_column_without_sql_constraint() {
+fn add_relation_generates_fk_column_with_references_clause() {
+    // 0.9.0: the belongs_to migration now includes a SQL FOREIGN KEY
+    // via the `REFERENCES` syntax. The column is nullable by default
+    // (SQLite can't add a NOT NULL+REFERENCES column via ALTER TABLE).
     let schema = housing_schema();
     let project = project_with_housing("/p");
     let plan = add_relation_plan("Application", "Applicant", "applicant_id");
@@ -803,8 +912,8 @@ fn add_relation_generates_fk_column_without_sql_constraint() {
     assert!(
         models_change
             .new_contents
-            .contains("pub applicant_id: i64,"),
-        "struct should gain the FK column:\n{}",
+            .contains("pub applicant_id: Option<i64>,"),
+        "struct should gain the nullable FK column:\n{}",
         models_change.new_contents,
     );
 
@@ -819,17 +928,18 @@ fn add_relation_generates_fk_column_without_sql_constraint() {
     );
     assert!(
         mig.new_contents.contains(
-            "ALTER TABLE applications ADD COLUMN applicant_id INTEGER NOT NULL DEFAULT 0;"
+            "ALTER TABLE applications ADD COLUMN applicant_id INTEGER REFERENCES applicants(id) ON DELETE RESTRICT;"
         ),
-        "migration SQL:\n{}",
+        "migration SQL should include REFERENCES + ON DELETE:\n{}",
         mig.new_contents,
     );
 }
 
 #[test]
-fn add_relation_emits_no_foreign_key_constraint() {
-    // The single hardest invariant of 0.8.0: a belongs_to never
-    // produces a SQL `FOREIGN KEY` or `REFERENCES` clause.
+fn add_relation_emits_references_and_pragma() {
+    // 0.9.0 inverse of the 0.8.0 test: the migration MUST now include
+    // `REFERENCES` and a `PRAGMA foreign_keys = ON`. The summary names
+    // both the parent table and the on_delete policy.
     let schema = housing_schema();
     let project = project_with_housing("/p");
     let plan = add_relation_plan("Application", "Applicant", "applicant_id");
@@ -844,22 +954,25 @@ fn add_relation_emits_no_foreign_key_constraint() {
     ));
     let mig_sql = &preview.file_changes[1].new_contents;
     assert!(
-        !mig_sql.contains("FOREIGN KEY"),
-        "0.8.0 must not emit FOREIGN KEY clauses:\n{mig_sql}",
+        mig_sql.contains("REFERENCES applicants(id)"),
+        "0.9.0 must emit REFERENCES:\n{mig_sql}",
     );
     assert!(
-        !mig_sql.contains("REFERENCES"),
-        "0.8.0 must not emit REFERENCES clauses:\n{mig_sql}",
+        mig_sql.contains("ON DELETE RESTRICT"),
+        "0.9.0 default on_delete is restrict:\n{mig_sql}",
     );
-    // Also check the preview summary flags the FK gap explicitly.
     assert!(
-        preview.summary.contains("No SQL FOREIGN KEY is emitted"),
-        "preview summary should surface the FK gap: {}",
-        preview.summary,
+        mig_sql.contains("PRAGMA foreign_keys = ON"),
+        "migration should set the per-connection FK pragma:\n{mig_sql}",
     );
     assert!(
         preview.summary.contains("belongs_to"),
         "preview summary should name the relation kind: {}",
+        preview.summary,
+    );
+    assert!(
+        preview.summary.contains("restrict"),
+        "preview summary should name the on_delete policy: {}",
         preview.summary,
     );
 }
@@ -892,6 +1005,118 @@ fn add_relation_idempotent_when_column_already_present() {
 }
 
 #[test]
+fn add_relation_cascade_emits_on_delete_cascade() {
+    let schema = housing_schema();
+    let project = project_with_housing("/p");
+    let plan = add_relation_plan_with(
+        "Application",
+        "Applicant",
+        "applicant_id",
+        false,
+        super::OnDelete::Cascade,
+    );
+    let doc = doc_for(&schema, "link with cascade", plan);
+    let preview = unwrap_preview(plan_execution(
+        &schema,
+        &project,
+        &doc,
+        &ExecuteOptions::default(),
+        None,
+    ));
+    let mig = &preview.file_changes[1].new_contents;
+    assert!(
+        mig.contains("ON DELETE CASCADE"),
+        "cascade policy should appear in SQL:\n{mig}",
+    );
+    assert!(
+        !mig.contains("ON DELETE RESTRICT") && !mig.contains("ON DELETE SET NULL"),
+        "only one ON DELETE should be emitted:\n{mig}",
+    );
+    assert!(
+        preview.summary.contains("cascade"),
+        "summary should name the policy: {}",
+        preview.summary,
+    );
+}
+
+#[test]
+fn add_relation_set_null_emits_on_delete_set_null() {
+    let schema = housing_schema();
+    let project = project_with_housing("/p");
+    let plan = add_relation_plan_with(
+        "Application",
+        "Applicant",
+        "applicant_id",
+        false,
+        super::OnDelete::SetNull,
+    );
+    let doc = doc_for(&schema, "link with set null", plan);
+    let preview = unwrap_preview(plan_execution(
+        &schema,
+        &project,
+        &doc,
+        &ExecuteOptions::default(),
+        None,
+    ));
+    let mig = &preview.file_changes[1].new_contents;
+    assert!(
+        mig.contains("ON DELETE SET NULL"),
+        "set_null policy should appear in SQL:\n{mig}",
+    );
+}
+
+#[test]
+fn add_relation_required_is_refused_with_retrofit_hint() {
+    // 0.9.0: a NOT NULL foreign key cannot be added via ALTER TABLE on
+    // SQLite. The executor refuses and points at `rustio migrate --add-fks`.
+    let schema = housing_schema();
+    let project = project_with_housing("/p");
+    let plan = add_relation_plan_with(
+        "Application",
+        "Applicant",
+        "applicant_id",
+        true,
+        super::OnDelete::Restrict,
+    );
+    let doc = doc_for(&schema, "link as required", plan);
+    let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
+        .expect_err("required FK must refuse");
+    match err {
+        ExecutionError::UnsupportedPrimitive { op, reason } => {
+            assert_eq!(op, "add_relation");
+            assert!(
+                reason.contains("--add-fks") || reason.contains("recreate-table"),
+                "reason should hint at the retrofit path: {reason}",
+            );
+        }
+        other => panic!("expected UnsupportedPrimitive, got {other:?}"),
+    }
+}
+
+#[test]
+fn add_relation_column_is_nullable_in_the_struct() {
+    // The struct patch must use `Option<i64>` since the FK column is
+    // nullable. If this flips to plain `i64`, Rust code that reads a
+    // NULL row at runtime panics.
+    let schema = housing_schema();
+    let project = project_with_housing("/p");
+    let plan = add_relation_plan("Application", "Applicant", "applicant_id");
+    let doc = doc_for(&schema, "link Application to Applicant", plan);
+    let preview = unwrap_preview(plan_execution(
+        &schema,
+        &project,
+        &doc,
+        &ExecuteOptions::default(),
+        None,
+    ));
+    let models = &preview.file_changes[0].new_contents;
+    assert!(
+        models.contains("pub applicant_id: Option<i64>,"),
+        "struct field must be Option<i64>:\n{models}",
+    );
+}
+
+#[test]
 fn remove_relation_primitive_is_refused_with_clear_reason() {
     // 0.8.0: explicit — dropping a FK column is destructive. The
     // executor refuses until the destructive-gate work lands. Seed
@@ -913,6 +1138,8 @@ fn remove_relation_primitive_is_refused_with_clear_reason() {
             field: "id".into(),
             kind: crate::schema::RelationKind::BelongsTo,
             display_field: None,
+            required: None,
+            on_delete: None,
         }),
     });
     app.relations.push(crate::schema::SchemaRelation {
@@ -920,24 +1147,71 @@ fn remove_relation_primitive_is_refused_with_clear_reason() {
         to: "Applicant".into(),
         via: "applicant_id".into(),
     });
-    let project = project_with_housing("/p");
+    // The struct source must actually declare `applicant_id` for
+    // remove_relation to patch it. Insert the field and its Rust-side
+    // plumbing so the fixture matches the schema above. The
+    // `insert_values` block is reformatted to multi-line — the remove
+    // helper matches on an indented per-element line.
+    let mut project = project_with_housing("/p");
+    let with_fk = APPLICATION_MODELS_SRC
+        .replace(
+            "    pub title: String,\n}",
+            "    pub title: String,\n    pub applicant_id: i64,\n}",
+        )
+        .replace(
+            "&[\"id\", \"title\"]",
+            "&[\"id\", \"title\", \"applicant_id\"]",
+        )
+        .replace("&[\"title\"]", "&[\"title\", \"applicant_id\"]")
+        .replace(
+            "title: row.get_string(\"title\")?,",
+            "title: row.get_string(\"title\")?,\n            applicant_id: row.get_i64(\"applicant_id\")?,",
+        )
+        .replace(
+            "vec![self.title.clone().into()]",
+            "vec![\n            self.title.clone().into(),\n            self.applicant_id.into(),\n        ]",
+        );
+    project.models_files.get_mut("applications").unwrap().source = with_fk;
+
     let plan = Plan::new(vec![Primitive::RemoveRelation(super::RemoveRelation {
         from: "Application".into(),
         via: "applicant_id".into(),
     })]);
     let doc = doc_for(&schema, "drop relation", plan);
+
+    // Default options: destructive gate refuses.
     let err = plan_execution(&schema, &project, &doc, &ExecuteOptions::default(), None)
-        .expect_err("remove_relation must refuse");
+        .expect_err("remove_relation must refuse without --force");
     match err {
-        ExecutionError::UnsupportedPrimitive { op, reason } => {
+        ExecutionError::DestructiveWithoutConfirmation { op } => {
             assert_eq!(op, "remove_relation");
-            assert!(
-                reason.contains("destructive"),
-                "reason should call the op destructive: {reason}",
-            );
         }
-        other => panic!("expected UnsupportedPrimitive, got {other:?}"),
+        other => panic!("expected DestructiveWithoutConfirmation, got {other:?}"),
     }
+
+    // With allow_destructive: drop the FK column, emit recreate-table.
+    let opts = ExecuteOptions {
+        allow_destructive: true,
+    };
+    let preview = unwrap_preview(plan_execution(&schema, &project, &doc, &opts, None));
+    assert_eq!(preview.applied_steps, 1);
+    let models = &preview.file_changes[0];
+    assert!(
+        !models.new_contents.contains("pub applicant_id"),
+        "struct field should be dropped:\n{}",
+        models.new_contents,
+    );
+    let mig = &preview.file_changes[1];
+    assert!(
+        mig.new_contents.contains("CREATE TABLE applications__new"),
+        "migration uses recreate-table:\n{}",
+        mig.new_contents,
+    );
+    assert!(
+        preview.summary.contains("Remove relation"),
+        "summary should name the op: {}",
+        preview.summary,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1064,5 +1338,123 @@ mod integration {
             other => panic!("expected FileConflict, got {other:?}"),
         }
         let _ = fs::remove_dir_all(&root);
+    }
+
+    // ---- 0.9.0 retrofit -------------------------------------------------
+
+    fn schema_with_unannotated_fk() -> Schema {
+        use crate::schema::{Relation, RelationKind};
+        Schema {
+            version: SCHEMA_VERSION,
+            rustio_version: pkg_version(),
+            models: vec![
+                SchemaModel {
+                    name: "Applicant".into(),
+                    table: "applicants".into(),
+                    admin_name: "applicants".into(),
+                    display_name: "Applicants".into(),
+                    singular_name: "Applicant".into(),
+                    fields: vec![SchemaField {
+                        name: "id".into(),
+                        ty: "i64".into(),
+                        nullable: false,
+                        editable: false,
+                        relation: None,
+                    }],
+                    relations: vec![],
+                    core: false,
+                },
+                SchemaModel {
+                    name: "Application".into(),
+                    table: "applications".into(),
+                    admin_name: "applications".into(),
+                    display_name: "Applications".into(),
+                    singular_name: "Application".into(),
+                    fields: vec![
+                        SchemaField {
+                            name: "id".into(),
+                            ty: "i64".into(),
+                            nullable: false,
+                            editable: false,
+                            relation: None,
+                        },
+                        // Pre-0.9.0: `applicant_id` has Relation metadata
+                        // but the on_delete / required fields are None.
+                        SchemaField {
+                            name: "applicant_id".into(),
+                            ty: "i64".into(),
+                            nullable: false,
+                            editable: true,
+                            relation: Some(Relation {
+                                model: "Applicant".into(),
+                                field: "id".into(),
+                                kind: RelationKind::BelongsTo,
+                                display_field: None,
+                                required: None,
+                                on_delete: None,
+                            }),
+                        },
+                    ],
+                    relations: vec![],
+                    core: false,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn retrofit_reports_every_unannotated_belongs_to() {
+        let schema = schema_with_unannotated_fk();
+        let report = super::super::plan_retrofit_foreign_keys(&schema);
+        assert_eq!(
+            report.upgraded,
+            vec![("Application".to_string(), "applicant_id".to_string())]
+        );
+        assert_eq!(report.migrations.len(), 1);
+        let (name, sql) = &report.migrations[0];
+        assert!(
+            name.contains("applications"),
+            "file name should include the table: {name}"
+        );
+        assert!(
+            sql.contains("REFERENCES applicants(id)"),
+            "retrofit SQL must emit a FK clause:\n{sql}"
+        );
+        assert!(
+            sql.contains("ON DELETE RESTRICT"),
+            "retrofit default on_delete is restrict:\n{sql}"
+        );
+        assert!(
+            sql.contains("CREATE TABLE applications__new"),
+            "retrofit uses the recreate-table pattern:\n{sql}"
+        );
+        assert!(
+            sql.contains("DROP TABLE applications"),
+            "retrofit drops the old table:\n{sql}"
+        );
+        assert!(
+            sql.contains("ALTER TABLE applications__new RENAME TO applications"),
+            "retrofit renames the new table:\n{sql}"
+        );
+        assert!(
+            sql.contains("PRAGMA foreign_keys = OFF;"),
+            "retrofit toggles PRAGMA around the recreate:\n{sql}"
+        );
+    }
+
+    #[test]
+    fn retrofit_is_a_noop_for_schemas_already_annotated() {
+        let mut schema = schema_with_unannotated_fk();
+        for m in &mut schema.models {
+            for f in &mut m.fields {
+                if let Some(r) = f.relation.as_mut() {
+                    r.on_delete = Some("restrict".into());
+                    r.required = Some(!f.nullable);
+                }
+            }
+        }
+        let report = super::super::plan_retrofit_foreign_keys(&schema);
+        assert!(report.upgraded.is_empty());
+        assert!(report.migrations.is_empty());
     }
 }

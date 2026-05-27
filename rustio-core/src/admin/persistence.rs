@@ -1,4 +1,4 @@
-//! Persistence helpers for `/admin-new` — basic CREATE + UPDATE.
+//! Persistence helpers for the admin engine — basic CREATE + UPDATE.
 //!
 //! Deliberately small. No ORM integration, no schema discovery, no
 //! migration framework. The caller hands in a `(table, column → value)`

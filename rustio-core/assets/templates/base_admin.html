@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block body_class %}admin-shell{% endblock %}
+
+{% block body %}
+<div class="admin-layout d-flex min-vh-100">
+  {% include "includes/sidebar.html" %}
+  <div class="admin-main flex-grow-1 d-flex flex-column">
+    {% include "includes/header.html" %}
+    <main class="admin-content flex-grow-1">
+      <div class="container-fluid py-4">
+        {% block admin_content %}{% endblock %}
+      </div>
+    </main>
+    {% include "includes/footer.html" %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base_admin.html" %}
+
+{% block title %}Your account · {{ design.project_name | default('RustIO') }}{% endblock %}
+{% block page_title %}Your account{% endblock %}
+
+{% block admin_content %}
+<div class="card admin-card">
+  <div class="card-body">
+    <h2 class="h6 text-muted text-uppercase mb-3">Identity</h2>
+    <dl class="row mb-0">
+      <dt class="col-sm-3 text-muted">Email</dt>
+      <dd class="col-sm-9">{{ profile.email }}</dd>
+
+      <dt class="col-sm-3 text-muted">User ID</dt>
+      <dd class="col-sm-9">#{{ profile.user_id }}</dd>
+
+      <dt class="col-sm-3 text-muted">Role</dt>
+      <dd class="col-sm-9"><span class="badge text-bg-secondary">{{ profile.role }}</span></dd>
+
+      <dt class="col-sm-3 text-muted">Status</dt>
+      <dd class="col-sm-9">
+        {% if profile.is_active %}
+          <span class="badge text-bg-success">active</span>
+        {% else %}
+          <span class="badge text-bg-danger">inactive</span>
+        {% endif %}
+      </dd>
+    </dl>
+  </div>
+  <div class="card-footer bg-white d-flex justify-content-between">
+    <a href="/admin" class="btn btn-link">Back to admin</a>
+    <div>
+      <a href="/admin/logout" class="btn btn-outline-secondary">Sign out</a>
+      <a href="/admin/password_change" class="btn btn-primary">Change password</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

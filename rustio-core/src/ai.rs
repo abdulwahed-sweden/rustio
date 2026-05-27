@@ -45,9 +45,9 @@ mod planner_tests;
 mod review_tests;
 
 pub use executor::{
-    execute_plan_document, plan_execution, render_preview_human, ExecuteOptions, ExecutionError,
-    ExecutionPreview, ExecutionResult, FileChangeKind, ParsedModelsFile, PlannedFileChange,
-    ProjectView,
+    execute_plan_document, plan_execution, plan_retrofit_foreign_keys, render_preview_human,
+    ExecuteOptions, ExecutionError, ExecutionPreview, ExecutionResult, FileChangeKind,
+    ParsedModelsFile, PlannedFileChange, ProjectView, RetrofitReport,
 };
 pub use industry::{industry_schema_for, IndustrySchema};
 pub use planner::{generate_plan, ContextConfig, PlanError, PlanRequest, PlanResult};
@@ -235,6 +235,59 @@ pub struct AddRelation {
     /// (e.g. `user_id`). For `has_many`, the reverse accessor name on
     /// the parent side (e.g. `posts`).
     pub via: String,
+    /// `true` → `NOT NULL` FK column, requires a parent row to exist
+    /// before the child row can be inserted. `false` (default) → nullable,
+    /// safe to add to a table with existing rows.
+    ///
+    /// 0.9.0 default is `false` because upgrading a 0.8.0 project must
+    /// not break on pre-existing rows that pointed at id `0`.
+    #[serde(default)]
+    pub required: bool,
+    /// The SQL `ON DELETE` action when the referenced parent row is
+    /// removed. Default is `Restrict`: the parent row cannot be deleted
+    /// while any child references it. `Cascade` deletes the children.
+    /// `SetNull` nulls the FK on children (only valid when the column
+    /// is nullable — the executor will reject a `SetNull` + `required`
+    /// combination).
+    #[serde(default)]
+    pub on_delete: OnDelete,
+}
+
+/// Referential-integrity action triggered when a referenced row is
+/// deleted. 0.9.0 introduces this on [`AddRelation`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OnDelete {
+    /// Default. Refuse to delete a parent row while children exist.
+    #[default]
+    Restrict,
+    /// Delete every child row whose FK points at the parent being
+    /// deleted. Dangerous — requires explicit opt-in.
+    Cascade,
+    /// Null out the FK on every child row. Valid only when the FK
+    /// column is nullable.
+    SetNull,
+}
+
+impl OnDelete {
+    /// SQLite clause fragment, e.g. `ON DELETE RESTRICT`. Case-folded
+    /// upper for readability in generated migrations.
+    pub fn sql(self) -> &'static str {
+        match self {
+            OnDelete::Restrict => "ON DELETE RESTRICT",
+            OnDelete::Cascade => "ON DELETE CASCADE",
+            OnDelete::SetNull => "ON DELETE SET NULL",
+        }
+    }
+
+    /// `snake_case` serialised form, mirrors the serde rename.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OnDelete::Restrict => "restrict",
+            OnDelete::Cascade => "cascade",
+            OnDelete::SetNull => "set_null",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -927,6 +980,8 @@ mod tests {
             kind: RelationKind::BelongsTo,
             to: "User".to_string(),
             via: "user_id".to_string(),
+            required: false,
+            on_delete: OnDelete::Restrict,
         });
         let json = serde_json::to_string(&p).unwrap();
         assert!(json.contains(r#""kind":"belongs_to""#));
@@ -1063,6 +1118,8 @@ mod tests {
             kind: RelationKind::BelongsTo,
             to: "Ghost".to_string(),
             via: "ghost_id".to_string(),
+            required: false,
+            on_delete: OnDelete::Restrict,
         });
         let err = validate_against(&p, &schema()).unwrap_err();
         assert!(matches!(err, PrimitiveError::UnknownRelationTarget { .. }));

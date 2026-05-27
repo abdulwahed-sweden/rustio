@@ -1,0 +1,19 @@
+{% extends "base_admin.html" %}
+
+{% block title %}Dashboard · {{ design.project_name | default('RustIO') }}{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block admin_content %}
+  <div class="row g-3">
+    {% for card in dashboard_cards | default([]) %}
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card admin-card h-100">
+          <div class="card-body">
+            <h2 class="h6 text-muted text-uppercase mb-2">{{ card.label }}</h2>
+            <p class="display-6 mb-0">{{ card.value }}</p>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}

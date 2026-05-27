@@ -1,0 +1,17 @@
+<aside class="admin-sidebar">
+  <div class="admin-sidebar__brand">
+    <span class="admin-sidebar__logo">{{ design.logo_initial | default('R') }}</span>
+    <span class="admin-sidebar__name">{{ design.project_name | default('RustIO') }}</span>
+  </div>
+  <nav class="admin-sidebar__nav" aria-label="Admin navigation">
+    <ul class="admin-sidebar__list">
+      {% for entry in sidebar_entries | default([]) %}
+        {% if entry.visible %}
+          <li class="admin-sidebar__item{% if entry.active %} admin-sidebar__item--active{% endif %}">
+            <a class="admin-sidebar__link" href="{{ entry.href }}">{{ entry.label }}</a>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </nav>
+</aside>

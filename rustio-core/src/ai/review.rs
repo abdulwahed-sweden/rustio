@@ -486,6 +486,7 @@ pub fn classify_risk(
 /// output is the 0.5.x set — nothing changes for projects that
 /// haven't opted in.
 pub fn warnings_for(plan: &Plan, context: Option<&ContextConfig>) -> Vec<String> {
+    use crate::ai::OnDelete;
     let mut out: Vec<String> = Vec::new();
     let mut has_remove = false;
     let mut has_rename_model = false;
@@ -503,6 +504,31 @@ pub fn warnings_for(plan: &Plan, context: Option<&ContextConfig>) -> Vec<String>
             Primitive::ChangeFieldType(_) => has_type_change = true,
             Primitive::ChangeFieldNullability(c) if !c.nullable => has_require = true,
             Primitive::RemoveModel(_) => has_remove_model = true,
+            // 0.9.0 — FK-specific warnings. Each bullet is justified by
+            // the policy on the primitive; nothing speculative.
+            Primitive::AddRelation(r) => {
+                if r.required {
+                    out.push(format!(
+                        "Relation `{model}.{via}` → `{to}` is required (NOT NULL FK). \
+                         Existing rows with no matching parent will prevent the \
+                         migration; use `rustio migrate add-fks --write` to retrofit \
+                         via recreate-table instead of ALTER TABLE.",
+                        model = r.from,
+                        via = r.via,
+                        to = r.to,
+                    ));
+                }
+                if matches!(r.on_delete, OnDelete::Cascade) {
+                    out.push(format!(
+                        "Relation `{model}.{via}` uses ON DELETE CASCADE: deleting a \
+                         single `{to}` row will delete every `{model}` row that \
+                         points at it. Review the blast radius before execution.",
+                        model = r.from,
+                        via = r.via,
+                        to = r.to,
+                    ));
+                }
+            }
             _ => {}
         }
         if step.is_developer_only() {
@@ -817,13 +843,15 @@ fn apply_shadow_for_review(p: &Primitive, schema: &mut Schema) {
                     model.fields.push(SchemaField {
                         name: r.via.clone(),
                         ty: "i64".to_string(),
-                        nullable: false,
+                        nullable: !r.required,
                         editable: true,
                         relation: Some(Relation {
                             model: r.to.clone(),
                             field: "id".to_string(),
                             kind: RelationKind::BelongsTo,
                             display_field: None,
+                            required: Some(r.required),
+                            on_delete: Some(r.on_delete.as_str().to_string()),
                         }),
                     });
                     model.fields.sort_by(|a, b| a.name.cmp(&b.name));
@@ -862,11 +890,22 @@ fn touches_core_model(p: &Primitive, schema: &Schema) -> bool {
 }
 
 fn per_step_risk(p: &Primitive) -> RiskLevel {
+    use crate::ai::OnDelete;
     match p {
         // Safe additions
         Primitive::AddField(a) if a.field.nullable => RiskLevel::Low,
         Primitive::AddField(_) => RiskLevel::Low,
-        Primitive::AddRelation(_) => RiskLevel::Low,
+        // 0.9.0 — AddRelation risk depends on the FK policy.
+        // `required + cascade` is the most dangerous combination: a NOT
+        // NULL FK blocks inserts with no parent, and a cascade delete
+        // sweeps children out silently. `required` alone is Medium
+        // (insert-time friction). `cascade` alone is Medium (one bad
+        // DELETE can remove many rows). Everything else stays Low.
+        Primitive::AddRelation(r) => match (r.required, r.on_delete) {
+            (true, OnDelete::Cascade) => RiskLevel::High,
+            (true, _) | (_, OnDelete::Cascade) => RiskLevel::Medium,
+            _ => RiskLevel::Low,
+        },
         Primitive::AddModel(_) => RiskLevel::Low,
         Primitive::UpdateAdmin(_) => RiskLevel::Low,
         // Flipping to nullable is reversible and safe; to required is not.

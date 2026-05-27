@@ -1,0 +1,61 @@
+{% extends "base_admin.html" %}
+
+{% block title %}Recent actions · {{ design.project_name | default('RustIO') }}{% endblock %}
+{% block page_title %}Recent actions{% endblock %}
+
+{% block admin_content %}
+<form class="d-flex gap-2 align-items-center mb-3" method="get" action="/admin/actions" aria-label="Filter actions">
+  <select class="form-select form-select-sm" name="model" style="max-width: 14rem" aria-label="Filter by model">
+    <option value="">All models</option>
+    {% for m in model_options %}
+      <option value="{{ m.value }}"{% if m.selected %} selected{% endif %}>{{ m.label }}</option>
+    {% endfor %}
+  </select>
+  <select class="form-select form-select-sm" name="action" style="max-width: 10rem" aria-label="Filter by action">
+    {% for a in action_options %}
+      <option value="{{ a.value }}"{% if a.selected %} selected{% endif %}>{{ a.label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-sm btn-outline-primary">Apply</button>
+  {% if filters_active %}
+    <a class="btn btn-sm btn-link" href="/admin/actions">Reset</a>
+  {% endif %}
+  <span class="ms-auto text-muted small">{{ count_label }}</span>
+</form>
+
+<div class="card admin-card">
+  {% if actions | length == 0 %}
+    <div class="card-body text-center text-muted py-5">
+      <p class="mb-1"><strong>No actions match these filters.</strong></p>
+      <p class="mb-0">Once operators create, edit, or delete records through the admin, the activity shows up here.</p>
+    </div>
+  {% else %}
+    <div class="table-responsive">
+      <table class="table admin-table align-middle mb-0">
+        <thead>
+          <tr>
+            <th scope="col">When</th>
+            <th scope="col">User</th>
+            <th scope="col">Action</th>
+            <th scope="col">Model</th>
+            <th scope="col">Object</th>
+            <th scope="col">Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in actions %}
+            <tr>
+              <td class="text-nowrap text-muted small">{{ a.timestamp }}</td>
+              <td>{{ a.user_email | default('—') }}</td>
+              <td><span class="badge text-bg-secondary">{{ a.action_type }}</span></td>
+              <td>{{ a.model_name }}</td>
+              <td>{% if a.object_url %}<a href="{{ a.object_url }}">#{{ a.object_id }}</a>{% else %}#{{ a.object_id }}{% endif %}</td>
+              <td>{{ a.summary }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

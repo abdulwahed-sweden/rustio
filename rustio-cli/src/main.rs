@@ -23,8 +23,10 @@ COMMANDS:
                               (0.5.0) Plan a schema change; optionally save a reviewable document
     ai review <path>          (0.5.1) Review a saved plan against the current schema
     ai validate <path>        (0.5.1) Terse validate-only gate for CI
-    ai apply <path> [--yes] [--dry-run]
+    ai apply <path> [--yes] [--dry-run] [--force]
                               (0.5.2) Apply a reviewed plan (writes files, never runs migrations)
+                              (0.9.1) `--force` opens the destructive gate for `remove_field` /
+                                      `remove_relation`; Critical / developer-only / PII refusals stay authoritative
     context show              (0.6.0) Show the parsed rustio.context.json and inferred flags
     context validate          (0.6.0) Parse rustio.context.json; exit 0 on success
     user create [opts]        Create a user in the auth tables (interactive if args omitted)
@@ -55,6 +57,7 @@ async fn main() -> ExitCode {
         Ok(Command::MigrateGenerate(name)) => migrate_generate(&name),
         Ok(Command::MigrateApply { verbose }) => migrate_apply(verbose).await,
         Ok(Command::MigrateStatus) => migrate_status().await,
+        Ok(Command::MigrateAddFks { write }) => migrate_add_fks(write),
         Ok(Command::Schema) => schema_command(),
         Ok(Command::Ai(sub)) => ai_command(sub),
         Ok(Command::Context(sub)) => context_command(sub),
@@ -97,6 +100,14 @@ enum Command {
         verbose: bool,
     },
     MigrateStatus,
+    /// `rustio migrate add-fks` — 0.9.0 retrofit. Scans `rustio.schema.json`
+    /// for belongs_to relations materialised before 0.9.0 (no
+    /// `on_delete` metadata) and generates a recreate-table migration
+    /// for every affected table. Default is dry-run; `--write` commits
+    /// the files to `migrations/`.
+    MigrateAddFks {
+        write: bool,
+    },
     /// Emit `rustio.schema.json` at the project root by running the
     /// built binary with `--dump-schema`.
     Schema,
@@ -149,10 +160,16 @@ pub(crate) enum AiCommand {
     Validate(String),
     /// `rustio ai apply <path> [--yes] [--dry-run]` — apply a reviewed
     /// plan. Prints a preview, prompts, writes files atomically.
+    ///
+    /// 0.9.1: `--force` unlocks `remove_field` and `remove_relation`
+    /// primitives. Critical-risk plans, developer-only primitives, and
+    /// PII policy refusals are **not** bypassed by `--force` — those
+    /// gates live a layer above the destructive-op gate.
     Apply {
         path: String,
         assume_yes: bool,
         dry_run: bool,
+        force: bool,
     },
 }
 
@@ -230,8 +247,18 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                 }
                 Ok(Command::MigrateStatus)
             }
+            Some("add-fks") => {
+                let mut write = false;
+                for a in &args[3..] {
+                    match a.as_str() {
+                        "--write" => write = true,
+                        other => return Err(format!("unexpected argument `{other}`")),
+                    }
+                }
+                Ok(Command::MigrateAddFks { write })
+            }
             Some(other) => Err(format!("unknown subcommand `migrate {other}`")),
-            None => Err("usage: rustio migrate <generate|apply|status>".into()),
+            None => Err("usage: rustio migrate <generate|apply|status|add-fks>".into()),
         },
         Some(other) => Err(format!("unknown command `{other}`")),
     }
@@ -538,6 +565,66 @@ async fn migrate_status() -> Result<(), String> {
     Ok(())
 }
 
+/// `rustio migrate add-fks` — 0.9.0 retrofit.
+///
+/// Parses `rustio.schema.json`, finds belongs_to relations lacking
+/// `on_delete` metadata, and emits a recreate-table migration per
+/// affected table. Default is dry-run — the user has to pass
+/// `--write` to actually create files under `migrations/`.
+fn migrate_add_fks(write: bool) -> Result<(), String> {
+    let path = Path::new("rustio.schema.json");
+    let raw = std::fs::read_to_string(path).map_err(|e| {
+        format!(
+            "cannot read {path}: {e}. Run `rustio schema` first.",
+            path = path.display()
+        )
+    })?;
+    let schema: rustio_core::schema::Schema = serde_json::from_str(&raw)
+        .map_err(|e| format!("could not parse rustio.schema.json: {e}"))?;
+
+    let report = rustio_core::ai::plan_retrofit_foreign_keys(&schema);
+
+    if report.upgraded.is_empty() {
+        out::info("All belongs_to relations already carry FK metadata — nothing to retrofit.");
+        return Ok(());
+    }
+
+    println!("{}", out::bold("Relations to retrofit:"));
+    for (model, field) in &report.upgraded {
+        println!("  {} {model}.{field}  →  ON DELETE RESTRICT", out::check());
+    }
+    println!();
+    println!("{}", out::bold("Migrations that would be written:"));
+    for (name, _) in &report.migrations {
+        println!("  migrations/<NNNN>_{name}.sql");
+    }
+    println!();
+
+    if !write {
+        out::info("Dry run. Re-run with --write to commit the migrations.");
+        out::info("Review each SQL file before running `rustio migrate apply`.");
+        return Ok(());
+    }
+
+    let dir = Path::new("migrations");
+    let mut written = Vec::new();
+    for (name, sql) in &report.migrations {
+        let p = rustio_core::migrations::generate(dir, name, sql).map_err(err_str)?;
+        written.push(
+            p.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+        );
+    }
+    println!("{}", out::bold("Wrote:"));
+    for f in &written {
+        println!("  {} migrations/{f}", out::check());
+    }
+    println!();
+    out::success("Next step", "review the SQL, then `rustio migrate apply`.");
+    Ok(())
+}
+
 /// `rustio schema` — compile + run the project with `--dump-schema`.
 /// The generated `main.rs` watches for that flag, invokes
 /// `rustio_core::Schema::from_admin`, and writes `rustio.schema.json`
@@ -733,20 +820,26 @@ fn ai_command(sub: AiCommand) -> Result<(), String> {
             path,
             assume_yes,
             dry_run,
-        } => ai_apply_command(&path, assume_yes, dry_run),
+            force,
+        } => ai_apply_command(&path, assume_yes, dry_run, force),
     }
 }
 
 /// Parse `rustio ai apply …`: one positional path, optional `--yes`
-/// (skip confirmation) and `--dry-run` (print preview only).
+/// (skip confirmation), `--dry-run` (print preview only), and
+/// `--force` (0.9.1 — unlocks destructive primitives `remove_field` /
+/// `remove_relation`). Critical / developer-only / PII gates are
+/// **not** bypassed by `--force`.
 fn parse_ai_apply_args(rest: &[String]) -> Result<Command, String> {
     let mut path: Option<String> = None;
     let mut assume_yes = false;
     let mut dry_run = false;
+    let mut force = false;
     for a in rest {
         match a.as_str() {
             "--yes" | "-y" => assume_yes = true,
             "--dry-run" => dry_run = true,
+            "--force" => force = true,
             other if other.starts_with("--") => {
                 return Err(format!("unknown flag `{other}`"));
             }
@@ -758,11 +851,13 @@ fn parse_ai_apply_args(rest: &[String]) -> Result<Command, String> {
             }
         }
     }
-    let path = path.ok_or("usage: rustio ai apply <path-to-plan.json> [--yes] [--dry-run]")?;
+    let path =
+        path.ok_or("usage: rustio ai apply <path-to-plan.json> [--yes] [--dry-run] [--force]")?;
     Ok(Command::Ai(AiCommand::Apply {
         path,
         assume_yes,
         dry_run,
+        force,
     }))
 }
 
@@ -951,7 +1046,12 @@ fn ai_validate_command(path: &str) -> Result<(), String> {
 ///   6. Call `execute_plan_document` which commits atomically.
 ///   7. Print the post-apply summary and the `rustio migrate apply`
 ///      hint — we never run migrations ourselves.
-fn ai_apply_command(path: &str, assume_yes: bool, dry_run: bool) -> Result<(), String> {
+fn ai_apply_command(
+    path: &str,
+    assume_yes: bool,
+    dry_run: bool,
+    force: bool,
+) -> Result<(), String> {
     use std::io::{BufRead, IsTerminal};
 
     use rustio_core::ai::executor::{
@@ -980,20 +1080,25 @@ fn ai_apply_command(path: &str, assume_yes: bool, dry_run: bool) -> Result<(), S
     let review = review_plan(&schema, &plan_doc.plan, context.as_ref())
         .map_err(|e| format!("review failed: {e}"))?;
 
+    // 0.9.1 — `--force` sets `allow_destructive` for both the dry-run
+    // preview and the real apply. The flag never bypasses Critical,
+    // developer-only, or PII refusals; those live in `plan_execution`
+    // outside `ExecuteOptions`.
+    let opts = ExecuteOptions {
+        allow_destructive: force,
+    };
+
     // Pure dry-run against the live project.
     let project = ProjectView::from_dir(Path::new(".")).map_err(|e| format!("{e}"))?;
-    let preview = plan_execution(
-        &schema,
-        &project,
-        &plan_doc,
-        &ExecuteOptions::default(),
-        context.as_ref(),
-    )
-    .map_err(|e| format!("{e}"))?;
+    let preview = plan_execution(&schema, &project, &plan_doc, &opts, context.as_ref())
+        .map_err(|e| format!("{e}"))?;
 
     // Preview + risk tag on stdout.
     print!("{}", render_preview_human(&preview, review.risk));
     println!("\nSource:\n  {source_label}");
+    if force {
+        println!("  (destructive gate open: --force)");
+    }
     if !review.warnings.is_empty() {
         println!("\nWarnings:");
         for w in &review.warnings {
@@ -1027,13 +1132,8 @@ fn ai_apply_command(path: &str, assume_yes: bool, dry_run: bool) -> Result<(), S
     }
 
     // Commit.
-    let result = execute_plan_document(
-        Path::new("."),
-        &plan_doc,
-        &ExecuteOptions::default(),
-        context.as_ref(),
-    )
-    .map_err(|e| format!("{e}"))?;
+    let result = execute_plan_document(Path::new("."), &plan_doc, &opts, context.as_ref())
+        .map_err(|e| format!("{e}"))?;
 
     println!();
     out::success(
@@ -1983,5 +2083,49 @@ mod tests {
     fn render_leaves_unknown_vars_alone() {
         let tpl = "{{UNKNOWN}} {{KNOWN}}";
         assert_eq!(render(tpl, &[("KNOWN", "k")]), "{{UNKNOWN}} k");
+    }
+
+    // 0.9.1 — `ai apply --force` argument parsing.
+
+    #[test]
+    fn ai_apply_parses_force_flag() {
+        match parse_command(&args(&["ai", "apply", "plan.json", "--force"])).unwrap() {
+            Command::Ai(AiCommand::Apply { force, .. }) => assert!(force),
+            other => panic!("expected AiCommand::Apply, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ai_apply_force_defaults_to_false() {
+        match parse_command(&args(&["ai", "apply", "plan.json"])).unwrap() {
+            Command::Ai(AiCommand::Apply { force, .. }) => assert!(!force),
+            other => panic!("expected AiCommand::Apply, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ai_apply_force_composes_with_yes_and_dry_run() {
+        match parse_command(&args(&[
+            "ai",
+            "apply",
+            "plan.json",
+            "--yes",
+            "--dry-run",
+            "--force",
+        ]))
+        .unwrap()
+        {
+            Command::Ai(AiCommand::Apply {
+                assume_yes,
+                dry_run,
+                force,
+                ..
+            }) => {
+                assert!(assume_yes);
+                assert!(dry_run);
+                assert!(force);
+            }
+            other => panic!("expected AiCommand::Apply, got {other:?}"),
+        }
     }
 }
