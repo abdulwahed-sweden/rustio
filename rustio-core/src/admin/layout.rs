@@ -65,6 +65,52 @@ async fn collect_dashboard_entries(
     out
 }
 
+/// Walk legacy `AdminEntry`s, skipping framework-internal (`core`)
+/// entries and any slugs already covered by the new-engine registry,
+/// and return one `DashboardEntry` per remaining model. Mirrors the
+/// shape of [`collect_dashboard_entries`] so both lists are
+/// interchangeable downstream.
+///
+/// This is what makes `Admin::new().model::<T>()`-registered models
+/// appear on the `/admin` dashboard, not just in the sidebar. Without
+/// this walk, the cards listed only what the new `AdminUiModel`
+/// registry knew about — projects scaffolded via the standard
+/// `rustio new app` path were invisible on the overview.
+async fn collect_legacy_dashboard_entries(
+    db: &Db,
+    legacy_entries: &[crate::admin::AdminEntry],
+    already_listed: &std::collections::HashSet<&str>,
+) -> Vec<DashboardEntry> {
+    use sqlx::Row;
+    let mut out = Vec::new();
+    for entry in legacy_entries {
+        if entry.core || already_listed.contains(entry.admin_name) {
+            continue;
+        }
+        let count: i64 = {
+            let sql = format!(
+                "SELECT COUNT(*) AS c FROM \"{}\"",
+                entry.table.replace('"', "\"\""),
+            );
+            match sqlx::query(&sql).fetch_one(db.pool()).await {
+                Ok(row) => row.try_get::<i64, _>("c").unwrap_or(0),
+                Err(_) => 0,
+            }
+        };
+        out.push(DashboardEntry {
+            slug: entry.admin_name,
+            // `singular_name` is "Task" / "Project"; the card template
+            // pluralizes via `format!("{}s", …)` for the label.
+            model_name: entry.singular_name,
+            count,
+        });
+    }
+    // Sort by slug for deterministic card order — matches what
+    // `collect_dashboard_entries` does for the new-engine half.
+    out.sort_by_key(|e| e.slug);
+    out
+}
+
 /// Pull the users-table window + count from the demo table. When a
 /// non-empty `query` is supplied, dispatches to
 /// [`persistence::search_records`] / [`persistence::count_search_records`]
@@ -1002,9 +1048,21 @@ pub async fn dashboard_render(
     identity: Option<&crate::auth::Identity>,
     csrf_token: Option<&str>,
 ) -> String {
-    let entries = collect_dashboard_entries(db, registry).await;
-    let sidebar = sidebar_merged(&entries, legacy_entries, None);
-    let cards: Vec<DashboardCardView> = entries
+    // Cards come from two sources, in priority order:
+    //   1. the new `AdminUiModel` registry (one entry per registered slug)
+    //   2. the legacy `Admin::new().model::<T>()` path, filtered to
+    //      non-`core` entries not already covered by source 1
+    // Same dedup rule as `sidebar_merged` keeps a model registered
+    // through both paths from appearing twice. Before this dual-source
+    // build, the dashboard cards only reflected source 1 — every
+    // `rustio new app`-scaffolded model was invisible at /admin.
+    let new_entries = collect_dashboard_entries(db, registry).await;
+    let known: std::collections::HashSet<&str> = new_entries.iter().map(|e| e.slug).collect();
+    let legacy_dash = collect_legacy_dashboard_entries(db, legacy_entries, &known).await;
+    let all_entries: Vec<&DashboardEntry> = new_entries.iter().chain(legacy_dash.iter()).collect();
+
+    let sidebar = sidebar_merged(&new_entries, legacy_entries, None);
+    let cards: Vec<DashboardCardView> = all_entries
         .iter()
         .map(|e| DashboardCardView {
             label: format!("{}s", e.model_name),
@@ -1029,7 +1087,11 @@ pub async fn dashboard_render(
         Ok(html) => html,
         Err(err) => {
             eprintln!("admin dashboard template render failed: {err}");
-            dashboard_fallback(&entries)
+            // Fallback path also gets the combined list so a template
+            // failure doesn't silently regress the bug we just fixed.
+            let combined: Vec<DashboardEntry> =
+                new_entries.into_iter().chain(legacy_dash).collect();
+            dashboard_fallback(&combined)
         }
     }
 }
@@ -1694,4 +1756,136 @@ fn dashboard_fallback(entries: &[DashboardEntry]) -> String {
     }
     out.push_str("</ul></body></html>");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::admin::{AdminEntry, AdminField, FieldType};
+
+    /// Helper: build a minimal `AdminEntry` for the dashboard walker
+    /// to chew on. Only the fields the walker actually reads are
+    /// populated; the rest fall back to empty slices / defaults.
+    fn entry(
+        admin: &'static str,
+        singular: &'static str,
+        table: &'static str,
+        core: bool,
+    ) -> AdminEntry {
+        const NO_FIELDS: &[AdminField] = &[AdminField {
+            name: "id",
+            ty: FieldType::I64,
+            editable: false,
+            nullable: false,
+            relation: None,
+        }];
+        AdminEntry {
+            admin_name: admin,
+            display_name: singular,
+            singular_name: singular,
+            table,
+            fields: NO_FIELDS,
+            core,
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_dashboard_walk_returns_one_entry_per_non_core_model() {
+        let db = Db::memory().await.unwrap();
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE tasks (id INTEGER PRIMARY KEY)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO projects DEFAULT VALUES")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO projects DEFAULT VALUES")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO tasks DEFAULT VALUES")
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        let legacy = [
+            entry("projects", "Project", "projects", false),
+            entry("tasks", "Task", "tasks", false),
+        ];
+        let known = std::collections::HashSet::new();
+
+        let got = collect_legacy_dashboard_entries(&db, &legacy, &known).await;
+
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].slug, "projects");
+        assert_eq!(got[0].count, 2);
+        assert_eq!(got[1].slug, "tasks");
+        assert_eq!(got[1].count, 1);
+    }
+
+    #[tokio::test]
+    async fn legacy_dashboard_walk_skips_core_entries() {
+        let db = Db::memory().await.unwrap();
+        // No table needed — `core` filter should bail out before any SQL runs.
+        let legacy = [
+            entry("rustio_users", "User", "rustio_users", true),
+            entry("projects", "Project", "projects", false),
+        ];
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        let known = std::collections::HashSet::new();
+        let got = collect_legacy_dashboard_entries(&db, &legacy, &known).await;
+
+        assert_eq!(got.len(), 1, "core entry should be skipped");
+        assert_eq!(got[0].slug, "projects");
+    }
+
+    #[tokio::test]
+    async fn legacy_dashboard_walk_dedupes_against_already_listed_slugs() {
+        let db = Db::memory().await.unwrap();
+        sqlx::query("CREATE TABLE projects (id INTEGER PRIMARY KEY)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE tasks (id INTEGER PRIMARY KEY)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        // Imagine the new-engine registry already covers `projects`.
+        let mut known = std::collections::HashSet::new();
+        known.insert("projects");
+
+        let legacy = [
+            entry("projects", "Project", "projects", false),
+            entry("tasks", "Task", "tasks", false),
+        ];
+
+        let got = collect_legacy_dashboard_entries(&db, &legacy, &known).await;
+
+        assert_eq!(got.len(), 1, "already-listed slug should be skipped");
+        assert_eq!(got[0].slug, "tasks");
+    }
+
+    #[tokio::test]
+    async fn legacy_dashboard_walk_falls_back_to_zero_when_table_missing() {
+        let db = Db::memory().await.unwrap();
+        // No `CREATE TABLE` — the COUNT(*) will fail; the walker
+        // should degrade to count=0 instead of erroring or panicking.
+        let legacy = [entry("ghosts", "Ghost", "ghosts", false)];
+        let known = std::collections::HashSet::new();
+
+        let got = collect_legacy_dashboard_entries(&db, &legacy, &known).await;
+
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].count, 0);
+    }
 }
