@@ -1,0 +1,159 @@
+{
+  "version": 2,
+  "rustio_version": "0.10.0",
+  "models": [
+    {
+      "name": "Project",
+      "table": "projects",
+      "admin_name": "projects",
+      "display_name": "Projects",
+      "singular_name": "Project",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Task",
+      "table": "tasks",
+      "admin_name": "tasks",
+      "display_name": "Tasks",
+      "singular_name": "Task",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "description",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "due_at",
+          "type": "DateTime",
+          "nullable": true,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "priority",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "project_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Project",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "name"
+          }
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "title",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "User",
+      "table": "rustio_users",
+      "admin_name": "users",
+      "display_name": "Users",
+      "singular_name": "User",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "password_hash",
+          "type": "String",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "role",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": true
+    }
+  ]
+}

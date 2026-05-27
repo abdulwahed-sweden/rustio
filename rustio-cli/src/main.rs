@@ -7,33 +7,65 @@ mod wizard;
 const USAGE: &str = r#"rustio — the RustIO framework CLI
 
 USAGE:
-    rustio <COMMAND>
+    rustio <command> [args...]
 
-COMMANDS:
-    init [name]               Start the interactive wizard, or scaffold directly with a name
-    new project <name>        Create a new RustIO project
-    new app <name>            Create a new app inside the current project
-    run                       Build and run the project in the current directory
-    migrate generate <name>   Create a new migration file
-    migrate apply [-v]        Apply all pending migrations (verbose with -v / --verbose)
-    migrate status            Show applied and pending migrations
-    schema                    Write rustio.schema.json at the project root
-    ai                        (0.5.x) Show the AI boundary summary
+If you're new: `rustio init <name>` creates a project, `cd <name>`,
+then `rustio new app <thing>` adds your first model, then
+`rustio migrate apply` + `rustio run`. That's the whole loop.
+
+SCAFFOLD
+    init [name]                 Wizard (no name) or non-interactive scaffold (with name).
+                                  Options: --preset <basic|blog|api>, --app <name>
+    new project <name>          Create a new RustIO project in <name>/.
+    new app <name>              Create a new app inside the current project.
+
+RUN
+    run                         Build (cargo build) and start the server on :8000.
+
+DATABASE
+    migrate generate <name>     Create an empty migration file under migrations/.
+    migrate apply [-v]          Apply all pending migrations (verbose with -v).
+    migrate status              Show applied + pending migrations.
+    migrate add-fks [--write]   Retrofit FOREIGN KEY clauses onto an 0.8.x project.
+
+SCHEMA
+    schema                      Write rustio.schema.json from the in-memory admin
+                                  registry. The single source of truth for every
+                                  external tool (including the AI layer).
+
+AI                                                  (deterministic, refusal-first)
+    ai                          Print the AI boundary summary.
     ai plan "<prompt>" [--save <path>]
-                              (0.5.0) Plan a schema change; optionally save a reviewable document
-    ai review <path>          (0.5.1) Review a saved plan against the current schema
-    ai validate <path>        (0.5.1) Terse validate-only gate for CI
+                                Parse a natural-language request into a typed Plan
+                                (no execution).
+    ai review <path>            Risk/impact/warnings of a saved plan vs the live schema.
+    ai validate <path>          Terse validate-only gate for CI. Exit 0/1.
     ai apply <path> [--yes] [--dry-run] [--force]
-                              (0.5.2) Apply a reviewed plan (writes files, never runs migrations)
-                              (0.9.1) `--force` opens the destructive gate for `remove_field` /
-                                      `remove_relation`; Critical / developer-only / PII refusals stay authoritative
-    context show              (0.6.0) Show the parsed rustio.context.json and inferred flags
-    context validate          (0.6.0) Parse rustio.context.json; exit 0 on success
-    user create [opts]        Create a user in the auth tables (interactive if args omitted)
+                                Apply a reviewed plan (writes files, never runs
+                                migrations). `--force` opens the destructive gate
+                                for `remove_field` / `remove_relation`; Critical /
+                                developer-only / PII refusals stay authoritative.
 
-ENVIRONMENT:
-    RUSTIO_DATABASE_URL       Database URL (default: sqlite://app.db?mode=rwc)
-    NO_COLOR                  Disable colored CLI output
+CONTEXT
+    context show                Show rustio.context.json + inferred region / GDPR /
+                                  PII fields / industry conventions.
+    context validate            Parse rustio.context.json; exit 0/1.
+
+USERS
+    user create [opts]          Create a user in the auth tables. Interactive when
+                                  --email / --password / --role are omitted.
+
+META
+    --help, -h                  Print this help.
+    --version, -V               Print the CLI version.
+
+ENVIRONMENT
+    RUSTIO_DATABASE_URL         Database URL (default: sqlite://app.db?mode=rwc).
+    RUSTIO_CORE_PATH            Override the `rustio-core` path dep in generated
+                                  Cargo.toml — point at a checkout instead of crates.io.
+    NO_COLOR                    Disable coloured CLI output.
+
+For longer-form docs: https://github.com/abdulwahed-sweden/rustio
 "#;
 
 const DEFAULT_DATABASE_URL: &str = "sqlite://app.db?mode=rwc";
@@ -438,7 +470,9 @@ pub(crate) fn new_app(name: &str) -> Result<(), String> {
 fn run() -> Result<(), String> {
     if !Path::new("Cargo.toml").exists() {
         return Err(
-            "no Cargo.toml in current directory — run this from inside a RustIO project".into(),
+            "no Cargo.toml in current directory — this command runs from inside a RustIO \
+             project. Start one with `rustio init <name>` or `cd` into an existing project."
+                .into(),
         );
     }
 
@@ -632,10 +666,17 @@ fn migrate_add_fks(write: bool) -> Result<(), String> {
 fn schema_command() -> Result<(), String> {
     if !Path::new("Cargo.toml").exists() {
         return Err(
-            "no Cargo.toml in current directory — run this from inside a RustIO project".into(),
+            "no Cargo.toml in current directory — this command runs from inside a RustIO \
+             project. Start one with `rustio init <name>` or `cd` into an existing project."
+                .into(),
         );
     }
-    try_dump_schema()
+    try_dump_schema()?;
+    out::info("");
+    out::info("Next:");
+    out::hint("review rustio.schema.json — every external tool reads from this file");
+    out::hint("`rustio ai plan \"<change>\"` — let the AI layer propose a schema edit");
+    Ok(())
 }
 
 /// Parse `--email X --password Y --role R` in any order. All three are
@@ -735,6 +776,9 @@ async fn user_create_command(
         "Created user",
         &format!("{} (role={}, id={})", user.email, user.role, user.id),
     );
+    out::info("");
+    out::info("Next:");
+    out::hint("`rustio run` — then sign in at http://127.0.0.1:8000/admin");
     Ok(())
 }
 
