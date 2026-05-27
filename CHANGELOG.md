@@ -9,18 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > The 0.5.0 → 0.8.0 entries below describe work that accumulated in this section without distinct release cuts at the time. They remain in `[Unreleased]` until each is retroactively tagged or rolled forward into a future release. The 0.9.0 / 0.9.1 / 0.10.0 work that was previously here has been promoted to dated releases below.
 
-### Fixed — Admin dashboard cards include legacy `AdminEntry` models ([#2](https://github.com/abdulwahed-sweden/rustio/issues/2), 2026-05-27)
-
-Before this commit, `/admin` only showed cards for models registered through the new `AdminUiModel` registry — every `rustio new app`-scaffolded model was invisible on the dashboard, even though it appeared correctly in the sidebar.
-
-![Dashboard now shows ORDERS 0, USERS 0, PROJECTS 2, TASKS 5 — matching the sidebar](docs/screenshots/admin-dashboard.png)
-
-- The seam was in `admin/layout.rs::dashboard_render`. It received `legacy_entries: &[AdminEntry]` (it'd been passing them to `sidebar_merged`), but the `cards` list was built only from the new registry. New helper `collect_legacy_dashboard_entries` walks the legacy entries (skipping `core: true` framework-internal ones), dedupes against the new-engine registry by slug, and emits one `DashboardEntry` per remaining model — same shape as the new-engine half so both lists are interchangeable downstream.
-- Sidebar continues to be built from `sidebar_merged`'s own legacy walk — unchanged. Dedup rules match between sidebar and cards, so a model registered through both paths never double-counts.
-- Both the minijinja path and the no-template fallback path get the combined list, so a template failure can't silently regress the fix.
-- **Tests:** +4 in `admin::layout::tests` (happy path, `core`-filter, slug-dedup, missing-table-fallback). Workspace test count: **524 passed** (was 520).
-- Commit: [`a294287 fix(admin): include legacy AdminEntry models on the dashboard cards`](https://github.com/abdulwahed-sweden/rustio/commit/a294287).
-
 ### Changed — Signed commits required on `main` (2026-05-27)
 
 The `main` branch ruleset now includes a `required_signatures` rule alongside the existing `non_fast_forward` / `deletion` / `required_status_checks` rules. Every commit landing on `main` must carry a signature GitHub can verify — direct pushes by repo admins still go through via the ruleset's admin bypass, but PRs from contributors need a valid signature on every commit.
@@ -1320,6 +1308,20 @@ the `--dump-schema` and `build_admin` shape. Either:
 2. Hand-merge the two snippets from the generated templates — they are
    ~10 lines each.
 
+## [0.10.1] - 2026-05-27
+
+### Fixed — Admin dashboard cards include legacy `AdminEntry` models ([#2](https://github.com/abdulwahed-sweden/rustio/issues/2))
+
+Before this patch, `/admin` only showed cards for models registered through the new `AdminUiModel` registry — every `rustio new app`-scaffolded model was invisible on the dashboard, even though it appeared correctly in the sidebar.
+
+![Dashboard now shows ORDERS 0, USERS 0, PROJECTS 2, TASKS 5 — matching the sidebar](docs/screenshots/admin-dashboard.png)
+
+- The seam was in `admin/layout.rs::dashboard_render`. It received `legacy_entries: &[AdminEntry]` (it'd been passing them to `sidebar_merged`), but the `cards` list was built only from the new registry. New helper `collect_legacy_dashboard_entries` walks the legacy entries (skipping `core: true` framework-internal ones), dedupes against the new-engine registry by slug, and emits one `DashboardEntry` per remaining model — same shape as the new-engine half so both lists are interchangeable downstream.
+- Sidebar continues to be built from `sidebar_merged`'s own legacy walk — unchanged. Dedup rules match between sidebar and cards, so a model registered through both paths never double-counts.
+- Both the minijinja path and the no-template fallback path get the combined list, so a template failure can't silently regress the fix.
+- **Tests:** +4 in `admin::layout::tests` (happy path, `core`-filter, slug-dedup, missing-table-fallback). Workspace test count: **524 passed** (was 520).
+- Commit: [`a294287 fix(admin): include legacy AdminEntry models on the dashboard cards`](https://github.com/abdulwahed-sweden/rustio/commit/a294287).
+
 ## [0.10.0] - 2026-05-27
 
 ### Changed (breaking) — Admin rebuild
@@ -1795,7 +1797,8 @@ First public release.
 - `rustio-core = "x.y.z"` in generated projects is pinned to match CLI; lockstep
   releases expected until this stabilizes.
 
-[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/abdulwahed-sweden/rustio/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/abdulwahed-sweden/rustio/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/abdulwahed-sweden/rustio/compare/v0.3.1...v0.9.0
