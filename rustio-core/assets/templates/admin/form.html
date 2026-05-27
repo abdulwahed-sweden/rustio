@@ -9,22 +9,22 @@
   </header>
 
   {% if form.error %}
-    <div class="alert" role="alert">{{ form.error }}</div>
+    <div class="rio-alert rio-alert--danger" role="alert">{{ form.error }}</div>
   {% endif %}
 
   <div class="rio-card">
     <form method="post" action="{{ form.action }}" class="rio-form" novalidate>
       {% for field in form.fields %}
         <div class="rio-form__field">
-          <label for="{{ field.id }}" class="form-label">
+          <label for="{{ field.id }}" class="rio-form__label">
             {{ field.label }}{% if field.required %} <span class="rio-form__required">*</span>{% endif %}
           </label>
           {{ field.control | safe }}
           {% if field.help %}
-            <div class="form-text">{{ field.help }}</div>
+            <div class="rio-form__help">{{ field.help }}</div>
           {% endif %}
           {% if field.error %}
-            <div class="form-text" style="color: var(--accent);">{{ field.error }}</div>
+            <div class="rio-form__help rio-form__help--error">{{ field.error }}</div>
           {% endif %}
         </div>
       {% endfor %}

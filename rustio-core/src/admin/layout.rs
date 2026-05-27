@@ -814,7 +814,7 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
             ));
         }
         return format!(
-            r#"<select class="form-select" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
+            r#"<select class="rio-form__input" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
         );
     }
     if field.is_relation {
@@ -823,22 +823,22 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
         // form still submits. This matches the 0.9 relation-layer
         // rule: "never guess, never hide".
         return format!(
-            r#"<input type="number" step="1" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required} placeholder="id">"#,
+            r#"<input type="number" step="1" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required} placeholder="id">"#,
         );
     }
 
     match field.data_type {
         AdminDataType::Text => format!(
-            r#"<textarea class="form-control" id="{id}" name="{name}"{readonly}{required} rows="4">{val}</textarea>"#,
+            r#"<textarea class="rio-form__input rio-form__input--textarea" id="{id}" name="{name}"{readonly}{required} rows="4">{val}</textarea>"#,
         ),
         AdminDataType::Email => format!(
-            r#"<input type="email" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required} autocomplete="off">"#,
+            r#"<input type="email" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required} autocomplete="off">"#,
         ),
         AdminDataType::Integer => format!(
-            r#"<input type="number" step="1" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="number" step="1" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::Float => format!(
-            r#"<input type="number" step="any" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="number" step="any" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::Boolean => {
             let checked = if value == "1" || value.eq_ignore_ascii_case("true") {
@@ -850,14 +850,14 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
             // box is unchecked, so "unchecked" means "false" rather
             // than "omitted".
             format!(
-                r#"<input type="hidden" name="{name}" value="0"><div class="form-check"><input type="checkbox" class="form-check-input" id="{id}" name="{name}" value="1"{checked}{readonly}></div>"#,
+                r#"<input type="hidden" name="{name}" value="0"><input type="checkbox" class="rio-form__check" id="{id}" name="{name}" value="1"{checked}{readonly}>"#,
             )
         }
         AdminDataType::DateTime => format!(
-            r#"<input type="datetime-local" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="datetime-local" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::String => format!(
-            r#"<input type="text" class="form-control" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="text" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
     }
 }
@@ -2068,6 +2068,9 @@ mod tests {
         assert_eq!(humanize_status_label(""), "");
         assert_eq!(humanize_status_label("a"), "A");
         assert_eq!(humanize_status_label(" trim "), "Trim");
-        assert_eq!(humanize_status_label("multi_word_status"), "Multi word status");
+        assert_eq!(
+            humanize_status_label("multi_word_status"),
+            "Multi word status"
+        );
     }
 }

@@ -12,20 +12,20 @@
   </div>
 
   {% if error %}
-    <div class="alert" role="alert">{{ error }}</div>
+    <div class="rio-alert rio-alert--danger" role="alert">{{ error }}</div>
   {% endif %}
 
   <form method="post" action="/admin/login" novalidate>
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-    <div class="form-field">
-      <label for="email" class="form-label">Email</label>
-      <input type="email" class="form-control" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
+    <div class="rio-form__field">
+      <label for="email" class="rio-form__label">Email</label>
+      <input type="email" class="rio-form__input" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
     </div>
-    <div class="form-field">
-      <label for="password" class="form-label">Password</label>
-      <input type="password" class="form-control" id="password" name="password" autocomplete="current-password" required>
+    <div class="rio-form__field">
+      <label for="password" class="rio-form__label">Password</label>
+      <input type="password" class="rio-form__input" id="password" name="password" autocomplete="current-password" required>
     </div>
-    <button type="submit" class="btn btn-primary">Sign in</button>
+    <button type="submit" class="rio-btn rio-btn--primary rio-btn--block">Sign in</button>
   </form>
 </div>
 {% endblock %}

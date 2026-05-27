@@ -1,39 +1,37 @@
 {% extends "base_admin.html" %}
 
 {% block title %}Changes applied · {{ design.project_name | default('RustIO') }}{% endblock %}
-{% block page_title %}Changes applied{% endblock %}
 
 {% block admin_content %}
-<div class="card admin-card">
-  <div class="card-body">
-    <div class="alert alert-success" role="alert">
-      <strong>Changes applied.</strong> The planner wrote the files below atomically.
-      The live admin continues serving the old compiled binary until you restart.
-    </div>
+  <header class="rio-page-head">
+    <h1>Changes applied</h1>
+    <p>The planner wrote the files below atomically. The live admin continues serving the old compiled binary until you restart.</p>
+  </header>
 
-    <p class="mt-3 mb-1"><strong>Summary</strong></p>
+  <div class="rio-card">
+    <h2>Summary</h2>
     <ul>
       {% for line in applied.change_lines %}<li>{{ line | safe }}</li>{% endfor %}
     </ul>
 
-    <p class="mt-3 mb-1"><strong>Files written</strong></p>
+    <h2 style="margin-top: var(--space-5);">Files written</h2>
     <ul>
       {% for f in applied.files %}
         <li>{{ f.kind }} <code>{{ f.path }}</code></li>
       {% endfor %}
     </ul>
 
-    <p class="mt-3 mb-1"><strong>Next</strong></p>
-    <ol class="mb-0">
+    <h2 style="margin-top: var(--space-5);">Next</h2>
+    <ol>
       <li>Stop this admin server.</li>
       <li>Run <code>rustio migrate apply</code> to apply the new migration to the database.</li>
       <li>Run <code>cargo build</code> (or <code>rustio run</code>) to recompile against the updated <code>models.rs</code>.</li>
       <li>Run <code>rustio schema</code> so <code>rustio.schema.json</code> reflects the new shape, then click <a href="/admin">Reload schema</a> on the dashboard.</li>
     </ol>
+
+    <div class="rio-form__actions">
+      <a href="/admin" class="rio-btn rio-btn--ghost">Back to dashboard</a>
+      <a href="/admin/actions" class="rio-btn">View recent actions</a>
+    </div>
   </div>
-  <div class="card-footer bg-white d-flex justify-content-between">
-    <a href="/admin" class="btn btn-link">Back to dashboard</a>
-    <a href="/admin/actions" class="btn btn-outline-secondary">View recent actions</a>
-  </div>
-</div>
 {% endblock %}
