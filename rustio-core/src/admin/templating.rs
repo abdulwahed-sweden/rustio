@@ -222,20 +222,12 @@ fn embedded(name: &str) -> Option<&'static str> {
         .find_map(|(n, s)| if *n == name { Some(*s) } else { None })
 }
 
-/// Bootstrap 5 + framework CSS/JS served under `/admin/static/…`. The
-/// tuples are `(path_under_admin_static, content_type, bytes)`. Empty
-/// favicon entry keeps `/admin/static/favicon.svg` 404-free once wired.
+/// Framework CSS/JS served under `/admin/static/…`. The tuples are
+/// `(path_under_admin_static, content_type, bytes)`. As of 0.11.x the
+/// admin no longer ships Bootstrap — the design system is self-contained
+/// in `admin.css` (compiled from Tailwind v4 source by build.rs in
+/// Phase 2).
 pub const BUNDLED_ASSETS: &[(&str, &str, &[u8])] = &[
-    (
-        "bootstrap/bootstrap.min.css",
-        "text/css; charset=utf-8",
-        include_bytes!("../../assets/static/bootstrap/bootstrap.min.css"),
-    ),
-    (
-        "bootstrap/bootstrap.bundle.min.js",
-        "application/javascript; charset=utf-8",
-        include_bytes!("../../assets/static/bootstrap/bootstrap.bundle.min.js"),
-    ),
     (
         "admin.css",
         "text/css; charset=utf-8",
