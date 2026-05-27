@@ -1,0 +1,79 @@
+#!/bin/sh
+# Refuse to push unsigned commits to protected branches.
+#
+# Mirrors the `required_signatures` rule in the "Protect main" ruleset
+# on origin — catches the failure locally so you don't burn a network
+# round-trip discovering you forgot to sign.
+#
+# To install in this clone (one-time, per checkout):
+#   git config core.hooksPath scripts/hooks
+#
+# To override for a single push (e.g. break-glass):
+#   git push --no-verify
+
+set -eu
+
+# Branches this hook gates. Keep in sync with the protected-branch
+# ruleset glob on origin (currently `refs/heads/main`).
+protected_branches='main'
+
+# git provides the push range on stdin, one tuple per line:
+#   <local_ref> <local_sha> <remote_ref> <remote_sha>
+# A `0000…` sha on either side means "this ref is being created or
+# deleted on the remote".
+ZERO='0000000000000000000000000000000000000000'
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Pacify the linter for unused vars — they're still needed in the
+    # signature git relies on, even when this body ignores them.
+    : "$local_ref"
+
+    # Deleting the remote branch — nothing to verify.
+    [ "$local_sha" = "$ZERO" ] && continue
+
+    # Only enforce on the protected list.
+    branch=${remote_ref#refs/heads/}
+    case " $protected_branches " in
+        *" $branch "*) ;;
+        *) continue ;;
+    esac
+
+    # First-push case: no remote_sha, walk all reachable history from
+    # local_sha. Normal case: walk only the new commits.
+    if [ "$remote_sha" = "$ZERO" ]; then
+        range="$local_sha"
+    else
+        range="${remote_sha}..${local_sha}"
+    fi
+
+    # %G? returns one letter per commit:
+    #   G = good signature              · B = bad signature
+    #   U = good but unknown validity   · X = good but expired
+    #   Y = good but key expired        · R = good but key revoked
+    #   E = couldn't verify (key missing locally — still pushable)
+    #   N = no signature                — the one that always fails on origin
+    #
+    # We reject only on N (no signature). Anything else has a
+    # signature GitHub can attempt to verify server-side; if it
+    # fails there, the ruleset will surface the specific reason.
+    unsigned=$(git log --format='%h %G? %s' "$range" | awk '$2 == "N"')
+
+    if [ -n "$unsigned" ]; then
+        if [ -t 2 ]; then
+            red='\033[31m'; bold='\033[1m'; reset='\033[0m'
+        else
+            red=''; bold=''; reset=''
+        fi
+        printf '%s✗%s pre-push: unsigned commits would land on %s%s%s:\n' \
+            "$red" "$reset" "$bold" "$branch" "$reset" >&2
+        echo "$unsigned" | sed 's/^/    /' >&2
+        echo "" >&2
+        echo "The 'Protect main' ruleset on origin will reject these." >&2
+        echo "Sign them first, then push again:" >&2
+        echo "" >&2
+        echo "  one-time setup        see CONTRIBUTING.md § 'Signed commits'" >&2
+        echo "  resign in-place       git rebase -i --exec 'git commit --amend --no-edit -S' <base>" >&2
+        echo "  override locally      git push --no-verify  (NOT recommended)" >&2
+        exit 1
+    fi
+done

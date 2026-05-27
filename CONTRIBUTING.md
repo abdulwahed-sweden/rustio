@@ -78,6 +78,28 @@ If you have GPG already configured for another project, that works too — just 
 
 History is **not** rewritten: pre-existing unsigned commits stay as-is. Only commits being pushed going forward need signing. See the entry under `[Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md) for the policy change record.
 
+### Pre-push hook (optional, catches the problem earlier)
+
+The repo ships a `pre-push` hook at [`scripts/hooks/pre-push`](scripts/hooks/pre-push) that walks every commit you're about to push to `main` and refuses if any are unsigned — same answer the server gives, just instant and without a network round-trip. Opt in once per checkout:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+That's all — git now consults `scripts/hooks/<hook-name>` instead of the per-clone `.git/hooks/`. The hook fires on `git push` only when the destination is `refs/heads/main`; pushing to feature branches is unaffected.
+
+To bypass it for a single push (e.g. you're an admin doing a break-glass force-push and the ruleset's admin bypass already covers you):
+
+```bash
+git push --no-verify
+```
+
+To turn it off in this checkout entirely:
+
+```bash
+git config --unset core.hooksPath
+```
+
 ## Workspace layout
 
 - `rustio-core/` — runtime library (HTTP, router, middleware, context, errors, auth, ORM, admin, migrations).
