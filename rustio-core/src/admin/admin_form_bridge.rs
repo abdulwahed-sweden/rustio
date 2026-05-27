@@ -192,7 +192,7 @@ pub fn resolve_filter_type(field: &AdminUiField) -> FilterType {
 /// [`AdminRegistry`] for dynamic-by-URL-slug dispatch.
 pub trait AdminUiModel: Send + Sync + 'static {
     /// URL slug used as the `:model` path segment, e.g. `"users"` →
-    /// `/admin-new/users`. Must be unique within a registry.
+    /// `/admin/users`. Must be unique within a registry.
     fn slug(&self) -> &'static str;
 
     /// Human-readable display name shown in subtitles / banners,

@@ -476,7 +476,7 @@ impl Admin {
 
         // Build the AdminUiModel registry first — both the dashboard
         // (GET /admin) and the per-model routes (/admin/:model and
-        // the temporary /admin-new/:model alias) read from it.
+        // its create/edit/delete variants) read from it.
         let admin_new_registry = std::sync::Arc::new({
             let mut reg = crate::admin::admin_form_bridge::AdminRegistry::new();
             reg.register("users", crate::admin::layout::new_user_admin);
@@ -515,34 +515,6 @@ impl Admin {
                 Ok::<Response, Error>(with_admin_headers(crate::http::html(html)))
             }
         });
-        // /admin-new/:model is a temporary alias kept for verification
-        // during the migration to /admin/:model. Both routes call the
-        // same shared handler. Remove this block once parity is
-        // confirmed and bookmarks are migrated.
-        {
-            let db = db.clone();
-            let registry = admin_new_registry.clone();
-            let alias_entries = entries.clone();
-            router =
-                router.get("/admin-new/:model", move |req, params| {
-                    let db = db.clone();
-                    let registry = registry.clone();
-                    let legacy_entries = alias_entries.clone();
-                    async move {
-                        admin_model_index_get(&db, &registry, &legacy_entries, req, params).await
-                    }
-                });
-        }
-        {
-            let db = db.clone();
-            let registry = admin_new_registry.clone();
-            router = router.post("/admin-new/:model", move |req, params| {
-                let db = db.clone();
-                let registry = registry.clone();
-                async move { admin_model_index_post(&db, &registry, req, params).await }
-            });
-        }
-
         // Login + logout. Unauthenticated users *need* to reach
         // /admin/login; POST /admin/logout is CSRF-protected inside
         // the handler. GET /admin/logout is **public** — Django uses
@@ -806,8 +778,9 @@ impl Admin {
         // (login, logout, profile, password_change, actions,
         // suggestions, schema, assets) bound to their dedicated
         // handlers. Anything else under /admin/<slug> resolves into
-        // the new admin engine via the same shared helper that
-        // /admin-new/:model uses.
+        // the template-based list page. Form submits go to the
+        // dedicated /admin/:model/new and /admin/:model/:id/edit
+        // routes mounted below — there is no catch-all POST.
         {
             let db = db.clone();
             let registry = admin_new_registry.clone();
@@ -821,15 +794,6 @@ impl Admin {
                         admin_model_index_get(&db, &registry, &legacy_entries, req, params).await
                     }
                 });
-        }
-        {
-            let db = db.clone();
-            let registry = admin_new_registry.clone();
-            router = router.post("/admin/:model", move |req, params| {
-                let db = db.clone();
-                let registry = registry.clone();
-                async move { admin_model_index_post(&db, &registry, req, params).await }
-            });
         }
 
         // 0.10 stage 4f-a: GET /admin/:model/new and
@@ -5059,100 +5023,6 @@ async fn admin_model_delete_post(
     Ok(with_admin_headers(redirect(&format!(
         "/admin/{model_slug}"
     ))))
-}
-
-async fn admin_model_index_post(
-    db: &Db,
-    registry: &crate::admin::admin_form_bridge::AdminRegistry,
-    req: Request,
-    params: crate::router::Params,
-) -> Result<Response, Error> {
-    if let Err(resp) = admin_guard(req.ctx()) {
-        return Ok(resp);
-    }
-    let model_slug = params.get("model").unwrap_or("").to_string();
-    let Some(model) = registry.get(&model_slug) else {
-        return Err(Error::NotFound);
-    };
-    // Extract URL state before consuming the body — `read_form` takes
-    // ownership of the request.
-    let q_map = req.query().into_map();
-    let query = q_map
-        .get("q")
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    let page = q_map
-        .get("page")
-        .and_then(|p| p.parse::<i64>().ok())
-        .filter(|p| *p > 0)
-        .unwrap_or(1);
-    let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
-    let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
-    let filters: std::collections::HashMap<String, String> = q_map
-        .iter()
-        .filter(|(k, v)| {
-            !v.is_empty()
-                && k.as_str() != "q"
-                && k.as_str() != "page"
-                && k.as_str() != "id"
-                && k.as_str() != "sort"
-                && k.as_str() != "dir"
-                && k.as_str() != "advanced"
-        })
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    let advanced = q_map
-        .get("advanced")
-        .map(|s| !s.is_empty())
-        .unwrap_or(false);
-    let form_data = read_form(req).await?;
-    let bulk_action = form_data
-        .get("bulk_action")
-        .filter(|s| !s.is_empty())
-        .map(String::from);
-    let bulk_ids: Vec<String> = form_data
-        .get_all("ids")
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect();
-    let body_params = form_data.into_map();
-    let html = if let Some(action) = bulk_action.as_deref() {
-        crate::admin::layout::admin_index_bulk(
-            db,
-            registry,
-            &*model,
-            action,
-            &bulk_ids,
-            query.as_deref(),
-            &filters,
-            sort.as_deref(),
-            dir.as_deref(),
-            advanced,
-        )
-        .await
-    } else {
-        let editing_id = body_params
-            .get("id")
-            .map(String::as_str)
-            .filter(|s| !s.is_empty());
-        crate::admin::layout::admin_index_post(
-            db,
-            registry,
-            &*model,
-            &body_params,
-            editing_id,
-            query.as_deref(),
-            page,
-            &filters,
-            sort.as_deref(),
-            dir.as_deref(),
-            advanced,
-        )
-        .await
-    };
-    Ok(with_admin_headers(crate::http::html(html)))
 }
 
 // ---------------------------------------------------------------------------
