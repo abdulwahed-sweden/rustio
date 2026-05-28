@@ -1,51 +1,70 @@
 /* ============================================================================
- * RustIO admin — lifted-dark editorial design system
+ * RustIO admin — design system (Phase 3)
  *
- * A calm, neutral interface. Nine carefully spaced grays carry every
- * structural decision; one warm orange (#FF6A3D) is the only chromatic
- * colour in the entire system, used at 5–8% of any visible surface.
+ * Tailwind v4 source. Compiled at `cargo build` time by `build.rs` →
+ * `$OUT_DIR/admin.css` → `include_bytes!`'d into the binary.
  *
- * Surface ladder (intentional two-step lift):
- *   canvas  --bg-canvas    #1B1B1F   the page background
- *   surface --bg-surface   #2A2A2F   cards sitting on the canvas
- *   topbar  --bg-elevated  #36363C   lifted off the page
+ *   :root  — variable definitions that browsers honour even if Tailwind
+ *            is bypassed (passthrough mode). Names mirrored from @theme.
+ *   @theme — same tokens, exposed to Tailwind's utility generator so
+ *            classes like `bg-canvas` and `text-primary` resolve.
+ *   @layer base       — resets and global type rules.
+ *   @layer components — named primitives templates use directly.
  *
- * Strict rules from the brief:
+ * The component layer is split into two zones:
+ *   (a) Phase 3 canonical vocabulary — .rio-topbar, .rio-sidebar,
+ *       .rio-btn, .rio-card, .rio-stat, .rio-pill, .rio-table, etc.
+ *       These match the brief verbatim.
+ *   (b) Interim vocabulary — .rio-topnav, .rio-statusbar, .rio-stat-card,
+ *       .rio-page-head, .rio-form*, .rio-auth, .rio-pagination, .rio-alert,
+ *       .rio-detail-list, .rio-meta, .rio-empty. Used by templates not yet
+ *       swept onto the canonical names. Removed in Phase 6 once Phase 5
+ *       (reference page) + Phase 6 sweep land.
+ *
+ * Hard rules (carry over from the original brief):
  *   - no pure black, no pure white
- *   - all borders 0.5px (never 1px / 2px); featured cards use accent border
- *   - font weights 400 and 500 only (never 600+)
+ *   - all borders 0.5px (featured cards use the accent border)
+ *   - font weights 400 and 500 only — never 600+
  *   - sentence case everywhere, no Title Case, no ALL CAPS
- *   - body text 16px / line-height 1.7 — no 13/14px paragraphs
- *   - accent locations are budgeted: logo, hero word, primary CTA, status
- *     dot, one featured card, link hover, input focus — nothing else
+ *   - body text 16px / line-height 1.7
+ *   - accent #FF6A3D appears at ≤7 locations per viewport
  * ============================================================================ */
 
+@import "tailwindcss";
+
+/* ----------------------------------------------------------------------------
+ * Token definitions — readable by browsers without Tailwind compilation.
+ * Tailwind's @theme block below holds the same values; both live here so
+ * the file remains useful even in passthrough mode (when build.rs falls
+ * back to a verbatim copy).
+ * -------------------------------------------------------------------------- */
+
 :root {
-  /* Grayscale ladder — 9 steps, all with a subtle purple-leaning undertone */
-  --gray-950: #1B1B1F;   /* page canvas */
-  --gray-900: #2A2A2F;   /* primary surface */
-  --gray-800: #36363C;   /* elevated surface */
-  --gray-700: #45454C;   /* default borders */
-  --gray-600: #5C5C64;   /* secondary borders */
-  --gray-500: #7A7A82;   /* muted icons, disabled states */
-  --gray-400: #9C9CA4;   /* subtitle text, secondary text */
-  --gray-300: #C4C4CA;   /* labels, tertiary emphasis */
-  --gray-100: #F0F0F4;   /* primary text */
+  /* Grayscale ladder — 9 steps with a subtle purple undertone */
+  --color-gray-950: #1B1B1F;   /* page canvas */
+  --color-gray-900: #2A2A2F;   /* primary surface */
+  --color-gray-800: #36363C;   /* elevated surface */
+  --color-gray-700: #45454C;   /* default borders */
+  --color-gray-600: #5C5C64;   /* secondary borders */
+  --color-gray-500: #7A7A82;   /* muted icons, disabled */
+  --color-gray-400: #9C9CA4;   /* secondary text */
+  --color-gray-300: #C4C4CA;   /* tertiary text, labels */
+  --color-gray-100: #F0F0F4;   /* primary text */
 
-  /* Single accent */
-  --accent:        #FF6A3D;
-  --accent-text:   #2A0A04;   /* text on accent background */
-  --accent-deep:   #5C2410;   /* secondary text on accent background */
+  /* Single accent (#FF6A3D family) */
+  --color-accent:      #FF6A3D;
+  --color-accent-text: #2A0A04;
+  --color-accent-deep: #5C2410;
 
-  /* Semantic aliases — components use these, not the raw scale */
-  --bg-canvas:      var(--gray-950);
-  --bg-surface:     var(--gray-900);
-  --bg-elevated:    var(--gray-800);
-  --border-default: var(--gray-700);
-  --border-strong:  var(--gray-600);
-  --text-primary:   var(--gray-100);
-  --text-secondary: var(--gray-400);
-  --text-tertiary:  var(--gray-300);
+  /* Semantic aliases — what component selectors actually consume */
+  --color-canvas:        var(--color-gray-950);
+  --color-surface:       var(--color-gray-900);
+  --color-elevated:      var(--color-gray-800);
+  --color-border:        var(--color-gray-700);
+  --color-border-strong: var(--color-gray-600);
+  --color-text-primary:   var(--color-gray-100);
+  --color-text-secondary: var(--color-gray-400);
+  --color-text-tertiary:  var(--color-gray-300);
 
   /* Type scale */
   --text-hero:  26px;   /* H1, hero headline */
@@ -74,865 +93,828 @@
   --space-8: 48px;
 
   /* Fonts */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* Interim aliases — pre-Phase-3 templates still reference these. Folded
+   * into the canonical names above in Phase 6. */
+  --gray-950: var(--color-gray-950);
+  --gray-900: var(--color-gray-900);
+  --gray-800: var(--color-gray-800);
+  --gray-700: var(--color-gray-700);
+  --gray-600: var(--color-gray-600);
+  --gray-500: var(--color-gray-500);
+  --gray-400: var(--color-gray-400);
+  --gray-300: var(--color-gray-300);
+  --gray-100: var(--color-gray-100);
+  --accent:        var(--color-accent);
+  --accent-text:   var(--color-accent-text);
+  --accent-deep:   var(--color-accent-deep);
+  --bg-canvas:      var(--color-canvas);
+  --bg-surface:     var(--color-surface);
+  --bg-elevated:    var(--color-elevated);
+  --border-default: var(--color-border);
+  --border-strong:  var(--color-border-strong);
+  --text-primary:   var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-tertiary:  var(--color-text-tertiary);
 }
 
 /* ----------------------------------------------------------------------------
- * Reset + base typography
+ * Tailwind v4 theme tokens — drives auto-generation of utility classes
+ * (bg-canvas, text-primary, border-default, etc.). Same values as :root
+ * above. Tailwind reads this; browsers ignore it.
  * -------------------------------------------------------------------------- */
 
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+@theme {
+  --color-gray-950: #1B1B1F;
+  --color-gray-900: #2A2A2F;
+  --color-gray-800: #36363C;
+  --color-gray-700: #45454C;
+  --color-gray-600: #5C5C64;
+  --color-gray-500: #7A7A82;
+  --color-gray-400: #9C9CA4;
+  --color-gray-300: #C4C4CA;
+  --color-gray-100: #F0F0F4;
 
-body.admin-shell,
-body.admin-auth {
-  background: var(--bg-canvas);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  font-weight: 400;
-  line-height: 1.7;
-  letter-spacing: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+  --color-accent:      #FF6A3D;
+  --color-accent-text: #2A0A04;
+  --color-accent-deep: #5C2410;
 
-/* Headings — weight 500, never heavier. Negative letter-spacing per spec. */
-body.admin-shell h1, body.admin-shell h2, body.admin-shell h3,
-body.admin-shell h4, body.admin-shell h5, body.admin-shell h6,
-body.admin-auth  h1, body.admin-auth  h2, body.admin-auth  h3 {
-  margin: 0;
-  color: var(--text-primary);
-  font-weight: 500;
-  font-family: var(--font-sans);
-}
+  --color-canvas:        var(--color-gray-950);
+  --color-surface:       var(--color-gray-900);
+  --color-elevated:      var(--color-gray-800);
+  --color-border:        var(--color-gray-700);
+  --color-border-strong: var(--color-gray-600);
+  --color-text-primary:   var(--color-gray-100);
+  --color-text-secondary: var(--color-gray-400);
+  --color-text-tertiary:  var(--color-gray-300);
 
-body.admin-shell h1, body.admin-auth h1 {
-  font-size: var(--text-hero);
-  line-height: 1.3;
-  letter-spacing: -0.5px;
-}
-body.admin-shell h2 {
-  font-size: var(--text-h2);
-  line-height: 1.35;
-  letter-spacing: -0.2px;
-}
-body.admin-shell h3 {
-  font-size: var(--text-h3);
-  line-height: 1.4;
-  letter-spacing: -0.2px;
-}
-
-body.admin-shell p,
-body.admin-auth  p {
-  margin: 0;
-  font-size: var(--text-body);
-  line-height: 1.7;
-  color: var(--text-secondary);
-}
-
-body.admin-shell a,
-body.admin-auth  a {
-  color: inherit;
-  text-decoration: none;
-  transition: color .15s ease;
-}
-body.admin-shell a:hover,
-body.admin-auth  a:hover {
-  color: var(--accent);
-}
-
-body.admin-shell code,
-body.admin-auth  code {
-  font-family: var(--font-mono);
-  font-size: var(--text-mono);
-}
-
-::selection {
-  background: var(--accent);
-  color: var(--accent-text);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
 }
 
 /* ----------------------------------------------------------------------------
- * Neutralise Bootstrap classes the templates still emit.
- * Keeps the cascade predictable as we migrate page-by-page; eventually the
- * templates will use only .rio-* classes and this block becomes redundant.
+ * Base layer — global resets and default type rules.
  * -------------------------------------------------------------------------- */
 
-body.admin-shell .btn,
-body.admin-shell .form-label,
-body.admin-shell .form-control,
-body.admin-shell .form-select,
-body.admin-shell .alert,
-body.admin-shell .text-muted,
-body.admin-shell .text-danger,
-body.admin-shell .small,
-body.admin-shell .display-6 {
-  font-family: var(--font-sans);
-  font-weight: 400;
-}
-
-body.admin-shell .text-muted    { color: var(--text-secondary); }
-body.admin-shell .text-danger   { color: var(--accent); }
-
-/* ----------------------------------------------------------------------------
- * Shell layout — three rows: topbar / main / statusbar
- * -------------------------------------------------------------------------- */
-
-.rio-shell {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  min-height: 100vh;
-  background: var(--bg-canvas);
-}
-
-.rio-main {
-  width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
-  /* 36px top · 28px sides · 28px bottom. The bottom was originally
-   * --space-8 (48px); trimmed to --space-6 so the pagination row on
-   * /admin/<model> sits closer to the viewport fold at typical
-   * monitor heights. Statusbar still anchors at the page bottom via
-   * the .rio-shell grid. */
-  padding: var(--space-7) var(--space-6) var(--space-6);
-}
-
-/* ----------------------------------------------------------------------------
- * Topbar — lifted off the canvas by sitting on --bg-elevated
- *
- * Two-step lift makes the topbar feel architectural rather than chrome:
- *   canvas #1B1B1F  →  topbar #36363C  (two shades brighter)
- * -------------------------------------------------------------------------- */
-
-.rio-topnav {
-  background: var(--bg-elevated);
-  border-bottom: 0.5px solid var(--border-default);
-  padding: var(--space-4) var(--space-6);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-6);
-}
-
-.rio-topnav__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  color: var(--text-primary);
-}
-
-.rio-topnav__mark {
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: var(--text-meta);
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.rio-topnav__name {
-  font-size: var(--text-h3);
-  font-weight: 500;
-  color: var(--text-primary);
-  letter-spacing: -0.2px;
-}
-
-.rio-topnav__links {
-  display: flex;
-  gap: var(--space-6);
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  flex: 1;
-  justify-content: center;
-}
-
-.rio-topnav__link {
-  font-size: var(--text-meta);
-  color: var(--text-secondary);
-  text-decoration: none;
-}
-
-.rio-topnav__link:hover {
-  color: var(--text-primary);
-}
-
-.rio-topnav__link--active {
-  color: var(--text-primary);
-}
-
-.rio-topnav__status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-4);
-  color: var(--text-tertiary);
-  font-size: var(--text-meta);
-}
-
-.rio-topnav__dot {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.rio-topnav__dot::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.rio-topnav__email {
-  color: var(--text-tertiary);
-}
-
-.rio-topnav__logout {
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: color .15s ease;
-}
-
-.rio-topnav__logout:hover {
-  color: var(--text-primary);
-}
-
-/* ----------------------------------------------------------------------------
- * Status bar — subdued bottom strip
- * -------------------------------------------------------------------------- */
-
-.rio-statusbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-6);
-  border-top: 0.5px solid var(--border-default);
-  background: var(--bg-canvas);
-  color: var(--text-secondary);
-  font-size: var(--text-small);
-}
-
-.rio-statusbar__sep {
-  color: var(--border-default);
-}
-
-.rio-statusbar__spacer { flex: 1; }
-
-/* ----------------------------------------------------------------------------
- * Buttons
- *
- * Primary: accent background, --accent-text on top.
- * Secondary: transparent with 0.5px border-strong outline.
- * -------------------------------------------------------------------------- */
-
-.rio-btn,
-body.admin-shell .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  padding: 12px 22px;
-  border-radius: var(--radius-md);
-  border: 0.5px solid var(--border-strong);
-  background: transparent;
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: 0;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background .15s ease, color .15s ease, border-color .15s ease, filter .15s ease;
-}
-
-.rio-btn:hover,
-body.admin-shell .btn:hover {
-  background: var(--bg-surface);
-}
-
-.rio-btn--primary,
-body.admin-shell .btn-primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
-  font-weight: 500;
-}
-
-.rio-btn--primary:hover,
-body.admin-shell .btn-primary:hover,
-body.admin-shell .btn-primary:focus {
-  background: var(--accent);
-  color: var(--accent-text);
-  filter: brightness(1.05);
-}
-
-.rio-btn--primary:active,
-body.admin-shell .btn-primary:active {
-  transform: scale(0.98);
-}
-
-.rio-btn--ghost,
-body.admin-shell .btn-link {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-secondary);
-  padding: 8px 0;
-  font-weight: 400;
-}
-
-.rio-btn--ghost:hover,
-body.admin-shell .btn-link:hover {
-  background: transparent;
-  color: var(--accent);
-}
-
-body.admin-shell .btn-link.text-danger {
-  color: var(--text-secondary) !important;
-}
-body.admin-shell .btn-link.text-danger:hover {
-  color: var(--accent) !important;
-}
-
-/* ----------------------------------------------------------------------------
- * Cards
- *
- * Generic card: sits on the canvas, --bg-surface fill, 0.5px border,
- * 12px radius, 22px 24px padding (per spec).
- * -------------------------------------------------------------------------- */
-
-.rio-card {
-  background: var(--bg-surface);
-  border: 0.5px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5) var(--space-6);
-}
-
-/* ----------------------------------------------------------------------------
- * Form fields
- *
- * 44px height, --bg-surface fill, 0.5px border, focus turns the
- * border to --accent (no glow, no shadow per spec).
- * -------------------------------------------------------------------------- */
-
-/* Page header block — used on every interior page */
-.rio-page-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-bottom: var(--space-7);
-  max-width: 640px;
-}
-
-.rio-page-head > h1 { margin: 0; }
-.rio-page-head > p  { color: var(--text-secondary); }
-
-/* Page-head variant with a CTA on the right */
-.rio-page-head--with-action {
-  flex-direction: row;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-5);
-  max-width: none;
-}
-
-.rio-page-head--with-action > div { max-width: 640px; }
-
-.rio-form {
-  max-width: 720px;
-}
-
-.rio-form__actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-top: var(--space-7);
-  padding-top: var(--space-5);
-  border-top: 0.5px solid var(--border-default);
-}
-
-/* ----------------------------------------------------------------------------
- * Tables — live inside a .rio-card. No outer borders on the table itself;
- * only inter-row dividers. Sentence-case headers in --text-secondary.
- * -------------------------------------------------------------------------- */
-
-.rio-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0;
-}
-
-.rio-table thead th {
-  text-align: left;
-  font-size: var(--text-small);
-  font-weight: 500;
-  color: var(--text-secondary);
-  padding: 0 var(--space-3) var(--space-3) 0;
-  border-bottom: 0.5px solid var(--border-default);
-  letter-spacing: 0;
-  text-transform: none;
-  white-space: nowrap;
-}
-
-.rio-table tbody td {
-  padding: var(--space-4) var(--space-3) var(--space-4) 0;
-  border-bottom: 0.5px solid var(--border-default);
-  color: var(--text-primary);
-  font-size: var(--text-body);
-  font-weight: 400;
-  vertical-align: middle;
-}
-
-.rio-table thead th:last-child,
-.rio-table tbody td:last-child {
-  padding-right: 0;
-  text-align: right;
-}
-
-.rio-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-/* FK links inside table cells */
-.rio-table a {
-  color: var(--text-primary);
-  border-bottom: 0.5px solid var(--border-default);
-  text-decoration: none;
-  transition: color .15s ease, border-color .15s ease;
-}
-.rio-table a:hover {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-/* Tabular-num utility for currency / count columns */
-.rio-num,
-body.admin-shell .num {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ----------------------------------------------------------------------------
- * Status cells — no pills, no brackets, no colour differentiation.
- *
- * The Rust renderer still emits `<span class="badge-status" data-status="…">`
- * but the spec bans coloured pills and non-accent text colours. So every
- * status renders as sentence-case --text-secondary text. Information is
- * preserved (you can read the value); colour-coding is not.
- * -------------------------------------------------------------------------- */
-
-.badge-status,
-[data-status] {
-  display: inline;
-  padding: 0;
-  background: transparent;
-  border-radius: 0;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.badge-status::before,
-.badge-status::after,
-[data-status]::before,
-[data-status]::after {
-  content: none;
-}
-
-/* ----------------------------------------------------------------------------
- * Stat cards — dashboard
- *
- * Auto-fit grid of cards: --bg-surface fill, 0.5px border, 8px radius,
- * 16x18px padding. Numbers 22px weight 500.
- *
- * One card per row can be marked "featured" (the model with the most
- * records); that card gets a 0.5px --accent border and an --accent number.
- * Within the 5-8% accent budget.
- * -------------------------------------------------------------------------- */
-
-.rio-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--space-3);
-}
-
-.rio-stat-card {
-  display: block;
-  background: var(--bg-surface);
-  border: 0.5px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: var(--space-4) 18px;
-  color: var(--text-primary);
-  text-decoration: none;
-  transition: border-color .15s ease;
-}
-
-.rio-stat-card:hover {
-  border-color: var(--border-strong);
-}
-
-.rio-stat-card__number {
-  font-size: var(--text-stat);
-  font-weight: 500;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.2px;
-  line-height: 1.2;
-}
-
-.rio-stat-card__label {
-  font-size: var(--text-meta);
-  font-weight: 400;
-  color: var(--text-secondary);
-  margin-top: var(--space-1);
-}
-
-.rio-stat-card--featured {
-  border-color: var(--accent);
-}
-
-.rio-stat-card--featured .rio-stat-card__number {
-  color: var(--accent);
-}
-
-/* ----------------------------------------------------------------------------
- * Pagination — small, unobtrusive
- * -------------------------------------------------------------------------- */
-
-body.admin-shell .pagination,
-.rio-pagination {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  list-style: none;
-  margin: var(--space-5) 0 0;
-  padding: 0;
-}
-
-body.admin-shell .page-link,
-.rio-pagination__link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  height: 32px;
-  padding: 0 10px;
-  background: transparent;
-  border: 0.5px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  margin-right: var(--space-2);
-  color: var(--text-secondary);
-  font-size: var(--text-small);
-  font-weight: 400;
-  text-decoration: none;
-  transition: color .15s ease, border-color .15s ease;
-}
-
-body.admin-shell .page-link:hover {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-}
-
-body.admin-shell .page-item.active .page-link,
-.rio-pagination__link--active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
-}
-
-/* Highlight word in a hero — used by the dashboard headline. The single
- * place inside body copy where the accent appears. */
-.rio-accent-word {
-  color: var(--accent);
-}
-
-/* ----------------------------------------------------------------------------
- * Auth (sign-in) — centred card on the canvas
- * -------------------------------------------------------------------------- */
-
-body.admin-auth {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: var(--space-6) var(--space-4);
-  background: var(--bg-canvas);
-  color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  line-height: 1.7;
-}
-
-.rio-auth {
-  width: 100%;
-  max-width: 380px;
-  background: var(--bg-surface);
-  border: 0.5px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  padding: var(--space-7) var(--space-6);
-}
-
-.rio-auth__header {
-  text-align: center;
-  margin-bottom: var(--space-7);
-}
-
-.rio-auth__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--accent-text);
-  font-weight: 500;
-  font-size: var(--text-h3);
-  margin-bottom: var(--space-4);
-}
-
-.rio-auth__title {
-  font-size: var(--text-hero);
-  font-weight: 500;
-  color: var(--text-primary);
-  letter-spacing: -0.5px;
-  margin: 0;
-}
-
-.rio-auth__subtitle {
-  margin-top: var(--space-1);
-  font-size: var(--text-body);
-  color: var(--text-secondary);
-}
-
-body.admin-auth .form-control {
-  width: 100%;
-  height: 44px;
-  background: var(--bg-canvas);
-  color: var(--text-primary);
-  border: 0.5px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: 0 14px;
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-}
-
-body.admin-auth .form-control:focus {
-  border-color: var(--accent);
-  outline: none;
-  box-shadow: none;
-}
-
-body.admin-auth .form-label {
-  display: block;
-  font-size: var(--text-meta);
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: var(--space-2);
-}
-
-body.admin-auth .form-field { margin-bottom: var(--space-5); }
-
-body.admin-auth .btn-primary {
-  display: block;
-  width: 100%;
-  background: var(--accent);
-  color: var(--accent-text);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 12px;
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  font-weight: 500;
-  cursor: pointer;
-  margin-top: var(--space-4);
-}
-
-body.admin-auth .btn-primary:hover { filter: brightness(1.05); }
-body.admin-auth .btn-primary:active { transform: scale(0.98); }
-
-body.admin-auth .alert {
-  background: transparent;
-  border: 0.5px solid var(--accent);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--text-body);
-  margin-bottom: var(--space-5);
-}
-
-.rio-form__field {
-  margin-bottom: var(--space-6);
-}
-
-body.admin-shell .form-label,
-.rio-form__label {
-  display: block;
-  font-size: var(--text-meta);
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: var(--space-2);
-  letter-spacing: 0;
-}
-
-.rio-form__required {
-  color: var(--accent);
-  font-weight: 400;
-}
-
-body.admin-shell .form-control,
-body.admin-shell .form-select,
-.rio-form__input {
-  width: 100%;
-  height: 44px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  border: 0.5px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: 0 14px;
-  font-family: var(--font-sans);
-  font-size: var(--text-body);
-  font-weight: 400;
-  outline: none;
-  transition: border-color .15s ease;
-}
-
-body.admin-shell .form-control::placeholder,
-.rio-form__input::placeholder {
-  color: var(--text-secondary);
-}
-
-body.admin-shell .form-control:focus,
-body.admin-shell .form-select:focus,
-.rio-form__input:focus {
-  border-color: var(--accent);
-  box-shadow: none;
-}
-
-/* Native select arrow recoloured for the dark surface */
-body.admin-shell .form-select {
-  background-image:
-    linear-gradient(45deg,  transparent 50%, var(--text-secondary) 50%),
-    linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
-  background-position: calc(100% - 18px) center, calc(100% - 13px) center;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-  padding-right: 36px;
-}
-
-body.admin-shell .form-text {
-  font-size: var(--text-small);
-  color: var(--text-secondary);
-  margin-top: var(--space-2);
-  line-height: 1.5;
-}
-
-body.admin-shell .alert,
-.rio-alert {
-  background: transparent;
-  border: 0.5px solid var(--border-default);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  padding: var(--space-3) var(--space-4);
-  font-size: var(--text-body);
-  margin-bottom: var(--space-5);
-}
-
-.rio-alert--danger { border-color: var(--accent); }
-
-/* ----------------------------------------------------------------------------
- * Phase 1a additions — vocabulary that the post-Bootstrap templates emit.
- * Folded into the canonical design system in Phase 2-3.
- * -------------------------------------------------------------------------- */
-
-.rio-form__help {
-  font-size: var(--text-small);
-  color: var(--text-secondary);
-  margin-top: var(--space-2);
-  line-height: 1.5;
-}
-.rio-form__help--error { color: var(--accent); }
-
-.rio-form__input--inline {
-  width: auto;
-  min-width: 12rem;
-}
-
-.rio-form__input--textarea {
-  height: auto;
-  min-height: 110px;
-  padding: var(--space-3) 14px;
-  line-height: 1.6;
-  resize: vertical;
-}
-
-.rio-form__check {
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
-.rio-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
-  flex-wrap: wrap;
-}
-.rio-toolbar__count {
-  margin-left: auto;
-  color: var(--text-secondary);
-  font-size: var(--text-small);
-}
-
-.rio-empty {
-  text-align: center;
-  padding: var(--space-7) var(--space-4);
-  color: var(--text-secondary);
-}
-.rio-empty p { margin: 0 0 var(--space-2); }
-.rio-empty p:last-child { margin-bottom: 0; }
-.rio-empty strong { color: var(--text-primary); font-weight: 500; }
-
-.rio-detail-list {
-  display: grid;
-  grid-template-columns: minmax(120px, 200px) 1fr;
-  gap: var(--space-3) var(--space-5);
-  margin: 0;
-}
-.rio-detail-list dt {
-  font-size: var(--text-meta);
-  color: var(--text-secondary);
-  margin: 0;
-}
-.rio-detail-list dd {
-  margin: 0;
-  font-size: var(--text-body);
-  color: var(--text-primary);
-}
-
-.rio-meta {
-  font-size: var(--text-small);
-  color: var(--text-secondary);
-  margin: 0 0 var(--space-2);
-}
-
-.rio-btn--block {
-  width: 100%;
-  justify-content: center;
+@layer base {
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  html {
+    font-family: var(--font-sans);
+    background: var(--color-canvas);
+    color: var(--color-text-primary);
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-text-primary);
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    font-weight: 400;
+    line-height: 1.7;
+    letter-spacing: 0;
+  }
+  h1, h2, h3, h4 {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    letter-spacing: -0.2px;
+  }
+  h1 { font-size: var(--text-hero); line-height: 1.3; letter-spacing: -0.5px; }
+  h2 { font-size: var(--text-h2);  line-height: 1.35; }
+  h3 { font-size: var(--text-h3);  line-height: 1.4; }
+  h4 { font-size: var(--text-h3);  line-height: 1.4; }
+  p  { margin: 0; font-size: var(--text-body); line-height: 1.7; color: var(--color-text-secondary); }
+  a  { color: var(--color-text-primary); text-decoration: none; transition: color .15s ease; }
+  a:hover { color: var(--color-accent); }
+  code { font-family: var(--font-mono); font-size: var(--text-mono); }
+  ::selection { background: var(--color-accent); color: var(--color-accent-text); }
+}
+
+/* ============================================================================
+ * Components — Phase 3 canonical vocabulary
+ * Use these primitives directly from templates. One class per primitive
+ * with --modifier variants where the brief calls for them.
+ * ============================================================================ */
+
+@layer components {
+
+  /* ---- Shell layout (2-col: sidebar + main, per Phase 3 spec) ----------- */
+  .rio-shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: 100vh;
+    background: var(--color-canvas);
+  }
+  .rio-main {
+    width: 100%;
+    max-width: 1200px;
+    padding: 28px 32px;
+    background: var(--color-canvas);
+  }
+
+  /* ---- Sidebar (Django-admin style left nav) ---------------------------- */
+  .rio-sidebar {
+    background: var(--color-elevated);
+    border-right: 0.5px solid var(--color-border);
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .rio-sidebar__section {
+    font-size: var(--text-small);
+    color: var(--color-text-secondary);
+    padding: 12px 10px 6px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .rio-sidebar__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-body);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .rio-sidebar__item:hover {
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+  }
+  .rio-sidebar__item.is-active {
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+
+  /* ---- Topbar (lifted on --color-elevated) ------------------------------ */
+  .rio-topbar {
+    background: var(--color-elevated);
+    border-bottom: 0.5px solid var(--color-border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-6);
+  }
+  .rio-topbar__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--color-text-primary);
+    text-decoration: none;
+  }
+  .rio-topbar__mark {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+    font-size: var(--text-meta);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rio-topbar__wordmark {
+    font-size: var(--text-h3);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    letter-spacing: -0.2px;
+  }
+  .rio-topbar__nav {
+    display: flex;
+    gap: 24px;
+  }
+  .rio-topbar__link {
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+  }
+  .rio-topbar__link:hover,
+  .rio-topbar__link.is-active {
+    color: var(--color-text-primary);
+  }
+  .rio-topbar__status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-meta);
+    color: var(--color-text-tertiary);
+  }
+  .rio-topbar__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-accent);
+    display: inline-block;
+  }
+
+  /* ---- Buttons ---------------------------------------------------------- */
+  .rio-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: 12px 22px;
+    border-radius: var(--radius-md);
+    border: 0.5px solid var(--color-border-strong);
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: 0;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .15s ease, color .15s ease, border-color .15s ease, filter .15s ease;
+  }
+  .rio-btn:hover { background: var(--color-surface); }
+  .rio-btn:active { transform: scale(0.98); }
+
+  .rio-btn--primary {
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+    border-color: var(--color-accent);
+    font-weight: 500;
+  }
+  .rio-btn--primary:hover { filter: brightness(1.05); background: var(--color-accent); color: var(--color-accent-text); }
+  .rio-btn--primary:active { transform: scale(0.98); }
+
+  .rio-btn--secondary {
+    background: transparent;
+    color: var(--color-text-primary);
+    border: 0.5px solid var(--color-border-strong);
+    font-weight: 400;
+  }
+  .rio-btn--secondary:hover { background: var(--color-surface); }
+
+  .rio-btn--ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--color-text-secondary);
+    padding: 8px 0;
+    font-weight: 400;
+  }
+  .rio-btn--ghost:hover { background: transparent; color: var(--color-accent); }
+
+  .rio-btn--block {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* ---- Cards ------------------------------------------------------------ */
+  .rio-card {
+    background: var(--color-surface);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 22px 24px;
+  }
+  .rio-card--featured { border-color: var(--color-accent); }
+  .rio-card__title {
+    font-size: var(--text-h3);
+    font-weight: 500;
+    margin: 0 0 8px;
+  }
+  .rio-card__meta {
+    font-size: var(--text-small);
+    color: var(--color-text-secondary);
+  }
+
+  /* ---- Stat (dashboard primitives) -------------------------------------- */
+  .rio-stat {
+    background: var(--color-surface);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    color: var(--color-text-primary);
+    text-decoration: none;
+    transition: border-color .15s ease;
+    display: block;
+  }
+  .rio-stat:hover { border-color: var(--color-border-strong); }
+  .rio-stat--featured { border-color: var(--color-accent); }
+  .rio-stat__value {
+    font-size: var(--text-stat);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.2px;
+    line-height: 1.2;
+  }
+  .rio-stat--featured .rio-stat__value { color: var(--color-accent); }
+  .rio-stat__label {
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+    margin-top: var(--space-1);
+  }
+
+  /* ---- Tag pill --------------------------------------------------------- */
+  .rio-pill {
+    display: inline-block;
+    font-size: var(--text-small);
+    color: var(--color-text-secondary);
+    padding: 5px 12px;
+    border: 0.5px solid var(--color-border);
+    border-radius: 999px;
+  }
+
+  /* ---- Form fields ------------------------------------------------------ */
+  .rio-input,
+  .rio-select {
+    width: 100%;
+    height: 44px;
+    background: var(--color-surface);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0 14px;
+    font-size: var(--text-body);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    transition: border-color .15s ease;
+  }
+  .rio-textarea {
+    width: 100%;
+    background: var(--color-surface);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    font-size: var(--text-body);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    min-height: 100px;
+    transition: border-color .15s ease;
+    resize: vertical;
+  }
+  .rio-input:focus,
+  .rio-select:focus,
+  .rio-textarea:focus {
+    outline: none;
+    border-color: var(--color-accent);
+  }
+  .rio-input::placeholder,
+  .rio-textarea::placeholder {
+    color: var(--color-text-secondary);
+  }
+  .rio-label {
+    display: block;
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+    margin-bottom: 6px;
+  }
+
+  /* ---- Table ------------------------------------------------------------ */
+  .rio-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-body);
+    margin: 0;
+  }
+  .rio-table thead th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    font-size: var(--text-small);
+    padding: 0 var(--space-3) var(--space-3) 0;
+    border-bottom: 0.5px solid var(--color-border);
+    letter-spacing: 0;
+    text-transform: none;
+    white-space: nowrap;
+  }
+  .rio-table tbody td {
+    padding: var(--space-4) var(--space-3) var(--space-4) 0;
+    border-bottom: 0.5px solid var(--color-border);
+    color: var(--color-text-primary);
+    font-size: var(--text-body);
+    font-weight: 400;
+    vertical-align: middle;
+  }
+  .rio-table thead th:last-child,
+  .rio-table tbody td:last-child {
+    padding-right: 0;
+    text-align: right;
+  }
+  .rio-table tbody tr:last-child td { border-bottom: none; }
+  .rio-table a {
+    color: var(--color-text-primary);
+    border-bottom: 0.5px solid var(--color-border);
+    text-decoration: none;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .rio-table a:hover {
+    color: var(--color-accent);
+    border-bottom-color: var(--color-accent);
+  }
+
+  /* ---- Toolbar ---------------------------------------------------------- */
+  .rio-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+    flex-wrap: wrap;
+  }
+  .rio-toolbar__count {
+    margin-left: auto;
+    color: var(--color-text-secondary);
+    font-size: var(--text-small);
+  }
+
+  /* ======================================================================
+   * Interim primitives — used by templates not yet swept onto the Phase 3
+   * canonical vocabulary above. Each block here will go away in Phase 6.
+   * ====================================================================== */
+
+  /* Three-row shell still used by base_admin.html (topbar + main +
+   * statusbar). Renamed from the old `.rio-shell` so `.rio-shell` is free
+   * for the Phase 3 sidebar+main layout. */
+  .rio-stack {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 100vh;
+    background: var(--color-canvas);
+  }
+
+  /* The current topbar (full-width, not the inside-main variant). Lives
+   * directly under .rio-stack. Replaced in Phase 5/6 by .rio-topbar inside
+   * .rio-main. */
+  .rio-topnav {
+    background: var(--color-elevated);
+    border-bottom: 0.5px solid var(--color-border);
+    padding: var(--space-4) var(--space-6);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-6);
+  }
+  .rio-topnav__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--color-text-primary);
+    text-decoration: none;
+  }
+  .rio-topnav__mark {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+    font-size: var(--text-meta);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .rio-topnav__name {
+    font-size: var(--text-h3);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    letter-spacing: -0.2px;
+  }
+  .rio-topnav__links {
+    display: flex;
+    gap: var(--space-6);
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    flex: 1;
+    justify-content: center;
+  }
+  .rio-topnav__link {
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+  }
+  .rio-topnav__link:hover,
+  .rio-topnav__link--active { color: var(--color-text-primary); }
+  .rio-topnav__status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4);
+    color: var(--color-text-tertiary);
+    font-size: var(--text-meta);
+  }
+  .rio-topnav__dot {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .rio-topnav__dot::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-accent);
+  }
+  .rio-topnav__email { color: var(--color-text-tertiary); }
+  .rio-topnav__logout {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    font: inherit;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: color .15s ease;
+  }
+  .rio-topnav__logout:hover { color: var(--color-text-primary); }
+
+  /* Status bar — quiet footer strip under the 3-row stack. */
+  .rio-statusbar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-6);
+    border-top: 0.5px solid var(--color-border);
+    background: var(--color-canvas);
+    color: var(--color-text-secondary);
+    font-size: var(--text-small);
+  }
+  .rio-statusbar__sep { color: var(--color-border); }
+  .rio-statusbar__spacer { flex: 1; }
+
+  /* Page-head pattern used by every interior admin page. */
+  .rio-page-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-bottom: var(--space-7);
+    max-width: 640px;
+  }
+  .rio-page-head > h1 { margin: 0; }
+  .rio-page-head > p  { color: var(--color-text-secondary); }
+  .rio-page-head--with-action {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-5);
+    max-width: none;
+  }
+  .rio-page-head--with-action > div { max-width: 640px; }
+
+  /* Word-level accent inside a hero headline. */
+  .rio-accent-word { color: var(--color-accent); }
+
+  /* Form scaffold used by .rio-form blocks. The fields themselves use
+   * .rio-form__input rather than the Phase 3 .rio-input — the templates
+   * still emit the BEM-style names; Phase 6 converges them. */
+  .rio-form { max-width: 720px; }
+  .rio-form__field { margin-bottom: var(--space-6); }
+  .rio-form__label {
+    display: block;
+    font-size: var(--text-meta);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    margin-bottom: var(--space-2);
+  }
+  .rio-form__required { color: var(--color-accent); font-weight: 400; }
+  .rio-form__input {
+    width: 100%;
+    height: 44px;
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 0 14px;
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    font-weight: 400;
+    outline: none;
+    transition: border-color .15s ease;
+  }
+  .rio-form__input::placeholder { color: var(--color-text-secondary); }
+  .rio-form__input:focus { border-color: var(--color-accent); }
+  .rio-form__input--inline { width: auto; min-width: 12rem; }
+  .rio-form__input--textarea {
+    height: auto;
+    min-height: 110px;
+    padding: var(--space-3) 14px;
+    line-height: 1.6;
+    resize: vertical;
+  }
+  .rio-form__check {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+  }
+  .rio-form__help {
+    font-size: var(--text-small);
+    color: var(--color-text-secondary);
+    margin-top: var(--space-2);
+    line-height: 1.5;
+  }
+  .rio-form__help--error { color: var(--color-accent); }
+  .rio-form__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-top: var(--space-7);
+    padding-top: var(--space-5);
+    border-top: 0.5px solid var(--color-border);
+  }
+
+  /* Auth pages (login / forbidden / not_found) — centred 380px card on
+   * the canvas. body.admin-auth supplies the centring; .rio-auth is the
+   * card itself. */
+  body.admin-auth {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: var(--space-6) var(--space-4);
+  }
+  .rio-auth {
+    width: 100%;
+    max-width: 380px;
+    background: var(--color-surface);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-7) var(--space-6);
+  }
+  .rio-auth__header {
+    text-align: center;
+    margin-bottom: var(--space-7);
+  }
+  .rio-auth__mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+    font-weight: 500;
+    font-size: var(--text-h3);
+    margin-bottom: var(--space-4);
+  }
+  .rio-auth__title {
+    font-size: var(--text-hero);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    letter-spacing: -0.5px;
+    margin: 0;
+  }
+  .rio-auth__subtitle {
+    margin-top: var(--space-1);
+    font-size: var(--text-body);
+    color: var(--color-text-secondary);
+  }
+
+  /* Pagination chips at the bottom of list pages. */
+  .rio-pagination {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    list-style: none;
+    margin: var(--space-5) 0 0;
+    padding: 0;
+  }
+  .rio-pagination__link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 10px;
+    background: transparent;
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    margin-right: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: var(--text-small);
+    font-weight: 400;
+    text-decoration: none;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .rio-pagination__link:hover {
+    color: var(--color-text-primary);
+    border-color: var(--color-border-strong);
+  }
+  .rio-pagination__link--active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-text);
+  }
+
+  /* Pre-Phase-3 stat card (parallel to .rio-stat). dashboard.html still
+   * emits these names; Phase 6 converges them onto .rio-stat. */
+  .rio-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-3);
+  }
+  .rio-stat-card {
+    display: block;
+    background: var(--color-surface);
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4) 18px;
+    color: var(--color-text-primary);
+    text-decoration: none;
+    transition: border-color .15s ease;
+  }
+  .rio-stat-card:hover { border-color: var(--color-border-strong); }
+  .rio-stat-card__number {
+    font-size: var(--text-stat);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.2px;
+    line-height: 1.2;
+  }
+  .rio-stat-card__label {
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+    margin-top: var(--space-1);
+  }
+  .rio-stat-card--featured { border-color: var(--color-accent); }
+  .rio-stat-card--featured .rio-stat-card__number { color: var(--color-accent); }
+
+  /* Alerts. */
+  .rio-alert {
+    background: transparent;
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-primary);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-body);
+    margin-bottom: var(--space-5);
+  }
+  .rio-alert--danger { border-color: var(--color-accent); }
+
+  /* Empty state inside cards (.actions / .suggestion templates). */
+  .rio-empty {
+    text-align: center;
+    padding: var(--space-7) var(--space-4);
+    color: var(--color-text-secondary);
+  }
+  .rio-empty p { margin: 0 0 var(--space-2); }
+  .rio-empty p:last-child { margin-bottom: 0; }
+  .rio-empty strong { color: var(--color-text-primary); font-weight: 500; }
+
+  /* Two-column dl grid (profile / suggestion-review summary). */
+  .rio-detail-list {
+    display: grid;
+    grid-template-columns: minmax(120px, 200px) 1fr;
+    gap: var(--space-3) var(--space-5);
+    margin: 0;
+  }
+  .rio-detail-list dt {
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+    margin: 0;
+  }
+  .rio-detail-list dd {
+    margin: 0;
+    font-size: var(--text-body);
+    color: var(--color-text-primary);
+  }
+
+  /* Small muted annotation (404 / 403 status line above a heading). */
+  .rio-meta {
+    font-size: var(--text-small);
+    color: var(--color-text-secondary);
+    margin: 0 0 var(--space-2);
+  }
+
+  /* Status cells inside list-page tables. The Rust list renderer emits
+   * `<span class="badge-status" data-status="…">` — Phase 3 keeps status
+   * as plain sentence-case text (no coloured pills), so this neutralises
+   * the legacy pill styling. */
+  .badge-status,
+  [data-status] {
+    display: inline;
+    padding: 0;
+    background: transparent;
+    border-radius: 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .badge-status::before,
+  .badge-status::after,
+  [data-status]::before,
+  [data-status]::after { content: none; }
+
+  /* Tabular-num utility for currency / count columns. */
+  .rio-num { font-variant-numeric: tabular-nums; }
 }

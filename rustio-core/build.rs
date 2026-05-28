@@ -93,18 +93,77 @@ fn try_run(cmd: &str, args: &[String]) -> bool {
     }
 }
 
-/// Copy `src` to `dest` verbatim, then print a `cargo:warning`
-/// explaining why Tailwind was skipped. The build still succeeds —
-/// browsers render the unprocessed CSS file fine (component selectors
-/// work; only Tailwind-generated utilities and `@theme {}` token
-/// expansion go missing).
+/// Copy `src` to `dest` with two passthrough-mode rewrites:
+///   - strip any `@import "tailwindcss"` line so browsers don't 404
+///     trying to resolve it as a stylesheet URL;
+///   - drop the entire `@theme { … }` block (Tailwind-only syntax;
+///     the equivalent variables are already declared inside `:root`).
+///
+/// Both rewrites are no-ops when the source CSS happens not to contain
+/// those constructs, so plain CSS sources pass through verbatim.
 fn passthrough(src: &Path, dest: &Path, reason: &str) {
     println!("cargo:warning=admin.css served unprocessed: {reason}");
-    std::fs::copy(src, dest).unwrap_or_else(|e| {
-        panic!(
-            "failed to copy {} to {}: {e}",
-            src.display(),
-            dest.display()
-        )
-    });
+    let source = std::fs::read_to_string(src)
+        .unwrap_or_else(|e| panic!("failed to read {} for passthrough: {e}", src.display()));
+    let stripped = strip_tailwind_only_syntax(&source);
+    std::fs::write(dest, stripped)
+        .unwrap_or_else(|e| panic!("failed to write {} for passthrough: {e}", dest.display()));
+}
+
+/// Remove the two constructs that only Tailwind understands —
+/// `@import "tailwindcss"` and `@theme { … }` — so the file is
+/// browser-clean. Variable definitions in `:root` are expected to
+/// mirror anything that `@theme` would have published, so dropping
+/// the block has no runtime effect.
+fn strip_tailwind_only_syntax(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut chars = source.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c == '@' {
+            let rest = &source[i..];
+            if let Some(rest_after) = rest.strip_prefix("@import") {
+                let trimmed = rest_after.trim_start();
+                if trimmed.starts_with("\"tailwindcss\"") || trimmed.starts_with("'tailwindcss'") {
+                    if let Some(end) = source[i..].find(';') {
+                        for _ in 0..end {
+                            chars.next();
+                        }
+                        chars.next(); // consume the ';'
+                        continue;
+                    }
+                }
+            }
+            if rest.starts_with("@theme") {
+                if let Some(brace_offset) = rest.find('{') {
+                    let abs_brace = i + brace_offset;
+                    let mut depth = 0i32;
+                    let bytes = source.as_bytes();
+                    let mut idx = abs_brace;
+                    while idx < bytes.len() {
+                        let ch = bytes[idx] as char;
+                        if ch == '{' {
+                            depth += 1;
+                        } else if ch == '}' {
+                            depth -= 1;
+                            if depth == 0 {
+                                idx += 1;
+                                break;
+                            }
+                        }
+                        idx += 1;
+                    }
+                    // Step the outer iterator past the entire `@theme { … }`
+                    // block. `chars` is already positioned one past the
+                    // initial `@`, so advance by (idx - i - 1) more chars.
+                    let consumed = idx - i;
+                    for _ in 0..consumed.saturating_sub(1) {
+                        chars.next();
+                    }
+                    continue;
+                }
+            }
+        }
+        out.push(c);
+    }
+    out
 }
