@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "rustio_version": "0.10.0",
+  "rustio_version": "0.10.1",
   "models": [
     {
       "name": "Project",

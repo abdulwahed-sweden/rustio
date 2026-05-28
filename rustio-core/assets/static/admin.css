@@ -40,31 +40,33 @@
  * -------------------------------------------------------------------------- */
 
 :root {
-  /* Grayscale ladder — 9 steps with a subtle purple undertone */
-  --color-gray-950: #1B1B1F;   /* page canvas */
-  --color-gray-900: #2A2A2F;   /* primary surface */
-  --color-gray-800: #36363C;   /* elevated surface */
-  --color-gray-700: #45454C;   /* default borders */
-  --color-gray-600: #5C5C64;   /* secondary borders */
-  --color-gray-500: #7A7A82;   /* muted icons, disabled */
-  --color-gray-400: #9C9CA4;   /* secondary text */
-  --color-gray-300: #C4C4CA;   /* tertiary text, labels */
-  --color-gray-100: #F0F0F4;   /* primary text */
+  /* Dark grayscale ladder — 9 steps with a subtle purple undertone */
+  --color-gray-950: #1B1B1F;
+  --color-gray-900: #2A2A2F;
+  --color-gray-800: #36363C;
+  --color-gray-700: #45454C;
+  --color-gray-600: #5C5C64;
+  --color-gray-500: #7A7A82;
+  --color-gray-400: #9C9CA4;
+  --color-gray-300: #C4C4CA;
+  --color-gray-100: #F0F0F4;
 
-  /* Single accent (#FF6A3D family) */
+  /* Light palette — 9 warm neutral steps, lightest first */
+  --color-light-50:  #F7F6F2;   /* page canvas — warm off-white, NEVER #FFF */
+  --color-light-100: #EEEDE7;   /* primary surface / cards */
+  --color-light-200: #E4E2DA;   /* elevated surface / topbar / sidebar */
+  --color-light-300: #D5D2C8;   /* default borders, dividers */
+  --color-light-400: #BAB6AA;   /* secondary borders, button outlines */
+  --color-light-500: #8F8B7F;   /* muted icons, disabled */
+  --color-light-600: #6B6862;   /* subtitle text, secondary */
+  --color-light-700: #4A4843;   /* labels, tertiary emphasis */
+  --color-light-900: #1F1E1B;   /* primary text / headings — warm near-black */
+
+  /* Single accent (#FF6A3D family) — unchanged across themes */
   --color-accent:      #FF6A3D;
   --color-accent-text: #2A0A04;
   --color-accent-deep: #5C2410;
-
-  /* Semantic aliases — what component selectors actually consume */
-  --color-canvas:        var(--color-gray-950);
-  --color-surface:       var(--color-gray-900);
-  --color-elevated:      var(--color-gray-800);
-  --color-border:        var(--color-gray-700);
-  --color-border-strong: var(--color-gray-600);
-  --color-text-primary:   var(--color-gray-100);
-  --color-text-secondary: var(--color-gray-400);
-  --color-text-tertiary:  var(--color-gray-300);
+  --color-accent-soft: #FFE5D9;   /* very pale orange tint for light-mode highlights */
 
   /* Type scale */
   --text-hero:  26px;   /* H1, hero headline */
@@ -121,6 +123,40 @@
 }
 
 /* ----------------------------------------------------------------------------
+ * Theme switching — semantic aliases are bound to one of two themes via
+ * `data-theme` on <html>. Default is light; dark is opt-in. Components only
+ * ever reference `--color-canvas`, `--color-surface`, `--color-border`, etc.,
+ * so toggling the attribute flips the entire surface palette in one go.
+ * -------------------------------------------------------------------------- */
+
+:root,
+[data-theme="light"] {
+  --color-canvas:         var(--color-light-50);
+  --color-surface:        var(--color-light-100);
+  --color-elevated:       var(--color-light-200);
+  --color-border:         var(--color-light-300);
+  --color-border-strong:  var(--color-light-400);
+  --color-text-primary:   var(--color-light-900);
+  --color-text-secondary: var(--color-light-600);
+  --color-text-tertiary:  var(--color-light-700);
+  --color-text-muted:     var(--color-light-500);
+  --color-highlight-soft: var(--color-accent-soft);
+}
+
+[data-theme="dark"] {
+  --color-canvas:         var(--color-gray-950);
+  --color-surface:        var(--color-gray-900);
+  --color-elevated:       var(--color-gray-800);
+  --color-border:         var(--color-gray-700);
+  --color-border-strong:  var(--color-gray-600);
+  --color-text-primary:   var(--color-gray-100);
+  --color-text-secondary: var(--color-gray-400);
+  --color-text-tertiary:  var(--color-gray-300);
+  --color-text-muted:     var(--color-gray-500);
+  --color-highlight-soft: rgba(255, 106, 61, 0.12);
+}
+
+/* ----------------------------------------------------------------------------
  * Tailwind v4 theme tokens — drives auto-generation of utility classes
  * (bg-canvas, text-primary, border-default, etc.). Same values as :root
  * above. Tailwind reads this; browsers ignore it.
@@ -137,18 +173,34 @@
   --color-gray-300: #C4C4CA;
   --color-gray-100: #F0F0F4;
 
+  --color-light-50:  #F7F6F2;
+  --color-light-100: #EEEDE7;
+  --color-light-200: #E4E2DA;
+  --color-light-300: #D5D2C8;
+  --color-light-400: #BAB6AA;
+  --color-light-500: #8F8B7F;
+  --color-light-600: #6B6862;
+  --color-light-700: #4A4843;
+  --color-light-900: #1F1E1B;
+
   --color-accent:      #FF6A3D;
   --color-accent-text: #2A0A04;
   --color-accent-deep: #5C2410;
+  --color-accent-soft: #FFE5D9;
 
-  --color-canvas:        var(--color-gray-950);
-  --color-surface:       var(--color-gray-900);
-  --color-elevated:      var(--color-gray-800);
-  --color-border:        var(--color-gray-700);
-  --color-border-strong: var(--color-gray-600);
-  --color-text-primary:   var(--color-gray-100);
-  --color-text-secondary: var(--color-gray-400);
-  --color-text-tertiary:  var(--color-gray-300);
+  /* Light is the default — `:root` and `[data-theme="light"]` below set
+   * the same surface aliases. Bound here so Tailwind utility generation
+   * (`bg-canvas`, `text-primary`, etc.) resolves to a value. */
+  --color-canvas:        var(--color-light-50);
+  --color-surface:       var(--color-light-100);
+  --color-elevated:      var(--color-light-200);
+  --color-border:        var(--color-light-300);
+  --color-border-strong: var(--color-light-400);
+  --color-text-primary:   var(--color-light-900);
+  --color-text-secondary: var(--color-light-600);
+  --color-text-tertiary:  var(--color-light-700);
+  --color-text-muted:     var(--color-light-500);
+  --color-highlight-soft: var(--color-accent-soft);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;

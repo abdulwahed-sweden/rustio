@@ -1,8 +1,18 @@
 <!DOCTYPE html>
-<html lang="{{ lang | default('en') }}">
+<html lang="{{ lang | default('en') }}" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# No-FOUC theme bootstrap. Runs before any stylesheet link so the
+     attribute is set before the body paints. Default is light; dark is
+     opt-in and persisted via `localStorage.rio-theme`. #}
+  <script>
+    (function () {
+      var saved = localStorage.getItem('rio-theme');
+      var theme = saved === 'dark' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
   <title>{% block title %}{{ design.project_name | default('RustIO') }}{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/admin/static/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
