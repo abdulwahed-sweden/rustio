@@ -896,3 +896,268 @@
   /* Tabular-num utility for currency / count columns. */
   .rio-num { font-variant-numeric: tabular-nums; }
 }
+
+/* ============================================================================
+ * Phase 4 — Django-admin style internal-page primitives
+ *
+ * Page header with breadcrumb + actions; detail-grid with side column;
+ * meta-list, activity timeline; canonical empty-state for list views.
+ * These compose with the Phase 3 .rio-* primitives above — they are
+ * additive, not replacements.
+ * ============================================================================ */
+
+@layer components {
+
+  /* ---- Page header (breadcrumb + title + right-aligned actions) -------- */
+  .rio-page-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: var(--space-4);
+    row-gap: 6px;
+    margin: var(--space-6) 0 var(--space-5);
+  }
+  .rio-page-header > h1 {
+    grid-column: 1;
+    margin: 0;
+  }
+  .rio-page-header__actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: flex;
+    gap: 10px;
+    align-self: center;
+  }
+
+  .rio-breadcrumb {
+    grid-column: 1;
+    font-size: var(--text-small);
+    color: var(--color-text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .rio-breadcrumb a { color: var(--color-text-secondary); }
+  .rio-breadcrumb a:hover { color: var(--color-text-primary); }
+  .rio-breadcrumb__sep { color: var(--color-text-muted); }
+
+  /* ---- List-view pagination (replaces the Phase-3 .rio-pagination chips
+   *      so list.html can show a Django-style "Showing N of M / page links"
+   *      footer). The old chip list still exists for templates that pass
+   *      a structured `pagination.links` array — both selectors below are
+   *      narrowly scoped. */
+  .rio-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--space-5);
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+  }
+  .rio-pagination__pages {
+    display: flex;
+    gap: var(--space-3);
+  }
+  .rio-pagination__pages a {
+    color: var(--color-text-secondary);
+  }
+  .rio-pagination__pages a:hover {
+    color: var(--color-text-primary);
+  }
+  .rio-pagination__pages a.is-active {
+    color: var(--color-accent);
+    font-weight: 500;
+  }
+
+  /* ---- Detail / edit grid (main column + 320px side column) ------------ */
+  .rio-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: var(--space-5);
+    align-items: start;
+  }
+  .rio-detail-main { max-width: 720px; }
+  .rio-detail-side { display: flex; flex-direction: column; gap: var(--space-3); }
+  .rio-detail-single { max-width: 720px; }
+
+  .rio-field { margin-bottom: var(--space-4); }
+  .rio-field:last-child { margin-bottom: 0; }
+
+  /* ---- Two-column dl used by detail-page "About" cards ----------------- */
+  .rio-meta-list {
+    display: grid;
+    grid-template-columns: 90px 1fr;
+    row-gap: var(--space-2);
+    column-gap: var(--space-3);
+    font-size: var(--text-meta);
+    margin: 0;
+  }
+  .rio-meta-list dt { color: var(--color-text-secondary); margin: 0; }
+  .rio-meta-list dd { color: var(--color-text-primary); margin: 0; }
+
+  /* ---- Activity timeline ----------------------------------------------- */
+  .rio-timeline {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .rio-timeline li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: var(--space-2) 0;
+    font-size: var(--text-meta);
+    color: var(--color-text-secondary);
+    border-bottom: 0.5px solid var(--color-border);
+  }
+  .rio-timeline li:last-child { border-bottom: none; }
+  .rio-timeline__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ---- Sidebar counts + grouped sections ------------------------------- */
+  .rio-sidebar__group { margin-bottom: 18px; }
+  .rio-sidebar__count {
+    font-size: var(--text-small);
+    color: var(--color-text-muted);
+    margin-left: auto;
+  }
+  .rio-sidebar__item:hover .rio-sidebar__count,
+  .rio-sidebar__item.is-active .rio-sidebar__count {
+    color: var(--color-text-secondary);
+  }
+
+  /* ---- Theme toggle (topbar ghost button) ------------------------------ */
+  .rio-theme-toggle {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    border: 0.5px solid transparent;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: var(--text-body);
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .rio-theme-toggle:hover {
+    color: var(--color-text-primary);
+    background: var(--color-surface);
+  }
+}
+
+/* ============================================================================
+ * Phase 4 — Empty state override
+ *
+ * The original Phase 3 `.rio-empty` was a text-only padding box meant to live
+ * inside a `.rio-card`. The Phase 4 list view renders the empty state stand-
+ * alone (no surrounding card), so it now carries its own surface + dashed
+ * border. The earlier definition above is intentionally overridden — keep
+ * the new shape; older callers were updated to render outside the card.
+ * ============================================================================ */
+
+@layer components {
+  .rio-empty {
+    background: var(--color-surface);
+    border: 0.5px dashed var(--color-border-strong);
+    border-radius: var(--radius-lg);
+    padding: 56px 32px;
+    text-align: center;
+    color: var(--color-text-secondary);
+  }
+  .rio-empty p { max-width: 380px; margin: var(--space-2) auto 0; }
+  .rio-empty strong { color: var(--color-text-primary); font-weight: 500; }
+}
+
+/* ============================================================================
+ * Phase 4 — Light-mode component overrides
+ *
+ * Components reference semantic aliases (`--color-surface`,
+ * `--color-border`, …) which already flip with `data-theme`. These rules
+ * cover the few cases where the brief calls for an explicitly lighter
+ * surface or the soft-accent highlight instead of the dark-mode default.
+ * ============================================================================ */
+
+/* Form-field surfaces: drop fields to canvas-50 so they stand off the
+ * surface-100 cards behind them; lift on focus to barely-perceptible #FFFDF9
+ * (the one allowed near-white exception). */
+[data-theme="light"] .rio-input,
+[data-theme="light"] .rio-select,
+[data-theme="light"] .rio-textarea,
+[data-theme="light"] .rio-form__input {
+  background: var(--color-light-50);
+  border-color: var(--color-light-300);
+}
+[data-theme="light"] .rio-input:focus,
+[data-theme="light"] .rio-select:focus,
+[data-theme="light"] .rio-textarea:focus,
+[data-theme="light"] .rio-form__input:focus {
+  border-color: var(--color-accent);
+  background: #FFFDF9;
+}
+
+/* Selected / active rows use the soft orange tint, not full saturation. */
+[data-theme="light"] .rio-sidebar__item.is-active {
+  background: var(--color-highlight-soft);
+  color: var(--color-text-primary);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+[data-theme="light"] .rio-table tbody tr.is-selected {
+  background: var(--color-highlight-soft);
+}
+[data-theme="light"] .rio-stat--featured {
+  background: var(--color-highlight-soft);
+  border-color: var(--color-accent);
+}
+
+/* Table zebra (light only — dark stays flat). Hover lifts on the warm tint. */
+[data-theme="light"] .rio-table tbody tr {
+  transition: background .15s ease;
+}
+[data-theme="light"] .rio-table tbody tr:nth-child(even) {
+  background: var(--color-light-50);
+}
+[data-theme="light"] .rio-table tbody tr:hover {
+  background: var(--color-highlight-soft);
+}
+
+/* Sidebar item hover: in light mode use a soft canvas wash rather than the
+ * darker surface tone the dark theme uses (which would feel muddy). */
+[data-theme="light"] .rio-sidebar__item:hover {
+  background: var(--color-light-50);
+  color: var(--color-text-primary);
+}
+
+/* Scrollbars — make light-mode chrome quieter than browser defaults. */
+[data-theme="light"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: var(--color-light-300);
+  border-radius: 999px;
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-light-400);
+}
+[data-theme="light"] ::-webkit-scrollbar-track { background: transparent; }
+
+/* Disabled state — flat 0.5 opacity, no special color. */
+.rio-btn[disabled],
+.rio-input[disabled],
+.rio-select[disabled],
+.rio-textarea[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Responsive — collapse detail grid to single column. */
+@media (max-width: 960px) {
+  .rio-detail-grid { grid-template-columns: 1fr; }
+}
