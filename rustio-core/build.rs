@@ -115,35 +115,64 @@ fn passthrough(src: &Path, dest: &Path, reason: &str) {
 /// browser-clean. Variable definitions in `:root` are expected to
 /// mirror anything that `@theme` would have published, so dropping
 /// the block has no runtime effect.
+///
+/// Walks the source character-by-character tracking whether the
+/// cursor is inside a `/* … */` comment, so `@theme` mentions inside
+/// commentary survive while the real rule is stripped. The `@theme`
+/// match also requires the immediate next non-whitespace character
+/// to be `{` — that single check is enough to distinguish the rule
+/// `@theme {` from prose like `@theme — same tokens, exposed to…`.
 fn strip_tailwind_only_syntax(source: &str) -> String {
+    let bytes = source.as_bytes();
     let mut out = String::with_capacity(source.len());
-    let mut chars = source.char_indices().peekable();
-    while let Some((i, c)) = chars.next() {
-        if c == '@' {
+    let mut i = 0usize;
+    let mut in_comment = false;
+    while i < bytes.len() {
+        // Comment boundaries first — `@`-prefixed matches must not fire
+        // inside `/* … */` runs.
+        if !in_comment && i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            in_comment = true;
+            out.push('/');
+            out.push('*');
+            i += 2;
+            continue;
+        }
+        if in_comment && i + 1 < bytes.len() && bytes[i] == b'*' && bytes[i + 1] == b'/' {
+            in_comment = false;
+            out.push('*');
+            out.push('/');
+            i += 2;
+            continue;
+        }
+        if !in_comment && bytes[i] == b'@' {
             let rest = &source[i..];
+            // `@import "tailwindcss";` — strip through the terminator.
             if let Some(rest_after) = rest.strip_prefix("@import") {
                 let trimmed = rest_after.trim_start();
                 if trimmed.starts_with("\"tailwindcss\"") || trimmed.starts_with("'tailwindcss'") {
-                    if let Some(end) = source[i..].find(';') {
-                        for _ in 0..end {
-                            chars.next();
-                        }
-                        chars.next(); // consume the ';'
+                    if let Some(end) = rest.find(';') {
+                        i += end + 1;
                         continue;
                     }
                 }
             }
+            // `@theme { … }` — strip the whole block. Guard against
+            // false matches by demanding the next non-whitespace char
+            // be `{`; in-prose mentions ("@theme — same tokens…") fail
+            // the guard and pass through unchanged.
             if rest.starts_with("@theme") {
-                if let Some(brace_offset) = rest.find('{') {
+                let after_kw = &rest[6..]; // "@theme".len() == 6
+                let trimmed = after_kw.trim_start();
+                if trimmed.starts_with('{') {
+                    let brace_offset = rest.find('{').unwrap();
                     let abs_brace = i + brace_offset;
                     let mut depth = 0i32;
-                    let bytes = source.as_bytes();
                     let mut idx = abs_brace;
                     while idx < bytes.len() {
-                        let ch = bytes[idx] as char;
-                        if ch == '{' {
+                        let ch = bytes[idx];
+                        if ch == b'{' {
                             depth += 1;
-                        } else if ch == '}' {
+                        } else if ch == b'}' {
                             depth -= 1;
                             if depth == 0 {
                                 idx += 1;
@@ -152,18 +181,53 @@ fn strip_tailwind_only_syntax(source: &str) -> String {
                         }
                         idx += 1;
                     }
-                    // Step the outer iterator past the entire `@theme { … }`
-                    // block. `chars` is already positioned one past the
-                    // initial `@`, so advance by (idx - i - 1) more chars.
-                    let consumed = idx - i;
-                    for _ in 0..consumed.saturating_sub(1) {
-                        chars.next();
-                    }
+                    i = idx;
                     continue;
                 }
             }
         }
-        out.push(c);
+        // Default: copy the byte (or UTF-8 char) and advance.
+        let ch_end = source[i..].chars().next().unwrap().len_utf8();
+        out.push_str(&source[i..i + ch_end]);
+        i += ch_end;
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_tailwind_only_syntax;
+
+    #[test]
+    fn strips_at_theme_rule_but_keeps_comment_mention() {
+        let src = r#"
+/* :root — variables.
+ * @theme — same tokens, just Tailwind-side.
+ */
+:root { --color-canvas: #1B1B1F; }
+
+@theme {
+  --color-accent: #FF6A3D;
+}
+
+.body { background: var(--color-canvas); }
+"#;
+        let out = strip_tailwind_only_syntax(src);
+        // Comment mention survives.
+        assert!(out.contains("@theme — same tokens"));
+        // Real rule is gone.
+        assert!(!out.contains("--color-accent: #FF6A3D"));
+        // Surrounding content intact.
+        assert!(out.contains(":root { --color-canvas: #1B1B1F; }"));
+        assert!(out.contains(".body { background: var(--color-canvas); }"));
+    }
+
+    #[test]
+    fn strips_import_tailwindcss_and_nothing_else() {
+        let src = "@import \"tailwindcss\";\n@import \"other.css\";\n.x { color: red; }";
+        let out = strip_tailwind_only_syntax(src);
+        assert!(!out.contains("\"tailwindcss\""));
+        assert!(out.contains("@import \"other.css\""));
+        assert!(out.contains(".x { color: red; }"));
+    }
 }
