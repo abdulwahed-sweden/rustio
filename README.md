@@ -21,7 +21,7 @@ You write the data — fields, types, relationships — as plain Rust structs. R
 
 If you've never touched Rust before, you should still finish this page in 5 minutes with a running website.
 
-![Admin list page — FK column renders project names as clickable links](docs/screenshots/admin-tasks-list.png)
+![Admin list page — FK column renders project names as clickable links](docs/screenshots/admin-tasks-list-light.png)
 
 <sub>↑ The taskhub example's `/admin/tasks` page. The `project_id` column displays each project's name (a clickable link), not a raw integer — that's what `#[rustio(belongs_to, display)]` buys you. <a href="examples/taskhub/">→ See the full example</a></sub>
 
@@ -56,8 +56,8 @@ Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for th
 
 <p align="center">
   <img src="docs/screenshots/admin-login.png" alt="Sign-in page" width="32%">
-  <img src="docs/screenshots/admin-dashboard.png" alt="Dashboard with one card per registered model" width="32%">
-  <img src="docs/screenshots/admin-task-edit.png" alt="Edit form with every input type — text, integer, foreign-key select, datetime" width="32%">
+  <img src="docs/screenshots/admin-dashboard-light.png" alt="Dashboard with one card per registered model" width="32%">
+  <img src="docs/screenshots/admin-task-edit-light.png" alt="Edit form with every input type — text, integer, foreign-key select, datetime" width="32%">
 </p>
 
 <sub>The three screens you touch most. <b>Left:</b> sign-in. <b>Middle:</b> the dashboard you land on after sign-in — one card per model, live row counts. <b>Right:</b> the edit form RustIO generates from your struct — every field type maps to the right input (foreign keys become <code>&lt;select&gt;</code>s populated from the target table, <code>DateTime</code> becomes a date-time picker, <code>Option&lt;T&gt;</code> fields become nullable).</sub>

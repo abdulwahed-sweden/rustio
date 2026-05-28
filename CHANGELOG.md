@@ -13,8 +13,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Cherry-picks the design language of a slate-and-blue product-table reference into the admin: Sora display + Source Sans 3 body, soft-shadow rounded cards (16 px radius), uppercase tracked column headers, tabular numeric figures, pill-shaped status badge utility, refined buttons + form focus rings.
 
-![Tasks list with the new Sora + Source Sans typography, blue-600 brand, soft-shadow card, and uppercase tracked column headers](docs/screenshots/admin-tasks-list.png)
-
 - **Typography.** `base.html` adds a Google Fonts link for **Sora** (400/500/600/700) and **Source Sans 3** (400/500/600/700). `admin.css` sets `--admin-font-display: 'Sora'` for headings, table-column labels, button text, and stat-card values; `--admin-font-body: 'Source Sans 3'` for everything else. Falls back to system sans if the fonts fail to load.
 - **Brand colour.** Default `Design::primary_color` / `accent_color` shifts from indigo-600 (`#4f46e5`) to **blue-600 (`#2563eb`)** to match the reference. Projects with `rustio.design.json` pinning a colour continue to override. The existing `default_palette_is_indigo_as_of_0_10` test is renamed to `default_palette_is_blue_as_of_0_10_1` and updated.
 - **Cards.** New `.admin-card` baseline — 16 px radius, soft `0 4px 14px rgba(15,23,42,.08)` shadow, optional `.admin-card-top` header strip and `.admin-card-foot` band (replaces the old `card-foot` shape). The list page uses the card-top for "All <model> · N <model>" + the +Add button; the card-foot holds pagination.
@@ -1334,8 +1332,6 @@ the `--dump-schema` and `build_admin` shape. Either:
 ### Fixed — Admin dashboard cards include legacy `AdminEntry` models ([#2](https://github.com/abdulwahed-sweden/rustio/issues/2))
 
 Before this patch, `/admin` only showed cards for models registered through the new `AdminUiModel` registry — every `rustio new app`-scaffolded model was invisible on the dashboard, even though it appeared correctly in the sidebar.
-
-![Dashboard now shows ORDERS 0, USERS 0, PROJECTS 2, TASKS 5 — matching the sidebar](docs/screenshots/admin-dashboard.png)
 
 - The seam was in `admin/layout.rs::dashboard_render`. It received `legacy_entries: &[AdminEntry]` (it'd been passing them to `sidebar_merged`), but the `cards` list was built only from the new registry. New helper `collect_legacy_dashboard_entries` walks the legacy entries (skipping `core: true` framework-internal ones), dedupes against the new-engine registry by slug, and emits one `DashboardEntry` per remaining model — same shape as the new-engine half so both lists are interchangeable downstream.
 - Sidebar continues to be built from `sidebar_merged`'s own legacy walk — unchanged. Dedup rules match between sidebar and cards, so a model registered through both paths never double-counts.
