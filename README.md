@@ -17,7 +17,7 @@
 
 **Build real web systems in Rust without writing the boring parts.**
 
-You write the data — fields, types, relationships — as plain Rust structs. RustIO gives you back a working admin UI, a database, an auth system, and an HTTP server. Same idea as Django for Python, but built around a strict typed core so the AI layer can extend your system without breaking it.
+You write the data — fields, types, relationships — as plain Rust structs. RustIO gives you back a working admin UI, a database, an auth system, and an HTTP server. Same idea as Django for Python, but built around a strict typed core — so changes to your schema, by hand or via the guided setup, stay safe-by-construction.
 
 If you've never touched Rust before, you should still finish this page in 5 minutes with a running website.
 
@@ -35,24 +35,39 @@ You need [Rust](https://rustup.rs/) installed. Nothing else.
 # 1. Install the CLI
 cargo install rustio-cli
 
-# 2. Make a project
+# 2. Start a project — this opens the setup menu
 rustio init mysite
 cd mysite
+```
 
-# 3. Make an app (one app = one "thing" your site knows about)
-rustio new app notes
+When `init` finishes, RustIO opens a small menu:
 
-# 4. Set up the database (creates tables for users, sessions, your notes)
+<p align="center">
+  <img src="docs/screenshots/cli-start-menu.png" alt="rustio start — entry-point menu with Guided / Manual / Import" width="80%">
+</p>
+
+Pick **Guided**, describe what you're building in one sentence (*"a small clinic with patients and appointments"*), and walk each proposed model with a single keystroke. Before any file is written you see a plain-English summary of what's about to happen:
+
+<p align="center">
+  <img src="docs/screenshots/cli-start-blueprint.png" alt="System-blueprint summary — connected models, relationships, admin screens, migrations" width="80%">
+</p>
+
+The technical details (typed plan operations, risk classification, warnings, migration paths) live one keystroke deeper, behind **Show technical details**. You decide what lands. Prefer to do everything by hand? Pick **Manual** and add models one at a time with `rustio new app <name>`.
+
+Finish the loop:
+
+```bash
+# 3. Apply the migrations the wizard wrote
 rustio migrate apply
 
-# 5. Make a login for yourself
+# 4. Make a login for yourself
 rustio user create --email you@example.com --password secret --role admin
 
-# 6. Start the server
+# 5. Start the server
 rustio run
 ```
 
-Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for the `Note` model. Click **+ Add Note** to create one. Click the row to edit it. That's the entire loop.
+Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for every model you accepted. Click **+ Add …** to create one. Click the row to edit. That's the entire loop.
 
 <p align="center">
   <img src="docs/screenshots/admin-login-light.png" alt="Sign-in page" width="32%">
@@ -70,9 +85,8 @@ Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for th
 
 | Step | What actually happened |
 |---|---|
-| `rustio init mysite` | Created a new Rust project with the framework wired up. |
-| `rustio new app notes` | Added a `Note` model (in `apps/notes/models.rs`), a migration (in `migrations/`), and registered both with the admin. |
-| `rustio migrate apply` | Ran the SQL migrations against `app.db` (SQLite, created on first run). |
+| `rustio init mysite` | Scaffolded a Rust project with the framework wired up, then opened the setup menu. The Guided path mapped your one-line description to a typed starting shape, walked each model with you, and — for every model you accepted — wrote `apps/<table>/models.rs` plus a `CREATE TABLE` migration. Nothing was guessed: the underlying vocabulary is closed, so requests it can't express are refused rather than approximated. |
+| `rustio migrate apply` | Ran the SQL migrations against `app.db` (SQLite, created on first run) and regenerated `rustio.schema.json`. |
 | `rustio user create …` | Inserted a row into the `rustio_users` table with an argon2-hashed password and gave it the `admin` role. |
 | `rustio run` | Built and ran your binary. The HTTP server listens on `:8000`; `/admin/*` is gated by the auth middleware. |
 
@@ -109,9 +123,9 @@ The taskhub README walks through every interesting page (FK rendering, RBAC, aud
 
 ---
 
-## The AI layer
+## Evolving the schema later (advanced)
 
-Once your project is up, you can evolve the schema by asking in plain English:
+Once your project is running, the same closed-vocabulary engine that backs the guided setup is available as a three-stage plan/review/apply pipeline for evolving an existing schema:
 
 ```bash
 rustio ai plan "add date_of_birth as DateTime to notes" --save plan.json
@@ -120,9 +134,9 @@ rustio ai apply  plan.json --yes    # writes models.rs + a migration
 rustio migrate apply                # actually changes the DB
 ```
 
-The planner can only express changes inside a fixed vocabulary (add field, rename field, add relation, change type, etc.). If your request doesn't fit, it **refuses** rather than guessing. The review step runs deterministic risk classification before anything touches your tree. The executor is atomic — either every file write lands or none of them do.
+The planner expresses changes inside a fixed vocabulary (add field, rename field, add relation, change type, etc.). If your request doesn't fit, it **refuses** rather than guessing. The review step runs deterministic risk classification before anything touches your tree. The executor is atomic — either every file write lands or none of them do.
 
-The whole pipeline reads one file: **`rustio.schema.json`** (generated by `rustio schema`). That's the only contract the AI layer is allowed to use; nothing else.
+The whole pipeline reads one file: **`rustio.schema.json`** (generated by `rustio schema`). That's the only contract external tools — including this engine — are allowed to use; nothing else.
 
 ---
 
@@ -136,7 +150,8 @@ rustio help                     # the full command list, grouped by purpose
 rustio doctor                   # health check for the current project
 rustio explain <topic>          # short docs on `model`, `migration`, `admin`, `ai`, …
 
-rustio init <name>              # new project (or `rustio init` for a wizard)
+rustio init <name>              # new project + opens the setup menu
+rustio start                    # open the setup menu inside an existing project
 rustio new app <name>           # new model + admin entry + migration stub
 rustio migrate apply            # apply pending migrations
 rustio migrate status           # what's applied, what's pending
@@ -144,6 +159,7 @@ rustio schema                   # regenerate rustio.schema.json
 rustio run                      # build + serve on :8000
 rustio user create [...]        # add a user (interactive when args missing)
 
+# Advanced — evolve an existing schema through the typed plan pipeline.
 rustio ai plan "<change>" [--save PATH]
 rustio ai review <plan>
 rustio ai apply  <plan> [--yes] [--dry-run] [--force]
