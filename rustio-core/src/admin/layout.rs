@@ -1327,7 +1327,11 @@ fn build_pagination_view(
     // `fetch_users_table_state` uses PAGE_SIZE = 20; keep that here. If the
     // page-size constant ever moves, thread it through instead of copying.
     let per_page: i64 = 20;
-    let from = if total == 0 { 0 } else { (current - 1) * per_page + 1 };
+    let from = if total == 0 {
+        0
+    } else {
+        (current - 1) * per_page + 1
+    };
     let to = (current * per_page).min(total).max(from);
     if pages <= 1 {
         return PaginationView {
