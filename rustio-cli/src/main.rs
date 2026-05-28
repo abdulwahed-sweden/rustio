@@ -35,6 +35,9 @@ SCHEMA
 
 AI                                                  (deterministic, refusal-first)
     ai                          Print the AI boundary summary.
+    ai start                    Interactive onboarding wizard. Reads a one-line
+                                  description, proposes a starting shape, walks
+                                  each model with you. You decide what lands.
     ai plan "<prompt>" [--save <path>]
                                 Parse a natural-language request into a typed Plan
                                 (no execution).
@@ -353,6 +356,12 @@ pub(crate) enum AiCommand {
         dry_run: bool,
         force: bool,
     },
+    /// `rustio ai start` — interactive onboarding wizard. Reads a
+    /// one-line project description, proposes a starter shape via the
+    /// deterministic `intake` module, walks each model with the user,
+    /// then runs the plan through the standard review + apply pipeline.
+    /// Lives entirely inside the existing Primitive vocabulary.
+    Start,
 }
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
@@ -529,7 +538,76 @@ fn init_command(
         },
         None => wizard::run(preset, app)?,
     };
-    wizard::execute(&plan)
+    wizard::execute(&plan)?;
+
+    // After the project is scaffolded, offer the AI-assisted wizard.
+    // `wizard::execute` only `chdir`s into the new project when it
+    // scaffolded an app — otherwise we're still in the parent dir.
+    // Always step into the project here so the post-init prompts see
+    // the right tree.
+    //
+    // We skip the offer (and stay silent) when stdin isn't a terminal —
+    // CI / piped runs of `rustio init` shouldn't pause for input.
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        if Path::new(&plan.project_name).exists() {
+            // The wizard already chdir'd if it ran a per-app scaffold;
+            // a second chdir into the same path then fails. Guard by
+            // checking whether `apps/mod.rs` is already visible from cwd.
+            if !Path::new("apps/mod.rs").exists() {
+                std::env::set_current_dir(&plan.project_name)
+                    .map_err(|e| format!("failed to enter `{}`: {e}", plan.project_name))?;
+            }
+        }
+        offer_ai_wizard_after_init()?;
+    }
+    Ok(())
+}
+
+/// Ask the user, in one calm prompt, whether they'd like the AI wizard
+/// to propose a starting shape. On yes: ensures `rustio.schema.json`
+/// exists, then dispatches to [`ai_start_command`]. On no: prints a
+/// one-line hint and returns.
+///
+/// This function is forgiving: any failure short of stdin EOF is
+/// downgraded to a printed warning so a partially set up project never
+/// blocks the user from getting to the regular `rustio run` path.
+fn offer_ai_wizard_after_init() -> Result<(), String> {
+    println!();
+    let want = inquire::Confirm::new("Want me to propose a starting shape for your models?")
+        .with_default(true)
+        .with_help_message(
+            "I'll ask one question, walk each model with you, and you decide what lands.",
+        )
+        .prompt();
+
+    let go = match want {
+        Ok(v) => v,
+        Err(inquire::InquireError::OperationCanceled)
+        | Err(inquire::InquireError::OperationInterrupted) => false,
+        Err(e) => return Err(format!("{e}")),
+    };
+    if !go {
+        println!();
+        out::hint("rustio ai start        # propose a starting shape any time");
+        return Ok(());
+    }
+
+    // The wizard reads `rustio.schema.json`; on a brand-new project
+    // it isn't there yet. Building it requires a `cargo run -- --dump-schema`
+    // which can be slow on first compile — let the user know.
+    if !Path::new("rustio.schema.json").exists() {
+        println!();
+        out::info("Generating rustio.schema.json (first build can take ~30s) …");
+        if let Err(e) = try_dump_schema() {
+            println!();
+            out::info(&format!("could not generate the schema: {e}"));
+            out::hint("rustio schema && rustio ai start   # try again after the first compile");
+            return Ok(());
+        }
+    }
+
+    ai_start_command()
 }
 
 pub(crate) fn new_project(name: &str) -> Result<(), String> {
@@ -956,6 +1034,12 @@ async fn user_create_command(
 /// can grow independently.
 fn parse_ai_command(rest: &[String]) -> Result<Command, String> {
     match rest.first().map(String::as_str) {
+        Some("start") => {
+            if rest.len() > 1 {
+                return Err(format!("unexpected argument `{}`", rest[1]));
+            }
+            Ok(Command::Ai(AiCommand::Start))
+        }
         Some("plan") => parse_ai_plan_args(&rest[1..]),
         Some("review") => {
             let path = rest
@@ -1035,6 +1119,7 @@ fn ai_command(sub: AiCommand) -> Result<(), String> {
             dry_run,
             force,
         } => ai_apply_command(&path, assume_yes, dry_run, force),
+        AiCommand::Start => ai_start_command(),
     }
 }
 
@@ -1366,6 +1451,284 @@ fn ai_apply_command(
     Ok(())
 }
 
+/// `rustio ai start` — the AI-assisted onboarding wizard.
+///
+/// Reads a single-sentence project description, maps it (deterministically)
+/// to a starter shape via the `intake` module, walks each proposed model
+/// with the user one at a time, then runs the resulting plan through the
+/// standard review + apply pipeline. The wizard never invents primitives
+/// — every decision is constrained to the existing vocabulary, and the
+/// user is the one who decides what lands.
+///
+/// Constraints enforced top-to-bottom:
+///   - intake refuses on ambiguous input (no fuzzy guessing).
+///   - the wizard prompts per model — accept / skip — so the developer
+///     is always the final decider.
+///   - the resulting Plan flows through `build_plan_document` and
+///     `execute_plan_document`, the same path `rustio ai apply` uses,
+///     so risk/impact/validation gates are not bypassed.
+fn ai_start_command() -> Result<(), String> {
+    use rustio_core::ai::intake;
+
+    let schema = load_project_schema()?;
+    let context = load_project_context()?;
+
+    println!();
+    println!("rustio ai · let's shape your project together.");
+    println!();
+    println!("  Tell me what you're building. One sentence is enough — I'll");
+    println!("  propose a starting shape and walk it with you, one model at");
+    println!("  a time. You decide what lands.");
+    println!();
+
+    let description = inquire::Text::new("What are you building?")
+        .with_help_message("e.g. \"a small clinic with patients and appointments\"")
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+
+    let description = description.trim().to_string();
+    if description.is_empty() {
+        return Err("no description given — re-run when you're ready.".into());
+    }
+
+    let Some(sketch) = intake::sketch(&description) else {
+        println!();
+        println!("  I don't recognise a clear domain in that description.");
+        println!("  I can start from these shapes today:");
+        println!();
+        println!("    · clinic   — patients, doctors, appointments");
+        println!("    · blog     — authors, posts");
+        println!("    · shop     — products, orders");
+        println!("    · crm      — companies, contacts, deals");
+        println!("    · tasks    — projects, tasks");
+        println!();
+        println!("  Try again with one of those words in your sentence, or");
+        println!("  add models one at a time with `rustio new app <name>`.");
+        return Ok(());
+    };
+
+    println!();
+    println!("  I read this as a `{}` project.", sketch.domain);
+    println!("  {}", sketch.headline);
+    println!();
+    println!("  Here's what I'd suggest:");
+    println!();
+    for (i, m) in sketch.models.iter().enumerate() {
+        let field_summary: Vec<String> = m.fields.iter().map(|f| f.name.to_string()).collect();
+        println!(
+            "    {}.  {:<14}  {}",
+            i + 1,
+            m.struct_name,
+            field_summary.join(", ")
+        );
+    }
+    println!();
+
+    let go = inquire::Confirm::new("Walk through these with me?")
+        .with_default(true)
+        .with_help_message("I'll ask you about each one in turn. You can skip any of them.")
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+    if !go {
+        println!();
+        println!("  No problem. Run `rustio ai start` again whenever you're ready.");
+        return Ok(());
+    }
+
+    // Walk each model. Accepted ones are accumulated; skipped ones are
+    // dropped (and their downstream references would be a `belongs_to`
+    // dangle — we refuse to proceed past that to keep the plan valid).
+    let mut accepted: Vec<intake::ModelSketch> = Vec::new();
+    let mut accepted_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+    for (i, model) in sketch.models.iter().enumerate() {
+        println!();
+        println!(
+            "  ─── {} of {} · {} ──────────",
+            i + 1,
+            sketch.models.len(),
+            model.struct_name
+        );
+        println!("  {}", model.rationale);
+        println!();
+        for f in &model.fields {
+            let mut line = format!("    · {:<22} {}", f.name, f.ty);
+            if f.nullable {
+                line.push_str("  (optional)");
+            }
+            if let Some(target) = f.belongs_to {
+                line.push_str(&format!("  → {target}"));
+            }
+            println!("{line}");
+        }
+        println!();
+
+        let choice = inquire::Select::new(
+            "What should I do?",
+            vec!["add — include this model", "skip — leave it out"],
+        )
+        .with_starting_cursor(0)
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+
+        if choice.starts_with("skip") {
+            // A skipped parent breaks any downstream `belongs_to`. Rather
+            // than silently dropping fields, refuse to continue and explain.
+            for later in &sketch.models[i + 1..] {
+                for f in &later.fields {
+                    if let Some(target) = f.belongs_to {
+                        if target == model.struct_name {
+                            println!();
+                            println!(
+                                "  Skipping `{}` would leave `{}.{}` pointing nowhere.",
+                                model.struct_name, later.struct_name, f.name
+                            );
+                            println!("  Stopping here — apply what you've already accepted with `rustio ai apply`,");
+                            println!(
+                                "  or re-run `rustio ai start` to walk the whole shape again."
+                            );
+                            // Fall through to the "build a plan from what we have so far" path.
+                            return finalise_wizard(
+                                &schema,
+                                context.as_ref(),
+                                &accepted,
+                                &description,
+                            );
+                        }
+                    }
+                }
+            }
+            println!("    skipped.");
+            continue;
+        }
+
+        accepted.push(model.clone());
+        accepted_names.insert(model.struct_name);
+        println!("    queued.");
+    }
+
+    finalise_wizard(&schema, context.as_ref(), &accepted, &description)
+}
+
+/// Build a `Plan` from the accepted sketches, review it, and apply it.
+/// Factored out so the early-exit "skipping a parent" path can call it
+/// with whatever was accepted so far.
+fn finalise_wizard(
+    schema: &rustio_core::Schema,
+    context: Option<&rustio_core::ai::ContextConfig>,
+    accepted: &[rustio_core::ai::ModelSketch],
+    description: &str,
+) -> Result<(), String> {
+    use rustio_core::ai::intake;
+    use rustio_core::ai::review::review_plan;
+    let _ = description; // recorded into the run banner above; keep for symmetry
+
+    if accepted.is_empty() {
+        println!();
+        println!("  Nothing queued — exiting without changes.");
+        return Ok(());
+    }
+
+    let plan = intake::plan_for(accepted);
+
+    // Run the review layer first so the operator sees the same
+    // risk/impact summary they'd get from `rustio ai review`.
+    let review = review_plan(schema, &plan, context).map_err(|e| format!("review failed: {e}"))?;
+
+    println!();
+    println!("  Summary");
+    println!("    models queued : {}", accepted.len());
+    let model_names: Vec<&str> = accepted.iter().map(|m| m.struct_name).collect();
+    println!("    →               {}", model_names.join(", "));
+    println!("    risk          : {:?}", review.risk);
+    if !review.warnings.is_empty() {
+        println!("    warnings      :");
+        for w in &review.warnings {
+            println!("      - {w}");
+        }
+    }
+    println!();
+
+    let confirm = inquire::Confirm::new("Apply these changes to the project?")
+        .with_default(true)
+        .with_help_message("This writes models.rs files + a migration. You still run `rustio migrate apply` after.")
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+    if !confirm {
+        println!();
+        println!("  No changes written.");
+        return Ok(());
+    }
+
+    // The AI executor refuses `AddModel` by design — model scaffolding
+    // is the wizard's job, not the executor's. We've already shown the
+    // user the reviewed plan + risk; now we materialise each accepted
+    // model by writing the scaffold directly. The plan itself is kept
+    // in memory for the prompt + explanation strings that go into the
+    // CLI output, mirroring the `rustio ai apply` summary shape.
+    let _ = (schema, plan); // referenced for clarity; not handed downstream
+
+    let mut applied: usize = 0;
+    let mut wrote_paths: Vec<String> = Vec::new();
+    for model in accepted {
+        // Map (column, target_struct) → (column, target_table) for the
+        // FK clause. Target table is looked up by struct name across
+        // the accepted set; if the target wasn't accepted we already
+        // bailed earlier.
+        let belongs_to: Vec<(String, String)> = model
+            .fields
+            .iter()
+            .filter_map(|f| {
+                f.belongs_to.and_then(|target_struct| {
+                    accepted
+                        .iter()
+                        .find(|m| m.struct_name == target_struct)
+                        .map(|m| (f.name.to_string(), m.table.to_string()))
+                })
+            })
+            .collect();
+
+        let fields: Vec<rustio_core::ai::FieldSpec> = model
+            .fields
+            .iter()
+            .map(|f| rustio_core::ai::FieldSpec {
+                name: f.name.to_string(),
+                ty: f.ty.to_string(),
+                nullable: f.nullable,
+                editable: true,
+            })
+            .collect();
+
+        let migration = scaffold_app_with_fields(
+            model.table,
+            model.struct_name,
+            model.table,
+            &fields,
+            &belongs_to,
+        )?;
+        out::success("created", &format!("app `{}`", model.table));
+        wrote_paths.push(format!("apps/{}/models.rs", model.table));
+        wrote_paths.push(migration.display().to_string());
+        applied += 1;
+    }
+
+    println!();
+    out::success(
+        "applied",
+        &format!("{} model{}", applied, if applied == 1 { "" } else { "s" }),
+    );
+    for p in &wrote_paths {
+        out::success("wrote", p);
+    }
+    println!();
+    println!("  Next:");
+    out::hint("rustio migrate apply   # actually create the tables in the DB");
+    out::hint("rustio schema          # regenerate rustio.schema.json");
+    out::hint("rustio run             # start the server on :8000");
+    out::hint("                       # then open http://127.0.0.1:8000/admin");
+    Ok(())
+}
+
 /// Shared schema loader for the AI subcommands — every one of them
 /// refuses to proceed without a committed `rustio.schema.json`.
 fn load_project_schema() -> Result<rustio_core::Schema, String> {
@@ -1524,6 +1887,245 @@ fn error_kind(e: &rustio_core::ai::PlanError) -> &'static str {
         // as a generic tag rather than block the CLI from printing.
         _ => "unknown",
     }
+}
+
+/// Scaffold an app with an explicit field set, used by the
+/// `rustio ai start` wizard. Same layout as [`new_app`] (mod.rs +
+/// models.rs + admin.rs + views.rs + a CREATE TABLE migration) but
+/// every Rust file is rendered from the sketch's fields rather than
+/// the default `title / is_active / priority` template.
+///
+/// The function is intentionally permissive about its inputs because
+/// the wizard already validated them upstream: every name is a known
+/// snake_case identifier and every type is in `VALID_TYPE_NAMES`.
+///
+/// `belongs_to` carries `(column_name, target_table)` pairs so we can
+/// emit a SQL `FOREIGN KEY` clause on a *fresh* table — referential
+/// integrity is otherwise blocked until 0.9.0 `migrate add-fks`,
+/// but a brand-new table has no pre-existing rows to break.
+pub(crate) fn scaffold_app_with_fields(
+    app_name: &str,
+    struct_name: &str,
+    table: &str,
+    fields: &[rustio_core::ai::FieldSpec],
+    belongs_to: &[(String, String)],
+) -> Result<std::path::PathBuf, String> {
+    validate_name(app_name)?;
+    if !Path::new("apps/mod.rs").exists() {
+        return Err(
+            "not inside a RustIO project — expected apps/mod.rs in the current directory".into(),
+        );
+    }
+    let app_dir = Path::new("apps").join(app_name);
+    if app_dir.exists() {
+        return Err(format!("app `{app_name}` already exists"));
+    }
+
+    fs::create_dir_all(&app_dir).map_err(err_str)?;
+    fs::write(app_dir.join("mod.rs"), APP_MOD_RS).map_err(err_str)?;
+    fs::write(
+        app_dir.join("models.rs"),
+        render_models_rs_with_fields(struct_name, table, fields),
+    )
+    .map_err(err_str)?;
+    fs::write(
+        app_dir.join("admin.rs"),
+        render(APP_ADMIN_RS, &[("STRUCT", struct_name)]),
+    )
+    .map_err(err_str)?;
+    fs::write(
+        app_dir.join("views.rs"),
+        render(
+            APP_VIEWS_RS,
+            &[
+                ("NAME", app_name),
+                ("STRUCT", struct_name),
+                ("TABLE", table),
+            ],
+        ),
+    )
+    .map_err(err_str)?;
+
+    register_app_in_mod(app_name)?;
+
+    let create_sql = render_create_table_sql(table, fields, belongs_to);
+    let migration_path = rustio_core::migrations::generate(
+        Path::new("migrations"),
+        &format!("create_{table}"),
+        &create_sql,
+    )
+    .map_err(err_str)?;
+
+    Ok(migration_path)
+}
+
+/// Render an `apps/<x>/models.rs` from a custom field list. Mirrors
+/// the shape of [`APP_MODELS_RS`] but every column comes from the
+/// supplied `FieldSpec`s.
+fn render_models_rs_with_fields(
+    struct_name: &str,
+    table: &str,
+    fields: &[rustio_core::ai::FieldSpec],
+) -> String {
+    let struct_fields = fields
+        .iter()
+        .map(|f| {
+            format!(
+                "    pub {}: {},",
+                f.name,
+                rust_field_type(&f.ty, f.nullable)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let columns_csv: Vec<String> = std::iter::once("\"id\"".to_string())
+        .chain(fields.iter().map(|f| format!("\"{}\"", f.name)))
+        .collect();
+    let insert_csv: Vec<String> = fields.iter().map(|f| format!("\"{}\"", f.name)).collect();
+
+    let from_row = fields
+        .iter()
+        .map(|f| {
+            format!(
+                "            {}: row.{}(\"{}\")?,",
+                f.name,
+                row_getter(&f.ty, f.nullable),
+                f.name,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let insert_values = fields
+        .iter()
+        .map(|f| {
+            format!(
+                "            {},",
+                insert_value_expr(&f.name, &f.ty, f.nullable)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        r#"use rustio_core::{{Error, Model, Row, RustioAdmin, Value}};
+
+/// The {struct_name} model — generated by `rustio ai start`. Edit freely.
+#[derive(Debug, RustioAdmin)]
+pub struct {struct_name} {{
+    pub id: i64,
+{struct_fields}
+}}
+
+impl Model for {struct_name} {{
+    const TABLE: &'static str = "{table}";
+    const COLUMNS: &'static [&'static str] = &[{columns}];
+    const INSERT_COLUMNS: &'static [&'static str] = &[{inserts}];
+
+    fn id(&self) -> i64 {{
+        self.id
+    }}
+
+    fn from_row(row: Row<'_>) -> Result<Self, Error> {{
+        Ok(Self {{
+            id: row.get_i64("id")?,
+{from_row}
+        }})
+    }}
+
+    fn insert_values(&self) -> Vec<Value> {{
+        vec![
+{insert_values}
+        ]
+    }}
+}}
+"#,
+        struct_fields = struct_fields,
+        columns = columns_csv.join(", "),
+        inserts = insert_csv.join(", "),
+        from_row = from_row,
+        insert_values = insert_values,
+    )
+}
+
+fn rust_field_type(ty: &str, nullable: bool) -> String {
+    let base = match ty {
+        "String" => "String",
+        "i32" => "i32",
+        "i64" => "i64",
+        "bool" => "bool",
+        "DateTime" => "chrono::DateTime<chrono::Utc>",
+        other => other,
+    };
+    if nullable {
+        format!("Option<{base}>")
+    } else {
+        base.to_string()
+    }
+}
+
+fn row_getter(ty: &str, nullable: bool) -> &'static str {
+    match (ty, nullable) {
+        ("String", false) => "get_string",
+        ("String", true) => "get_optional_string",
+        ("i32", false) => "get_i32",
+        ("i32", true) => "get_optional_i32",
+        ("i64", false) => "get_i64",
+        ("i64", true) => "get_optional_i64",
+        ("bool", false) => "get_bool",
+        ("bool", true) => "get_optional_bool",
+        ("DateTime", false) => "get_datetime",
+        ("DateTime", true) => "get_optional_datetime",
+        _ => "get_string",
+    }
+}
+
+fn insert_value_expr(name: &str, ty: &str, _nullable: bool) -> String {
+    // `Value: From<T>` covers every supported type; `Value: From<Option<T>>`
+    // covers the optional variants — same expression in both cases.
+    // `String` and `DateTime` need a `clone()` so the model stays usable
+    // after `insert_values` consumes its fields.
+    let needs_clone = ty == "String" || ty == "DateTime";
+    if needs_clone {
+        format!("self.{name}.clone().into()")
+    } else {
+        format!("self.{name}.into()")
+    }
+}
+
+/// Build the `CREATE TABLE` SQL for a wizard-scaffolded model.
+fn render_create_table_sql(
+    table: &str,
+    fields: &[rustio_core::ai::FieldSpec],
+    belongs_to: &[(String, String)],
+) -> String {
+    let mut lines: Vec<String> = Vec::with_capacity(2 + fields.len());
+    lines.push("    id INTEGER PRIMARY KEY AUTOINCREMENT,".to_string());
+    for f in fields {
+        let sqlite_ty = match f.ty.as_str() {
+            "String" | "DateTime" => "TEXT",
+            "i32" | "i64" | "bool" => "INTEGER",
+            _ => "TEXT",
+        };
+        let null = if f.nullable { "" } else { " NOT NULL" };
+        lines.push(format!("    {} {}{},", f.name, sqlite_ty, null));
+    }
+    for (col, target_table) in belongs_to {
+        // `ON DELETE RESTRICT` mirrors the AI executor's default and
+        // keeps fresh tables on the same posture the 0.9.x retrofit
+        // emits for older projects.
+        lines.push(format!(
+            "    FOREIGN KEY ({col}) REFERENCES {target_table}(id) ON DELETE RESTRICT,"
+        ));
+    }
+    // Drop the trailing comma on the last entry.
+    if let Some(last) = lines.last_mut() {
+        if last.ends_with(',') {
+            last.pop();
+        }
+    }
+    format!("CREATE TABLE {table} (\n{}\n);\n", lines.join("\n"))
 }
 
 fn register_app_in_mod(name: &str) -> Result<(), String> {

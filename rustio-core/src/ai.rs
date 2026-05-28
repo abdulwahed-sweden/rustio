@@ -30,6 +30,7 @@ use crate::schema::{
 
 pub mod executor;
 pub mod industry;
+pub mod intake;
 pub mod planner;
 pub mod review;
 
@@ -50,6 +51,7 @@ pub use executor::{
     ParsedModelsFile, PlannedFileChange, ProjectView, RetrofitReport,
 };
 pub use industry::{industry_schema_for, IndustrySchema};
+pub use intake::{sketch, FieldSketch, ModelSketch, ProjectSketch};
 pub use planner::{generate_plan, ContextConfig, PlanError, PlanRequest, PlanResult};
 pub use review::{
     build_plan_document, build_plan_document_with_timestamp, classify_risk, compute_impact,
