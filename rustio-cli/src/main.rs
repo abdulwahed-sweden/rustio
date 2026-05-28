@@ -9,13 +9,17 @@ const USAGE: &str = r#"rustio — the RustIO framework CLI
 USAGE:
     rustio <command> [args...]
 
-If you're new: `rustio init <name>` creates a project, `cd <name>`,
-then `rustio new app <thing>` adds your first model, then
-`rustio migrate apply` + `rustio run`. That's the whole loop.
+If you're new: `rustio init <name>` creates a project and opens the
+setup menu — a guided walkthrough that proposes a starting shape and
+lets you decide what lands. From there: `rustio migrate apply` +
+`rustio run`. That's the whole loop.
 
 SCAFFOLD
     init [name]                 Wizard (no name) or non-interactive scaffold (with name).
                                   Options: --preset <basic|blog|api>, --app <name>
+    start                       Open the setup menu — guided wizard, manual mode,
+                                  or (soon) import an existing schema. Recommended
+                                  entry point for a fresh project.
     new project <name>          Create a new RustIO project in <name>/.
     new app <name>              Create a new app inside the current project.
 
@@ -31,13 +35,9 @@ DATABASE
 SCHEMA
     schema                      Write rustio.schema.json from the in-memory admin
                                   registry. The single source of truth for every
-                                  external tool (including the AI layer).
+                                  external tool reading the project.
 
-AI                                                  (deterministic, refusal-first)
-    ai                          Print the AI boundary summary.
-    ai start                    Interactive onboarding wizard. Reads a one-line
-                                  description, proposes a starting shape, walks
-                                  each model with you. You decide what lands.
+ADVANCED                                            (deterministic, refusal-first)
     ai plan "<prompt>" [--save <path>]
                                 Parse a natural-language request into a typed Plan
                                 (no execution).
@@ -170,6 +170,14 @@ async fn main() -> ExitCode {
                 run()
             }
         }
+        Ok(Command::Start) => {
+            if why_mode {
+                why_for("start");
+                Ok(())
+            } else {
+                start_command()
+            }
+        }
         Ok(Command::MigrateGenerate(name)) => {
             if why_mode {
                 why_for("migrate-generate");
@@ -270,6 +278,12 @@ enum Command {
     },
     NewProject(String),
     NewApp(String),
+    /// `rustio start` — the recommended entry point for new projects.
+    /// Opens a small menu (Guided / Manual / Import) and dispatches.
+    /// The Guided path is the conversational wizard introduced in
+    /// 0.10.x; the underlying machinery is the same module used by
+    /// the post-`init` offer.
+    Start,
     Run,
     MigrateGenerate(String),
     MigrateApply {
@@ -356,12 +370,6 @@ pub(crate) enum AiCommand {
         dry_run: bool,
         force: bool,
     },
-    /// `rustio ai start` — interactive onboarding wizard. Reads a
-    /// one-line project description, proposes a starter shape via the
-    /// deterministic `intake` module, walks each model with the user,
-    /// then runs the plan through the standard review + apply pipeline.
-    /// Lives entirely inside the existing Primitive vocabulary.
-    Start,
 }
 
 fn parse_command(args: &[String]) -> Result<Command, String> {
@@ -392,6 +400,12 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                 return Err(format!("unexpected argument `{}`", args[2]));
             }
             Ok(Command::Run)
+        }
+        Some("start") => {
+            if args.len() > 2 {
+                return Err(format!("unexpected argument `{}`", args[2]));
+            }
+            Ok(Command::Start)
         }
         Some("init") => parse_init_args(&args[2..]),
         Some("new") => {
@@ -559,55 +573,45 @@ fn init_command(
                     .map_err(|e| format!("failed to enter `{}`: {e}", plan.project_name))?;
             }
         }
-        offer_ai_wizard_after_init()?;
+        offer_start_menu_after_init()?;
     }
     Ok(())
 }
 
-/// Ask the user, in one calm prompt, whether they'd like the AI wizard
-/// to propose a starting shape. On yes: ensures `rustio.schema.json`
-/// exists, then dispatches to [`ai_start_command`]. On no: prints a
-/// one-line hint and returns.
+/// Open the post-init menu — same one as `rustio start`, just chained
+/// onto the end of `rustio init` so the onboarding is one continuous
+/// experience rather than two disjoint commands.
 ///
-/// This function is forgiving: any failure short of stdin EOF is
-/// downgraded to a printed warning so a partially set up project never
-/// blocks the user from getting to the regular `rustio run` path.
-fn offer_ai_wizard_after_init() -> Result<(), String> {
-    println!();
-    let want = inquire::Confirm::new("Want me to propose a starting shape for your models?")
-        .with_default(true)
-        .with_help_message(
-            "I'll ask one question, walk each model with you, and you decide what lands.",
-        )
-        .prompt();
-
-    let go = match want {
-        Ok(v) => v,
-        Err(inquire::InquireError::OperationCanceled)
-        | Err(inquire::InquireError::OperationInterrupted) => false,
-        Err(e) => return Err(format!("{e}")),
-    };
-    if !go {
-        println!();
-        out::hint("rustio ai start        # propose a starting shape any time");
-        return Ok(());
-    }
-
-    // The wizard reads `rustio.schema.json`; on a brand-new project
-    // it isn't there yet. Building it requires a `cargo run -- --dump-schema`
-    // which can be slow on first compile — let the user know.
+/// Forgiving: anything short of stdin EOF is downgraded to a printed
+/// hint, so a partially set-up project never blocks the user from
+/// getting to the regular `rustio run` path.
+fn offer_start_menu_after_init() -> Result<(), String> {
+    // The guided path reads `rustio.schema.json`; on a brand-new project
+    // it isn't there yet. Generate it up front so both Guided and Manual
+    // paths see a consistent project state. First build can be slow on
+    // a clean machine — say so plainly.
     if !Path::new("rustio.schema.json").exists() {
         println!();
         out::info("Generating rustio.schema.json (first build can take ~30s) …");
         if let Err(e) = try_dump_schema() {
             println!();
             out::info(&format!("could not generate the schema: {e}"));
-            out::hint("rustio schema && rustio ai start   # try again after the first compile");
+            out::hint("rustio schema && rustio start   # try again after the first compile");
             return Ok(());
         }
     }
 
-    ai_start_command()
+    match start_command() {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // Cancellations / interrupts inside the menu shouldn't fail
+            // the surrounding `rustio init` — just surface the hint.
+            println!();
+            out::info(&format!("setup menu exited: {e}"));
+            out::hint("rustio start           # open the setup menu any time");
+            Ok(())
+        }
+    }
 }
 
 pub(crate) fn new_project(name: &str) -> Result<(), String> {
@@ -922,7 +926,7 @@ fn schema_command() -> Result<(), String> {
     out::info("");
     out::info("Next:");
     out::hint("review rustio.schema.json — every external tool reads from this file");
-    out::hint("`rustio ai plan \"<change>\"` — let the AI layer propose a schema edit");
+    out::hint("`rustio start` — onboard a new project, or `rustio ai plan \"<change>\"` to evolve this one");
     Ok(())
 }
 
@@ -1034,12 +1038,9 @@ async fn user_create_command(
 /// can grow independently.
 fn parse_ai_command(rest: &[String]) -> Result<Command, String> {
     match rest.first().map(String::as_str) {
-        Some("start") => {
-            if rest.len() > 1 {
-                return Err(format!("unexpected argument `{}`", rest[1]));
-            }
-            Ok(Command::Ai(AiCommand::Start))
-        }
+        Some("start") => Err(
+            "`rustio ai start` was promoted to `rustio start` — same flow, new name.".into(),
+        ),
         Some("plan") => parse_ai_plan_args(&rest[1..]),
         Some("review") => {
             let path = rest
@@ -1119,7 +1120,6 @@ fn ai_command(sub: AiCommand) -> Result<(), String> {
             dry_run,
             force,
         } => ai_apply_command(&path, assume_yes, dry_run, force),
-        AiCommand::Start => ai_start_command(),
     }
 }
 
@@ -1451,30 +1451,86 @@ fn ai_apply_command(
     Ok(())
 }
 
-/// `rustio ai start` — the AI-assisted onboarding wizard.
+/// `rustio start` — onboarding entry point.
 ///
-/// Reads a single-sentence project description, maps it (deterministically)
+/// Shows a small three-way menu (Guided / Manual / Import) and
+/// dispatches. The guided path is the conversational wizard; the
+/// manual path drops out with a one-line hint pointing at
+/// `rustio new app <name>`; the import path is reserved for a future
+/// release that reads a `rustio.schema.json` from disk and rebuilds
+/// matching `apps/<x>/models.rs` files.
+///
+/// This is the **canonical first command** for a new project — the
+/// rest of the AI vocabulary (`ai plan` / `review` / `apply`) is an
+/// advanced surface for evolving an existing schema, not a first
+/// impression.
+fn start_command() -> Result<(), String> {
+    if !Path::new("apps/mod.rs").exists() {
+        return Err(
+            "not inside a RustIO project — run `rustio init <name>` first, or `cd` into an existing project.".into(),
+        );
+    }
+
+    println!();
+    println!("Welcome.");
+    println!();
+    println!("  How would you like to begin?");
+    println!();
+
+    let choice = inquire::Select::new(
+        "Pick one",
+        vec![
+            "Guided — I'll propose a starting shape and walk it with you",
+            "Manual — I'll get out of the way; you add models one at a time",
+            "Import — read an existing rustio.schema.json (coming soon)",
+        ],
+    )
+    .with_starting_cursor(0)
+    .prompt()
+    .map_err(|e| format!("{e}"))?;
+
+    if choice.starts_with("Guided") {
+        guided_wizard_command()
+    } else if choice.starts_with("Manual") {
+        println!();
+        println!("  Got it. Build at your own pace:");
+        println!();
+        out::hint("rustio new app <name>   # one model + admin entry + migration stub");
+        out::hint("rustio migrate apply    # apply the migration to the DB");
+        out::hint("rustio run              # start the server on :8000");
+        println!();
+        out::hint("rustio start            # come back to this menu any time");
+        Ok(())
+    } else {
+        println!();
+        println!("  Importing from an existing schema isn't wired up yet — it's");
+        println!("  the next thing on this front. For now, `rustio start` →");
+        println!("  Guided will walk you through a fresh shape.");
+        Ok(())
+    }
+}
+
+/// The conversational wizard itself — formerly `rustio ai start`.
+///
+/// Reads a single-sentence project description, maps it deterministically
 /// to a starter shape via the `intake` module, walks each proposed model
 /// with the user one at a time, then runs the resulting plan through the
-/// standard review + apply pipeline. The wizard never invents primitives
-/// — every decision is constrained to the existing vocabulary, and the
-/// user is the one who decides what lands.
+/// standard review path before materialising files.
 ///
 /// Constraints enforced top-to-bottom:
 ///   - intake refuses on ambiguous input (no fuzzy guessing).
 ///   - the wizard prompts per model — accept / skip — so the developer
 ///     is always the final decider.
-///   - the resulting Plan flows through `build_plan_document` and
-///     `execute_plan_document`, the same path `rustio ai apply` uses,
-///     so risk/impact/validation gates are not bypassed.
-fn ai_start_command() -> Result<(), String> {
+///   - the resulting Plan flows through `review_plan` so the user sees
+///     the same risk/impact gate every `rustio ai apply` would show.
+fn guided_wizard_command() -> Result<(), String> {
     use rustio_core::ai::intake;
 
     let schema = load_project_schema()?;
     let context = load_project_context()?;
 
     println!();
-    println!("rustio ai · let's shape your project together.");
+    println!("Let's shape your project together.");
     println!();
     println!("  Tell me what you're building. One sentence is enough — I'll");
     println!("  propose a starting shape and walk it with you, one model at");
@@ -1531,7 +1587,7 @@ fn ai_start_command() -> Result<(), String> {
         .map_err(|e| format!("{e}"))?;
     if !go {
         println!();
-        println!("  No problem. Run `rustio ai start` again whenever you're ready.");
+        println!("  No problem. Run `rustio start` again whenever you're ready.");
         return Ok(());
     }
 
@@ -1584,9 +1640,7 @@ fn ai_start_command() -> Result<(), String> {
                                 model.struct_name, later.struct_name, f.name
                             );
                             println!("  Stopping here — apply what you've already accepted with `rustio ai apply`,");
-                            println!(
-                                "  or re-run `rustio ai start` to walk the whole shape again."
-                            );
+                            println!("  or re-run `rustio start` to walk the whole shape again.");
                             // Fall through to the "build a plan from what we have so far" path.
                             return finalise_wizard(
                                 &schema,
@@ -1631,33 +1685,55 @@ fn finalise_wizard(
 
     let plan = intake::plan_for(accepted);
 
-    // Run the review layer first so the operator sees the same
-    // risk/impact summary they'd get from `rustio ai review`.
+    // Run the review layer so we have risk + warnings to show if the
+    // user opts into the technical view. The summary itself stays
+    // intentionally non-technical until they ask.
     let review = review_plan(schema, &plan, context).map_err(|e| format!("review failed: {e}"))?;
 
-    println!();
-    println!("  Summary");
-    println!("    models queued : {}", accepted.len());
+    // Counts for the blueprint. `relationships` = AddRelation primitives
+    // in the plan; the rest are inherent properties of the resulting
+    // admin (every model gets list/search/filters/pagination for free),
+    // so we state them as guarantees, not counts.
+    use rustio_core::ai::Primitive;
+    let n_models = accepted.len();
+    let n_relations = plan
+        .steps
+        .iter()
+        .filter(|p| matches!(p, Primitive::AddRelation(_)))
+        .count();
+    let n_migrations = accepted.len(); // one CREATE TABLE per accepted model
     let model_names: Vec<&str> = accepted.iter().map(|m| m.struct_name).collect();
-    println!("    →               {}", model_names.join(", "));
-    println!("    risk          : {:?}", review.risk);
-    if !review.warnings.is_empty() {
-        println!("    warnings      :");
-        for w in &review.warnings {
-            println!("      - {w}");
-        }
-    }
-    println!();
 
-    let confirm = inquire::Confirm::new("Apply these changes to the project?")
-        .with_default(true)
-        .with_help_message("This writes models.rs files + a migration. You still run `rustio migrate apply` after.")
+    show_blueprint(&model_names, n_models, n_relations, n_migrations);
+
+    // Three-way choice. Apply lands the files; details opens the
+    // technical view (plan ops, risk, warnings) and then re-asks;
+    // cancel exits without changes.
+    loop {
+        let choice = inquire::Select::new(
+            "Ready?",
+            vec![
+                "Apply — write the files",
+                "Show technical details — plan, risk, warnings",
+                "Cancel — don't change anything",
+            ],
+        )
+        .with_starting_cursor(0)
         .prompt()
         .map_err(|e| format!("{e}"))?;
-    if !confirm {
-        println!();
-        println!("  No changes written.");
-        return Ok(());
+
+        if choice.starts_with("Apply") {
+            break;
+        } else if choice.starts_with("Show") {
+            show_technical_details(&plan, &review, accepted);
+            // Loop back to the choice menu so the user can apply or
+            // cancel after reading the details.
+            continue;
+        } else {
+            println!();
+            println!("  No changes written.");
+            return Ok(());
+        }
     }
 
     // The AI executor refuses `AddModel` by design — model scaffolding
@@ -1727,6 +1803,90 @@ fn finalise_wizard(
     out::hint("rustio run             # start the server on :8000");
     out::hint("                       # then open http://127.0.0.1:8000/admin");
     Ok(())
+}
+
+/// The system-blueprint summary shown after the user finishes the
+/// walkthrough. Frames the outcome in terms of *what RustIO is about
+/// to build*, not what primitives the plan contains.
+///
+/// The five lines below are deliberate:
+///   - models / relationships are **counts** (they change per project).
+///   - admin screens / search-filters-pagination / migrations are
+///     **guarantees** — they hold for every model the framework lays
+///     down, so the wording is positive and unconditional.
+///
+/// Power users who want to see the plan ops + risk + warnings reach
+/// them through the "Show technical details" option in the prompt
+/// that follows this view.
+fn show_blueprint(model_names: &[&str], n_models: usize, n_relations: usize, n_migrations: usize) {
+    println!();
+    println!("  RustIO is ready to create:");
+    println!();
+    println!(
+        "    ✓  {} connected model{} — {}",
+        n_models,
+        if n_models == 1 { "" } else { "s" },
+        model_names.join(", "),
+    );
+    println!(
+        "    ✓  {} relationship{}",
+        n_relations,
+        if n_relations == 1 { "" } else { "s" },
+    );
+    println!("    ✓  Admin screens for every model");
+    println!("    ✓  Search, filters, and pagination");
+    println!(
+        "    ✓  {} starter migration{}",
+        n_migrations,
+        if n_migrations == 1 { "" } else { "s" },
+    );
+    println!();
+}
+
+/// Behind the "Show technical details" toggle. This is where the
+/// review-layer vocabulary (plan operations, risk, warnings) lives —
+/// available to anyone who asks, never the first impression.
+fn show_technical_details(
+    plan: &rustio_core::ai::Plan,
+    review: &rustio_core::ai::PlanReview,
+    accepted: &[rustio_core::ai::ModelSketch],
+) {
+    use rustio_core::ai::Primitive;
+
+    println!();
+    println!("  Technical details");
+    println!("  ─────────────────");
+    println!();
+    println!("  Plan operations ({}):", plan.steps.len());
+    for (i, step) in plan.steps.iter().enumerate() {
+        let label = match step {
+            Primitive::AddModel(m) => {
+                format!("add_model     {} ({} fields)", m.name, m.fields.len())
+            }
+            Primitive::AddRelation(r) => {
+                format!("add_relation  {}.{} → {}", r.from, r.via, r.to)
+            }
+            other => format!("{other:?}"),
+        };
+        println!("    {}. {}", i + 1, label);
+    }
+    println!();
+    println!("  Risk classification : {:?}", review.risk);
+    if review.warnings.is_empty() {
+        println!("  Warnings            : none");
+    } else {
+        println!("  Warnings            :");
+        for w in &review.warnings {
+            println!("    - {w}");
+        }
+    }
+    println!();
+    println!("  Migrations to be written:");
+    for m in accepted {
+        println!("    migrations/<next>_create_{}.sql", m.table);
+    }
+    println!();
+    let _ = accepted; // referenced above; reserved for future per-model detail
 }
 
 /// Shared schema loader for the AI subcommands — every one of them
@@ -2011,7 +2171,7 @@ fn render_models_rs_with_fields(
     format!(
         r#"use rustio_core::{{Error, Model, Row, RustioAdmin, Value}};
 
-/// The {struct_name} model — generated by `rustio ai start`. Edit freely.
+/// The {struct_name} model — generated by `rustio start`. Edit freely.
 #[derive(Debug, RustioAdmin)]
 pub struct {struct_name} {{
     pub id: i64,
@@ -2733,6 +2893,14 @@ fn why_for(name: &str) {
              dependencies). Subsequent runs are instant.\n\
              \n\
              Run it without --why to start the server."
+        }
+        "start" => {
+            "`rustio start` opens the setup menu — guided wizard (recommended), manual\n\
+             mode, or (soon) import an existing schema. It's the recommended first\n\
+             command on a fresh project. The guided path asks one question, proposes\n\
+             a starting shape, and walks each model with you; you decide what lands.\n\
+             \n\
+             Run it without --why to open the menu."
         }
         "migrate-generate" => {
             "`rustio migrate generate <name>` writes an empty SQL file under migrations/\n\
