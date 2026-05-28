@@ -160,8 +160,7 @@ fn strip_tailwind_only_syntax(source: &str) -> String {
             // false matches by demanding the next non-whitespace char
             // be `{`; in-prose mentions ("@theme — same tokens…") fail
             // the guard and pass through unchanged.
-            if rest.starts_with("@theme") {
-                let after_kw = &rest[6..]; // "@theme".len() == 6
+            if let Some(after_kw) = rest.strip_prefix("@theme") {
                 let trimmed = after_kw.trim_start();
                 if trimmed.starts_with('{') {
                     let brace_offset = rest.find('{').unwrap();

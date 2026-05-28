@@ -922,7 +922,7 @@ pub async fn form_render(
             FormFieldView {
                 id: format!("field_{}", f.name),
                 name: f.name.to_string(),
-                label: f.label.to_string(),
+                label: humanize_field_label(f.label),
                 required: f.required && !f.readonly,
                 readonly: f.readonly,
                 control,
@@ -1176,7 +1176,7 @@ pub async fn list_render(
         .filter(|f| f.visible_in_table)
         .map(|f| ColumnView {
             name: f.name.to_string(),
-            label: f.label.to_string(),
+            label: humanize_field_label(f.label),
             sortable: f.sortable,
         })
         .collect();
@@ -1825,6 +1825,40 @@ fn humanize_status_label(raw: &str) -> String {
     }
 }
 
+/// Convert a database column name into a sentence-cased display label.
+///
+/// Rules (in order):
+///   1. Empty input returns empty.
+///   2. Bare `"id"` becomes `"ID"` — the conventional case for an
+///      identifier column.
+///   3. A label with no underscores whose first char is already
+///      uppercase is treated as user-set (e.g. `"Username"` from
+///      `AdminUiField { label: "Username", … }`) and passed through
+///      unchanged so explicit labels aren't lowercased.
+///   4. A trailing `"_id"` is stripped (`"project_id"` → `"project"`)
+///      so foreign-key columns show the model name rather than the
+///      column name.
+///   5. Underscores become spaces, the whole label is lowercased,
+///      then the first character is uppercased: `"due_at"` →
+///      `"Due at"`, `"first_name"` → `"First name"`.
+///
+/// Idempotent — `humanize_field_label("Title") == "Title"`.
+fn humanize_field_label(raw: &str) -> String {
+    if raw == "id" {
+        return "ID".to_string();
+    }
+    if !raw.contains('_') && raw.chars().next().is_some_and(|c| c.is_uppercase()) {
+        return raw.to_string();
+    }
+    let stripped = raw.strip_suffix("_id").unwrap_or(raw);
+    let spaced = stripped.replace('_', " ").to_lowercase();
+    let mut chars = spaced.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 fn dashboard_fallback(entries: &[DashboardEntry]) -> String {
     let mut out = String::from(
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Dashboard</title></head><body style=\"font-family:system-ui\"><h1>Dashboard</h1><ul>",
@@ -2071,6 +2105,27 @@ mod tests {
         assert_eq!(
             humanize_status_label("multi_word_status"),
             "Multi word status"
+        );
+    }
+
+    #[test]
+    fn humanize_field_label_cases() {
+        assert_eq!(humanize_field_label(""), "");
+        assert_eq!(humanize_field_label("id"), "ID");
+        assert_eq!(humanize_field_label("title"), "Title");
+        assert_eq!(humanize_field_label("project_id"), "Project");
+        assert_eq!(humanize_field_label("user_id"), "User");
+        assert_eq!(humanize_field_label("due_at"), "Due at");
+        assert_eq!(humanize_field_label("created_at"), "Created at");
+        assert_eq!(humanize_field_label("first_name"), "First name");
+        // Already-cased labels (e.g. user-set via AdminUiField.label =
+        // "Username") pass through unchanged.
+        assert_eq!(humanize_field_label("Username"), "Username");
+        assert_eq!(humanize_field_label("User ID"), "User ID");
+        // Idempotent on a previous humanize output.
+        assert_eq!(
+            humanize_field_label(&humanize_field_label("due_at")),
+            "Due at"
         );
     }
 }
