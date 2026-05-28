@@ -229,6 +229,35 @@
     flex-direction: column;
     gap: 4px;
   }
+  .rio-sidebar__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 6px 18px;
+    text-decoration: none;
+    color: var(--color-text-primary);
+    margin-bottom: 4px;
+    border-bottom: 0.5px solid var(--color-border);
+  }
+  .rio-sidebar__mark {
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--color-accent);
+    color: var(--color-accent-text);
+    font-size: var(--text-meta);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .rio-sidebar__wordmark {
+    font-size: var(--text-h3);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    letter-spacing: -0.2px;
+  }
   .rio-sidebar__section {
     font-size: var(--text-small);
     color: var(--color-text-secondary);
@@ -266,6 +295,21 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-6);
+  }
+  /* Inset variant — used by header.html inside .rio-main: rounds the
+   * corners, adds a full border, and reserves bottom margin so the page
+   * body content sits below it. */
+  .rio-topbar--inset {
+    border: 0.5px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 28px;
+  }
+  .rio-topbar__logout-form {
+    display: inline;
+    margin: 0;
+  }
+  .rio-topbar__logout-form .rio-btn {
+    padding: 6px 14px;
   }
   .rio-topbar__brand {
     display: inline-flex;
@@ -428,6 +472,16 @@
     padding: 5px 12px;
     border: 0.5px solid var(--color-border);
     border-radius: 999px;
+  }
+  /* Lift variant — adds the spacing pattern from the brief so the pill
+   * sits cleanly above a page hero (rio-page-head). */
+  .rio-pill--lift { margin-bottom: var(--space-5); }
+
+  /* ---- Stat grid -------------------------------------------------------- */
+  .rio-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-3);
   }
 
   /* ---- Form fields ------------------------------------------------------ */

@@ -1,5 +1,6 @@
-{# Subdued status bar at the bottom of every admin page. Neutral
-   gray ladder only — no accent, no cursor, no blink. #}
+{# Quiet status strip at the bottom of every admin page. Project name
+   + framework version, separated by a middle dot. Sits below the page
+   content inside .rio-main; styled in admin.css as .rio-statusbar. #}
 <footer class="rio-statusbar">
   <span>{{ design.project_name | default('RustIO') }}</span>
   {% if rustio_version is defined and rustio_version %}

@@ -3,15 +3,12 @@
 {% block body_class %}admin-shell{% endblock %}
 
 {% block body %}
-<div class="rio-stack">
-  {% include "includes/header.html" %}
+<div class="rio-shell">
+  {% include "includes/sidebar.html" %}
   <main class="rio-main">
+    {% include "includes/header.html" %}
     {% block admin_content %}{% endblock %}
+    {% include "includes/footer.html" %}
   </main>
-  {% include "includes/footer.html" %}
 </div>
-{# Vestigial — kept so project overrides at this path still resolve.
-   The new shell carries navigation in the top bar; sidebar.html
-   renders nothing by default. #}
-{% include "includes/sidebar.html" %}
 {% endblock %}

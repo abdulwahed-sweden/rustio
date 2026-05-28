@@ -1,33 +1,14 @@
-{# Lifted topbar. Sits on --bg-elevated so it visibly rises off the
-   canvas. Brand mark uses the only accent in the topbar; everything
-   else stays on the gray ladder. #}
-<nav class="rio-topnav" aria-label="Admin navigation">
-  <a href="/admin" class="rio-topnav__brand">
-    <span class="rio-topnav__mark">{{ design.logo_initial | default('R') }}</span>
-    <span class="rio-topnav__name">{{ design.project_name | default('RustIO') }}</span>
-  </a>
-
-  <ul class="rio-topnav__links">
-    {% for entry in sidebar_entries | default([]) %}
-      {% if entry.visible %}
-        <li>
-          <a href="{{ entry.href }}"
-             class="rio-topnav__link{% if entry.active %} rio-topnav__link--active{% endif %}">
-            {{ entry.label }}
-          </a>
-        </li>
-      {% endif %}
-    {% endfor %}
-  </ul>
-
-  {% if current_user is defined and current_user %}
-    <div class="rio-topnav__status">
-      <span class="rio-topnav__dot"></span>
-      <span class="rio-topnav__email">{{ current_user.email }}</span>
-      <form method="post" action="/admin/logout" class="m-0" style="display:inline;margin:0;">
-        {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-        <button type="submit" class="rio-topnav__logout">Log out</button>
-      </form>
-    </div>
-  {% endif %}
-</nav>
+{# Topbar inside main. Quiet status strip — accent dot, signed-in
+   user, log-out form. Brand and navigation live in the sidebar. #}
+{% if current_user is defined and current_user %}
+<header class="rio-topbar rio-topbar--inset">
+  <div class="rio-topbar__status">
+    <span class="rio-topbar__dot" aria-hidden="true"></span>
+    <span>Signed in as {{ current_user.email }}</span>
+  </div>
+  <form method="post" action="/admin/logout" class="rio-topbar__logout-form">
+    {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+    <button type="submit" class="rio-btn rio-btn--ghost">Log out</button>
+  </form>
+</header>
+{% endif %}
