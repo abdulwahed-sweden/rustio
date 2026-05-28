@@ -55,7 +55,7 @@ rustio run
 Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for the `Note` model. Click **+ Add Note** to create one. Click the row to edit it. That's the entire loop.
 
 <p align="center">
-  <img src="docs/screenshots/admin-login.png" alt="Sign-in page" width="32%">
+  <img src="docs/screenshots/admin-login-light.png" alt="Sign-in page" width="32%">
   <img src="docs/screenshots/admin-dashboard-light.png" alt="Dashboard with one card per registered model" width="32%">
   <img src="docs/screenshots/admin-task-edit-light.png" alt="Edit form with every input type — text, integer, foreign-key select, datetime" width="32%">
 </p>
