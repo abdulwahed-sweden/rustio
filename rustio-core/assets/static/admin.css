@@ -15,11 +15,11 @@
  *   (a) Phase 3 canonical vocabulary — .rio-topbar, .rio-sidebar,
  *       .rio-btn, .rio-card, .rio-stat, .rio-pill, .rio-table, etc.
  *       These match the brief verbatim.
- *   (b) Interim vocabulary — .rio-topnav, .rio-statusbar, .rio-stat-card,
- *       .rio-page-head, .rio-form*, .rio-auth, .rio-pagination, .rio-alert,
- *       .rio-detail-list, .rio-meta, .rio-empty. Used by templates not yet
- *       swept onto the canonical names. Removed in Phase 6 once Phase 5
- *       (reference page) + Phase 6 sweep land.
+ *   (b) Page-pattern vocabulary — .rio-statusbar, .rio-page-head,
+ *       .rio-form*, .rio-auth, .rio-pagination, .rio-alert,
+ *       .rio-detail-list, .rio-meta, .rio-empty. Higher-level
+ *       compositions templates still emit by name; each is just a
+ *       thin re-application of the primitives above.
  *
  * Hard rules (carry over from the original brief):
  *   - no pure black, no pure white
@@ -587,105 +587,11 @@
   }
 
   /* ======================================================================
-   * Interim primitives — used by templates not yet swept onto the Phase 3
-   * canonical vocabulary above. Each block here will go away in Phase 6.
+   * Page-pattern vocabulary — higher-level compositions still emitted by
+   * templates. Each is a thin re-skin of the Phase 3 primitives above.
    * ====================================================================== */
 
-  /* Three-row shell still used by base_admin.html (topbar + main +
-   * statusbar). Renamed from the old `.rio-shell` so `.rio-shell` is free
-   * for the Phase 3 sidebar+main layout. */
-  .rio-stack {
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    min-height: 100vh;
-    background: var(--color-canvas);
-  }
-
-  /* The current topbar (full-width, not the inside-main variant). Lives
-   * directly under .rio-stack. Replaced in Phase 5/6 by .rio-topbar inside
-   * .rio-main. */
-  .rio-topnav {
-    background: var(--color-elevated);
-    border-bottom: 0.5px solid var(--color-border);
-    padding: var(--space-4) var(--space-6);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-6);
-  }
-  .rio-topnav__brand {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-3);
-    color: var(--color-text-primary);
-    text-decoration: none;
-  }
-  .rio-topnav__mark {
-    width: 26px;
-    height: 26px;
-    border-radius: var(--radius-sm);
-    background: var(--color-accent);
-    color: var(--color-accent-text);
-    font-size: var(--text-meta);
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .rio-topnav__name {
-    font-size: var(--text-h3);
-    font-weight: 500;
-    color: var(--color-text-primary);
-    letter-spacing: -0.2px;
-  }
-  .rio-topnav__links {
-    display: flex;
-    gap: var(--space-6);
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    flex: 1;
-    justify-content: center;
-  }
-  .rio-topnav__link {
-    font-size: var(--text-meta);
-    color: var(--color-text-secondary);
-    text-decoration: none;
-  }
-  .rio-topnav__link:hover,
-  .rio-topnav__link--active { color: var(--color-text-primary); }
-  .rio-topnav__status {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-4);
-    color: var(--color-text-tertiary);
-    font-size: var(--text-meta);
-  }
-  .rio-topnav__dot {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .rio-topnav__dot::before {
-    content: "";
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--color-accent);
-  }
-  .rio-topnav__email { color: var(--color-text-tertiary); }
-  .rio-topnav__logout {
-    background: transparent;
-    border: 0;
-    padding: 0;
-    font: inherit;
-    color: var(--color-text-secondary);
-    cursor: pointer;
-    transition: color .15s ease;
-  }
-  .rio-topnav__logout:hover { color: var(--color-text-primary); }
-
-  /* Status bar — quiet footer strip under the 3-row stack. */
+  /* Status bar — quiet footer strip at the bottom of .rio-main. */
   .rio-statusbar {
     display: flex;
     align-items: center;
@@ -865,40 +771,6 @@
     border-color: var(--color-accent);
     color: var(--color-accent-text);
   }
-
-  /* Pre-Phase-3 stat card (parallel to .rio-stat). dashboard.html still
-   * emits these names; Phase 6 converges them onto .rio-stat. */
-  .rio-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: var(--space-3);
-  }
-  .rio-stat-card {
-    display: block;
-    background: var(--color-surface);
-    border: 0.5px solid var(--color-border);
-    border-radius: var(--radius-md);
-    padding: var(--space-4) 18px;
-    color: var(--color-text-primary);
-    text-decoration: none;
-    transition: border-color .15s ease;
-  }
-  .rio-stat-card:hover { border-color: var(--color-border-strong); }
-  .rio-stat-card__number {
-    font-size: var(--text-stat);
-    font-weight: 500;
-    color: var(--color-text-primary);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -0.2px;
-    line-height: 1.2;
-  }
-  .rio-stat-card__label {
-    font-size: var(--text-meta);
-    color: var(--color-text-secondary);
-    margin-top: var(--space-1);
-  }
-  .rio-stat-card--featured { border-color: var(--color-accent); }
-  .rio-stat-card--featured .rio-stat-card__number { color: var(--color-accent); }
 
   /* Alerts. */
   .rio-alert {
