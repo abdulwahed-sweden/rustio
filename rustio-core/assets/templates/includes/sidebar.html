@@ -1,26 +1,33 @@
-{# Left sidebar. Brand at top, then sections for registered models and
-   system links. Active item is highlighted with an accent inset border. #}
+{# Left sidebar. Brand at top, then sections (Workspace + System) with
+   optional count badges per model — Django-admin shape, our tone. #}
 <aside class="rio-sidebar">
   <a href="/admin" class="rio-sidebar__brand">
     <span class="rio-sidebar__mark">{{ design.logo_initial | default('R') }}</span>
     <span class="rio-sidebar__wordmark">{{ design.project_name | default('RustIO') }}</span>
   </a>
 
-  {% if sidebar_entries is defined and sidebar_entries | length > 0 %}
-    <div class="rio-sidebar__section">Models</div>
-    {% for entry in sidebar_entries %}
-      {% if entry.visible %}
-        <a href="{{ entry.href }}"
-           class="rio-sidebar__item{% if entry.active %} is-active{% endif %}">
-          {{ entry.label }}
-        </a>
-      {% endif %}
-    {% endfor %}
-  {% endif %}
+  <div class="rio-sidebar__group">
+    <div class="rio-sidebar__section">Workspace</div>
+    {% if sidebar_entries is defined and sidebar_entries | length > 0 %}
+      {% for entry in sidebar_entries %}
+        {% if entry.visible %}
+          <a href="{{ entry.href }}"
+             class="rio-sidebar__item{% if entry.active %} is-active{% endif %}">
+            <span>{{ entry.label }}</span>
+            {% if entry.count is defined and entry.count >= 0 %}
+              <span class="rio-sidebar__count">{{ entry.count }}</span>
+            {% endif %}
+          </a>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  </div>
 
-  <div class="rio-sidebar__section">System</div>
-  <a href="/admin/actions" class="rio-sidebar__item">Recent actions</a>
-  {% if current_user is defined and current_user %}
-    <a href="/admin/profile" class="rio-sidebar__item">Your account</a>
-  {% endif %}
+  <div class="rio-sidebar__group">
+    <div class="rio-sidebar__section">System</div>
+    <a href="/admin/actions" class="rio-sidebar__item"><span>Recent actions</span></a>
+    {% if current_user is defined and current_user %}
+      <a href="/admin/profile" class="rio-sidebar__item"><span>Your account</span></a>
+    {% endif %}
+  </div>
 </aside>

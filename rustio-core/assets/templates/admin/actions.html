@@ -3,10 +3,14 @@
 {% block title %}Recent actions · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <header class="rio-page-head">
+  <div class="rio-page-header">
+    <nav class="rio-breadcrumb" aria-label="Breadcrumb">
+      <a href="/admin">Home</a>
+      <span class="rio-breadcrumb__sep">/</span>
+      <span>Recent actions</span>
+    </nav>
     <h1>Recent actions</h1>
-    <p>Audit log of every create, update, and delete performed through the admin.</p>
-  </header>
+  </div>
 
   <form class="rio-toolbar" method="get" action="/admin/actions" aria-label="Filter actions">
     <select class="rio-form__input rio-form__input--inline" name="model" aria-label="Filter by model">
@@ -27,13 +31,13 @@
     <span class="rio-toolbar__count">{{ count_label }}</span>
   </form>
 
-  <div class="rio-card">
-    {% if actions | length == 0 %}
-      <div class="rio-empty">
-        <p><strong>No actions match these filters.</strong></p>
-        <p>Once operators create, edit, or delete records through the admin, the activity shows up here.</p>
-      </div>
-    {% else %}
+  {% if actions | length == 0 %}
+    <div class="rio-empty">
+      <h3 class="rio-card__title">No actions match these filters</h3>
+      <p>Once operators create, edit, or delete records through the admin, the activity shows up here.</p>
+    </div>
+  {% else %}
+    <div class="rio-card">
       <table class="rio-table">
         <thead>
           <tr>
@@ -58,6 +62,6 @@
           {% endfor %}
         </tbody>
       </table>
-    {% endif %}
-  </div>
+    </div>
+  {% endif %}
 {% endblock %}

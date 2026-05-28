@@ -406,6 +406,11 @@ struct SidebarEntryView {
     href: String,
     active: bool,
     visible: bool,
+    /// Row count for the underlying table. -1 means "no count
+    /// available" (used for legacy `AdminEntry`s); the template
+    /// hides the badge in that case. Otherwise the count renders
+    /// in `.rio-sidebar__count` to the right of the label.
+    count: i64,
 }
 
 #[derive(serde::Serialize)]
@@ -444,6 +449,7 @@ fn sidebar_from_entries(
             href: format!("/admin/{}", e.slug),
             active: active_slug == Some(e.slug),
             visible: true,
+            count: e.count,
         })
         .collect()
 }
@@ -470,6 +476,7 @@ fn sidebar_merged(
             href: format!("/admin/{}", entry.admin_name),
             active: active_slug == Some(entry.admin_name),
             visible: true,
+            count: -1,
         });
     }
     merged
@@ -1130,6 +1137,10 @@ struct PageLinkView {
 struct PaginationView {
     pages: i64,
     current: i64,
+    per_page: i64,
+    total: i64,
+    from: i64,
+    to: i64,
     links: Vec<PageLinkView>,
 }
 
@@ -1253,6 +1264,7 @@ pub async fn list_render(
         query,
         current_page,
         total_pages,
+        total,
         &validated_sort,
         &validated_dir,
     );
@@ -1308,13 +1320,23 @@ fn build_pagination_view(
     query: Option<&str>,
     current: i64,
     pages: i64,
+    total: i64,
     sort: &Option<String>,
     dir: &Option<String>,
 ) -> PaginationView {
+    // `fetch_users_table_state` uses PAGE_SIZE = 20; keep that here. If the
+    // page-size constant ever moves, thread it through instead of copying.
+    let per_page: i64 = 20;
+    let from = if total == 0 { 0 } else { (current - 1) * per_page + 1 };
+    let to = (current * per_page).min(total).max(from);
     if pages <= 1 {
         return PaginationView {
             pages,
             current,
+            per_page,
+            total,
+            from,
+            to,
             links: Vec::new(),
         };
     }
@@ -1368,6 +1390,10 @@ fn build_pagination_view(
     PaginationView {
         pages,
         current,
+        per_page,
+        total,
+        from,
+        to,
         links,
     }
 }

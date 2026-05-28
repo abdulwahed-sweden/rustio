@@ -3,10 +3,14 @@
 {% block title %}Your account · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <header class="rio-page-head">
+  <div class="rio-page-header">
+    <nav class="rio-breadcrumb" aria-label="Breadcrumb">
+      <a href="/admin">Home</a>
+      <span class="rio-breadcrumb__sep">/</span>
+      <span>Your account</span>
+    </nav>
     <h1>Your account</h1>
-    <p>Identity and session details for {{ profile.email }}.</p>
-  </header>
+  </div>
 
   <div class="rio-card">
     <dl class="rio-detail-list">

@@ -3,71 +3,93 @@
 {% block title %}{{ model.display_name }} · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <header class="rio-page-head rio-page-head--with-action">
-    <div>
-      <h1>{{ model.display_name }}</h1>
-      <p>
-        {{ total | default(0) }} record{% if total != 1 %}s{% endif %}{% if pagination is defined and pagination.pages > 1 %} · Page {{ pagination.current }} of {{ pagination.pages }}{% endif %}.
-      </p>
+  {# Page header — breadcrumb + title on the left, actions on the right.
+     The grid layout (.rio-page-header) keeps the actions vertically
+     centred regardless of breadcrumb-vs-no-breadcrumb height. #}
+  <div class="rio-page-header">
+    <nav class="rio-breadcrumb" aria-label="Breadcrumb">
+      <a href="/admin">Home</a>
+      <span class="rio-breadcrumb__sep">/</span>
+      <span>{{ model.display_name }}</span>
+    </nav>
+    <h1>{{ model.display_name }}</h1>
+    <div class="rio-page-header__actions">
+      {% if permissions.create %}
+        <a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ Add {{ model.singular_name | lower }}</a>
+      {% endif %}
     </div>
-    {% if permissions.create %}
-      <a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">Add {{ model.singular_name | lower }}</a>
-    {% endif %}
-  </header>
-
-  <div class="rio-card">
-    <table class="rio-table">
-      <thead>
-        <tr>
-          {% for col in columns %}
-            <th scope="col">{{ col.label }}</th>
-          {% endfor %}
-          {% if permissions.edit or permissions.delete %}
-            <th scope="col">&nbsp;</th>
-          {% endif %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in rows %}
-          <tr>
-            {% for cell in row.cells %}
-              <td>{{ cell | safe }}</td>
-            {% endfor %}
-            {% if permissions.edit or permissions.delete %}
-              <td>
-                {% if permissions.edit %}
-                  <a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>
-                {% endif %}
-                {% if permissions.delete %}
-                  <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">
-                    <button type="submit" class="rio-btn rio-btn--ghost">Delete</button>
-                  </form>
-                {% endif %}
-              </td>
-            {% endif %}
-          </tr>
-        {% else %}
-          <tr>
-            <td colspan="{{ columns | length + 1 }}" style="text-align:center;padding:48px 0;color:var(--text-secondary);">
-              No {{ model.display_name | lower }} yet. <a href="{{ model.new_url }}">Create the first one</a>.
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
 
-  {% if pagination is defined and pagination.pages > 1 %}
-    <ul class="rio-pagination">
-      {% for page in pagination.links %}
-        <li>
-          <a class="rio-pagination__link{% if page.active %} rio-pagination__link--active{% endif %}"
-             href="{{ page.href }}"
-             {% if page.disabled %}style="pointer-events:none;opacity:.4;"{% endif %}>
-            {{ page.label }}
-          </a>
-        </li>
-      {% endfor %}
-    </ul>
+  {# Toolbar — search input + summary count. Filter chips and bulk
+     actions land when the Rust side surfaces them; until then the
+     toolbar is the single search field plus a record-count caption. #}
+  <form class="rio-toolbar" method="get" action="/admin/{{ model.singular_name | lower }}s" role="search">
+    <input class="rio-input" name="q" value="{{ query | default('') }}" placeholder="Search {{ model.display_name | lower }}…" style="max-width: 320px;">
+    <span class="rio-toolbar__count">
+      {% if pagination is defined and pagination.total > 0 %}
+        Showing {{ pagination.from }}–{{ pagination.to }} of {{ pagination.total }}
+      {% else %}
+        {{ total | default(0) }} record{% if total != 1 %}s{% endif %}
+      {% endif %}
+    </span>
+  </form>
+
+  {% if rows | length == 0 %}
+    <div class="rio-empty">
+      <h3 class="rio-card__title">No {{ model.display_name | lower }} yet</h3>
+      <p>Get started by creating your first {{ model.singular_name | lower }}. It only takes a moment.</p>
+      {% if permissions.create %}
+        <p style="margin-top: 18px;"><a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ Add {{ model.singular_name | lower }}</a></p>
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="rio-card">
+      <table class="rio-table">
+        <thead>
+          <tr>
+            {% for col in columns %}
+              <th scope="col">{{ col.label }}</th>
+            {% endfor %}
+            {% if permissions.edit or permissions.delete %}
+              <th scope="col" style="width: 1%;">&nbsp;</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              {% for cell in row.cells %}
+                <td>{{ cell | safe }}</td>
+              {% endfor %}
+              {% if permissions.edit or permissions.delete %}
+                <td>
+                  {% if permissions.edit %}
+                    <a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>
+                  {% endif %}
+                  {% if permissions.delete %}
+                    <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">
+                      <button type="submit" class="rio-btn rio-btn--ghost">Delete</button>
+                    </form>
+                  {% endif %}
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if pagination is defined and pagination.pages > 1 %}
+      <footer class="rio-pagination">
+        <span>Showing {{ pagination.from }}–{{ pagination.to }} of {{ pagination.total }}</span>
+        <div class="rio-pagination__pages">
+          {% for page in pagination.links %}
+            <a href="{{ page.href }}"
+               class="{% if page.active %}is-active{% endif %}"
+               {% if page.disabled %}style="pointer-events:none;opacity:.4;"{% endif %}>{{ page.label }}</a>
+          {% endfor %}
+        </div>
+      </footer>
+    {% endif %}
   {% endif %}
 {% endblock %}

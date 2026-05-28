@@ -3,36 +3,66 @@
 {% block title %}{{ form.title }} · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <header class="rio-page-head">
+  {# Page header — breadcrumb leads back to the list view when we can
+     work out its URL, otherwise just back to the dashboard. The list
+     URL is the form action minus the trailing /new or /<id>/edit. #}
+  <div class="rio-page-header">
+    <nav class="rio-breadcrumb" aria-label="Breadcrumb">
+      <a href="/admin">Home</a>
+      <span class="rio-breadcrumb__sep">/</span>
+      <a href="{{ form.cancel_url }}">Back</a>
+      <span class="rio-breadcrumb__sep">/</span>
+      <span>{{ form.title }}</span>
+    </nav>
     <h1>{{ form.title }}</h1>
-    <p>{% if form.editing_id is defined and form.editing_id %}Editing record {{ form.editing_id }}.{% else %}Create a new record.{% endif %}</p>
-  </header>
+    <div class="rio-page-header__actions">
+      <a href="{{ form.cancel_url }}" class="rio-btn rio-btn--ghost">Cancel</a>
+      <button type="submit" form="rio-detail-form" class="rio-btn rio-btn--primary">{{ form.submit_label | default('Save changes') }}</button>
+    </div>
+  </div>
 
   {% if form.error %}
     <div class="rio-alert rio-alert--danger" role="alert">{{ form.error }}</div>
   {% endif %}
 
-  <div class="rio-card">
-    <form method="post" action="{{ form.action }}" class="rio-form" novalidate>
-      {% for field in form.fields %}
-        <div class="rio-form__field">
-          <label for="{{ field.id }}" class="rio-form__label">
-            {{ field.label }}{% if field.required %} <span class="rio-form__required">*</span>{% endif %}
-          </label>
-          {{ field.control | safe }}
-          {% if field.help %}
-            <div class="rio-form__help">{{ field.help }}</div>
-          {% endif %}
-          {% if field.error %}
-            <div class="rio-form__help rio-form__help--error">{{ field.error }}</div>
-          {% endif %}
-        </div>
-      {% endfor %}
+  {% set is_edit = form.editing_id is defined and form.editing_id %}
 
-      <div class="rio-form__actions">
-        <a href="{{ form.cancel_url }}" class="rio-btn rio-btn--ghost">Cancel</a>
-        <button type="submit" class="rio-btn rio-btn--primary">{{ form.submit_label | default('Save changes') }}</button>
-      </div>
-    </form>
+  <div class="{% if is_edit %}rio-detail-grid{% endif %}">
+    <div class="{% if is_edit %}rio-detail-main{% else %}rio-detail-single{% endif %}">
+      <section class="rio-card">
+        <form method="post" action="{{ form.action }}" class="rio-form" id="rio-detail-form" novalidate>
+          {% for field in form.fields %}
+            <div class="rio-form__field rio-field">
+              <label for="{{ field.id }}" class="rio-form__label">
+                {{ field.label }}{% if field.required %} <span class="rio-form__required">*</span>{% endif %}
+              </label>
+              {{ field.control | safe }}
+              {% if field.help %}
+                <div class="rio-form__help">{{ field.help }}</div>
+              {% endif %}
+              {% if field.error %}
+                <div class="rio-form__help rio-form__help--error">{{ field.error }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+
+          <div class="rio-form__actions">
+            <a href="{{ form.cancel_url }}" class="rio-btn rio-btn--ghost">Cancel</a>
+            <button type="submit" class="rio-btn rio-btn--primary">{{ form.submit_label | default('Save changes') }}</button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    {% if is_edit %}
+      <aside class="rio-detail-side">
+        <section class="rio-card">
+          <h3 class="rio-card__title">About</h3>
+          <dl class="rio-meta-list">
+            <dt>ID</dt><dd>#{{ form.editing_id }}</dd>
+          </dl>
+        </section>
+      </aside>
+    {% endif %}
   </div>
 {% endblock %}
