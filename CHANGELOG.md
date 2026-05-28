@@ -5,6 +5,112 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-05-28
+
+The product-orchestration release. The pieces shipped in 0.10.x — a typed
+core, a deterministic plan/review/apply pipeline, a templated admin —
+were correct but felt like three adjacent features. 0.11 stitches them
+into one onboarding experience built around a single new command.
+
+### Added
+
+- **`rustio start` — onboarding entry point.** A three-way menu
+  (Guided / Manual / Import) that opens automatically at the end of
+  `rustio init` and is also reachable at any time inside a project.
+  Guided is the new conversational wizard; Manual prints the
+  `rustio new app <name>` hints; Import is reserved for a future
+  schema-replay flow.
+- **`rustio_core::ai::intake` — deterministic free-text → typed
+  `ProjectSketch`.** Five curated domain templates (clinic, blog,
+  shop, crm, tasks). Returns `None` for ambiguous input rather than
+  guessing — the same refusal-first posture the planner uses. 6 unit
+  tests. No LLM in the loop.
+- **`scaffold_app_with_fields` helper in the CLI** — sibling of
+  `new_app` that takes an explicit `FieldSpec` list and emits a
+  FK-aware `CREATE TABLE` migration. The wizard uses it to materialise
+  each accepted model.
+- **Light theme as the default** for the admin. Warm-neutral 9-step
+  palette (`--color-light-50…900`), `--color-accent-soft` for soft
+  highlights. Dark mode opt-in via `data-theme="dark"` on `<html>` +
+  `localStorage.rio-theme`. No-FOUC bootstrap script runs before any
+  stylesheet link.
+- **Django-style internal pages.** `admin/list.html`, `admin/form.html`,
+  and the sidebar were rebuilt around a `.rio-page-header` (breadcrumb
+  + right-aligned actions), `.rio-detail-grid` (main column + 320 px
+  side), `.rio-pagination` ("Showing 1–25 of 142" + page links), and
+  a `.rio-empty` dashed-border standalone empty state. Sidebar groups
+  models under named sections with optional count badges fed from
+  `SidebarEntryView.count`.
+- **Theme toggle button** in the topbar, with the icon kept in sync
+  with `<html data-theme>` and persisted to `localStorage.rio-theme`.
+- **Light + dark variants of every canonical admin screenshot** under
+  `docs/screenshots/` (`admin-{login,dashboard,task-edit,tasks-list,
+  empty}-{light,dark}.png`), plus `cli-start-{menu,blueprint}.png`
+  for the new wizard surface.
+
+### Changed
+
+- **The summary screen in the wizard is now a system blueprint, not
+  an operation log.** Before: `models queued / risk / warnings`.
+  After: `RustIO is ready to create: 3 connected models, 2
+  relationships, admin screens for every model, search/filters/
+  pagination, 3 starter migrations`. The typed plan operations + risk
+  classification + warnings live one keystroke deeper behind a
+  *"Show technical details"* choice — progressive disclosure, not
+  amputation.
+- **"AI" is off the primary surface.** Help reorganised so `ai plan /
+  review / apply` live in an `ADVANCED` section with the sub-line
+  "deterministic, refusal-first". Wizard banner is *"Let's shape your
+  project together,"* not *"rustio ai · …"*. Generated `apps/<x>/
+  models.rs` files attribute themselves to `rustio start`. Internal
+  module names (`ai::intake`, `ai::executor`, …) are unchanged because
+  they're honest implementation labels.
+- **README rewritten to lead with `rustio start`.** Quickstart drops
+  from 6 steps to 5 (the `new app` step folds into the menu), inlines
+  the menu + blueprint screenshots, retitles "The AI layer" to
+  "Evolving the schema later (advanced)" without losing substance.
+  Opening pitch trades *"so the AI layer can extend your system
+  without breaking it"* for *"so changes to your schema, by hand or
+  via the guided setup, stay safe-by-construction."*
+- **`PaginationView`** extended with `per_page` / `total` / `from` /
+  `to` so list templates render the "Showing N–M of T" caption
+  without arithmetic in the template.
+- **`SidebarEntryView`** gains a `count` field (-1 sentinel hides the
+  badge for legacy `AdminEntry` sources that don't carry a row
+  count).
+- **`base_admin.html` consolidates the two-column shell** and the
+  page-header / breadcrumb pattern is now the canonical interior
+  layout for every model view.
+- **CI runners**: `actions/checkout` v4 → v6, `actions/cache` v4 → v5
+  (Node.js 24 baseline).
+
+### Removed
+
+- **`rustio ai start`.** Promoted to `rustio start`. Typing the old
+  command now prints a one-line redirect.
+- **The post-init `Want me to propose a starting shape?` Y/n prompt.**
+  `rustio init` now chains straight into the `rustio start` menu so
+  the onboarding is one continuous experience, not two stitched-
+  together commands.
+- **Bootstrap CSS + JS bundle** from the admin assets (was already
+  superseded in 0.10.x; this release locks it out).
+- **Three pre-existing un-suffixed screenshots** (`admin-dashboard
+  .png` / `admin-tasks-list.png` / `admin-task-edit.png`) in favour
+  of the new `-light` / `-dark` pairs.
+
+### Fixed
+
+- The Tailwind v4 build step (`build.rs`) now strips `@theme` only
+  when it's a real rule, never in prose mentions inside comments.
+- Sentence-case field labels in list headers + form labels.
+
+### Numbers
+
+- 475 core + 54 CLI + 7 macros tests pass (was 469 + 54 + 7 in 0.10.1).
+- Performance posture unchanged from the roadmap: ≥50,000 req/s on a
+  simple endpoint, 10–30 MB resident memory, <50 ms cold start,
+  ~15 MB stripped binary.
+
 ## [Unreleased]
 
 > The 0.5.0 → 0.8.0 entries below describe work that accumulated in this section without distinct release cuts at the time. They remain in `[Unreleased]` until each is retroactively tagged or rolled forward into a future release. The 0.9.0 / 0.9.1 / 0.10.0 work that was previously here has been promoted to dated releases below.
