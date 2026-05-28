@@ -1,14 +1,19 @@
-{# Topbar inside main. Quiet status strip — accent dot, signed-in
-   user, log-out form. Brand and navigation live in the sidebar. #}
+{# Topbar inside main. Quiet status strip — accent dot, signed-in user,
+   theme toggle, log-out form. Brand and navigation live in the sidebar. #}
 {% if current_user is defined and current_user %}
 <header class="rio-topbar rio-topbar--inset">
   <div class="rio-topbar__status">
     <span class="rio-topbar__dot" aria-hidden="true"></span>
     <span>Signed in as {{ current_user.email }}</span>
   </div>
-  <form method="post" action="/admin/logout" class="rio-topbar__logout-form">
-    {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-    <button type="submit" class="rio-btn rio-btn--ghost">Log out</button>
-  </form>
+  <div style="display:flex;align-items:center;gap:var(--space-3);">
+    <button type="button" class="rio-theme-toggle" aria-label="Toggle theme">
+      <span data-theme-icon></span>
+    </button>
+    <form method="post" action="/admin/logout" class="rio-topbar__logout-form">
+      {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+      <button type="submit" class="rio-btn rio-btn--ghost">Log out</button>
+    </form>
+  </div>
 </header>
 {% endif %}
