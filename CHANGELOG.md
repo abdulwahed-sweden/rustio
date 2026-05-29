@@ -7,8 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet — see the **[2.0.0]** block below._
+_No unreleased changes yet — see the **[2.0.1]** block below._
 
+
+## [2.0.1] - 2026-05-29
+
+A short maintenance release on top of 2.0.0. No API changes.
+
+### Added
+
+- **`docs/design-system.md`.** Documents the two admin stylesheets
+  in the repo — what ships today (`rustio-core/assets/static/admin.css`)
+  vs the v7 spec sitting at `rustio-core/assets/admin.css` — and the
+  six-step migration path between them. Linked from the README's
+  "Going further" list.
+
+### Changed
+
+- **Admin chrome: drop the Google Fonts dependency.** `base.html`
+  no longer preconnects to `fonts.googleapis.com` / `fonts.gstatic.com`
+  and no longer pulls Inter via a CDN stylesheet link. `--font-sans`
+  keeps Inter at the head of the list (so projects that self-host a
+  copy via their own `<link>` still pick it up), then falls through
+  to the OS native UI stack: SF Pro Display on macOS, Segoe UI on
+  Windows, Roboto / Oxygen / Ubuntu / Cantarell on Linux. The mono
+  stack gets the same treatment with JetBrains Mono at the head and
+  SFMono / Menlo / Consolas / Liberation Mono as fallbacks. The admin
+  now renders identically offline, behind a strict CSP, or on an
+  air-gapped network — the framework's single-binary promise extends
+  to its chrome.
+
+### Fixed
+
+- **Release workflow is idempotent.** `release.yml` now wraps each
+  `cargo publish` step in `.github/scripts/publish-if-new.sh`, which
+  queries the crates.io API for the crate's `max_version` and skips
+  upload when it equals the workspace version. A re-run at the same
+  tag after a partial-success publish (a real situation that hit the
+  2.0.0 release) is now safe from any state — published crates skip
+  with a `::notice::` annotation; unpublished crates proceed
+  normally.
 
 ## [2.0.0] - 2026-05-29
 
