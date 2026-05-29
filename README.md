@@ -194,6 +194,7 @@ If any release regresses any of these, it doesn't ship.
 
 - **[`docs/glossary.md`](docs/glossary.md)** — every framework term in plain English.
 - **[`docs/advanced/`](docs/advanced/)** — deeper walkthroughs (long-form quickstart, the hospital example, the healthcare stress test). Read these once you're comfortable with the basics.
+- **[`docs/design-system.md`](docs/design-system.md)** — what's shipping in the admin today vs the v7 spec in `rustio-core/assets/admin.css`, and the migration path between them.
 - **[`ROADMAP.md`](ROADMAP.md)** — the three phases (Foundation / Intelligence / Systems) and where each release fits.
 - **[`CHANGELOG.md`](CHANGELOG.md)** — every visible change, version by version.
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to land a PR.
