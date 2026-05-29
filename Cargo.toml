@@ -16,3 +16,15 @@ homepage = "https://github.com/abdulwahed-sweden/rustio"
 rust-version = "1.75"
 keywords = ["web", "framework", "admin", "orm", "sqlite"]
 categories = ["web-programming::http-server"]
+
+# Release profile tuned for RustIO's stated targets (~15 MB stripped
+# binary, fast cold start). `strip` removes symbols for the biggest
+# size win; fat LTO + a single codegen unit trade build time for a
+# smaller, faster binary. Unwinding is kept (no `panic = "abort"`) so a
+# panic in one request handler unwinds that task instead of killing the
+# server process.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

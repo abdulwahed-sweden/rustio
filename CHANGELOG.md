@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Tuned `[profile.release]`** at the workspace root (`opt-level = 3`,
+  fat `lto`, `codegen-units = 1`, `strip = true`) toward the project's
+  stated ~15 MB stripped-binary / fast-cold-start targets. Unwinding is
+  intentionally kept (no `panic = "abort"`) so a panic in one request
+  handler unwinds that task rather than aborting the server. A minimal
+  scaffolded app builds to ~6 MB stripped (vs ~27 MB debug); warm startup
+  is unchanged (boot logic is identical).
+
 ### Fixed
 
 - **Phantom demo `Order` model no longer leaks into every project's admin.**
