@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Compatibility
+
+- **External: `rustio-admin` v0.22.0 (2026-05-29) renamed its CLI
+  binary from `rustio` to `rustio-admin`.** The unrelated [`rustio-admin`](https://github.com/abdulwahed-sweden/rustio-admin)
+  project (a Postgres-first admin framework) previously shipped a
+  `rustio` binary through its v0.21.x line. From its v0.22.0 release
+  onward the binary is named `rustio-admin`, so `cargo install
+  rustio-cli` and `cargo install rustio-admin-cli` no longer
+  silently overwrite each other in `~/.cargo/bin`. No change in this
+  project; the note is for users who tracked the collision.
+
+
 ## [0.11.0] - 2026-05-28
 
 The product-orchestration release. The pieces shipped in 0.10.x — a typed

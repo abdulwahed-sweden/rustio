@@ -200,6 +200,16 @@ If any release regresses any of these, it doesn't ship.
 
 ---
 
+## Naming — what about `rustio-admin`?
+
+There's a separate, unrelated project called **[`rustio-admin`](https://github.com/abdulwahed-sweden/rustio-admin)** — a Postgres-first administrative framework. Through its v0.21.x line it shipped a CLI binary also called `rustio`, which meant `cargo install rustio-cli` and `cargo install rustio-admin-cli` silently overwrote each other in `~/.cargo/bin`.
+
+As of [`rustio-admin` v0.22.0](https://github.com/abdulwahed-sweden/rustio-admin/releases/tag/v0.22.0) its binary is named **`rustio-admin`**, so the two no longer collide. You can install both on the same machine and `rustio` always means this project.
+
+The two are different in scope — `rustio-admin` targets Postgres-only admin panels; this project layers an admin UI, ORM, and AI-augmented schema pipeline over a strict typed core with SQLite. Same name prefix, different goals.
+
+---
+
 ## Help
 
 Stuck? Open an [issue on GitHub](https://github.com/abdulwahed-sweden/rustio/issues). There are no bad questions — the project is early-alpha and rough edges are real.
