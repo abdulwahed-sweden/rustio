@@ -8,7 +8,7 @@
   <a href="https://github.com/abdulwahed-sweden/rustio/actions/workflows/ci.yml">
     <img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/abdulwahed-sweden/rustio/ci.yml?style=for-the-badge&label=ci">
   </a>
-  <img alt="early alpha" src="https://img.shields.io/badge/status-early%20alpha-yellow?style=for-the-badge">
+  <img alt="beta" src="https://img.shields.io/badge/status-beta-blueviolet?style=for-the-badge">
   <img alt="rust version: 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-dea584?style=for-the-badge">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge">
 </p>
