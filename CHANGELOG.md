@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **v8 "bright" admin theme.** The light theme is restyled to a
+  high-contrast skin: bright blue-grey canvas (`#EEF2F8`) with white
+  sidebar/topbar/cards, the rust primary (`#B84318`, hover `#8F3413`) on
+  the New button / active nav / current pagination page / ID column, a
+  one-notch-larger type scale (display 30px, h2 24px, h3 19px), a lilac
+  filter strip (`#F3F0FB`), a tinted table head (`#E4EBF4`), cool-blue
+  row hover (`#EEF3FA`), and vivid emerald/amber/slate status pills.
+  Implemented by retargeting the `--color-light-*` / `--color-accent*`
+  tokens and editing the named rules in place; the list renderer now tags
+  the id column (`.rio-cell-id`), primary-name cell (`.rio-cell-primary`),
+  and status cells (`.rio-pill-*`), and the topbar gains an environment
+  chip (`.rio-env-chip`). Rust stays write-only apart from the two
+  sanctioned navigational uses (ID column, active page).
+
+### Fixed
+
+- **Admin URLs no longer render as `&#x2f;admin&#x2f;…`.** minijinja's
+  built-in HTML escaper also escapes `/`, so every templated URL
+  (`href`, `action`, sidebar/pagination links) across every admin page
+  came out with `&#x2f;` instead of `/` — valid (browsers decode it) but
+  noisy, non-standard HTML. The admin template environment now installs a
+  custom formatter that escapes the Jinja2/Django character set
+  (`<`, `>`, `&`, `"`, `'`) and leaves `/` alone. Safe strings and the
+  XSS-relevant escaping are unchanged; only the spurious slash escaping is
+  removed. Covered by new tests in `admin::templating`.
+
+### Changed
+
 - **Tuned `[profile.release]`** at the workspace root (`opt-level = 3`,
   fat `lto`, `codegen-units = 1`, `strip = true`) toward the project's
   stated ~15 MB stripped-binary / fast-cold-start targets. Unwinding is

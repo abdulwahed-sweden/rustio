@@ -1201,6 +1201,11 @@ pub async fn list_render(
 
     let pk = model.primary_key();
     let slug = model.slug();
+    // §4.8 — the first non-id column is the "primary" cell (bold name).
+    let primary_col = columns
+        .iter()
+        .find(|c| c.name.as_str() != pk)
+        .map(|c| c.name.clone());
     let rows: Vec<RowView> = rows_raw
         .iter()
         .map(|row| {
@@ -1210,6 +1215,16 @@ pub async fn list_render(
                 .enumerate()
                 .map(|(col_idx, col)| {
                     let raw = row.get(&col.name).cloned().unwrap_or_default();
+                    if col.name.as_str() == pk {
+                        // §3.4 — ID column: rust mono `#<id>`.
+                        if raw.is_empty() {
+                            return String::new();
+                        }
+                        return format!(
+                            r#"<span class="rio-cell-id">#{}</span>"#,
+                            html_escape(&raw)
+                        );
+                    }
                     if let Some(fk) = fk_lookups.iter().find(|f| f.column_index == col_idx) {
                         // FK column: render as a clickable link to the
                         // target row (or `#<id>` if the target is gone).
@@ -1226,24 +1241,23 @@ pub async fn list_render(
                             None => format!("#{}", html_escape(&raw)),
                         }
                     } else if is_status_field_name(&col.name) {
-                        // Status-shaped column: wrap in a pill badge that
-                        // admin.css colours via `[data-status="<value>"]`.
-                        // SQLite boolean columns return "0"/"1"; we
-                        // normalise to "Active"/"Inactive" so the label
-                        // reads cleanly AND admin.css can colour the
-                        // pill via `[data-status="active|inactive"]`.
-                        // String statuses (todo / in_progress / done /
-                        // pending …) pass through with the raw value
-                        // lowercased for the data-status attribute.
-                        // Empty values render as empty cells, not pills.
+                        // §3.5 — status-shaped column: vivid colour pill.
+                        // Booleans ("0"/"1") normalise to Active/Inactive;
+                        // string statuses keep their label. Empty → empty.
                         if raw.is_empty() {
                             return String::new();
                         }
                         let (data_value, label) = normalize_status_pill(&raw);
                         format!(
-                            r#"<span class="badge-status" data-status="{value}">{label}</span>"#,
-                            value = html_escape(&data_value),
+                            r#"<span class="{cls}">{label}</span>"#,
+                            cls = status_pill_color(&data_value),
                             label = html_escape(&label),
+                        )
+                    } else if primary_col.as_deref() == Some(col.name.as_str()) {
+                        // §4.8 — primary-name cell (bold).
+                        format!(
+                            r#"<span class="rio-cell-primary">{}</span>"#,
+                            html_escape(&raw)
                         )
                     } else {
                         html_escape(&raw)
@@ -1832,6 +1846,21 @@ fn is_status_field_name(name: &str) -> bool {
 /// SQLite booleans round-trip as `"0"` / `"1"` strings through the
 /// persistence layer; both are mapped to the readable `Active` /
 /// `Inactive` labels.
+/// Map a lowercased status value to a vivid pill class (v8 §3.5).
+/// Three buckets: emerald (good / done), amber (pending / attention),
+/// slate (inactive / closed). Unknown values fall back to slate.
+fn status_pill_color(data_value: &str) -> &'static str {
+    match data_value.trim() {
+        "active" | "approved" | "published" | "live" | "completed" | "complete" | "done"
+        | "finished" | "resolved" | "paid" => "rio-pill rio-pill-emerald",
+        "referred" | "pending" | "todo" | "queued" | "open" | "new" | "scheduled" | "draft"
+        | "sent" | "in progress" | "in review" | "review" | "overdue" | "on leave" => {
+            "rio-pill rio-pill-amber"
+        }
+        _ => "rio-pill rio-pill-slate",
+    }
+}
+
 fn normalize_status_pill(raw: &str) -> (String, String) {
     let lc = raw.trim().to_lowercase();
     match lc.as_str() {

@@ -21,13 +21,16 @@
  *       compositions templates still emit by name; each is just a
  *       thin re-application of the primitives above.
  *
- * Hard rules (carry over from the original brief):
- *   - no pure black, no pure white
- *   - all borders 0.5px (featured cards use the accent border)
- *   - font weights 400 and 500 only — never 600+
- *   - sentence case everywhere, no Title Case, no ALL CAPS
- *   - body text 16px / line-height 1.7
- *   - accent #FF6A3D appears at ≤7 locations per viewport
+ * Theme: "ClinicFlow bright" — a high-contrast light skin.
+ *   - bright blue-grey canvas (#EEF2F8) with pure-white surfaces/cards
+ *   - rust accent (#D2501E family) on buttons, active nav, pagination
+ *   - larger type; bold (600/700) titles and UPPERCASE table headers
+ *   - zebra-striped tables with a tinted header and a lilac toolbar
+ * Colours flow from the retargeted `--color-light-*` / `--color-accent*`
+ * tokens; the distinctive structure lives in the un-layered override
+ * block at the very bottom of this file. (This supersedes the original
+ * muted-warm brief: white surfaces, bold weights, and ALL CAPS headers
+ * are intentional here.)
  * ============================================================================ */
 
 @import "tailwindcss";
@@ -51,33 +54,33 @@
   --color-gray-300: #C4C4CA;
   --color-gray-100: #F0F0F4;
 
-  /* Light palette — 9 warm neutral steps, lightest first */
-  --color-light-50:  #F7F6F2;   /* page canvas — warm off-white, NEVER #FFF */
-  --color-light-100: #EEEDE7;   /* primary surface / cards */
-  --color-light-200: #E4E2DA;   /* elevated surface / topbar / sidebar */
-  --color-light-300: #D5D2C8;   /* default borders, dividers */
-  --color-light-400: #BAB6AA;   /* secondary borders, button outlines */
-  --color-light-500: #8F8B7F;   /* muted icons, disabled */
-  --color-light-600: #6B6862;   /* subtitle text, secondary */
-  --color-light-700: #4A4843;   /* labels, tertiary emphasis */
-  --color-light-900: #1F1E1B;   /* primary text / headings — warm near-black */
+  /* Light palette — bright blue-grey "ClinicFlow" steps, lightest first */
+  --color-light-50:  #EEF2F8;   /* page canvas — bright blue-grey */
+  --color-light-100: #FFFFFF;   /* primary surface / cards — pure white */
+  --color-light-200: #FFFFFF;   /* elevated surface / topbar / sidebar */
+  --color-light-300: #D8E1EC;   /* default borders, dividers */
+  --color-light-400: #B8C3CC;   /* secondary borders (v8 ink-300) */
+  --color-light-500: #8493A4;   /* muted icons, disabled (v8 ink-400) */
+  --color-light-600: #5C6B7D;   /* subtitle text, secondary (v8 ink-500) */
+  --color-light-700: #3C4A5A;   /* labels, tertiary emphasis (v8 ink-600) */
+  --color-light-900: #0D1620;   /* primary text / headings (v8 ink-900) */
 
-  /* Single accent (#FF6A3D family) — unchanged across themes */
-  --color-accent:      #FF6A3D;
-  --color-accent-text: #2A0A04;
-  --color-accent-deep: #5C2410;
-  --color-accent-soft: #FFE5D9;   /* very pale orange tint for light-mode highlights */
+  /* Rust primary (v8 spec §0 fixes this — do not change) */
+  --color-accent:      #B84318;   /* --rio-primary */
+  --color-accent-text: #FFFFFF;   /* text on a solid rust surface */
+  --color-accent-deep: #8F3413;   /* --rio-primary hover / rust-700 */
+  --color-accent-soft: #FCEFE9;   /* pale rust tint — active nav background */
 
-  /* Type scale */
-  --text-hero:  26px;   /* H1, hero headline */
-  --text-stat:  22px;   /* big numbers in stat cards */
-  --text-h2:    18px;   /* section headings */
-  --text-h3:    16px;   /* card titles, wordmark */
-  --text-body:  16px;   /* paragraphs, buttons */
-  --text-meta:  14px;   /* nav links, stat labels */
-  --text-small: 13px;   /* subtitles, helper text, tag pills */
-  --text-mono:  13px;   /* code, hex values */
-  --text-micro: 11px;   /* annotations only */
+  /* Type scale — v8 spec §2.3 (one notch up across the board) */
+  --text-hero:  30px;   /* H1 / display (was 26) */
+  --text-stat:  22px;   /* big numbers in stat cards (unchanged) */
+  --text-h2:    24px;   /* section headings (was 18) */
+  --text-h3:    19px;   /* card titles, wordmark (was 16) */
+  --text-body:  16px;   /* paragraphs, buttons (unchanged) */
+  --text-meta:  15px;   /* nav links, stat labels (was 14) */
+  --text-small: 14px;   /* subtitles, helper text (was 13) */
+  --text-mono:  13px;   /* code, hex values (unchanged) */
+  --text-micro: 12px;   /* annotations (was 11) */
 
   /* Radius */
   --radius-sm: 6px;
@@ -178,20 +181,20 @@
   --color-gray-300: #C4C4CA;
   --color-gray-100: #F0F0F4;
 
-  --color-light-50:  #F7F6F2;
-  --color-light-100: #EEEDE7;
-  --color-light-200: #E4E2DA;
-  --color-light-300: #D5D2C8;
-  --color-light-400: #BAB6AA;
-  --color-light-500: #8F8B7F;
-  --color-light-600: #6B6862;
-  --color-light-700: #4A4843;
-  --color-light-900: #1F1E1B;
+  --color-light-50:  #EEF2F8;
+  --color-light-100: #FFFFFF;
+  --color-light-200: #FFFFFF;
+  --color-light-300: #D8E1EC;
+  --color-light-400: #B8C3CC;
+  --color-light-500: #8493A4;
+  --color-light-600: #5C6B7D;
+  --color-light-700: #3C4A5A;
+  --color-light-900: #0D1620;
 
-  --color-accent:      #FF6A3D;
-  --color-accent-text: #2A0A04;
-  --color-accent-deep: #5C2410;
-  --color-accent-soft: #FFE5D9;
+  --color-accent:      #B84318;
+  --color-accent-text: #FFFFFF;
+  --color-accent-deep: #8F3413;
+  --color-accent-soft: #FCEFE9;
 
   /* Light is the default — `:root` and `[data-theme="light"]` below set
    * the same surface aliases. Bound here so Tailwind utility generation
@@ -1110,11 +1113,12 @@
   background: #FFFDF9;
 }
 
-/* Selected / active rows use the soft orange tint, not full saturation. */
+/* v8 §3.1 — active nav: soft rust tint, rust text, rust left rail. */
 [data-theme="light"] .rio-sidebar__item.is-active {
-  background: var(--color-highlight-soft);
-  color: var(--color-text-primary);
-  box-shadow: inset 2px 0 0 var(--color-accent);
+  background: var(--color-highlight-soft); /* #FCEFE9 */
+  color: var(--color-accent-deep);          /* rust-700 #8F3413 */
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 [data-theme="light"] .rio-table tbody tr.is-selected {
   background: var(--color-highlight-soft);
@@ -1131,8 +1135,10 @@
 [data-theme="light"] .rio-table tbody tr:nth-child(even) {
   background: var(--color-light-50);
 }
-[data-theme="light"] .rio-table tbody tr:hover {
-  background: var(--color-highlight-soft);
+/* v8 §3.3 — cool-blue row hover (not the warm tint). */
+[data-theme="light"] .rio-table tbody tr:hover,
+[data-theme="light"] .rio-table tbody tr:nth-child(even):hover {
+  background: #EEF3FA;
 }
 
 /* Sidebar item hover: in light mode use a soft canvas wash rather than the
@@ -1166,3 +1172,112 @@
 @media (max-width: 960px) {
   .rio-detail-grid { grid-template-columns: 1fr; }
 }
+
+/* ============================================================================
+ * v8 "bright" theme — additions (un-layered, so they outrank @layer rules).
+ *
+ * Only the structure the §3 spec needs that isn't a one-property tweak of an
+ * existing rule: the lilac filter strip + 42px controls (§3.2/§3.7), the
+ * tinted table head (§3.3), the solid-rust active page button (§3.8), the
+ * rust-mono ID column (§3.4), the vivid status pills (§3.5), and the
+ * environment chip (§3.6). The palette shift comes from the retargeted
+ * tokens in :root / @theme; the active-nav (§3.1) and row-hover (§3.3) live
+ * as in-place edits above. No uppercase headers, no zebra, no rust on row
+ * actions — the spec does not ask for them.
+ * ============================================================================ */
+
+/* §4.3 — large, bold page title (size flows from --text-hero: 30px) */
+.rio-page-header > h1,
+.rio-page-head > h1 { font-weight: 700; }
+
+/* §3.2 — filter strip: soft lavender, padded, rounded */
+.rio-toolbar {
+  background: #F3F0FB;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+}
+
+/* §3.7 — toolbar control heights */
+.rio-toolbar .rio-input,
+.rio-toolbar .rio-select,
+.rio-toolbar .rio-btn { height: 42px; }
+.rio-toolbar .rio-input { background: #fff; }
+
+/* §3.3 — tinted table head (sentence-case kept; only the background changes) */
+.rio-table thead { background: #E4EBF4; }
+
+/* §2.4 / §4.8 — comfortable row padding + bold primary-name cells */
+.rio-table tbody td { padding-top: 15px; padding-bottom: 15px; }
+.rio-cell-primary { font-weight: 600; color: var(--color-text-primary); }
+
+/* §3.8 — active pagination button: solid rust fill */
+.rio-pagination__pages a.is-active,
+.rio-pagination .is-current,
+.rio-table-wrap > nav .is-current {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+/* §3.4 — ID column: rust mono (1st of two allowed navigational rusts) */
+.rio-cell-id {
+  color: var(--color-accent);
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+/* §3.5 — vivid status pills (emitted by the list renderer) */
+.rio-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 7px;
+  font-size: var(--text-mono);
+  font-weight: 600;
+}
+.rio-pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.rio-pill-emerald { color: #066A48; background: #DCFAEC; border-color: #8DE5BE; }
+.rio-pill-emerald::before { background: #10B981; }
+.rio-pill-amber   { color: #9A4A07; background: #FFF1D6; border-color: #FBD489; }
+.rio-pill-amber::before   { background: #F59E0B; }
+.rio-pill-slate   { color: #3C4A5A; background: #EAEFF6; border-color: #CFDAE6; }
+.rio-pill-slate::before   { background: #7C8C9C; }
+
+/* §3.6 — environment chip (non-prod = mint; prod keeps the danger treatment) */
+.rio-env-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid #9FE1CB;
+  background: #E7FBF2;
+  color: #0F6E56;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.rio-env-chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #12A576;
+}
+.rio-env-chip.is-prod {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-deep);
+}
+.rio-env-chip.is-prod::before { background: var(--color-accent); }
