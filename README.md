@@ -200,6 +200,12 @@ If any release regresses any of these, it doesn't ship.
 
 ---
 
+## CLI
+
+See [`docs/cli.md`](docs/cli.md) for the full command reference.
+
+---
+
 ## Naming — what about `rustio-admin`?
 
 There's a separate, unrelated project called **[`rustio-admin`](https://github.com/abdulwahed-sweden/rustio-admin)** — a Postgres-first administrative framework. Through its v0.21.x line it shipped a CLI binary also called `rustio`, which meant `cargo install rustio-cli` and `cargo install rustio-admin-cli` silently overwrote each other in `~/.cargo/bin`.
