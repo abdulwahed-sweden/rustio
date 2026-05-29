@@ -7,8 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet — see the **[2.0.3]** block below._
+_No unreleased changes yet — see the **[2.0.4]** block below._
 
+
+## [2.0.4] - 2026-05-29
+
+Documentation-only patch. Ships fresh **crate-level** READMEs onto
+the crates.io listings — separate from the workspace root README
+that github.com renders, which was already up to date.
+
+The previous patch (2.0.3) re-published 2.0.2's bits with the new
+workspace README, but each Cargo workspace member has its own
+README file that crates.io serves on its individual listing. Those
+crate-level files had drifted since the 2.0.x rebrand. 2.0.4
+rolls the fresh text forward.
+
+### Changed
+
+- **`rustio-cli/README.md`** — substantial refresh.
+  - Quick start now leads with `rustio init <name>` opening the
+    setup menu and shows a representative Guided-mode interaction
+    (clinic intake → blueprint summary → walkthrough).
+  - New "Change something later" section showcases
+    `rustio evolve "<request>"` with the three-way choice
+    (Apply / Show technical details / Cancel).
+  - Common-commands table mirrors `rustio help` —
+    `start`, `evolve`, `migrate apply / status`, `doctor`,
+    `explain`, `--why`. The legacy `ai plan / review / apply /
+    validate` rows are replaced by a single pointer at
+    `rustio help advanced`.
+  - The v0.x wizard-output mock ("RustIO / Let's set up your
+    project / Project name: readlist") is gone; the new excerpt
+    matches what users actually see today.
+
+- **`rustio-core/README.md`** — two surgical lines.
+  - "the AI planner/review/executor pipeline" → "the typed
+    schema-evolution pipeline that backs `rustio evolve`".
+  - Example uses `rustio init mysite` instead of the long-
+    deprecated `rustio new project mysite`.
+
+- **`rustio-macros/README.md`** — untouched. Already neutral; just
+  describes the proc-macro crate.
+
+### Notes
+
+- **No code changes.** All three crates are byte-for-byte
+  equivalent to 2.0.3 modulo their respective READMEs. The bump
+  exists solely to let crates.io re-serve the new crate-level
+  README copy that 2.0.3 missed.
 
 ## [2.0.3] - 2026-05-29
 
