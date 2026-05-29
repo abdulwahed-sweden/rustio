@@ -10,10 +10,13 @@
 //! Stage 4a onwards consumes [`env()`] — the process-wide
 //! `Arc<Environment>` shared by every admin handler.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
-use minijinja::{Environment, ErrorKind};
+use minijinja::{
+    escape_formatter, AutoEscape, Environment, Error, ErrorKind, Output, State, Value,
+};
 
 /// Process-wide admin template environment. Built once on first
 /// access from [`TemplatingConfig::default()`]; auto-reload is
@@ -61,6 +64,11 @@ pub fn environment(config: &TemplatingConfig) -> Environment<'static> {
             minijinja::AutoEscape::None
         }
     });
+    // Use the Jinja2/Django-standard HTML escape set (no `/`). minijinja's
+    // built-in escaper also turns every `/` into `&#x2f;`, which rendered
+    // every templated URL as `href="&#x2f;admin&#x2f;…"` across all admin
+    // pages — valid (browsers decode it) but noisy, non-standard HTML.
+    env.set_formatter(admin_html_formatter);
 
     let overrides_root: Option<Arc<Path>> = config.overrides_root.clone().map(Into::into);
     let auto_reload = config.auto_reload;
@@ -73,6 +81,53 @@ pub fn environment(config: &TemplatingConfig) -> Environment<'static> {
         env.set_loader(move |name| Ok(resolved.lookup(name).map(|s| s.to_string())));
     }
     env
+}
+
+/// Minijinja formatter for the admin templates. Identical to the
+/// default ([`escape_formatter`]) except the HTML auto-escape path uses
+/// the Jinja2/Django character set ([`HtmlEscapeNoSlash`]) instead of
+/// minijinja's built-in one, which additionally escapes `/`. Safe
+/// strings (`{{ x | safe }}`) and every non-HTML autoescape mode are
+/// delegated unchanged, so escaping of the XSS-relevant characters
+/// (`<`, `>`, `&`, `"`, `'`) is untouched.
+fn admin_html_formatter(out: &mut Output, state: &State, value: &Value) -> Result<(), Error> {
+    if matches!(state.auto_escape(), AutoEscape::Html) && !value.is_safe() {
+        return write!(out, "{}", HtmlEscapeNoSlash(&value.to_string())).map_err(Error::from);
+    }
+    escape_formatter(out, state, value)
+}
+
+/// HTML escaper matching the Jinja2/Django convention: escapes `<`, `>`,
+/// `&`, `"`, and `'`, but leaves `/` alone. Slash is not a dangerous
+/// character in HTML text or attribute contexts, so omitting it is safe
+/// and keeps emitted URLs readable (`/admin/customers`, not
+/// `&#x2f;admin&#x2f;customers`).
+struct HtmlEscapeNoSlash<'a>(&'a str);
+
+impl fmt::Display for HtmlEscapeNoSlash<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.0;
+        let mut start = 0;
+        for (i, b) in s.bytes().enumerate() {
+            let replacement = match b {
+                b'<' => "&lt;",
+                b'>' => "&gt;",
+                b'&' => "&amp;",
+                b'"' => "&quot;",
+                b'\'' => "&#x27;",
+                _ => continue,
+            };
+            if start < i {
+                f.write_str(&s[start..i])?;
+            }
+            f.write_str(replacement)?;
+            start = i + 1;
+        }
+        if start < s.len() {
+            f.write_str(&s[start..])?;
+        }
+        Ok(())
+    }
 }
 
 fn load_template(
@@ -255,6 +310,39 @@ mod tests {
             env.get_template(name)
                 .unwrap_or_else(|e| panic!("embedded template {name} failed to parse: {e}"));
         }
+    }
+
+    #[test]
+    fn html_escape_no_slash_escapes_markup_but_keeps_slash() {
+        let out = HtmlEscapeNoSlash("/a/b <x> & \"q\" 'p'").to_string();
+        assert_eq!(out, "/a/b &lt;x&gt; &amp; &quot;q&quot; &#x27;p&#x27;");
+    }
+
+    #[test]
+    fn admin_formatter_keeps_url_slashes_but_escapes_dangerous_chars() {
+        let env = environment(&TemplatingConfig {
+            overrides_root: None,
+            auto_reload: false,
+        });
+        // A `.html` name triggers HTML auto-escape, which routes through
+        // `admin_html_formatter`. URLs must come out with literal slashes…
+        let url = env
+            .render_named_str(
+                "probe.html",
+                "{{ url }}",
+                minijinja::context! { url => "/admin/customers/50/edit" },
+            )
+            .unwrap();
+        assert_eq!(url, "/admin/customers/50/edit");
+        // …while the XSS-relevant characters are still escaped.
+        let danger = env
+            .render_named_str(
+                "probe.html",
+                "{{ s }}",
+                minijinja::context! { s => "<script>&'\"" },
+            )
+            .unwrap();
+        assert_eq!(danger, "&lt;script&gt;&amp;&#x27;&quot;");
     }
 
     #[test]
