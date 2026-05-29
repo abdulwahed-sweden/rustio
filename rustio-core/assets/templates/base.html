@@ -15,9 +15,13 @@
   </script>
   <title>{% block title %}{{ design.project_name | default('RustIO') }}{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/admin/static/favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  {# Fonts: system stack only. Inter is listed first in admin.css's
+     --font-sans, so a project that opts in (via its own <link> to a
+     self-hosted copy) picks it up automatically; without it the OS
+     picks the best native UI font (SF Pro / Segoe UI / Roboto) and the
+     admin renders identically offline, behind a strict CSP, or on an
+     air-gapped network. Honors the framework's single-binary promise
+     — no CDN @import, no external webfont download at runtime. #}
   <link rel="stylesheet" href="/admin/static/admin.css">
   {% block head_extra %}{% endblock %}
 </head>

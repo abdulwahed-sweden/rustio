@@ -95,8 +95,13 @@
   --space-8: 48px;
 
   /* Fonts */
-  --font-sans: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  /* Fonts: Inter first (picked up if the project ships a self-hosted
+   * copy via its own <link>); otherwise the OS native UI font — SF Pro
+   * Display on macOS, Segoe UI on Windows, Roboto on Android/Linux.
+   * No CDN @import, no external webfont download at runtime — the
+   * admin renders identically offline. */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
   /* Interim aliases — pre-Phase-3 templates still reference these. Folded
    * into the canonical names above in Phase 6. */
@@ -202,8 +207,8 @@
   --color-text-muted:     var(--color-light-500);
   --color-highlight-soft: var(--color-accent-soft);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 /* ----------------------------------------------------------------------------
