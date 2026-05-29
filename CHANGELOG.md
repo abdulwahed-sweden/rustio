@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet — see the **[2.0.4]** block below._
+### Fixed
+
+- **Phantom demo `Order` model no longer leaks into every project's admin.**
+  The admin runtime unconditionally registered a leftover demo model
+  (`build_orders_config`, table `admin_new_demo_orders`) into the
+  `AdminRegistry`, so every scaffolded project exposed a spurious
+  `/admin/orders` route and an "Orders" dashboard card for a model the
+  project never defined — absent from the project's own
+  `rustio.schema.json`. Removed the demo registration and the dead
+  `build_orders_config` helper; `register_generated` / `register_from_table`
+  remain available for real config-driven models. Projects now show only
+  their own models plus the built-in `User`.
 
 
 ## [2.0.4] - 2026-05-29

@@ -480,7 +480,6 @@ impl Admin {
         let admin_new_registry = std::sync::Arc::new({
             let mut reg = crate::admin::admin_form_bridge::AdminRegistry::new();
             reg.register("users", crate::admin::layout::new_user_admin);
-            register_generated(&mut reg, build_orders_config());
             reg
         });
 
@@ -2133,44 +2132,6 @@ pub async fn register_from_table(
     let cfg = crate::admin::schema_introspect::generate_from_table(db, table).await?;
     register_generated(registry, cfg);
     Ok(())
-}
-
-/// Declarative replacement for the hand-written `OrderAdmin` impl.
-/// Same metadata (table, primary key, fields, search columns,
-/// status flag, ensure-table SQL) — just expressed through the
-/// generator builder API instead of an `impl AdminUiModel` block.
-fn build_orders_config() -> crate::admin::admin_generator::AdminModelConfig {
-    use crate::admin::admin_form_bridge::AdminUiField;
-    use crate::admin::admin_generator::AdminModelConfig;
-
-    AdminModelConfig::new("orders", "Order")
-        .table("admin_new_demo_orders")
-        .primary_key("id")
-        .fields(vec![
-            AdminUiField::text("order_number", "Order #")
-                .required(true)
-                .filterable(true)
-                .sortable(true),
-            AdminUiField::email("customer_email", "Customer")
-                .required(true)
-                .filterable(true)
-                .advanced_filter(true),
-            AdminUiField::float("total_amount", "Total").sortable(true),
-            AdminUiField::boolean("is_paid", "Paid")
-                .filterable(true)
-                .sortable(true),
-        ])
-        .searchable(vec!["order_number", "customer_email"])
-        .status_field("is_paid")
-        .ensure_sql(
-            "CREATE TABLE IF NOT EXISTS admin_new_demo_orders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                order_number TEXT,
-                customer_email TEXT,
-                total_amount TEXT,
-                is_paid TEXT
-            )",
-        )
 }
 
 /// Context-aware hint shown on an empty list page. Combines the
