@@ -11,79 +11,95 @@ cargo install rustio-cli
 ## Quick start
 
 ```bash
-rustio init
+rustio init readlist
+cd readlist
 ```
 
-`rustio init` launches an interactive wizard:
+`rustio init <name>` scaffolds a Rust project and opens the setup menu — a small Guided / Manual / Import picker. Pick **Guided** and describe what you're building in one sentence:
 
 ```text
-  RustIO
-  Let's set up your project.
+  How would you like to begin?
+  › Guided — I'll propose a starting shape and walk it with you
+    Manual — I'll get out of the way; you add models one at a time
+    Import — read an existing rustio.schema.json (coming soon)
 
-> Project name: readlist
-> Choose a starting preset:
-    Basic — empty project, add apps later
-  › Blog  — scaffolds one app with admin + views
-    API   — scaffolds one app with admin + views
-> What should your first model track? books
-> Proceed? (Y/n)
+  ? What are you building?
+  › a small clinic with patients and appointments
+
+  I read this as a `clinic` project.
+  Here's what I'd suggest:
+    1. Patient      name, date_of_birth, phone
+    2. Doctor       name, specialty
+    3. Appointment  patient_id, doctor_id, scheduled_for, notes
 ```
 
-Then:
+RustIO walks each model with one keystroke (`add` / `skip`) and shows a system-blueprint summary before any file is written. The technical view (typed plan operations, risk classification, warnings) lives behind a *"Show technical details"* choice — you decide what lands.
+
+Then bring the project up:
 
 ```bash
-cd readlist
 rustio migrate apply
 rustio user create --email you@example.com --password secret --role admin
 rustio run
 ```
 
-Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/). The admin lives at `/admin` — sign in with the email + password you created.
+Open <http://127.0.0.1:8000/admin> and sign in. That's the whole loop.
+
+## Change something later
+
+Once your project is running, describe the change in plain English:
+
+```bash
+rustio evolve "add a status field to tasks"
+```
+
+RustIO proposes the diff as a small blueprint, shows you the risk, and lets you pick **Apply** / **Show technical details** / **Cancel**. On Apply, it writes the model edit + a migration; you then run `rustio migrate apply` to bring the DB up to date.
+
+The planner expresses changes inside a fixed vocabulary (add field, rename field, add relation, change type, …). If your request doesn't fit, it **refuses** rather than guessing.
 
 ## Non-interactive
 
-Skip the wizard by passing a name (and optionally a preset or a custom app name):
+Skip the menu by passing the preset and app upfront:
 
 ```bash
-rustio init readlist                                  # basic preset
 rustio init readlist --preset blog                    # default app: posts
 rustio init readlist --preset blog --app books        # custom app name
 ```
 
-## Commands
+## Common commands
 
-| Command                         | What it does                                                         |
-| ------------------------------- | -------------------------------------------------------------------- |
-| `rustio init`                   | Interactive wizard: name + preset + confirm                          |
-| `rustio init <name>`            | Non-interactive scaffold (default preset: `basic`)                   |
-| `rustio init <name> --preset P` | Non-interactive with a preset (`basic` / `blog` / `api`)             |
-| `rustio init <name> --app X`    | Override the scaffolded app name (e.g. `books`, `tasks`, `links`)    |
-| `rustio new project <name>`     | Create a new project directly (no wizard)                            |
-| `rustio new app <name>`         | Scaffold an app inside the current project                           |
-| `rustio migrate generate <n>`   | Create a new migration file                                          |
-| `rustio migrate apply [-v]`     | Apply pending migrations (`-v` prints each statement)                |
-| `rustio migrate status`         | Show applied and pending migrations                                  |
-| `rustio schema`                 | Write `rustio.schema.json` from the compiled admin                   |
-| `rustio run`                    | Build and run the project in the current directory                   |
-| `rustio user create ...`        | Create a real user in the auth tables                                |
-| `rustio ai plan "<prompt>" [--save <path>]` | Plan a schema change; optionally save a reviewable document |
-| `rustio ai review <path>`       | Review a saved plan against the current schema                       |
-| `rustio ai validate <path>`     | Terse validate-only gate for CI                                      |
-| `rustio ai apply <path> [--yes]` | Apply a reviewed plan (writes files, never runs migrations)         |
-| `rustio context show`           | Show parsed `rustio.context.json` + inferred flags (GDPR, PII, …)    |
-| `rustio context validate`       | Parse context; exit 0 on success                                     |
-| `rustio --version`              | Print the CLI version                                                |
+For a small day-one surface, run `rustio help`. The everyday loop:
+
+| Command                          | What it does                                                         |
+| -------------------------------- | -------------------------------------------------------------------- |
+| `rustio init [name]`             | Scaffold a project + open the setup menu                             |
+| `rustio start`                   | Re-open the setup menu inside an existing project                    |
+| `rustio new app <name>`          | Add a new model to the current project                               |
+| `rustio run`                     | Build (cargo build) + start the server on `:8000`                    |
+| `rustio evolve "<request>"`      | Describe a change in plain English — RustIO proposes the diff        |
+| `rustio migrate apply [-v]`      | Apply pending migrations                                             |
+| `rustio migrate status`          | Show applied and pending migrations                                  |
+| `rustio user create [opts]`      | Create a user in the auth tables (interactive when flags omitted)    |
+| `rustio doctor`                  | Health-check the current project                                     |
+| `rustio explain <topic>`         | Inline docs on a concept (`model`, `migration`, `admin`, …)          |
+| `<any> --why`                    | Print a one-paragraph "what does this do" without running it         |
+
+For the lower-level scripting / CI surface (`ai plan / review / apply / validate`), the legacy 0.8.x FK retrofit, schema regeneration, and context inspection, see:
+
+```bash
+rustio help advanced
+```
 
 ## Environment
 
 - `RUSTIO_DATABASE_URL` — override the default `sqlite://app.db?mode=rwc`.
-- `NO_COLOR` — disable colored CLI output. The wizard honors this automatically.
+- `NO_COLOR` — disable coloured CLI output. The wizard honours this automatically.
 - `RUSTIO_CORE_PATH` — use a local `rustio-core` path in generated projects (for RustIO contributors).
 
 ## Notes
 
-- `rustio init` needs a real terminal. In CI or when stdin is piped, pass a name explicitly: `rustio init mysite [--preset …]`.
-- Presets are coarse starting points, not lock-in. Every preset is "a project plus N apps" — you can always add more with `rustio new app <name>`.
+- The interactive setup menu needs a real terminal. In CI or when stdin is piped, pass a name + preset explicitly: `rustio init mysite --preset basic`.
+- Presets are coarse starting points, not lock-in. You can always add more with `rustio new app <name>` or change the shape with `rustio evolve "<request>"`.
 
 See the [main repository](https://github.com/abdulwahed-sweden/rustio) for the full guide.
 
