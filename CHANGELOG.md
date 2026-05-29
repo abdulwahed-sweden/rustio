@@ -7,8 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet — see the **[2.0.2]** block below._
+_No unreleased changes yet — see the **[2.0.3]** block below._
 
+
+## [2.0.3] - 2026-05-29
+
+Documentation-only patch — re-publishes the v2.0.2 codebase so that
+the README displayed on the crates.io listings reflects the new
+`rustio evolve` framing that landed in v2.0.2 but never made it
+into the registry-served copy.
+
+### Changed
+
+- **README's "Evolving the schema later" section** now leads with
+  `rustio evolve "<request>"` as the everyday verb (with the
+  three-way Apply / Show technical details / Cancel choice
+  explained inline). The scriptable `ai plan/review/apply`
+  pipeline is mentioned as the CI-friendly low-level surface
+  reachable via `rustio help advanced`, not the primary path.
+- **README's "Naming — what about `rustio-admin`?" section** —
+  "AI-augmented schema pipeline" → "guided schema-evolution wizard
+  (`rustio evolve`)". The reciprocal note in `rustio-admin`'s
+  README was updated in the same window so the two project pages
+  describe each other accurately.
+- **README's "What RustIO is NOT" list** — "Not an AI toy" →
+  "Not an AI gadget", rewritten to acknowledge that `evolve`'s
+  friendliness is a UX surface while the substance is the strict
+  typed core and closed-vocabulary pipeline that make safe change
+  possible.
+- **README's "Want a fuller example?" paragraph** — taskhub's tour
+  now points at "the `evolve` pipeline" instead of "the AI pipeline".
+
+### Notes
+
+- **No code changes.** All three crates are byte-for-byte
+  equivalent to 2.0.2 modulo the README. The bump exists so that
+  someone reading the crates.io listing today sees the new framing
+  instead of the old.
 
 ## [2.0.2] - 2026-05-29
 
