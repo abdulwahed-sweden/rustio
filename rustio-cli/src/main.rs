@@ -4,85 +4,132 @@ use std::process::{Command as ProcessCommand, ExitCode};
 
 mod wizard;
 
+// ─────────────────────────────────────────────────────────────────
+// Help is split into two surfaces:
+//
+//   USAGE          — the short, everyday help. ~10 commands, no
+//                    section for the scripting pipeline, no environment
+//                    variables, no legacy / niche surface.
+//
+//   ADVANCED_USAGE — the scripting + low-level surface. Reachable
+//                    via `rustio help advanced`. Adds the typed
+//                    pipeline commands, schema regeneration, the
+//                    legacy FK retrofit, context inspection, and
+//                    environment variables.
+//
+// The split is the simplest progressive disclosure we can ship today:
+// a new user reading `rustio help` is never confronted with vocabulary
+// they don't need on day one. Power users get the full surface one
+// keystroke away.
+// ─────────────────────────────────────────────────────────────────
+
 const USAGE: &str = r#"rustio — the RustIO framework CLI
 
 USAGE:
     rustio <command> [args...]
 
 If you're new: `rustio init <name>` creates a project and opens the
-setup menu — a guided walkthrough that proposes a starting shape and
-lets you decide what lands. From there: `rustio migrate apply` +
-`rustio run`. That's the whole loop.
+setup menu — a guided walkthrough that proposes a starting shape.
+Run `rustio migrate apply` then `rustio run` to bring it up. To
+change something later: `rustio evolve "<what you want>"`. That's
+the whole loop.
 
 SCAFFOLD
-    init [name]                 Wizard (no name) or non-interactive scaffold (with name).
-                                  Options: --preset <basic|blog|api>, --app <name>
-    start                       Open the setup menu — guided wizard, manual mode,
-                                  or (soon) import an existing schema. Recommended
-                                  entry point for a fresh project.
-    new project <name>          Create a new RustIO project in <name>/.
-    new app <name>              Create a new app inside the current project.
+    init [name]                 Wizard (no name) or non-interactive scaffold
+                                  (with name). Options:
+                                  --preset <basic|blog|api>, --app <name>.
+    start                       Open the setup menu in an existing project —
+                                  guided wizard, manual mode, or (soon) import.
+    new app <name>              Add a new model to the current project.
 
 RUN
     run                         Build (cargo build) and start the server on :8000.
 
-DATABASE
-    migrate generate <name>     Create an empty migration file under migrations/.
+CHANGE
+    evolve "<request>"          Describe a change in plain English. RustIO
+                                  proposes the diff, shows you the risk, and
+                                  applies only what you accept.
     migrate apply [-v]          Apply all pending migrations (verbose with -v).
     migrate status              Show applied + pending migrations.
-    migrate add-fks [--write]   Retrofit FOREIGN KEY clauses onto an 0.8.x project.
-
-SCHEMA
-    schema                      Write rustio.schema.json from the in-memory admin
-                                  registry. The single source of truth for every
-                                  external tool reading the project.
-
-ADVANCED                                            (deterministic, refusal-first)
-    ai plan "<prompt>" [--save <path>]
-                                Parse a natural-language request into a typed Plan
-                                (no execution).
-    ai review <path>            Risk/impact/warnings of a saved plan vs the live schema.
-    ai validate <path>          Terse validate-only gate for CI. Exit 0/1.
-    ai apply <path> [--yes] [--dry-run] [--force]
-                                Apply a reviewed plan (writes files, never runs
-                                migrations). `--force` opens the destructive gate
-                                for `remove_field` / `remove_relation`; Critical /
-                                developer-only / PII refusals stay authoritative.
-
-CONTEXT
-    context show                Show rustio.context.json + inferred region / GDPR /
-                                  PII fields / industry conventions.
-    context validate            Parse rustio.context.json; exit 0/1.
 
 USERS
-    user create [opts]          Create a user in the auth tables. Interactive when
-                                  --email / --password / --role are omitted.
+    user create [opts]          Create a user (interactive when flags omitted).
 
 HELP
-    (no args)                   Context-aware "what should I do next" for the
-                                  current directory.
-    doctor                      Health check the current project (toolchain,
-                                  apps, migrations, DB, schema). Prints
-                                  pass/warn/fail + a fix hint per check.
-    explain <topic>             Short inline docs on a concept. Topics:
-                                  model, migration, schema, app, admin,
-                                  route, ai, context, rbac.
-    --why                       Append to any command to print a one-paragraph
-                                  "what does this do" without running it.
+    (no args)                   Context-aware "what should I do next".
+    doctor                      Health-check the current project. Prints
+                                  pass/warn/fail with a fix hint per check.
+    explain <topic>             Short inline docs on a concept.
+    --why                       Append to any command for a one-paragraph
+                                  explanation without running it.
                                   Example: `rustio migrate apply --why`.
 
 META
     --help, -h                  Print this help.
     --version, -V               Print the CLI version.
 
-ENVIRONMENT
-    RUSTIO_DATABASE_URL         Database URL (default: sqlite://app.db?mode=rwc).
-    RUSTIO_CORE_PATH            Override the `rustio-core` path dep in generated
-                                  Cargo.toml — point at a checkout instead of crates.io.
-    NO_COLOR                    Disable coloured CLI output.
+For more commands (scripting, low-level operations, legacy retrofits):
+    rustio help advanced
 
 For longer-form docs: https://github.com/abdulwahed-sweden/rustio
 "#;
+
+const ADVANCED_USAGE: &str = r#"rustio — advanced commands
+
+For day-to-day work, see `rustio help`. The commands below cover
+scripting and CI gates, low-level project operations, and a legacy
+retrofit. Most users never need them.
+
+SCRIPTING                                       (composes evolve by hand)
+    ai plan "<request>" [--save <path>]
+                                Parse a request into a typed plan document
+                                  (no execution). The interactive wrapper
+                                  is `rustio evolve`.
+    ai review <path>            Risk / impact / warnings for a saved plan.
+    ai validate <path>          Terse validate-only gate for CI. Exit 0/1.
+    ai apply <path> [--yes] [--dry-run] [--force]
+                                Apply a reviewed plan (writes files, never
+                                  runs migrations). `--force` opens the
+                                  destructive gate; Critical / developer-
+                                  only / PII refusals stay authoritative.
+
+PROJECT                                                 (rarely needed)
+    new project <name>          Non-interactive variant of `rustio init <name>`.
+    migrate generate <name>     Write an empty migration file under migrations/.
+    schema                      Regenerate rustio.schema.json from the in-memory
+                                  admin registry.
+
+LEGACY                              (only for projects scaffolded before 0.9.0)
+    migrate add-fks [--write]   Retrofit FOREIGN KEY clauses onto an 0.8.x
+                                  project. Default is dry-run; --write commits.
+"#;
+
+const ADVANCED_USAGE_CONTEXT_TAIL: &str = r#"
+CONTEXT                              (only relevant when rustio.context.json exists)
+    context show                Show parsed context + inferred region / GDPR /
+                                  PII fields / industry conventions.
+    context validate            Parse rustio.context.json; exit 0/1.
+"#;
+
+const ADVANCED_USAGE_ENV_TAIL: &str = r#"
+ENVIRONMENT
+    RUSTIO_DATABASE_URL         Database URL (default: sqlite://app.db?mode=rwc).
+    RUSTIO_CORE_PATH            Override the `rustio-core` path dep in generated
+                                  Cargo.toml — point at a checkout instead of
+                                  crates.io.
+    NO_COLOR                    Disable coloured CLI output.
+"#;
+
+/// Print `rustio help advanced`. The CONTEXT block only renders when
+/// the current directory actually has a `rustio.context.json` — for
+/// the 95 % of projects without one, the section is just noise.
+fn print_advanced_help() {
+    print!("{ADVANCED_USAGE}");
+    if Path::new("rustio.context.json").exists() {
+        print!("{ADVANCED_USAGE_CONTEXT_TAIL}");
+    }
+    print!("{ADVANCED_USAGE_ENV_TAIL}");
+}
 
 const DEFAULT_DATABASE_URL: &str = "sqlite://app.db?mode=rwc";
 
@@ -102,6 +149,16 @@ async fn main() -> ExitCode {
                 Ok(())
             } else {
                 print!("{USAGE}");
+                Ok(())
+            }
+        }
+        Ok(Command::HelpAdvanced) => {
+            if why_mode {
+                // Same "why" as `rustio help` — both print docs.
+                why_for_help();
+                Ok(())
+            } else {
+                print_advanced_help();
                 Ok(())
             }
         }
@@ -226,6 +283,14 @@ async fn main() -> ExitCode {
                 ai_command(sub)
             }
         }
+        Ok(Command::Evolve { prompt }) => {
+            if why_mode {
+                why_for("evolve");
+                Ok(())
+            } else {
+                evolve_command(prompt)
+            }
+        }
         Ok(Command::Context(sub)) => {
             if why_mode {
                 why_for("context");
@@ -323,8 +388,28 @@ enum Command {
     /// example. Topics: model, migration, schema, app, admin, route,
     /// ai, context, rbac.
     Explain(String),
+    /// `rustio evolve "<request>"` — friendly interactive verb for
+    /// changing the schema after the project is up.
+    ///
+    /// Internally wires together the same `generate_plan` →
+    /// `review_plan` → `execute_plan_document` calls the lower-level
+    /// `ai plan/review/apply` commands compose, but presents them as
+    /// one continuous flow with a blueprint summary and a three-way
+    /// choice (Apply / Show technical details / Cancel) — the same
+    /// progressive-disclosure UX the setup wizard uses.
+    ///
+    /// This is what new users see; `ai plan/review/apply` survive as
+    /// a scriptable surface for CI gates (documented under
+    /// `rustio help advanced`, never named "AI" in user-facing copy).
+    Evolve {
+        prompt: String,
+    },
     Version,
     Help,
+    /// `rustio help advanced` — lower-level scripting + niche
+    /// commands. Surfaced via a dedicated subcommand so the default
+    /// `rustio help` can stay short and focused on the everyday loop.
+    HelpAdvanced,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -375,7 +460,25 @@ pub(crate) enum AiCommand {
 fn parse_command(args: &[String]) -> Result<Command, String> {
     match args.get(1).map(String::as_str) {
         None => Ok(Command::Default),
-        Some("--help") | Some("-h") | Some("help") => Ok(Command::Help),
+        Some("--help") | Some("-h") | Some("help") => {
+            // `rustio help` → short, everyday surface.
+            // `rustio help advanced` → scripting + low-level + legacy
+            //   + (conditionally) context. Kept separate so day-one
+            //   users never trip over an "ADVANCED" section in the
+            //   default help.
+            match args.get(2).map(String::as_str) {
+                None => Ok(Command::Help),
+                Some("advanced") => {
+                    if args.len() > 3 {
+                        return Err(format!("unexpected argument `{}`", args[3]));
+                    }
+                    Ok(Command::HelpAdvanced)
+                }
+                Some(other) => Err(format!(
+                    "unknown help section `{other}` (try `rustio help` or `rustio help advanced`)"
+                )),
+            }
+        }
         Some("--version") | Some("-V") | Some("version") => Ok(Command::Version),
         Some("doctor") => {
             if args.len() > 2 {
@@ -427,6 +530,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             }
             Ok(Command::Schema)
         }
+        Some("evolve") => parse_evolve_args(&args[2..]),
         Some("ai") => parse_ai_command(&args[2..]),
         Some("context") => match args.get(2).map(String::as_str) {
             Some("show") => {
@@ -926,7 +1030,7 @@ fn schema_command() -> Result<(), String> {
     out::info("");
     out::info("Next:");
     out::hint("review rustio.schema.json — every external tool reads from this file");
-    out::hint("`rustio start` — onboard a new project, or `rustio ai plan \"<change>\"` to evolve this one");
+    out::hint("`rustio start` — onboard a new project, or `rustio evolve \"<change>\"` to change this one");
     Ok(())
 }
 
@@ -1031,6 +1135,22 @@ async fn user_create_command(
     out::info("Next:");
     out::hint("`rustio run` — then sign in at http://127.0.0.1:8000/admin");
     Ok(())
+}
+
+/// Parse `rustio evolve "<request>"`. The prompt can be supplied as
+/// a single quoted token or as a sequence of bare words — we join
+/// `rest` with a single space, which handles both shapes.
+///
+/// An empty prompt is a usage error. We deliberately do not accept a
+/// `--save` flag here (the way `rustio ai plan` does): `evolve` is
+/// the interactive surface that applies changes immediately, so
+/// there's nothing to save.
+fn parse_evolve_args(rest: &[String]) -> Result<Command, String> {
+    let prompt = rest.join(" ").trim().to_string();
+    if prompt.is_empty() {
+        return Err("usage: rustio evolve \"<change request>\"".into());
+    }
+    Ok(Command::Evolve { prompt })
 }
 
 /// Parse the args after `rustio ai` into an [`AiCommand`]. Keeps
@@ -1887,6 +2007,225 @@ fn show_technical_details(
     }
     println!();
     let _ = accepted; // referenced above; reserved for future per-model detail
+}
+
+// ─────────────────────────────────────────────────────────────────
+// `rustio evolve "<request>"` — friendly interactive verb over the
+// typed plan/review/apply pipeline.
+//
+// The composition is intentionally thin: each step calls the same
+// rustio_core API the scriptable `ai plan / review / apply` commands
+// call. Everything user-facing happens in *this* function — the
+// pipeline stays headless and reusable. From the user's perspective:
+//
+//   $ rustio evolve "add a status field to tasks"
+//
+//   RustIO is ready to make this change:
+//     · add task.status (String)
+//
+//   ? Ready?
+//     › Apply — write the files
+//       Show technical details — plan, risk, warnings
+//       Cancel — don't change anything
+//
+// No mention of "AI" anywhere; "plan" / "review" / "apply" are
+// internal implementation labels the user never reads.
+// ─────────────────────────────────────────────────────────────────
+
+/// Top-level handler for `rustio evolve "<request>"`.
+///
+/// Reads the project schema + (optional) context, asks the planner to
+/// parse the request into a typed `Plan`, reviews it for risk and
+/// warnings, presents a one-screen blueprint, and on Apply hands the
+/// reviewed PlanDocument to the standard atomic executor. The three-
+/// way choice (Apply / Show technical details / Cancel) is the same
+/// progressive-disclosure pattern the setup wizard uses — the user
+/// only sees primitive-level vocabulary when they ask for it.
+fn evolve_command(prompt: String) -> Result<(), String> {
+    use rustio_core::ai::executor::{execute_plan_document, ExecuteOptions};
+    use rustio_core::ai::review::{build_plan_document, review_plan};
+    use rustio_core::ai::{generate_plan, PlanRequest};
+
+    let schema = load_project_schema()?;
+    let context = load_project_context()?;
+
+    println!();
+    println!("  Working on it…");
+    println!();
+
+    // Step 1 — plan. The planner is closed-vocabulary, so an
+    // unparseable request returns an error rather than a guess. We
+    // surface that to the user as a friendly refusal: better to admit
+    // a limit than fake a result.
+    let result = match generate_plan(&schema, context.as_ref(), PlanRequest::new(&prompt)) {
+        Ok(r) => r,
+        Err(e) => {
+            println!("  I can't make that change cleanly.");
+            println!("    {e}");
+            println!();
+            println!("  Try a more specific phrasing. RustIO works inside a fixed set of");
+            println!("  changes (add field, rename field, add relation, change type, …);");
+            println!("  if a request can't fit, it's better to be told than guessed at.");
+            return Ok(());
+        }
+    };
+
+    // Step 2 — review. Risk classification + warnings come from the
+    // same review path `rustio ai review` would print, but we only
+    // surface them in the technical-details view.
+    let review = review_plan(&schema, &result.plan, context.as_ref())
+        .map_err(|e| format!("could not review the change: {e}"))?;
+
+    show_evolve_blueprint(&result.plan);
+
+    // Step 3 — three-way interactive choice. Loop so the user can
+    // peek at technical details and then come back to apply.
+    loop {
+        let choice = inquire::Select::new(
+            "Ready?",
+            vec![
+                "Apply — write the files",
+                "Show technical details — plan, risk, warnings",
+                "Cancel — don't change anything",
+            ],
+        )
+        .with_starting_cursor(0)
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+
+        if choice.starts_with("Apply") {
+            break;
+        } else if choice.starts_with("Show") {
+            show_evolve_technical_details(&result.plan, &review);
+            continue;
+        } else {
+            println!();
+            println!("  No changes written.");
+            return Ok(());
+        }
+    }
+
+    // Step 4 — apply. Wrap the plan in a `PlanDocument` (same shape
+    // the executor accepts from `rustio ai apply`) and hand it to the
+    // atomic file-write path. Destructive primitives stay refused
+    // here; users who really need them go through the lower-level
+    // `ai apply --force` flow with documented review.
+    let doc = build_plan_document(&schema, &prompt, &result, context.as_ref())
+        .map_err(|e| format!("could not build the change document: {e}"))?;
+    let opts = ExecuteOptions {
+        allow_destructive: false,
+    };
+    let exec = execute_plan_document(Path::new("."), &doc, &opts, context.as_ref())
+        .map_err(|e| format!("{e}"))?;
+
+    println!();
+    out::success(
+        "applied",
+        &format!(
+            "{} step{}",
+            exec.applied_steps,
+            if exec.applied_steps == 1 { "" } else { "s" }
+        ),
+    );
+    for f in &exec.generated_files {
+        out::success("wrote", f);
+    }
+    println!();
+    out::hint("rustio migrate apply   # apply the new migration to your DB");
+    out::hint("rustio run             # if the server isn't already up");
+    Ok(())
+}
+
+/// Render the change set as a small system-blueprint block — one
+/// line per change, plain English, no primitive vocabulary. The
+/// goal is for the user to read the screen once and know what
+/// `Apply` will do without a manual.
+fn show_evolve_blueprint(plan: &rustio_core::ai::Plan) {
+    use rustio_core::ai::Primitive;
+
+    println!();
+    println!("  RustIO is ready to make this change:");
+    println!();
+
+    // `evolve` plans are usually 1–3 steps. We render them as
+    // bullets in the order the executor will apply them.
+    for step in &plan.steps {
+        let line = match step {
+            Primitive::AddField(a) => {
+                let kind = if a.field.nullable {
+                    "optional"
+                } else {
+                    "required"
+                };
+                format!(
+                    "    · add {}.{}  ({}, {})",
+                    a.model, a.field.name, a.field.ty, kind
+                )
+            }
+            Primitive::RemoveField(r) => format!("    · remove {}.{}", r.model, r.field),
+            Primitive::RenameField(r) => {
+                format!("    · rename {}.{} → {}", r.model, r.from, r.to)
+            }
+            Primitive::ChangeFieldType(c) => format!(
+                "    · change type of {}.{} → {}",
+                c.model, c.field, c.new_type
+            ),
+            Primitive::ChangeFieldNullability(c) => {
+                let to = if c.nullable { "optional" } else { "required" };
+                format!("    · {}.{} now {}", c.model, c.field, to)
+            }
+            Primitive::AddModel(a) => {
+                format!("    · add model {} ({} fields)", a.name, a.fields.len())
+            }
+            Primitive::RemoveModel(r) => format!("    · remove model {}", r.name),
+            Primitive::RenameModel(r) => format!("    · rename {} → {}", r.from, r.to),
+            Primitive::AddRelation(r) => {
+                format!("    · link {}.{} → {}", r.from, r.via, r.to)
+            }
+            Primitive::RemoveRelation(r) => {
+                format!("    · unlink {}.{}", r.from, r.via)
+            }
+            Primitive::UpdateAdmin(u) => {
+                format!("    · admin update on {}", u.model)
+            }
+            // Catch-all for primitives we haven't tailored copy for
+            // yet. Falls back to the Debug repr so the user still
+            // sees something concrete; covers future variants
+            // gracefully without a panic.
+            other => format!("    · {other:?}"),
+        };
+        println!("{line}");
+    }
+    println!();
+}
+
+/// Behind the "Show technical details" choice. Plan operations,
+/// risk classification, warnings — the same fields `rustio ai review`
+/// prints, just labelled in plain English. Available to anyone who
+/// asks; never the first impression.
+fn show_evolve_technical_details(
+    plan: &rustio_core::ai::Plan,
+    review: &rustio_core::ai::PlanReview,
+) {
+    println!();
+    println!("  Technical details");
+    println!("  ─────────────────");
+    println!();
+    println!("  Operations ({}):", plan.steps.len());
+    for (i, step) in plan.steps.iter().enumerate() {
+        println!("    {}. {:?}", i + 1, step);
+    }
+    println!();
+    println!("  Risk classification : {:?}", review.risk);
+    if review.warnings.is_empty() {
+        println!("  Warnings            : none");
+    } else {
+        println!("  Warnings            :");
+        for w in &review.warnings {
+            println!("    - {w}");
+        }
+    }
+    println!();
 }
 
 /// Shared schema loader for the AI subcommands — every one of them
@@ -2939,13 +3278,23 @@ fn why_for(name: &str) {
              Run it without --why to regenerate the file."
         }
         "ai" => {
-            "`rustio ai <plan|review|apply>` is the AI layer. Three deterministic, refusal-\n\
-             first steps:\n\
+            "`rustio ai <plan|review|apply>` is the scripting / CI surface for the\n\
+             typed change pipeline. Three steps:\n\
              \x20\x201. plan — parse plain English into a typed change document.\n\
              \x20\x202. review — risk / impact / warnings, no execution.\n\
              \x20\x203. apply — atomic file writes; never runs migrations itself.\n\
              \n\
+             For an interactive flow, `rustio evolve \"<request>\"` is friendlier.\n\
              Run a subcommand without --why for actual usage."
+        }
+        "evolve" => {
+            "`rustio evolve \"<request>\"` is the friendly verb for changing your\n\
+             schema after the project is up. Describe the change in plain English;\n\
+             RustIO proposes the diff, shows you the risk, and applies only what\n\
+             you accept. Same three-way choice the setup wizard uses:\n\
+             Apply / Show technical details / Cancel.\n\
+             \n\
+             Run it without --why to actually start a change."
         }
         "context" => {
             "`rustio context <show|validate>` inspects rustio.context.json — the optional\n\
