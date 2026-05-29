@@ -7,8 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet — see the **[2.0.1]** block below._
+_No unreleased changes yet — see the **[2.0.2]** block below._
 
+
+## [2.0.2] - 2026-05-29
+
+The simplification release. Hides every visible "AI" reference from
+the day-one user surface, cuts the default help from ~19 commands
+across 8 sections to ~10 commands across 6, and introduces a single
+new verb that becomes the framework's signature change experience.
+
+### Added
+
+- **`rustio evolve "<request>"`.** Friendly interactive verb for
+  changing the schema after the project is up. Reads a plain-English
+  request, asks the planner to parse it into a typed change, runs
+  the standard review for risk and warnings, and presents the same
+  three-way choice the setup wizard uses:
+
+      RustIO is ready to make this change:
+        · add Task.summary  (String, required)
+
+      ? Ready?
+        › Apply — write the files
+          Show technical details — plan, risk, warnings
+          Cancel — don't change anything
+
+  The blueprint summary is one bullet per primitive in plain English;
+  the typed operation list, risk classification, and warnings only
+  appear behind the "Show technical details" choice. When the
+  planner refuses (closed vocabulary, won't guess), the refusal
+  surfaces as a plain-English message — not the `PrimitiveError`
+  Debug repr.
+
+  Underneath, the pipeline is unchanged: `generate_plan` →
+  `review_plan` → `build_plan_document` → `execute_plan_document`.
+  Same atomic file-write path `rustio ai apply` composes by hand.
+
+- **`rustio help advanced`** — a second help surface for scripting,
+  rarely-needed project ops, and one legacy retrofit. Reached
+  through a dedicated subcommand so the default `rustio help` can
+  stay short. The CONTEXT section inside it renders only when
+  `rustio.context.json` exists in the current directory — projects
+  without one don't see noise about GDPR / PII detection on day one.
+
+### Changed
+
+- **`rustio help` is now ~10 commands across 6 sections.** Down
+  from ~19 across 8. Dropped from the default surface: the
+  scripting pipeline (`ai plan/review/apply/validate`), the
+  standalone `SCHEMA` section, `migrate add-fks`, `context show /
+  validate`, the entire `ENVIRONMENT` block. Every removed item is
+  still callable; most also appear in `rustio help advanced` with
+  cleaner framing.
+
+- **The opening paragraph in `rustio help`** now names the full
+  everyday loop including the change verb:
+
+      If you're new: `rustio init <name>` creates a project and opens
+      the setup menu — a guided walkthrough that proposes a starting
+      shape. Run `rustio migrate apply` then `rustio run` to bring it
+      up. To change something later: `rustio evolve "<what you want>"`.
+      That's the whole loop.
+
+- **The "AI" section in help is gone.** The pipeline commands
+  (`ai plan / review / validate / apply`) keep their existing names
+  for back-compat with CI scripts, but they appear only in
+  `rustio help advanced` under a `SCRIPTING (composes evolve by
+  hand)` heading. The `(deterministic, refusal-first)` sub-line is
+  gone — the substance survives in the behaviour, not the framing.
+
+- **Post-`rustio schema` hint** updated to point at
+  `rustio evolve "<change>"` instead of the old `rustio ai plan`
+  invocation.
+
+### Notes
+
+- **No new primitives, no new executor paths.** The substance of
+  `evolve` is the existing typed pipeline. The work was at the
+  product-orchestration layer, not the engine.
+- **`ai plan/review/apply/validate` are still public API.** Scripts
+  written against 2.0.x continue to work unchanged. The change is
+  *what's discoverable*, not *what's callable*.
 
 ## [2.0.1] - 2026-05-29
 
