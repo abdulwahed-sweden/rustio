@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet — see the **[2.0.0]** block below._
+
+
+## [2.0.0] - 2026-05-29
+
+### Major-version jump — re-publishing the post-restart codebase
+
+This release jumps from `0.11.0` to `2.0.0`. The reason is purely
+about crates.io ordering, not a redesign: the pre-restart line of
+this project published up to `v1.10.0`, then the codebase was
+reset to `0.10.0` for a clean foundation. The 0.10.x and 0.11.0
+releases happened on that new foundation but couldn't supersede
+`v1.10.0` on crates.io, so `cargo install rustio-cli` kept handing
+users the *pre-restart* `v1.10.0` binary — a codebase that no
+longer matches this repository.
+
+`2.0.0` cuts that knot:
+
+- Code is the cumulative post-restart line (the work shipped under
+  `0.10.0`, `0.10.1`, and `0.11.0` — see those entries below for
+  the per-step record).
+- `cargo install rustio-cli` from this release onward installs the
+  current `main` branch, not the pre-restart codebase.
+- The version jump explicitly signals "different major than v1.x —
+  the two share a name but not a shape" per SemVer.
+
+No new feature work in this entry beyond the version bump and the
+compatibility note below — the actual surface is what `0.11.0`
+already shipped.
+
 ### Compatibility
 
 - **External: `rustio-admin` v0.22.0 (2026-05-29) renamed its CLI
