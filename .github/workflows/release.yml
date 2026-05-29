@@ -23,17 +23,29 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-targets
 
+      # Each publish step is idempotent: it queries the crates.io API
+      # for the crate's `max_version`, compares against the workspace
+      # version, and skips the upload when the version is already
+      # published. This makes the workflow safe to re-run after a
+      # partial-success run (e.g. macros published, core/cli pending)
+      # instead of failing on `error: crate X@VERSION already exists`.
+      #
+      # The compare is exact equality, not "less-than": a re-run of
+      # an exact-version tag is the only scenario we want to skip.
+      # A lower published version (someone bumped the workspace but
+      # forgot a crate) still triggers a real publish.
+
       - name: Publish rustio-macros
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p rustio-macros
+        run: ./.github/scripts/publish-if-new.sh rustio-macros
 
       - name: Publish rustio-core
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p rustio-core
+        run: ./.github/scripts/publish-if-new.sh rustio-core
 
       - name: Publish rustio-cli
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p rustio-cli
+        run: ./.github/scripts/publish-if-new.sh rustio-cli
