@@ -9,19 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **v8 "bright" admin theme.** The light theme is restyled to a
-  high-contrast skin: bright blue-grey canvas (`#EEF2F8`) with white
-  sidebar/topbar/cards, the rust primary (`#B84318`, hover `#8F3413`) on
-  the New button / active nav / current pagination page / ID column, a
-  one-notch-larger type scale (display 30px, h2 24px, h3 19px), a lilac
-  filter strip (`#F3F0FB`), a tinted table head (`#E4EBF4`), cool-blue
-  row hover (`#EEF3FA`), and vivid emerald/amber/slate status pills.
-  Implemented by retargeting the `--color-light-*` / `--color-accent*`
-  tokens and editing the named rules in place; the list renderer now tags
-  the id column (`.rio-cell-id`), primary-name cell (`.rio-cell-primary`),
-  and status cells (`.rio-pill-*`), and the topbar gains an environment
-  chip (`.rio-env-chip`). Rust stays write-only apart from the two
-  sanctioned navigational uses (ID column, active page).
+- **"Bureau" admin theme.** The admin is restyled to a classic
+  institutional look: a confident navy/institutional-blue accent
+  (`#1E4C8A`) on a cool slate-and-paper neutral scale, large bold
+  typography (17px base, extra-bold headings, uppercase bold-sans labels
+  with monospace reserved for ids/counts/code), and crisp formal borders.
+  Ships **light and dark themes** via `data-theme` on `<html>`; the dark
+  theme is a soft, low-glare slate with a logical elevation ladder
+  (canvas `#171B22` → border-strong `#454D5C`), off-white text, and a
+  gentle blue accent — all meeting WCAG AA (body ≥ 4.5:1, UI ≥ 3:1).
+  Fonts are the OS-native stack only (no webfont/`@import`, offline-safe).
+  The list renderer tags the id column (`.rio-cell-id`), primary-name
+  cell (`.rio-cell-primary`), and status cells (`.rio-pill-*`), and the
+  topbar carries an environment chip (`.rio-env-chip`).
 
 ### Fixed
 
