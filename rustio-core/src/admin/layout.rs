@@ -8,6 +8,7 @@
 //! `/admin/static/…` by the core (see `admin::templating`).
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use crate::admin::admin_form_bridge::{
     resolve_filter_type, AdminDataType, AdminUiField, AdminUiModel, FilterType,
@@ -1197,7 +1198,10 @@ fn ui_data_type_to_schema(dt: AdminDataType) -> &'static str {
 /// Build a `schema::SchemaModel` from the live `AdminUiField` list so a
 /// default ViewSpec can be derived. Only `name` + `ty` matter to
 /// `from_schema_model`; the other schema fields are placeholders.
-fn schema_model_from_ui(model_name: &str, fields: &[AdminUiField]) -> crate::schema::SchemaModel {
+pub(crate) fn schema_model_from_ui(
+    model_name: &str,
+    fields: &[AdminUiField],
+) -> crate::schema::SchemaModel {
     use crate::schema::{SchemaField, SchemaModel};
     let schema_fields = fields
         .iter()
@@ -1221,59 +1225,112 @@ fn schema_model_from_ui(model_name: &str, fields: &[AdminUiField]) -> crate::sch
     }
 }
 
-/// Resolve the ViewSpec for a model's list page: load the saved
-/// `<model_snake>.view.json` from the working directory (same cwd anchor
-/// as `rustio.schema.json` and the `rustio view` CLI), or silently derive
-/// the Phase-2 default. Read per request (no cache this phase).
-fn resolve_list_view(
-    model_name: &str,
-    model: &crate::schema::SchemaModel,
-) -> crate::viewspec::ViewSpec {
-    let filename = format!("{}.view.json", view_snake_case(model_name));
-    let saved = std::fs::read_to_string(&filename).ok();
-    resolve_list_view_inner(saved.as_deref(), model)
+/// The `<model_snake>.view.json` path under `base`. **The single place the
+/// filename is computed**, shared by the reader and the writer so they can
+/// never diverge (constraint 3). `base` is the directory anchor — the cwd
+/// (`Path::new(".")`) in production, a temp dir in tests.
+fn view_file_path(base: &Path, model_name: &str) -> PathBuf {
+    base.join(format!("{}.view.json", view_snake_case(model_name)))
 }
 
-/// Pure resolution: a saved JSON document (present **and** valid) wins;
-/// otherwise derive the default. A missing or invalid file is never an
-/// error. Split from the filesystem read so the load decision is
-/// unit-testable.
-fn resolve_list_view_inner(
-    saved: Option<&str>,
-    model: &crate::schema::SchemaModel,
-) -> crate::viewspec::ViewSpec {
-    if let Some(raw) = saved {
-        if let Ok(spec) = crate::viewspec::ViewSpec::parse(raw) {
-            return spec;
-        }
-        // Invalid saved file → silently derive (never an error).
+/// Load + parse the saved ViewSpec for a model, or `None` when the file is
+/// absent **or** invalid (a missing/broken file is never an error). Shared
+/// by the list-page resolver, the layout-precedence reader, and the
+/// writer's load-existing step.
+fn load_saved_view(base: &Path, model_name: &str) -> Option<crate::viewspec::ViewSpec> {
+    let raw = std::fs::read_to_string(view_file_path(base, model_name)).ok()?;
+    crate::viewspec::ViewSpec::parse(&raw).ok()
+}
+
+/// Parse a `?layout=` (or form) value into a [`ViewLayout`](crate::viewspec::ViewLayout),
+/// returning `None` for anything that isn't one of the four exact keys.
+/// Used both for the request param and for validating the POSTed layout.
+pub(crate) fn parse_layout_strict(raw: Option<&str>) -> Option<crate::viewspec::ViewLayout> {
+    use crate::viewspec::ViewLayout;
+    match raw {
+        Some("table") => Some(ViewLayout::Table),
+        Some("list") => Some(ViewLayout::List),
+        Some("cards") => Some(ViewLayout::Cards),
+        Some("compact") => Some(ViewLayout::Compact),
+        _ => None,
     }
-    crate::viewspec::ViewSpec::from_schema_model(model)
 }
 
-/// Select the list table's columns through the ViewSpec. Resolves the
-/// model's view, renders the Table layout via the Phase-3 renderer to get
-/// the ordered, **non-Hidden** source names, and maps each back to its
-/// `AdminUiField` (preserving `label` / `sortable`). Hidden-role fields
-/// (`id`, `*_hash`, …) never appear — the end-to-end Hidden guarantee.
+/// List-page layout precedence (Phase 8):
+///
+/// 1. a present-**and-valid** `?layout=` wins (ephemeral override, Phase 7);
+/// 2. else the saved ViewSpec's `layout` (NEW — the persisted default);
+/// 3. else `Table` (the Phase-6 fallback for models with no saved view).
+///
+/// This **deliberately changes** Phase 6's "always Table": a saved view's
+/// layout now wins over Table when no `?layout=` is present.
+fn resolve_effective_layout(
+    param: Option<&str>,
+    saved: Option<&crate::viewspec::ViewSpec>,
+) -> crate::viewspec::ViewLayout {
+    parse_layout_strict(param)
+        .or_else(|| saved.map(|v| v.layout))
+        .unwrap_or(crate::viewspec::ViewLayout::Table)
+}
+
+/// Persist a model's default list layout into its `<model>.view.json`,
+/// reusing [`ViewSpec::write_to`](crate::viewspec::ViewSpec::write_to)
+/// (atomic temp-file + rename — constraint 2). If a saved view exists it is
+/// loaded and **only** its `layout` is changed (every other field — fields,
+/// roles, filters, version, model — preserved); otherwise the Phase-2
+/// default is derived, its layout set, and the file created (constraint 4).
+pub(crate) fn save_layout_default(
+    base: &Path,
+    model_name: &str,
+    schema_model: &crate::schema::SchemaModel,
+    layout: crate::viewspec::ViewLayout,
+) -> Result<(), crate::Error> {
+    let mut spec = load_saved_view(base, model_name)
+        .unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(schema_model));
+    spec.layout = layout;
+    spec.write_to(&view_file_path(base, model_name))
+}
+
+/// Strictly validate a `_return` path before redirecting to it after a
+/// state change. Only a relative path targeting **this model's** list is
+/// honoured — `/admin/<slug>` optionally followed by `?query`. Anything
+/// else (absolute URLs, scheme-relative `//host`, backslashes, `..`
+/// traversal, or a different path) falls back to `/admin/<slug>`. No
+/// open-redirect surface.
+pub(crate) fn sanitize_return(slug: &str, raw: &str) -> String {
+    let base = format!("/admin/{slug}");
+    let ok = raw.starts_with(&base)
+        && matches!(raw.as_bytes().get(base.len()), None | Some(b'?'))
+        && !raw.contains("..")
+        && !raw.contains('\\')
+        && !raw.contains("//");
+    if ok {
+        raw.to_string()
+    } else {
+        base
+    }
+}
+
+/// Select the list table's columns through the ViewSpec. Renders `spec`
+/// under `layout` via the Phase-3 renderer to get the ordered,
+/// **non-Hidden** source names, and maps each back to its `AdminUiField`
+/// (preserving `label` / `sortable`). Hidden-role fields (`id`, `*_hash`,
+/// …) never appear — the end-to-end Hidden guarantee.
 ///
 /// A merged ViewSpec cell maps to its anchor (`sources[0]`) column; a
 /// source naming a field that isn't on the model (e.g. a stale saved view)
 /// is skipped rather than crashing the page.
-fn view_selected_columns(
-    model_name: &str,
-    fields: &[AdminUiField],
+fn view_columns(
+    spec: &crate::viewspec::ViewSpec,
     layout: crate::viewspec::ViewLayout,
+    fields: &[AdminUiField],
 ) -> Vec<ColumnView> {
-    let schema_model = schema_model_from_ui(model_name, fields);
-    let spec = resolve_list_view(model_name, &schema_model);
-
     // Selection is independent of row data — probe with a single empty row
     // and read which sources the requested layout surfaces, in order. The
     // Phase-3 renderer owns the per-layout cell set (Table = all visible,
     // List drops Meta, Compact = Title + Badge, …); the admin adds none.
     let probe: Vec<crate::viewspec::render::Row> = vec![std::collections::BTreeMap::new()];
-    let view = crate::viewspec::render::RenderedView::render_with_layout(&spec, layout, &probe);
+    let view = crate::viewspec::render::RenderedView::render_with_layout(spec, layout, &probe);
     let selected: Vec<&str> = view
         .rows
         .first()
@@ -1306,22 +1363,6 @@ struct LayoutOptionView {
     label: String,
     href: String,
     active: bool,
-}
-
-/// Parse the `?layout=` query param into a [`ViewLayout`](crate::viewspec::ViewLayout).
-/// Unknown or missing values fall back to `Table` silently — the admin
-/// list is a table-first surface, and Phase 6 fixed it at Table. This is
-/// **not** the ViewSpec's own `layout` field; `?layout=` is the only thing
-/// that moves the admin list off Table.
-fn parse_list_layout(raw: Option<&str>) -> crate::viewspec::ViewLayout {
-    use crate::viewspec::ViewLayout;
-    match raw {
-        Some("list") => ViewLayout::List,
-        Some("cards") => ViewLayout::Cards,
-        Some("compact") => ViewLayout::Compact,
-        // "table", unknown, or absent → Table.
-        _ => ViewLayout::Table,
-    }
 }
 
 /// Stable lowercase key for a layout (URL param + template branch value).
@@ -1368,12 +1409,46 @@ fn list_layout_href(
     format!("/admin/{slug}?{}", parts.join("&"))
 }
 
+/// Server-built `_return` value for the "Set as default" form: the current
+/// list URL **without** a `layout` param (so the freshly-saved default
+/// applies after the redirect), preserving search / sort / filters. Filter
+/// keys sorted for determinism. Validated by [`sanitize_return`] on POST.
+fn list_return_href(
+    slug: &str,
+    query: Option<&str>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+    filters: &HashMap<String, String>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(q) = query.filter(|s| !s.is_empty()) {
+        parts.push(format!("q={}", urlencode(q)));
+    }
+    if let Some(s) = sort.filter(|s| !s.is_empty()) {
+        parts.push(format!("sort={}", urlencode(s)));
+    }
+    if let Some(d) = dir.filter(|s| !s.is_empty()) {
+        parts.push(format!("dir={}", urlencode(d)));
+    }
+    let mut keys: Vec<&String> = filters.keys().collect();
+    keys.sort();
+    for k in keys {
+        parts.push(format!("{}={}", urlencode(k), urlencode(&filters[k])));
+    }
+    if parts.is_empty() {
+        format!("/admin/{slug}")
+    } else {
+        format!("/admin/{slug}?{}", parts.join("&"))
+    }
+}
+
 /// 0.10+ list-page renderer. Searchable / filter / sort / paginate
 /// query runs through `fetch_users_table_state`; the page renders via
 /// `minijinja`. Create / edit / delete actions are RBAC-gated by the
 /// caller.
 #[allow(clippy::too_many_arguments)]
 pub async fn list_render(
+    base: &Path,
     db: &Db,
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
     legacy_entries: &[crate::admin::AdminEntry],
@@ -1412,20 +1487,25 @@ pub async fn list_render(
     //     `token`) and opaque PII — the end-to-end Hidden guarantee.
     //   * The old row-expansion of overflow columns is gone (no expand
     //     panel); Meta-role fields are just normal columns.
-    //   * A saved `<model_snake>.view.json` in the cwd overrides the
-    //     derived default; a missing/invalid file silently derives it.
+    //   * A saved `<model_snake>.view.json` in `base` overrides the derived
+    //     default; a missing/invalid file silently derives it.
     //   * NOTE: the live list path applies NO PII masking today — it only
     //     OMITS Hidden fields. Adding masking to shown cells here is a
     //     deliberate follow-up, intentionally out of this phase's scope.
     //
     // Phase 7 — the `?layout=` switcher selects which of the four layouts
-    // the renderer arranges. `?layout=` wins when present; otherwise the
-    // list defaults to Table (Phase 6 behaviour), NOT the ViewSpec's own
-    // `layout` field. The renderer picks the cell set per layout; the
-    // template arranges those same cells differently.
-    let active_layout = parse_list_layout(layout);
-    let columns: Vec<ColumnView> =
-        view_selected_columns(model.model_name(), &fields, active_layout);
+    // the renderer arranges. Phase 8 — layout precedence is now:
+    //   1. present-and-valid `?layout=` (ephemeral),
+    //   2. else the saved ViewSpec's `layout` (persisted default),
+    //   3. else Table.
+    // This CHANGES Phase 6's "always Table": a saved layout now wins over
+    // Table when no `?layout=` is present. The renderer still picks the
+    // cell set per layout; the template arranges those same cells.
+    let schema_model = schema_model_from_ui(model.model_name(), &fields);
+    let saved = load_saved_view(base, model.model_name());
+    let active_layout = resolve_effective_layout(layout, saved.as_ref());
+    let spec = saved.unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(&schema_model));
+    let columns: Vec<ColumnView> = view_columns(&spec, active_layout, &fields);
 
     // One batch `SELECT … WHERE id IN (…)` per FK column visible on
     // this page of rows. Cells for matching FK values are rewritten
@@ -1537,6 +1617,10 @@ pub async fn list_render(
     })
     .collect();
 
+    // Server-built return path for the "Set as default" POST (no layout
+    // param, so the saved default applies after redirect).
+    let return_to = list_return_href(slug, query, sort, dir, filters);
+
     let model_view = ModelView {
         display_name: format!("{}s", model.model_name()),
         singular_name: model.model_name().to_string(),
@@ -1571,6 +1655,7 @@ pub async fn list_render(
             permissions => permissions,
             layout => layout_key(active_layout),
             layout_options => layout_options,
+            return_to => return_to,
             page_title => format!("{}s", model.model_name()),
             query => query.unwrap_or(""),
             csrf_token => csrf_token.unwrap_or(""),
@@ -2339,6 +2424,19 @@ mod tests {
         crate::admin::admin_form_bridge::AdminRegistry::new()
     }
 
+    /// A fresh, unique temp directory so view-file reads/writes are isolated
+    /// and deterministic (no cwd pollution, no cross-test interference).
+    fn tmp_dir() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "rustio-viewspec-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
     #[tokio::test]
     async fn list_render_hides_id_and_secret_columns_live() {
         let db = Db::memory().await.unwrap();
@@ -2399,6 +2497,7 @@ mod tests {
         let filters = HashMap::new();
 
         let html = list_render(
+            std::path::Path::new("."),
             &db,
             &registry,
             &legacy,
@@ -2524,6 +2623,7 @@ mod tests {
         let filters = HashMap::new();
 
         let html = list_render(
+            std::path::Path::new("."),
             &db,
             &registry,
             &legacy,
@@ -2560,41 +2660,36 @@ mod tests {
     }
 
     #[test]
-    fn view_selected_columns_omits_hidden_in_schema_order() {
+    fn view_columns_omits_hidden_in_schema_order() {
         // No saved view → derived default. id + password_hash are Hidden;
         // the rest appear in declared order.
-        let cols = view_selected_columns(
-            "Widget",
-            &ui_fields_for_selection(),
-            crate::viewspec::ViewLayout::Table,
-        );
+        let fields = ui_fields_for_selection();
+        let model = schema_model_from_ui("Widget", &fields);
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&model);
+        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
         let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["name", "email", "status"]);
     }
 
     #[test]
-    fn resolve_list_view_inner_prefers_saved_else_derives() {
-        let model = schema_model_from_ui("Widget", &ui_fields_for_selection());
-
-        // A saved view listing only email (Title) → exactly that column.
-        let saved = r#"{"version":1,"model":"Widget","layout":"table",
-            "fields":[{"source":"email","role":"title"}],"filters":[]}"#;
-        let spec = resolve_list_view_inner(Some(saved), &model);
+    fn load_saved_view_reads_valid_skips_missing_and_invalid() {
+        let base = tmp_dir();
+        // Missing file → None.
+        assert!(load_saved_view(&base, "Widget").is_none());
+        // Valid file → Some, parsed.
+        std::fs::write(
+            view_file_path(&base, "Widget"),
+            r#"{"version":1,"model":"Widget","layout":"cards",
+               "fields":[{"source":"email","role":"title"}],"filters":[]}"#,
+        )
+        .unwrap();
+        let spec = load_saved_view(&base, "Widget").expect("valid saved view loads");
+        assert_eq!(spec.layout, crate::viewspec::ViewLayout::Cards);
         assert_eq!(spec.fields.len(), 1);
-        assert_eq!(spec.fields[0].source, "email");
-
-        // Missing → derived default describes every field.
-        assert_eq!(
-            resolve_list_view_inner(None, &model).fields.len(),
-            model.fields.len()
-        );
-        // Invalid JSON → silently derived (never an error).
-        assert_eq!(
-            resolve_list_view_inner(Some("{ not json"), &model)
-                .fields
-                .len(),
-            model.fields.len()
-        );
+        // Invalid JSON → None (never an error).
+        std::fs::write(view_file_path(&base, "Widget"), "{ not json").unwrap();
+        assert!(load_saved_view(&base, "Widget").is_none());
+        std::fs::remove_dir_all(&base).ok();
     }
 
     // --- Phase 7: ?layout= switcher (LIVE path) --------------------------
@@ -2681,12 +2776,23 @@ mod tests {
         layout: Option<&str>,
         filters: &HashMap<String, String>,
     ) -> String {
+        // Fresh empty base → no saved view → derived default (Table-first),
+        // isolating these from any saved-layout state.
+        render_gadget_layout_in(&tmp_dir(), layout, filters).await
+    }
+
+    async fn render_gadget_layout_in(
+        base: &std::path::Path,
+        layout: Option<&str>,
+        filters: &HashMap<String, String>,
+    ) -> String {
         let db = gadget_db().await;
         let entry = gadget_entry();
         let model = LegacyEntryModel::new(&entry);
         let registry = registry_empty();
         let legacy = [entry.clone()];
         list_render(
+            base,
             &db,
             &registry,
             &legacy,
@@ -2901,6 +3007,7 @@ mod tests {
         let filters = HashMap::new();
 
         let html = list_render(
+            std::path::Path::new("."),
             &db,
             &registry,
             &legacy,
@@ -2926,6 +3033,217 @@ mod tests {
             "FK link missing in cards"
         );
         assert!(html.contains("rio-card-item"), "cards markup missing");
+    }
+
+    // --- Phase 8: persist per-model layout default -----------------------
+    //
+    // The write logic (`save_layout_default`), the handler's gates
+    // (`require_csrf`, `admin_guard`), the `_return` sanitizer, and the
+    // precedence resolver are tested directly — each is the real code the
+    // POST handler / `list_render` invoke. `Request` has no public test
+    // constructor, so the full HTTP handler glue is proven by the live
+    // bookflow proof (see the phase notes), not a synthetic Request.
+
+    fn gadget_schema_model() -> crate::schema::SchemaModel {
+        let entry = gadget_entry();
+        let model = LegacyEntryModel::new(&entry);
+        schema_model_from_ui("Gadget", &model.fields())
+    }
+
+    #[test]
+    fn save_layout_default_creates_file_when_none_exists() {
+        use crate::viewspec::ViewLayout;
+        let base = tmp_dir();
+        assert!(
+            load_saved_view(&base, "Gadget").is_none(),
+            "precondition: no file"
+        );
+
+        save_layout_default(&base, "Gadget", &gadget_schema_model(), ViewLayout::Cards).unwrap();
+
+        // File now exists with the chosen layout, derived for the rest.
+        let spec = load_saved_view(&base, "Gadget").expect("file created");
+        assert_eq!(spec.layout, ViewLayout::Cards);
+        assert_eq!(spec.model, "Gadget");
+        assert!(!spec.fields.is_empty(), "derived fields present");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn save_layout_default_changes_only_layout_on_existing_view() {
+        use crate::viewspec::ViewLayout;
+        let base = tmp_dir();
+        // A custom saved view with bespoke fields/roles/filters + List layout.
+        let custom = r#"{
+  "version": 1,
+  "model": "Gadget",
+  "layout": "list",
+  "fields": [
+    { "source": "name", "role": "title" },
+    { "source": "status", "role": "badge", "filterable": true }
+  ],
+  "filters": ["status"]
+}
+"#;
+        std::fs::write(view_file_path(&base, "Gadget"), custom).unwrap();
+        let before = load_saved_view(&base, "Gadget").unwrap();
+
+        save_layout_default(&base, "Gadget", &gadget_schema_model(), ViewLayout::Cards).unwrap();
+
+        let after = load_saved_view(&base, "Gadget").unwrap();
+        // ONLY layout changed; everything else byte-identical.
+        assert_eq!(after.layout, ViewLayout::Cards);
+        assert_eq!(after.version, before.version);
+        assert_eq!(after.model, before.model);
+        assert_eq!(after.filters, before.filters);
+        assert_eq!(after.fields, before.fields);
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn saved_layout_is_used_by_list_render_without_param() {
+        // Save cards as the default, then a no-`?layout=` render uses it;
+        // an explicit `?layout=table` still overrides (ephemeral wins).
+        use crate::viewspec::ViewLayout;
+        let base = tmp_dir();
+        save_layout_default(&base, "Gadget", &gadget_schema_model(), ViewLayout::Cards).unwrap();
+
+        let no_param = render_gadget_layout_in(&base, None, &HashMap::new()).await;
+        assert!(
+            no_param.contains("rio-card-item"),
+            "saved cards default should drive the no-param render: {no_param}"
+        );
+
+        let override_table = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(
+            override_table.contains("<table class=\"rio-table\">"),
+            "?layout=table must override the saved default"
+        );
+        // Hidden guarantee still holds with a saved default in effect.
+        assert!(!no_param.contains("topsecret-xyz"));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn resolve_effective_layout_precedence() {
+        use crate::viewspec::{ViewLayout, ViewSpec};
+        let saved_cards = {
+            let mut s = ViewSpec::from_schema_model(&gadget_schema_model());
+            s.layout = ViewLayout::Cards;
+            s
+        };
+        // 1. valid param wins over saved.
+        assert_eq!(
+            resolve_effective_layout(Some("list"), Some(&saved_cards)),
+            ViewLayout::List
+        );
+        // 2. no param → saved layout.
+        assert_eq!(
+            resolve_effective_layout(None, Some(&saved_cards)),
+            ViewLayout::Cards
+        );
+        // invalid param → falls through to saved.
+        assert_eq!(
+            resolve_effective_layout(Some("banana"), Some(&saved_cards)),
+            ViewLayout::Cards
+        );
+        // 3. no param, no saved → Table.
+        assert_eq!(resolve_effective_layout(None, None), ViewLayout::Table);
+        // invalid param, no saved → Table.
+        assert_eq!(
+            resolve_effective_layout(Some("banana"), None),
+            ViewLayout::Table
+        );
+    }
+
+    #[test]
+    fn sanitize_return_rejects_malicious_targets() {
+        let slug = "bookings";
+        // Honored: this list, with or without a query.
+        assert_eq!(sanitize_return(slug, "/admin/bookings"), "/admin/bookings");
+        assert_eq!(
+            sanitize_return(slug, "/admin/bookings?q=a&status=active"),
+            "/admin/bookings?q=a&status=active"
+        );
+        // Rejected → fall back to /admin/<slug>.
+        for evil in [
+            "//evil.com",
+            "https://evil.com",
+            "http://evil.com/admin/bookings",
+            "/admin/../etc",
+            "/admin/bookings/../../secrets",
+            "/admin/other",
+            "/admin/bookings\\@evil",
+            "javascript:alert(1)",
+        ] {
+            assert_eq!(
+                sanitize_return(slug, evil),
+                "/admin/bookings",
+                "must reject `{evil}`"
+            );
+        }
+    }
+
+    #[test]
+    fn require_csrf_rejects_missing_or_wrong_token() {
+        use crate::context::Context;
+        use crate::http::FormData;
+        let mut ctx = Context::new();
+        ctx.insert(crate::auth::CsrfToken("good-token".to_string()));
+
+        // Valid token → Ok.
+        let ok_form = FormData::parse("_csrf=good-token&layout=cards");
+        assert!(crate::admin::require_csrf(&ctx, &ok_form).is_ok());
+        // Missing token → Forbidden.
+        let no_tok = FormData::parse("layout=cards");
+        assert!(matches!(
+            crate::admin::require_csrf(&ctx, &no_tok),
+            Err(crate::Error::Forbidden)
+        ));
+        // Wrong token → Forbidden.
+        let wrong = FormData::parse("_csrf=bad&layout=cards");
+        assert!(matches!(
+            crate::admin::require_csrf(&ctx, &wrong),
+            Err(crate::Error::Forbidden)
+        ));
+    }
+
+    #[test]
+    fn admin_guard_rejects_non_admin_and_unauthenticated() {
+        use crate::context::Context;
+        // No identity → Unauthorized (login page response).
+        let empty = Context::new();
+        assert!(crate::admin::admin_guard(&empty).is_err());
+
+        // Signed-in but NOT admin → Forbidden (the edit/write gate).
+        let mut non_admin = Context::new();
+        non_admin.insert(crate::auth::Identity {
+            user_id: 2,
+            email: "viewer@example.com".to_string(),
+            is_admin: false,
+        });
+        assert!(
+            crate::admin::admin_guard(&non_admin).is_err(),
+            "a non-admin (no edit) must be rejected by the write gate"
+        );
+
+        // Admin → Ok.
+        let mut admin = Context::new();
+        admin.insert(crate::auth::Identity {
+            user_id: 1,
+            email: "admin@example.com".to_string(),
+            is_admin: true,
+        });
+        assert!(crate::admin::admin_guard(&admin).is_ok());
+    }
+
+    #[test]
+    fn parse_layout_strict_rejects_unknown() {
+        use crate::viewspec::ViewLayout;
+        assert_eq!(parse_layout_strict(Some("cards")), Some(ViewLayout::Cards));
+        assert_eq!(parse_layout_strict(Some("table")), Some(ViewLayout::Table));
+        assert_eq!(parse_layout_strict(Some("banana")), None);
+        assert_eq!(parse_layout_strict(None), None);
     }
 
     #[test]

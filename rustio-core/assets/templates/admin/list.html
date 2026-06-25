@@ -52,6 +52,18 @@
           <a href="{{ opt.href }}" class="rio-btn rio-btn--ghost{% if opt.active %} is-active{% endif %}"
              {% if opt.active %}aria-current="true"{% endif %}>{{ opt.label }}</a>
         {% endfor %}
+        {# Phase 8 — persist the active layout as this model's default.
+           State-changing → POST + CSRF (mirrors the logout form). Shown
+           only to users with edit permission; the handler also re-checks. #}
+        {% if permissions.edit %}
+          <form method="post" action="/admin/{{ model.singular_name | lower }}s/layout"
+                style="display:inline" data-confirm="Set {{ layout | default('table') }} as the default layout for {{ model.display_name | lower }}?">
+            {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+            <input type="hidden" name="layout" value="{{ layout | default('table') }}">
+            <input type="hidden" name="_return" value="{{ return_to | default('') }}">
+            <button type="submit" class="rio-btn rio-btn--ghost" title="Save this layout as the default for everyone">Set as default</button>
+          </form>
+        {% endif %}
       </nav>
     {% endif %}
   </form>

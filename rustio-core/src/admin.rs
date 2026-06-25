@@ -877,6 +877,19 @@ impl Admin {
                 }
             });
         }
+        // Phase 8 — POST /admin/:model/layout persists the chosen list
+        // layout as the model's default in <model>.view.json. CSRF-protected,
+        // edit-gated; mirrors the delete action's wiring. No `db` needed —
+        // this writes a ViewSpec file, not the database.
+        {
+            let registry = admin_new_registry.clone();
+            let layout_entries = entries.clone();
+            router = router.post("/admin/:model/layout", move |req, params| {
+                let registry = registry.clone();
+                let legacy_entries = layout_entries.clone();
+                async move { admin_model_layout_post(&registry, &legacy_entries, req, params).await }
+            });
+        }
 
         for registrar in self.registrars {
             router = registrar(router, db, entries.clone());
@@ -4678,6 +4691,7 @@ async fn admin_model_index_get(
     let html = match &resolved {
         ResolvedModel::New(model) => {
             crate::admin::layout::list_render(
+                std::path::Path::new("."),
                 db,
                 registry,
                 legacy_entries,
@@ -4697,6 +4711,7 @@ async fn admin_model_index_get(
         ResolvedModel::Legacy(model) => {
             let source = model.source_entry().clone();
             crate::admin::layout::list_render(
+                std::path::Path::new("."),
                 db,
                 registry,
                 legacy_entries,
@@ -4990,6 +5005,51 @@ async fn admin_model_delete_post(
     Ok(with_admin_headers(redirect(&format!(
         "/admin/{model_slug}"
     ))))
+}
+
+/// Phase 8 — `POST /admin/:model/layout`. Persist the chosen list layout as
+/// the model's default in `<model>.view.json`. Mirrors the delete action's
+/// wiring exactly: `admin_guard` (admin/edit gate) → resolve model → read
+/// form → **CSRF verify** → validate the `layout` value → write via
+/// [`save_layout_default`](crate::admin::layout::save_layout_default)
+/// (which reuses `ViewSpec::write_to`'s atomic temp+rename) → redirect to a
+/// **sanitized** `_return` path.
+async fn admin_model_layout_post(
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    // Edit/write gate (defense in depth — the UI also hides the control for
+    // users without edit). `admin_guard` requires an admin identity.
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    // Validate the requested layout against the four known values.
+    let layout = crate::admin::layout::parse_layout_strict(form.get("layout"))
+        .ok_or_else(|| Error::BadRequest("invalid layout".into()))?;
+
+    let ui = resolved.as_ui_model();
+    let schema_model = crate::admin::layout::schema_model_from_ui(ui.model_name(), &ui.fields());
+    crate::admin::layout::save_layout_default(
+        std::path::Path::new("."),
+        ui.model_name(),
+        &schema_model,
+        layout,
+    )?;
+
+    // Redirect back to the list (no `?layout=`, so the new saved default
+    // applies), preserving filters via the strictly-validated `_return`.
+    let target =
+        crate::admin::layout::sanitize_return(&model_slug, form.get("_return").unwrap_or(""));
+    Ok(with_admin_headers(redirect(&target)))
 }
 
 // ---------------------------------------------------------------------------
