@@ -31,6 +31,7 @@
     <div class="{% if is_edit %}rio-detail-main{% else %}rio-detail-single{% endif %}">
       <section class="rio-card">
         <form method="post" action="{{ form.action }}" class="rio-form" id="rio-detail-form" novalidate>
+          {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
           {% for field in form.fields %}
             <div class="rio-form__field rio-field">
               <label for="{{ field.id }}" class="rio-form__label">

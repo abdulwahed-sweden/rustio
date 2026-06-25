@@ -93,7 +93,7 @@
             {% if permissions.edit or permissions.delete %}
               <div class="rio-list-actions">
                 {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?"><button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -109,7 +109,7 @@
             {% if permissions.edit or permissions.delete %}
               <div class="rio-card-actions">
                 {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?"><button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -150,6 +150,7 @@
                   {% endif %}
                   {% if permissions.delete %}
                     <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">
+                      {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
                       <button type="submit" class="rio-btn rio-btn--ghost">Delete</button>
                     </form>
                   {% endif %}
