@@ -98,6 +98,10 @@ PROJECT                                                 (rarely needed)
     migrate generate <name>     Write an empty migration file under migrations/.
     schema                      Regenerate rustio.schema.json from the in-memory
                                   admin registry.
+    view <model> [opts]         Render a model's default (or saved) view to the
+                                  terminal with demo rows. Opts: --layout
+                                  <table|list|cards|compact>, --save, --from
+                                  <path>, --json.
 
 LEGACY                              (only for projects scaffolded before 0.9.0)
     migrate add-fks [--write]   Retrofit FOREIGN KEY clauses onto an 0.8.x
@@ -275,6 +279,20 @@ async fn main() -> ExitCode {
                 schema_command()
             }
         }
+        Ok(Command::View {
+            model,
+            layout,
+            save,
+            from,
+            json,
+        }) => {
+            if why_mode {
+                why_for("view");
+                Ok(())
+            } else {
+                view_command(&model, layout, save, from.as_deref(), json)
+            }
+        }
         Ok(Command::Ai(sub)) => {
             if why_mode {
                 why_for("ai");
@@ -366,6 +384,16 @@ enum Command {
     /// Emit `rustio.schema.json` at the project root by running the
     /// built binary with `--dump-schema`.
     Schema,
+    /// `rustio view <MODEL> [--layout …] [--save] [--from <path>] [--json]`
+    /// — derive (or load) a ViewSpec for one model and render demo rows to
+    /// the terminal. Read-only unless `--save` is given; no web layer.
+    View {
+        model: String,
+        layout: Option<rustio_core::viewspec::ViewLayout>,
+        save: bool,
+        from: Option<String>,
+        json: bool,
+    },
     /// `rustio ai …`. Dispatches to the AI planner or (with no
     /// argument) prints a summary of the AI boundary.
     Ai(AiCommand),
@@ -530,6 +558,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             }
             Ok(Command::Schema)
         }
+        Some("view") => parse_view_args(&args[2..]),
         Some("evolve") => parse_evolve_args(&args[2..]),
         Some("ai") => parse_ai_command(&args[2..]),
         Some("context") => match args.get(2).map(String::as_str) {
@@ -589,6 +618,78 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             None => Err("usage: rustio migrate <generate|apply|status|add-fks>".into()),
         },
         Some(other) => Err(format!("unknown command `{other}`")),
+    }
+}
+
+/// Parse arguments to `rustio view`. Accepts one positional `MODEL`
+/// name plus the flags `--layout <table|list|cards|compact>`, `--save`,
+/// `--from <schema_path>`, and `--json`.
+fn parse_view_args(rest: &[String]) -> Result<Command, String> {
+    let usage =
+        "usage: rustio view <model> [--layout table|list|cards|compact] [--save] [--from <path>] [--json]";
+    let mut model: Option<String> = None;
+    let mut layout: Option<rustio_core::viewspec::ViewLayout> = None;
+    let mut save = false;
+    let mut from: Option<String> = None;
+    let mut json = false;
+
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--layout" => {
+                let v = rest
+                    .get(i + 1)
+                    .ok_or("usage: rustio view <model> --layout <table|list|cards|compact>")?;
+                layout = Some(parse_layout(v)?);
+                i += 2;
+            }
+            "--from" => {
+                let v = rest
+                    .get(i + 1)
+                    .ok_or("usage: rustio view <model> --from <schema_path>")?;
+                from = Some(v.clone());
+                i += 2;
+            }
+            "--save" => {
+                save = true;
+                i += 1;
+            }
+            "--json" => {
+                json = true;
+                i += 1;
+            }
+            other if other.starts_with('-') => {
+                return Err(format!("unexpected argument `{other}`"));
+            }
+            other if model.is_none() => {
+                model = Some(other.to_string());
+                i += 1;
+            }
+            other => return Err(format!("unexpected argument `{other}`")),
+        }
+    }
+
+    let model = model.ok_or(usage)?;
+    Ok(Command::View {
+        model,
+        layout,
+        save,
+        from,
+        json,
+    })
+}
+
+/// Map a `--layout` value to a [`rustio_core::viewspec::ViewLayout`].
+fn parse_layout(s: &str) -> Result<rustio_core::viewspec::ViewLayout, String> {
+    use rustio_core::viewspec::ViewLayout;
+    match s {
+        "table" => Ok(ViewLayout::Table),
+        "list" => Ok(ViewLayout::List),
+        "cards" => Ok(ViewLayout::Cards),
+        "compact" => Ok(ViewLayout::Compact),
+        other => Err(format!(
+            "unknown layout `{other}` (expected table, list, cards, or compact)"
+        )),
     }
 }
 
@@ -2261,6 +2362,310 @@ fn context_command(sub: ContextCommand) -> Result<(), String> {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────
+// `rustio view` — derive/load a ViewSpec and render demo rows to the
+// terminal. The whole chain (schema → derive → save → load → render)
+// lives in rustio-core; the CLI only resolves files, synthesises demo
+// rows (no DB yet), and turns the structured RenderedView into text.
+// ─────────────────────────────────────────────────────────────────
+
+/// Which ViewSpec the `view` command ended up using, for the status line.
+#[derive(Debug, PartialEq)]
+enum ViewSource {
+    /// A pre-existing `<model>.view.json` was loaded (source of truth).
+    SavedLoaded(String),
+    /// `--save` wrote a fresh `<model>.view.json` (the derived default).
+    Wrote(String),
+    /// No saved file and no `--save` — the derived default was used.
+    Derived,
+}
+
+fn view_command(
+    model_name: &str,
+    layout: Option<rustio_core::viewspec::ViewLayout>,
+    save: bool,
+    from: Option<&str>,
+    json: bool,
+) -> Result<(), String> {
+    // 1. Resolve + parse the schema.
+    let schema_path: &Path = match from {
+        Some(p) => Path::new(p),
+        None => Path::new("rustio.schema.json"),
+    };
+    if !schema_path.exists() {
+        return Err(format!(
+            "{} not found. Run `rustio schema` first to emit it.",
+            schema_path.display()
+        ));
+    }
+    let raw = fs::read_to_string(schema_path).map_err(err_str)?;
+    let schema = rustio_core::Schema::parse(&raw).map_err(err_str)?;
+
+    // 2. Find the requested model; on miss, list what's available.
+    let model = schema
+        .models
+        .iter()
+        .find(|m| m.name == model_name)
+        .ok_or_else(|| {
+            let names: Vec<&str> = schema.models.iter().map(|m| m.name.as_str()).collect();
+            format!(
+                "model `{model_name}` not found in {}. Available models: {}",
+                schema_path.display(),
+                names.join(", ")
+            )
+        })?;
+
+    // 3. Resolve the ViewSpec (saved file wins; --save writes the default).
+    let (spec, source) = resolve_view_spec(Path::new("."), model, save)?;
+    match &source {
+        ViewSource::Wrote(file) => out::success("wrote", &format!("{file} (derived default)")),
+        ViewSource::SavedLoaded(file) => out::info(&format!("using saved view: {file}")),
+        ViewSource::Derived => out::info("no saved view — using derived default"),
+    }
+
+    // 4. Layout: explicit --layout overrides the spec's own default.
+    let layout = layout.unwrap_or(spec.layout);
+
+    // 5. Synthesise deterministic demo rows (no DB yet) and render.
+    let rows = synth_demo_rows(model);
+    let view =
+        rustio_core::viewspec::render::RenderedView::render_with_layout(&spec, layout, &rows);
+
+    // 6. Output: structured JSON for scripting, else aligned terminal text.
+    if json {
+        let pretty = serde_json::to_string_pretty(&view).map_err(err_str)?;
+        println!("{pretty}");
+    } else {
+        print!("{}", render_terminal(&view));
+    }
+    Ok(())
+}
+
+/// Resolve the ViewSpec for `model` relative to `dir` (directory-parameterised
+/// so tests don't have to `chdir`).
+///
+/// - With `save`: refuse if `<model>.view.json` already exists (never
+///   overwrite); otherwise derive the default and write it.
+/// - Without `save`: load the saved file if present (it is the source of
+///   truth), else derive the default in memory.
+fn resolve_view_spec(
+    dir: &Path,
+    model: &rustio_core::schema::SchemaModel,
+    save: bool,
+) -> Result<(rustio_core::viewspec::ViewSpec, ViewSource), String> {
+    use rustio_core::viewspec::ViewSpec;
+
+    let filename = format!("{}.view.json", to_snake_case(&model.name));
+    let path = dir.join(&filename);
+    let exists = path.exists();
+
+    if save {
+        if exists {
+            return Err(format!(
+                "{filename} already exists — refusing to overwrite. \
+                 Delete it or edit it by hand, then re-run."
+            ));
+        }
+        let spec = ViewSpec::from_schema_model(model);
+        spec.write_to(&path).map_err(err_str)?;
+        return Ok((spec, ViewSource::Wrote(filename)));
+    }
+
+    if exists {
+        let raw = fs::read_to_string(&path).map_err(err_str)?;
+        let spec = ViewSpec::parse(&raw).map_err(err_str)?;
+        Ok((spec, ViewSource::SavedLoaded(filename)))
+    } else {
+        Ok((ViewSpec::from_schema_model(model), ViewSource::Derived))
+    }
+}
+
+/// `CamelCase` model name → `snake_case` file stem. `Customer` →
+/// `customer`, `BlogPost` → `blog_post`. Deterministic.
+fn to_snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Synthesise three deterministic demo rows from a model's schema fields.
+/// The CLI has no database yet; these placeholders exist only so the
+/// developer can SEE the layout shape. Values are field-name-based and
+/// fixed per row index, so output never varies between runs:
+/// `String → "sample <field> <n>"`, integers → `1/2/3`, `bool` →
+/// `true`/`false` alternating, `DateTime` → a fixed ISO string per row.
+fn synth_demo_rows(
+    model: &rustio_core::schema::SchemaModel,
+) -> Vec<rustio_core::viewspec::render::Row> {
+    use rustio_core::viewspec::render::{Row, RowValue};
+
+    const ISO: [&str; 3] = [
+        "2026-06-25T14:30:00Z",
+        "2025-01-02T09:05:00Z",
+        "2024-11-15T23:59:00Z",
+    ];
+
+    (0..3)
+        .map(|i| {
+            let mut row = Row::new();
+            for f in &model.fields {
+                let value = match f.ty.as_str() {
+                    "i32" | "i64" => RowValue::Int((i + 1) as i64),
+                    "bool" => RowValue::Bool(i % 2 == 0),
+                    "DateTime" => RowValue::Text(ISO[i].to_string()),
+                    _ => RowValue::Text(format!("sample {} {}", f.name, i + 1)),
+                };
+                row.insert(f.name.clone(), value);
+            }
+            row
+        })
+        .collect()
+}
+
+/// Turn a [`RenderedView`](rustio_core::viewspec::render::RenderedView)
+/// into aligned terminal text. Pure (returns a `String`) so it is
+/// testable and deterministic. Respects the renderer's cells exactly —
+/// Hidden fields are already absent and nothing here re-reads the schema.
+fn render_terminal(view: &rustio_core::viewspec::render::RenderedView) -> String {
+    use rustio_core::viewspec::ViewLayout;
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "View: {}  ·  layout: {}  ·  rows: {}  (demo data)\n",
+        view.model,
+        layout_word(view.layout),
+        view.rows.len(),
+    ));
+
+    if view.rows.is_empty() || view.rows.iter().all(|r| r.cells.is_empty()) {
+        out.push_str("\n(nothing to render)\n");
+        return out;
+    }
+
+    match view.layout {
+        ViewLayout::Table => render_table(view, &mut out),
+        _ => render_blocks(view, &mut out),
+    }
+    out
+}
+
+/// Aligned columns; cell labels become the header row.
+fn render_table(view: &rustio_core::viewspec::render::RenderedView, out: &mut String) {
+    let headers: Vec<&str> = view.rows[0]
+        .cells
+        .iter()
+        .map(|c| c.label.as_str())
+        .collect();
+    let ncol = headers.len();
+    let mut widths: Vec<usize> = headers.iter().map(|h| h.chars().count()).collect();
+    for row in &view.rows {
+        for (i, cell) in row.cells.iter().enumerate() {
+            if i < widths.len() {
+                widths[i] = widths[i].max(cell.value.chars().count());
+            }
+        }
+    }
+
+    let join_cols = |parts: Vec<String>| -> String {
+        let mut line = String::new();
+        for (i, p) in parts.iter().enumerate() {
+            line.push_str(p);
+            if i + 1 < ncol {
+                line.push_str("  ");
+            }
+        }
+        line.trim_end().to_string()
+    };
+
+    out.push('\n');
+    out.push_str(&join_cols(
+        headers
+            .iter()
+            .enumerate()
+            .map(|(i, h)| pad(h, widths[i]))
+            .collect(),
+    ));
+    out.push('\n');
+    out.push_str(&join_cols(widths.iter().map(|w| "-".repeat(*w)).collect()));
+    out.push('\n');
+    for row in &view.rows {
+        out.push_str(&join_cols(
+            row.cells
+                .iter()
+                .enumerate()
+                .map(|(i, c)| pad(&c.value, widths[i]))
+                .collect(),
+        ));
+        out.push('\n');
+    }
+}
+
+/// One role-labeled block per row, for List / Cards / Compact.
+fn render_blocks(view: &rustio_core::viewspec::render::RenderedView, out: &mut String) {
+    let role_w = view
+        .rows
+        .iter()
+        .flat_map(|r| r.cells.iter())
+        .map(|c| role_word(c.role).chars().count())
+        .max()
+        .unwrap_or(0);
+    for (idx, row) in view.rows.iter().enumerate() {
+        out.push_str(&format!("\nRow {}\n", idx + 1));
+        for cell in &row.cells {
+            out.push_str(&format!(
+                "  {}  {}\n",
+                pad(role_word(cell.role), role_w),
+                cell.value
+            ));
+        }
+    }
+}
+
+/// Right-pad `s` with spaces to `width` (by character count).
+fn pad(s: &str, width: usize) -> String {
+    let len = s.chars().count();
+    if len >= width {
+        s.to_string()
+    } else {
+        format!("{s}{}", " ".repeat(width - len))
+    }
+}
+
+/// Stable lowercase word for a layout (for the header line).
+fn layout_word(layout: rustio_core::viewspec::ViewLayout) -> &'static str {
+    use rustio_core::viewspec::ViewLayout;
+    match layout {
+        ViewLayout::Table => "table",
+        ViewLayout::List => "list",
+        ViewLayout::Cards => "cards",
+        ViewLayout::Compact => "compact",
+        _ => "unknown",
+    }
+}
+
+/// Stable label for a view field role (for block rendering).
+fn role_word(role: rustio_core::viewspec::FieldRole) -> &'static str {
+    use rustio_core::viewspec::FieldRole;
+    match role {
+        FieldRole::Title => "Title",
+        FieldRole::Subtitle => "Subtitle",
+        FieldRole::Badge => "Badge",
+        FieldRole::Timestamp => "Timestamp",
+        FieldRole::Meta => "Meta",
+        FieldRole::Hidden => "Hidden",
+        _ => "Field",
+    }
+}
+
 /// `rustio context show` — pretty-print the loaded context plus
 /// everything the project derives from it. Helps operators verify
 /// that their country / industry selection is doing what they expect.
@@ -3277,6 +3682,15 @@ fn why_for(name: &str) {
              \n\
              Run it without --why to regenerate the file."
         }
+        "view" => {
+            "`rustio view <model>` renders a model's view to the terminal: it derives a\n\
+             default ViewSpec from rustio.schema.json (or loads <model>.view.json when\n\
+             you've saved one), then prints demo rows in the chosen layout. Read-only\n\
+             unless you pass --save. Layouts: table, list, cards, compact. --json dumps\n\
+             the structured RenderedView for scripting.\n\
+             \n\
+             Run it without --why to render the view."
+        }
         "ai" => {
             "`rustio ai <plan|review|apply>` is the scripting / CI surface for the\n\
              typed change pipeline. Three steps:\n\
@@ -3652,6 +4066,182 @@ mod tests {
     #[test]
     fn parse_doctor_command() {
         assert_eq!(parse_command(&args(&["doctor"])).unwrap(), Command::Doctor);
+    }
+
+    // -- `rustio view` ------------------------------------------------------
+
+    fn view_customer_model() -> rustio_core::schema::SchemaModel {
+        use rustio_core::schema::{SchemaField, SchemaModel};
+        let f = |name: &str, ty: &str| SchemaField {
+            name: name.to_string(),
+            ty: ty.to_string(),
+            nullable: false,
+            editable: true,
+            relation: None,
+        };
+        SchemaModel {
+            name: "Customer".into(),
+            table: "customers".into(),
+            admin_name: "customers".into(),
+            display_name: "Customers".into(),
+            singular_name: "Customer".into(),
+            fields: vec![
+                f("id", "i64"),
+                f("name", "String"),
+                f("email", "String"),
+                f("status", "String"),
+                f("created_at", "DateTime"),
+                f("password_hash", "String"),
+                f("notes", "String"),
+            ],
+            relations: vec![],
+            core: false,
+        }
+    }
+
+    fn unique_temp_dir(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn parse_view_command() {
+        use rustio_core::viewspec::ViewLayout;
+        assert_eq!(
+            parse_command(&args(&["view", "Customer"])).unwrap(),
+            Command::View {
+                model: "Customer".into(),
+                layout: None,
+                save: false,
+                from: None,
+                json: false,
+            }
+        );
+        assert_eq!(
+            parse_command(&args(&[
+                "view", "Customer", "--layout", "table", "--save", "--from", "x.json", "--json",
+            ]))
+            .unwrap(),
+            Command::View {
+                model: "Customer".into(),
+                layout: Some(ViewLayout::Table),
+                save: true,
+                from: Some("x.json".into()),
+                json: true,
+            }
+        );
+        assert!(parse_command(&args(&["view"])).is_err());
+        assert!(parse_command(&args(&["view", "Customer", "--layout", "bogus"])).is_err());
+        assert!(parse_command(&args(&["view", "Customer", "--bogus"])).is_err());
+    }
+
+    #[test]
+    fn render_includes_title_value_and_omits_hidden() {
+        use rustio_core::viewspec::render::RenderedView;
+        use rustio_core::viewspec::{ViewLayout, ViewSpec};
+
+        let model = view_customer_model();
+        let spec = ViewSpec::from_schema_model(&model);
+        let rows = synth_demo_rows(&model);
+        // Check every layout: a Hidden field must never surface anywhere.
+        for layout in [
+            ViewLayout::Table,
+            ViewLayout::List,
+            ViewLayout::Cards,
+            ViewLayout::Compact,
+        ] {
+            let view = RenderedView::render_with_layout(&spec, layout, &rows);
+            let text = render_terminal(&view);
+            // `name` is the Title; its demo value must appear.
+            assert!(
+                text.contains("sample name 1"),
+                "title demo value missing in {layout:?}:\n{text}"
+            );
+            // `password_hash` is Hidden — neither its name, its label, nor
+            // its demo value may appear.
+            assert!(
+                !text.contains("password_hash"),
+                "hidden field name leaked in {layout:?}:\n{text}"
+            );
+            assert!(
+                !text.contains("Password Hash"),
+                "hidden field label leaked in {layout:?}:\n{text}"
+            );
+            assert!(
+                !text.contains("sample password_hash"),
+                "hidden field value leaked in {layout:?}:\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn save_writes_then_refuses_overwrite() {
+        let dir = unique_temp_dir("rustio-view-save");
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = view_customer_model();
+
+        // First --save writes the derived default.
+        let (_, src) = resolve_view_spec(&dir, &model, true).unwrap();
+        assert_eq!(src, ViewSource::Wrote("customer.view.json".into()));
+        assert!(dir.join("customer.view.json").exists());
+
+        // Second --save refuses, and the error names the next step.
+        let err = resolve_view_spec(&dir, &model, true).unwrap_err();
+        assert!(err.contains("already exists"), "got: {err}");
+        assert!(
+            err.contains("re-run"),
+            "overwrite error must suggest a next step, got: {err}"
+        );
+
+        // Without --save, the saved file is now loaded as source of truth.
+        let (_, src2) = resolve_view_spec(&dir, &model, false).unwrap();
+        assert_eq!(src2, ViewSource::SavedLoaded("customer.view.json".into()));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn no_saved_file_uses_derived_default() {
+        let dir = unique_temp_dir("rustio-view-derived");
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = view_customer_model();
+        let (_, src) = resolve_view_spec(&dir, &model, false).unwrap();
+        assert_eq!(src, ViewSource::Derived);
+        assert!(!dir.join("customer.view.json").exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn render_terminal_is_deterministic() {
+        use rustio_core::viewspec::render::RenderedView;
+        use rustio_core::viewspec::{ViewLayout, ViewSpec};
+
+        let model = view_customer_model();
+        let spec = ViewSpec::from_schema_model(&model);
+        let rows = synth_demo_rows(&model);
+        let a = render_terminal(&RenderedView::render_with_layout(
+            &spec,
+            ViewLayout::Cards,
+            &rows,
+        ));
+        let b = render_terminal(&RenderedView::render_with_layout(
+            &spec,
+            ViewLayout::Cards,
+            &rows,
+        ));
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn to_snake_case_handles_camel() {
+        assert_eq!(to_snake_case("Customer"), "customer");
+        assert_eq!(to_snake_case("BlogPost"), "blog_post");
     }
 
     #[test]
