@@ -23,7 +23,7 @@ If you've never touched Rust before, you should still finish this page in 5 minu
 
 ![Admin list page — FK column renders project names as clickable links](docs/screenshots/admin-tasks-list-light.png)
 
-<sub>↑ The taskhub example's `/admin/tasks` page. The `project_id` column displays each project's name (a clickable link), not a raw integer — that's what `#[rustio(belongs_to, display)]` buys you. <a href="examples/taskhub/">→ See the full example</a></sub>
+<sub>↑ A RustIO admin list page. A foreign-key column displays the related record's name (a clickable link), not a raw integer — that's what `#[rustio(belongs_to, display)]` buys you. <a href="examples/bookflow/">→ See the bookflow example</a></sub>
 
 ---
 
@@ -108,18 +108,29 @@ Everything else (the admin UI, the login flow, the session handling, the JSON sc
 
 ## Want a fuller example?
 
-The repo ships with **[`examples/taskhub/`](examples/taskhub/)** — a real two-model project (Project + Task) with a foreign-key relationship, seed data, and an admin user ready to sign in with. Run it like this:
+The repo ships with **[`examples/bookflow/`](examples/bookflow/)** — a real seven-model general-purpose booking system (customers, resources, bookings, locations, schedules, assignments, invoices) with foreign-key relationships and seed data. It's domain-agnostic on purpose: the same schema fits container logistics, equipment rental, or appointments — reshaped purely by editing the ViewSpec. Run it like this:
 
 ```bash
-cd examples/taskhub
+cd examples/bookflow
 RUSTIO_CORE_PATH="$(pwd)/../../rustio-core" \
   cargo run --manifest-path ../../Cargo.toml -p rustio-cli -- migrate apply
+RUSTIO_CORE_PATH="$(pwd)/../../rustio-core" \
+  cargo run --manifest-path ../../Cargo.toml -p rustio-cli -- \
+  user create --email admin@bookflow.local --password demo1234 --role admin
 cargo run
 # Open http://127.0.0.1:8000/admin
-# Sign in: admin@taskhub.local / demo1234
+# Sign in: admin@bookflow.local / demo1234
 ```
 
-The taskhub README walks through every interesting page (FK rendering, RBAC, audit log, the `evolve` pipeline).
+You can also render any model's default view straight from the schema, no web layer needed:
+
+```bash
+cargo run --quiet -- --dump-schema     # emit rustio.schema.json
+RUSTIO_CORE_PATH="$(pwd)/../../rustio-core" \
+  cargo run --manifest-path ../../Cargo.toml -p rustio-cli -- view Booking --layout list
+```
+
+The bookflow README walks through the models, the type mapping, and the `rustio view` reshaping idea.
 
 ---
 

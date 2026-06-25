@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Examples replaced with `bookflow`.** The `medflow` and `taskhub`
+  example projects are removed in favour of a single canonical example,
+  `examples/bookflow/` — a general-purpose seven-model booking system
+  (customers, resources, bookings, locations, schedules, assignments,
+  invoices). It is domain-agnostic on purpose: the same schema fits
+  container logistics, equipment rental, or appointments, reshaped purely
+  by editing the ViewSpec. The README walks through the `rustio view`
+  step end to end.
+
 ## [2.0.5] - 2026-05-30
 
 ### Changed
