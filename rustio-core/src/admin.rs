@@ -4647,6 +4647,9 @@ async fn admin_model_index_get(
         .unwrap_or(1);
     let sort = q_map.get("sort").filter(|s| !s.is_empty()).cloned();
     let dir = q_map.get("dir").filter(|s| !s.is_empty()).cloned();
+    // Phase 7 — list-page layout switcher. Read here and exclude from the
+    // `filters` map so it isn't mistaken for a column filter.
+    let layout = q_map.get("layout").filter(|s| !s.is_empty()).cloned();
     let filters: std::collections::HashMap<String, String> = q_map
         .iter()
         .filter(|(k, v)| {
@@ -4656,6 +4659,7 @@ async fn admin_model_index_get(
                 && k.as_str() != "id"
                 && k.as_str() != "sort"
                 && k.as_str() != "dir"
+                && k.as_str() != "layout"
                 && k.as_str() != "advanced"
         })
         .map(|(k, v)| (k.clone(), v.clone()))
@@ -4684,6 +4688,7 @@ async fn admin_model_index_get(
                 &filters,
                 sort.as_deref(),
                 dir.as_deref(),
+                layout.as_deref(),
                 identity.as_ref(),
                 csrf.as_deref(),
             )
@@ -4702,6 +4707,7 @@ async fn admin_model_index_get(
                 &filters,
                 sort.as_deref(),
                 dir.as_deref(),
+                layout.as_deref(),
                 identity.as_ref(),
                 csrf.as_deref(),
             )

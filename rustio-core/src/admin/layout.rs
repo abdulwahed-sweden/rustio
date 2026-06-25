@@ -1260,18 +1260,20 @@ fn resolve_list_view_inner(
 /// A merged ViewSpec cell maps to its anchor (`sources[0]`) column; a
 /// source naming a field that isn't on the model (e.g. a stale saved view)
 /// is skipped rather than crashing the page.
-fn view_selected_columns(model_name: &str, fields: &[AdminUiField]) -> Vec<ColumnView> {
+fn view_selected_columns(
+    model_name: &str,
+    fields: &[AdminUiField],
+    layout: crate::viewspec::ViewLayout,
+) -> Vec<ColumnView> {
     let schema_model = schema_model_from_ui(model_name, fields);
     let spec = resolve_list_view(model_name, &schema_model);
 
     // Selection is independent of row data — probe with a single empty row
-    // and read which sources the Table layout surfaces, in order.
+    // and read which sources the requested layout surfaces, in order. The
+    // Phase-3 renderer owns the per-layout cell set (Table = all visible,
+    // List drops Meta, Compact = Title + Badge, …); the admin adds none.
     let probe: Vec<crate::viewspec::render::Row> = vec![std::collections::BTreeMap::new()];
-    let view = crate::viewspec::render::RenderedView::render_with_layout(
-        &spec,
-        crate::viewspec::ViewLayout::Table,
-        &probe,
-    );
+    let view = crate::viewspec::render::RenderedView::render_with_layout(&spec, layout, &probe);
     let selected: Vec<&str> = view
         .rows
         .first()
@@ -1295,6 +1297,77 @@ fn view_selected_columns(model_name: &str, fields: &[AdminUiField]) -> Vec<Colum
         .collect()
 }
 
+/// One entry in the list-page layout switcher. `href` preserves the
+/// current search / sort / filter state so switching layout never drops
+/// the user's filters.
+#[derive(serde::Serialize)]
+struct LayoutOptionView {
+    key: String,
+    label: String,
+    href: String,
+    active: bool,
+}
+
+/// Parse the `?layout=` query param into a [`ViewLayout`](crate::viewspec::ViewLayout).
+/// Unknown or missing values fall back to `Table` silently — the admin
+/// list is a table-first surface, and Phase 6 fixed it at Table. This is
+/// **not** the ViewSpec's own `layout` field; `?layout=` is the only thing
+/// that moves the admin list off Table.
+fn parse_list_layout(raw: Option<&str>) -> crate::viewspec::ViewLayout {
+    use crate::viewspec::ViewLayout;
+    match raw {
+        Some("list") => ViewLayout::List,
+        Some("cards") => ViewLayout::Cards,
+        Some("compact") => ViewLayout::Compact,
+        // "table", unknown, or absent → Table.
+        _ => ViewLayout::Table,
+    }
+}
+
+/// Stable lowercase key for a layout (URL param + template branch value).
+fn layout_key(layout: crate::viewspec::ViewLayout) -> &'static str {
+    use crate::viewspec::ViewLayout;
+    // `ViewLayout` is `#[non_exhaustive]`, but only for downstream crates;
+    // inside rustio-core the four variants are exhaustive — a new variant
+    // must be mapped here, so no wildcard arm.
+    match layout {
+        ViewLayout::Table => "table",
+        ViewLayout::List => "list",
+        ViewLayout::Cards => "cards",
+        ViewLayout::Compact => "compact",
+    }
+}
+
+/// Build a list-page URL for `layout_key` that preserves the current
+/// search (`q`), sort, dir, and column filters. Filter keys are emitted in
+/// sorted order so the href is deterministic. `page` is intentionally
+/// dropped (a layout switch resets to page 1).
+fn list_layout_href(
+    slug: &str,
+    layout_key: &str,
+    query: Option<&str>,
+    sort: Option<&str>,
+    dir: Option<&str>,
+    filters: &HashMap<String, String>,
+) -> String {
+    let mut parts = vec![format!("layout={layout_key}")];
+    if let Some(q) = query.filter(|s| !s.is_empty()) {
+        parts.push(format!("q={}", urlencode(q)));
+    }
+    if let Some(s) = sort.filter(|s| !s.is_empty()) {
+        parts.push(format!("sort={}", urlencode(s)));
+    }
+    if let Some(d) = dir.filter(|s| !s.is_empty()) {
+        parts.push(format!("dir={}", urlencode(d)));
+    }
+    let mut keys: Vec<&String> = filters.keys().collect();
+    keys.sort();
+    for k in keys {
+        parts.push(format!("{}={}", urlencode(k), urlencode(&filters[k])));
+    }
+    format!("/admin/{slug}?{}", parts.join("&"))
+}
+
 /// 0.10+ list-page renderer. Searchable / filter / sort / paginate
 /// query runs through `fetch_users_table_state`; the page renders via
 /// `minijinja`. Create / edit / delete actions are RBAC-gated by the
@@ -1311,6 +1384,7 @@ pub async fn list_render(
     filters: &HashMap<String, String>,
     sort: Option<&str>,
     dir: Option<&str>,
+    layout: Option<&str>,
     identity: Option<&crate::auth::Identity>,
     csrf_token: Option<&str>,
 ) -> String {
@@ -1340,12 +1414,18 @@ pub async fn list_render(
     //     panel); Meta-role fields are just normal columns.
     //   * A saved `<model_snake>.view.json` in the cwd overrides the
     //     derived default; a missing/invalid file silently derives it.
-    //   * The list always renders the Table layout; a `?layout=` switcher
-    //     (list/cards/compact) is deferred to a later phase.
     //   * NOTE: the live list path applies NO PII masking today — it only
     //     OMITS Hidden fields. Adding masking to shown cells here is a
     //     deliberate follow-up, intentionally out of this phase's scope.
-    let columns: Vec<ColumnView> = view_selected_columns(model.model_name(), &fields);
+    //
+    // Phase 7 — the `?layout=` switcher selects which of the four layouts
+    // the renderer arranges. `?layout=` wins when present; otherwise the
+    // list defaults to Table (Phase 6 behaviour), NOT the ViewSpec's own
+    // `layout` field. The renderer picks the cell set per layout; the
+    // template arranges those same cells differently.
+    let active_layout = parse_list_layout(layout);
+    let columns: Vec<ColumnView> =
+        view_selected_columns(model.model_name(), &fields, active_layout);
 
     // One batch `SELECT … WHERE id IN (…)` per FK column visible on
     // this page of rows. Cells for matching FK values are rewritten
@@ -1436,7 +1516,26 @@ pub async fn list_render(
         total,
         &validated_sort,
         &validated_dir,
+        layout_key(active_layout),
     );
+
+    // Layout switcher — one link per layout, preserving the current
+    // search / sort / filter state so switching never drops filters.
+    use crate::viewspec::ViewLayout;
+    let layout_options: Vec<LayoutOptionView> = [
+        (ViewLayout::Table, "Table"),
+        (ViewLayout::List, "List"),
+        (ViewLayout::Cards, "Cards"),
+        (ViewLayout::Compact, "Compact"),
+    ]
+    .iter()
+    .map(|(lay, label)| LayoutOptionView {
+        key: layout_key(*lay).to_string(),
+        label: label.to_string(),
+        href: list_layout_href(slug, layout_key(*lay), query, sort, dir, filters),
+        active: *lay == active_layout,
+    })
+    .collect();
 
     let model_view = ModelView {
         display_name: format!("{}s", model.model_name()),
@@ -1470,6 +1569,8 @@ pub async fn list_render(
             total => total,
             pagination => pagination,
             permissions => permissions,
+            layout => layout_key(active_layout),
+            layout_options => layout_options,
             page_title => format!("{}s", model.model_name()),
             query => query.unwrap_or(""),
             csrf_token => csrf_token.unwrap_or(""),
@@ -1484,6 +1585,7 @@ pub async fn list_render(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_pagination_view(
     slug: &str,
     query: Option<&str>,
@@ -1492,6 +1594,7 @@ fn build_pagination_view(
     total: i64,
     sort: &Option<String>,
     dir: &Option<String>,
+    layout_key: &str,
 ) -> PaginationView {
     // `fetch_users_table_state` uses PAGE_SIZE = 20; keep that here. If the
     // page-size constant ever moves, thread it through instead of copying.
@@ -1518,6 +1621,10 @@ fn build_pagination_view(
     let dir_param = dir.as_deref().unwrap_or("");
     let base_href = |p: i64| -> String {
         let mut parts = vec![format!("page={p}")];
+        // Keep paging within the current layout.
+        if layout_key != "table" {
+            parts.push(format!("layout={layout_key}"));
+        }
         if !q_param.is_empty() {
             parts.push(format!("q={}", urlencode(q_param)));
         }
@@ -2302,6 +2409,7 @@ mod tests {
             &filters,
             None,
             None,
+            None, // layout → defaults to Table
             None,
             None,
         )
@@ -2426,6 +2534,7 @@ mod tests {
             &filters,
             None,
             None,
+            None, // layout → defaults to Table
             None,
             None,
         )
@@ -2454,7 +2563,11 @@ mod tests {
     fn view_selected_columns_omits_hidden_in_schema_order() {
         // No saved view → derived default. id + password_hash are Hidden;
         // the rest appear in declared order.
-        let cols = view_selected_columns("Widget", &ui_fields_for_selection());
+        let cols = view_selected_columns(
+            "Widget",
+            &ui_fields_for_selection(),
+            crate::viewspec::ViewLayout::Table,
+        );
         let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["name", "email", "status"]);
     }
@@ -2482,6 +2595,337 @@ mod tests {
                 .len(),
             model.fields.len()
         );
+    }
+
+    // --- Phase 7: ?layout= switcher (LIVE path) --------------------------
+    //
+    // Every test drives `list_render` end-to-end with a real layout param,
+    // proving the running admin behaviour per layout.
+
+    const GADGET_FIELDS: &[AdminField] = &[
+        AdminField {
+            name: "id",
+            ty: FieldType::I64,
+            editable: false,
+            nullable: false,
+            relation: None,
+        },
+        AdminField {
+            name: "name",
+            ty: FieldType::String,
+            editable: true,
+            nullable: false,
+            relation: None,
+        },
+        AdminField {
+            name: "email",
+            ty: FieldType::String,
+            editable: true,
+            nullable: false,
+            relation: None,
+        },
+        AdminField {
+            name: "status",
+            ty: FieldType::String,
+            editable: true,
+            nullable: false,
+            relation: None,
+        },
+        AdminField {
+            name: "notes",
+            ty: FieldType::String,
+            editable: true,
+            nullable: false,
+            relation: None,
+        },
+        AdminField {
+            name: "password_hash",
+            ty: FieldType::String,
+            editable: false,
+            nullable: false,
+            relation: None,
+        },
+    ];
+
+    fn gadget_entry() -> AdminEntry {
+        AdminEntry {
+            admin_name: "gadgets",
+            display_name: "Gadget",
+            singular_name: "Gadget",
+            table: "gadgets",
+            fields: GADGET_FIELDS,
+            core: false,
+        }
+    }
+
+    async fn gadget_db() -> Db {
+        let db = Db::memory().await.unwrap();
+        sqlx::query(
+            "CREATE TABLE gadgets (id INTEGER PRIMARY KEY, name TEXT, email TEXT, status TEXT, notes TEXT, password_hash TEXT)",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO gadgets (name,email,status,notes,password_hash) VALUES ('Alpha','alpha@x.example','active','MY-META-NOTE','topsecret-xyz')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        db
+    }
+
+    /// Render the gadget list through the live `list_render` for a given
+    /// `?layout=` value and filter set.
+    async fn render_gadget_layout(
+        layout: Option<&str>,
+        filters: &HashMap<String, String>,
+    ) -> String {
+        let db = gadget_db().await;
+        let entry = gadget_entry();
+        let model = LegacyEntryModel::new(&entry);
+        let registry = registry_empty();
+        let legacy = [entry.clone()];
+        list_render(
+            &db,
+            &registry,
+            &legacy,
+            &model,
+            Some(&entry),
+            None,
+            1,
+            filters,
+            None,
+            None,
+            layout,
+            None,
+            None,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn compact_layout_shows_only_title_and_badge_live() {
+        // Compact = Title (name) + Badge (status). Subtitle (email) and
+        // Meta (notes) must NOT appear.
+        let html = render_gadget_layout(Some("compact"), &HashMap::new()).await;
+        assert!(html.contains("Alpha"), "title missing in compact: {html}");
+        assert!(html.contains("rio-pill"), "badge pill missing in compact");
+        assert!(
+            !html.contains("alpha@x.example"),
+            "subtitle (email) should not appear in compact"
+        );
+        assert!(
+            !html.contains("MY-META-NOTE"),
+            "meta (notes) should not appear in compact"
+        );
+        assert!(html.contains("rio-compact-row"), "compact markup missing");
+    }
+
+    #[tokio::test]
+    async fn list_layout_drops_meta_live() {
+        // List = Title + Subtitle + Badge + Timestamp; Meta (notes) dropped.
+        let html = render_gadget_layout(Some("list"), &HashMap::new()).await;
+        assert!(html.contains("Alpha"), "title missing in list");
+        assert!(html.contains("alpha@x.example"), "subtitle missing in list");
+        assert!(html.contains("rio-pill"), "badge missing in list");
+        assert!(
+            !html.contains("MY-META-NOTE"),
+            "meta (notes) should be dropped in list: {html}"
+        );
+        assert!(html.contains("rio-list-item"), "list markup missing");
+    }
+
+    #[tokio::test]
+    async fn cards_layout_includes_meta_and_card_markup_live() {
+        // Cards = every visible role (same set as Table), arranged as cards.
+        let html = render_gadget_layout(Some("cards"), &HashMap::new()).await;
+        for needle in ["Alpha", "alpha@x.example", "MY-META-NOTE"] {
+            assert!(html.contains(needle), "cards missing {needle}");
+        }
+        assert!(html.contains("rio-card-item"), "card markup missing");
+        assert!(html.contains("rio-pill"), "badge pill missing in cards");
+    }
+
+    #[tokio::test]
+    async fn hidden_secret_absent_in_all_four_layouts_live() {
+        for layout in [
+            None,
+            Some("table"),
+            Some("list"),
+            Some("cards"),
+            Some("compact"),
+        ] {
+            let html = render_gadget_layout(layout, &HashMap::new()).await;
+            assert!(
+                !html.contains("topsecret-xyz"),
+                "hidden secret leaked in layout {layout:?}"
+            );
+            assert!(
+                !html.to_lowercase().contains("password_hash"),
+                "hidden column leaked in layout {layout:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn table_layout_unchanged_no_regression_live() {
+        // The switcher must ADD layouts without altering the Table path:
+        // no-param and ?layout=table render byte-identical HTML, and an
+        // unknown value falls back to that same Table output.
+        let none = render_gadget_layout(None, &HashMap::new()).await;
+        let table = render_gadget_layout(Some("table"), &HashMap::new()).await;
+        let banana = render_gadget_layout(Some("banana"), &HashMap::new()).await;
+        assert_eq!(none, table, "no-param and ?layout=table must be identical");
+        assert_eq!(banana, table, "unknown layout must fall back to Table");
+
+        // And the Table content is the Phase-6 shape: a table, id hidden,
+        // pill present, Meta column present (Table shows Meta).
+        assert!(
+            table.contains("<table class=\"rio-table\">"),
+            "table markup missing"
+        );
+        assert!(
+            !table.to_lowercase().contains(">id</th>") && !table.contains("rio-cell-id"),
+            "id column should be hidden in Table"
+        );
+        assert!(table.contains("rio-pill"), "status pill missing in Table");
+        assert!(
+            table.contains("MY-META-NOTE"),
+            "Meta column should show in Table"
+        );
+    }
+
+    #[tokio::test]
+    async fn layout_toggle_links_preserve_filter_live() {
+        // Switching layout must not drop an active filter: the switcher's
+        // hrefs carry the current filter param.
+        let mut filters = HashMap::new();
+        filters.insert("status".to_string(), "active".to_string());
+        let html = render_gadget_layout(Some("table"), &filters).await;
+        // A switch-to-cards link that keeps the status filter.
+        assert!(
+            html.contains("layout=cards") && html.contains("status=active"),
+            "layout toggle dropped the active filter: {html}"
+        );
+        assert!(
+            html.contains("rio-layout-switch"),
+            "layout switcher missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn fk_label_preserved_in_cards_layout_live() {
+        // FK linked labels (a Meta FK column) must still render in a
+        // non-Table layout that includes the cell.
+        let db = Db::memory().await.unwrap();
+        sqlx::query("CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO customers (id, name) VALUES (1, 'Acme Corp')")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE orders (id INTEGER PRIMARY KEY, code TEXT, customer_id INTEGER)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO orders (code, customer_id) VALUES ('OR-1', 1)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        const ORDER_FIELDS: &[AdminField] = &[
+            AdminField {
+                name: "id",
+                ty: FieldType::I64,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "code",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "customer_id",
+                ty: FieldType::I64,
+                editable: true,
+                nullable: false,
+                relation: Some(crate::admin::AdminRelation {
+                    kind: crate::schema::RelationKind::BelongsTo,
+                    model: "Customer",
+                    display_field: Some("name"),
+                }),
+            },
+        ];
+        const CUSTOMER_FIELDS: &[AdminField] = &[
+            AdminField {
+                name: "id",
+                ty: FieldType::I64,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "name",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+        ];
+        let orders_entry = AdminEntry {
+            admin_name: "orders",
+            display_name: "Order",
+            singular_name: "Order",
+            table: "orders",
+            fields: ORDER_FIELDS,
+            core: false,
+        };
+        let customers_entry = AdminEntry {
+            admin_name: "customers",
+            display_name: "Customer",
+            singular_name: "Customer",
+            table: "customers",
+            fields: CUSTOMER_FIELDS,
+            core: false,
+        };
+        let model = LegacyEntryModel::new(&orders_entry);
+        let registry = registry_empty();
+        let legacy = [orders_entry.clone(), customers_entry];
+        let filters = HashMap::new();
+
+        let html = list_render(
+            &db,
+            &registry,
+            &legacy,
+            &model,
+            Some(&orders_entry),
+            None,
+            1,
+            &filters,
+            None,
+            None,
+            Some("cards"),
+            None,
+            None,
+        )
+        .await;
+
+        assert!(
+            html.contains("Acme Corp"),
+            "FK label missing in cards: {html}"
+        );
+        assert!(
+            html.contains(r#"href="/admin/customers/1""#),
+            "FK link missing in cards"
+        );
+        assert!(html.contains("rio-card-item"), "cards markup missing");
     }
 
     #[test]

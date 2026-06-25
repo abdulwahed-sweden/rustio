@@ -23,7 +23,21 @@
   {# Toolbar — search input + summary count. Filter chips and bulk
      actions land when the Rust side surfaces them; until then the
      toolbar is the single search field plus a record-count caption. #}
+  <style>
+    .rio-layout-switch { display: inline-flex; gap: 4px; margin-left: auto; }
+    .rio-layout-switch .is-active { font-weight: 600; text-decoration: underline; }
+    .rio-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+    .rio-card-item, .rio-list-item { padding: 12px 14px; }
+    .rio-list-field, .rio-card-field { display: flex; gap: 8px; padding: 2px 0; }
+    .rio-list-label, .rio-card-label { min-width: 9rem; color: var(--rio-muted, #667); font-weight: 600; }
+    .rio-compact-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid #0001; }
+    .rio-compact-cell { white-space: nowrap; }
+    .rio-list-actions, .rio-card-actions { margin-top: 8px; }
+  </style>
+
   <form class="rio-toolbar" method="get" action="/admin/{{ model.singular_name | lower }}s" role="search">
+    {# Keep the active layout across a search submit. #}
+    <input type="hidden" name="layout" value="{{ layout | default('table') }}">
     <input class="rio-input" name="q" value="{{ query | default('') }}" placeholder="Search {{ model.display_name | lower }}…" style="max-width: 320px;">
     <span class="rio-toolbar__count">
       {% if pagination is defined and pagination.total > 0 %}
@@ -32,6 +46,14 @@
         {{ total | default(0) }} record{% if total != 1 %}s{% endif %}
       {% endif %}
     </span>
+    {% if layout_options is defined %}
+      <nav class="rio-layout-switch" aria-label="Layout">
+        {% for opt in layout_options %}
+          <a href="{{ opt.href }}" class="rio-btn rio-btn--ghost{% if opt.active %} is-active{% endif %}"
+             {% if opt.active %}aria-current="true"{% endif %}>{{ opt.label }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
   </form>
 
   {% if rows | length == 0 %}
@@ -43,6 +65,54 @@
       {% endif %}
     </div>
   {% else %}
+    {# Phase 7 — the body shape is chosen by `?layout=`. Every layout
+       reuses the SAME pre-rendered cell HTML in `row.cells` (FK links,
+       status pills, primary cell) and the SAME column set the Phase-3
+       renderer selected for that layout; only the arrangement differs.
+       List/Cards label each cell by zipping `columns` to `row.cells` by
+       index. The `table` branch below is the unchanged Phase-6 markup. #}
+    {% if layout == 'list' %}
+      <div class="rio-list">
+        {% for row in rows %}
+          <div class="rio-list-item rio-card">
+            {% for cell in row.cells %}
+              <div class="rio-list-field"><span class="rio-list-label">{{ columns[loop.index0].label }}</span><span class="rio-list-value">{{ cell | safe }}</span></div>
+            {% endfor %}
+            {% if permissions.edit or permissions.delete %}
+              <div class="rio-list-actions">
+                {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?"><button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% elif layout == 'cards' %}
+      <div class="rio-cards">
+        {% for row in rows %}
+          <div class="rio-card rio-card-item">
+            {% for cell in row.cells %}
+              <div class="rio-card-field"><span class="rio-card-label">{{ columns[loop.index0].label }}</span><span class="rio-card-value">{{ cell | safe }}</span></div>
+            {% endfor %}
+            {% if permissions.edit or permissions.delete %}
+              <div class="rio-card-actions">
+                {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?"><button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
+              </div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% elif layout == 'compact' %}
+      <div class="rio-card">
+        {% for row in rows %}
+          <div class="rio-compact-row">
+            {% for cell in row.cells %}<span class="rio-compact-cell">{{ cell | safe }}</span>{% endfor %}
+            {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}" style="margin-left:auto;">Edit</a>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
     <div class="rio-card">
       <table class="rio-table">
         <thead>
@@ -78,6 +148,7 @@
         </tbody>
       </table>
     </div>
+    {% endif %}
 
     {% if pagination is defined and pagination.pages > 1 %}
       <footer class="rio-pagination">
