@@ -29,6 +29,7 @@ pub mod orm;
 pub mod router;
 pub mod schema;
 pub mod server;
+pub mod viewspec;
 
 pub use auth::Identity;
 // Re-export the chrono types user models reach for. This lets generated
