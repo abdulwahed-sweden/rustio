@@ -1152,6 +1152,149 @@ struct ListPermissionsView {
     delete: bool,
 }
 
+// ---------------------------------------------------------------------------
+// ViewSpec-driven column selection (Phase 6)
+//
+// The list page chooses its columns through the model's ViewSpec
+// (`crate::viewspec`), resolved + rendered by the deterministic Phase-3
+// renderer. These helpers turn the live `AdminUiField` metadata into a
+// ViewSpec, resolve a saved-or-derived view, and map the renderer's
+// Table-layout cell selection back to `ColumnView`s. They are called
+// directly by `list_render` — the live admin path.
+// ---------------------------------------------------------------------------
+
+/// `CamelCase` model name → `snake_case` file stem (`Booking` →
+/// `booking`). Matches the `rustio view` CLI so the admin and CLI resolve
+/// the same `<model>.view.json`.
+fn view_snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Map a UI data type to the schema type vocabulary `from_schema_model`
+/// classifies on. Float collapses to a numeric type (the schema vocabulary
+/// has no float); Email/Text are plain strings.
+fn ui_data_type_to_schema(dt: AdminDataType) -> &'static str {
+    match dt {
+        AdminDataType::Integer => "i64",
+        AdminDataType::Float => "i64",
+        AdminDataType::Boolean => "bool",
+        AdminDataType::DateTime => "DateTime",
+        AdminDataType::String | AdminDataType::Text | AdminDataType::Email => "String",
+    }
+}
+
+/// Build a `schema::SchemaModel` from the live `AdminUiField` list so a
+/// default ViewSpec can be derived. Only `name` + `ty` matter to
+/// `from_schema_model`; the other schema fields are placeholders.
+fn schema_model_from_ui(model_name: &str, fields: &[AdminUiField]) -> crate::schema::SchemaModel {
+    use crate::schema::{SchemaField, SchemaModel};
+    let schema_fields = fields
+        .iter()
+        .map(|f| SchemaField {
+            name: f.name.to_string(),
+            ty: ui_data_type_to_schema(f.data_type).to_string(),
+            nullable: !f.required,
+            editable: !f.readonly,
+            relation: None,
+        })
+        .collect();
+    SchemaModel {
+        name: model_name.to_string(),
+        table: String::new(),
+        admin_name: String::new(),
+        display_name: String::new(),
+        singular_name: model_name.to_string(),
+        fields: schema_fields,
+        relations: Vec::new(),
+        core: false,
+    }
+}
+
+/// Resolve the ViewSpec for a model's list page: load the saved
+/// `<model_snake>.view.json` from the working directory (same cwd anchor
+/// as `rustio.schema.json` and the `rustio view` CLI), or silently derive
+/// the Phase-2 default. Read per request (no cache this phase).
+fn resolve_list_view(
+    model_name: &str,
+    model: &crate::schema::SchemaModel,
+) -> crate::viewspec::ViewSpec {
+    let filename = format!("{}.view.json", view_snake_case(model_name));
+    let saved = std::fs::read_to_string(&filename).ok();
+    resolve_list_view_inner(saved.as_deref(), model)
+}
+
+/// Pure resolution: a saved JSON document (present **and** valid) wins;
+/// otherwise derive the default. A missing or invalid file is never an
+/// error. Split from the filesystem read so the load decision is
+/// unit-testable.
+fn resolve_list_view_inner(
+    saved: Option<&str>,
+    model: &crate::schema::SchemaModel,
+) -> crate::viewspec::ViewSpec {
+    if let Some(raw) = saved {
+        if let Ok(spec) = crate::viewspec::ViewSpec::parse(raw) {
+            return spec;
+        }
+        // Invalid saved file → silently derive (never an error).
+    }
+    crate::viewspec::ViewSpec::from_schema_model(model)
+}
+
+/// Select the list table's columns through the ViewSpec. Resolves the
+/// model's view, renders the Table layout via the Phase-3 renderer to get
+/// the ordered, **non-Hidden** source names, and maps each back to its
+/// `AdminUiField` (preserving `label` / `sortable`). Hidden-role fields
+/// (`id`, `*_hash`, …) never appear — the end-to-end Hidden guarantee.
+///
+/// A merged ViewSpec cell maps to its anchor (`sources[0]`) column; a
+/// source naming a field that isn't on the model (e.g. a stale saved view)
+/// is skipped rather than crashing the page.
+fn view_selected_columns(model_name: &str, fields: &[AdminUiField]) -> Vec<ColumnView> {
+    let schema_model = schema_model_from_ui(model_name, fields);
+    let spec = resolve_list_view(model_name, &schema_model);
+
+    // Selection is independent of row data — probe with a single empty row
+    // and read which sources the Table layout surfaces, in order.
+    let probe: Vec<crate::viewspec::render::Row> = vec![std::collections::BTreeMap::new()];
+    let view = crate::viewspec::render::RenderedView::render_with_layout(
+        &spec,
+        crate::viewspec::ViewLayout::Table,
+        &probe,
+    );
+    let selected: Vec<&str> = view
+        .rows
+        .first()
+        .map(|r| {
+            r.cells
+                .iter()
+                .filter_map(|c| c.sources.first().map(String::as_str))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    selected
+        .iter()
+        .filter_map(|name| {
+            fields.iter().find(|f| f.name == *name).map(|f| ColumnView {
+                name: f.name.to_string(),
+                label: humanize_field_label(f.label),
+                sortable: f.sortable,
+            })
+        })
+        .collect()
+}
+
 /// 0.10+ list-page renderer. Searchable / filter / sort / paginate
 /// query runs through `fetch_users_table_state`; the page renders via
 /// `minijinja`. Create / edit / delete actions are RBAC-gated by the
@@ -1182,15 +1325,27 @@ pub async fn list_render(
         fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
 
     let fields = model.fields();
-    let columns: Vec<ColumnView> = fields
-        .iter()
-        .filter(|f| f.visible_in_table)
-        .map(|f| ColumnView {
-            name: f.name.to_string(),
-            label: humanize_field_label(f.label),
-            sortable: f.sortable,
-        })
-        .collect();
+    // Phase 6 — column selection runs through the model's ViewSpec via the
+    // deterministic Phase-3 renderer (`crate::viewspec::render`), replacing
+    // the raw `visible_in_table` dump. The ViewSpec decides WHICH columns
+    // appear, their ORDER, and which are Hidden; the cell rendering below
+    // (FK linked labels, status pills, primary cell) is unchanged, so those
+    // live features are preserved.
+    //
+    // Deliberate behaviour changes vs. the pre-ViewSpec list:
+    //   * The primary-key / `id` column is Hidden by default (raw ids
+    //     aren't shown), as are secret-shaped fields (`*_hash`, `password`,
+    //     `token`) and opaque PII — the end-to-end Hidden guarantee.
+    //   * The old row-expansion of overflow columns is gone (no expand
+    //     panel); Meta-role fields are just normal columns.
+    //   * A saved `<model_snake>.view.json` in the cwd overrides the
+    //     derived default; a missing/invalid file silently derives it.
+    //   * The list always renders the Table layout; a `?layout=` switcher
+    //     (list/cards/compact) is deferred to a later phase.
+    //   * NOTE: the live list path applies NO PII masking today — it only
+    //     OMITS Hidden fields. Adding masking to shown cells here is a
+    //     deliberate follow-up, intentionally out of this phase's scope.
+    let columns: Vec<ColumnView> = view_selected_columns(model.model_name(), &fields);
 
     // One batch `SELECT … WHERE id IN (…)` per FK column visible on
     // this page of rows. Cells for matching FK values are rewritten
@@ -2063,6 +2218,270 @@ mod tests {
 
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].count, 0);
+    }
+
+    // --- Phase 6: ViewSpec-driven list columns (LIVE path) ---------------
+    //
+    // These tests drive the real list renderer. The first two call
+    // `list_render` end-to-end (the exact function `admin_model_index_get`
+    // invokes), proving the running admin behaviour. The remaining two
+    // exercise `view_selected_columns` / `resolve_list_view_inner`, which
+    // `list_render` calls directly — live code, not isolated helpers.
+
+    fn registry_empty() -> crate::admin::admin_form_bridge::AdminRegistry {
+        crate::admin::admin_form_bridge::AdminRegistry::new()
+    }
+
+    #[tokio::test]
+    async fn list_render_hides_id_and_secret_columns_live() {
+        let db = Db::memory().await.unwrap();
+        sqlx::query(
+            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT, status TEXT, password_hash TEXT)",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO widgets (name, status, password_hash) VALUES ('Alpha','active','topsecret-xyz')",
+        )
+        .execute(db.pool())
+        .await
+        .unwrap();
+
+        const FIELDS: &[AdminField] = &[
+            AdminField {
+                name: "id",
+                ty: FieldType::I64,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "name",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "status",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "password_hash",
+                ty: FieldType::String,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+        ];
+        let entry = AdminEntry {
+            admin_name: "widgets",
+            display_name: "Widget",
+            singular_name: "Widget",
+            table: "widgets",
+            fields: FIELDS,
+            core: false,
+        };
+        let model = LegacyEntryModel::new(&entry);
+        let registry = registry_empty();
+        let legacy = [entry.clone()];
+        let filters = HashMap::new();
+
+        let html = list_render(
+            &db,
+            &registry,
+            &legacy,
+            &model,
+            Some(&entry),
+            None,
+            1,
+            &filters,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        // Hidden guarantee, end to end: the secret value and its column
+        // name never reach the HTML.
+        assert!(
+            !html.contains("topsecret-xyz"),
+            "hidden field VALUE leaked into live list HTML"
+        );
+        assert!(
+            !html.to_lowercase().contains("password_hash"),
+            "hidden field column leaked into live list HTML"
+        );
+        // The id column header is gone too (`id` is Hidden by default).
+        assert!(
+            !html.contains(r#"<th scope="col">Id</th>"#)
+                && !html.contains(r#"<th scope="col">ID</th>"#),
+            "id column should be hidden by default"
+        );
+        // Shown columns are present, and the status pill survived.
+        assert!(html.contains("Alpha"), "title value missing from list HTML");
+        assert!(
+            html.contains("rio-pill"),
+            "status pill markup lost from live list HTML"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_render_preserves_fk_label_live() {
+        let db = Db::memory().await.unwrap();
+        sqlx::query("CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO customers (id, name) VALUES (1, 'Acme Corp')")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("CREATE TABLE orders (id INTEGER PRIMARY KEY, code TEXT, customer_id INTEGER)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO orders (code, customer_id) VALUES ('OR-1', 1)")
+            .execute(db.pool())
+            .await
+            .unwrap();
+
+        const ORDER_FIELDS: &[AdminField] = &[
+            AdminField {
+                name: "id",
+                ty: FieldType::I64,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "code",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "customer_id",
+                ty: FieldType::I64,
+                editable: true,
+                nullable: false,
+                relation: Some(crate::admin::AdminRelation {
+                    kind: crate::schema::RelationKind::BelongsTo,
+                    model: "Customer",
+                    display_field: Some("name"),
+                }),
+            },
+        ];
+        const CUSTOMER_FIELDS: &[AdminField] = &[
+            AdminField {
+                name: "id",
+                ty: FieldType::I64,
+                editable: false,
+                nullable: false,
+                relation: None,
+            },
+            AdminField {
+                name: "name",
+                ty: FieldType::String,
+                editable: true,
+                nullable: false,
+                relation: None,
+            },
+        ];
+        let orders_entry = AdminEntry {
+            admin_name: "orders",
+            display_name: "Order",
+            singular_name: "Order",
+            table: "orders",
+            fields: ORDER_FIELDS,
+            core: false,
+        };
+        let customers_entry = AdminEntry {
+            admin_name: "customers",
+            display_name: "Customer",
+            singular_name: "Customer",
+            table: "customers",
+            fields: CUSTOMER_FIELDS,
+            core: false,
+        };
+        let model = LegacyEntryModel::new(&orders_entry);
+        let registry = registry_empty();
+        let legacy = [orders_entry.clone(), customers_entry];
+        let filters = HashMap::new();
+
+        let html = list_render(
+            &db,
+            &registry,
+            &legacy,
+            &model,
+            Some(&orders_entry),
+            None,
+            1,
+            &filters,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+        // Hero feature preserved: FK column renders the related label +
+        // link, not a bare integer.
+        assert!(html.contains("Acme Corp"), "FK label missing: {html}");
+        assert!(
+            html.contains(r#"href="/admin/customers/1""#),
+            "FK link missing: {html}"
+        );
+    }
+
+    fn ui_fields_for_selection() -> Vec<AdminUiField> {
+        vec![
+            AdminUiField::integer("id", "id"),
+            AdminUiField::text("name", "name"),
+            AdminUiField::text("email", "email"),
+            AdminUiField::text("status", "status"),
+            AdminUiField::text("password_hash", "password_hash"),
+        ]
+    }
+
+    #[test]
+    fn view_selected_columns_omits_hidden_in_schema_order() {
+        // No saved view → derived default. id + password_hash are Hidden;
+        // the rest appear in declared order.
+        let cols = view_selected_columns("Widget", &ui_fields_for_selection());
+        let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, vec!["name", "email", "status"]);
+    }
+
+    #[test]
+    fn resolve_list_view_inner_prefers_saved_else_derives() {
+        let model = schema_model_from_ui("Widget", &ui_fields_for_selection());
+
+        // A saved view listing only email (Title) → exactly that column.
+        let saved = r#"{"version":1,"model":"Widget","layout":"table",
+            "fields":[{"source":"email","role":"title"}],"filters":[]}"#;
+        let spec = resolve_list_view_inner(Some(saved), &model);
+        assert_eq!(spec.fields.len(), 1);
+        assert_eq!(spec.fields[0].source, "email");
+
+        // Missing → derived default describes every field.
+        assert_eq!(
+            resolve_list_view_inner(None, &model).fields.len(),
+            model.fields.len()
+        );
+        // Invalid JSON → silently derived (never an error).
+        assert_eq!(
+            resolve_list_view_inner(Some("{ not json"), &model)
+                .fields
+                .len(),
+            model.fields.len()
+        );
     }
 
     #[test]
