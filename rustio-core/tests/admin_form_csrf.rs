@@ -17,7 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use rustio_core::admin::Admin;
-use rustio_core::auth::{self, authenticate, ROLE_ADMIN};
+use rustio_core::auth::{self, authenticate, ROLE_ADMIN, ROLE_USER};
 use rustio_core::defaults::with_defaults;
 use rustio_core::{Db, Error, Model, Router, Row, RustioAdmin, Server, Value};
 
@@ -54,6 +54,9 @@ async fn spawn_server() -> SocketAddr {
     auth::user::create(&db, "admin@example.com", "hunter2", ROLE_ADMIN)
         .await
         .expect("seed admin");
+    auth::user::create(&db, "viewer@example.com", "hunter2", ROLE_USER)
+        .await
+        .expect("seed non-admin viewer");
     db.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL)")
         .await
         .expect("notes table");
@@ -139,9 +142,9 @@ fn post_with_cookie(path: &str, body: &str, cookie: &str) -> String {
     )
 }
 
-/// Log in as the seeded admin and return the session cookie.
-async fn login(addr: SocketAddr) -> String {
-    let body = "email=admin@example.com&password=hunter2";
+/// Log in with the given credentials and return the session cookie.
+async fn login_as(addr: SocketAddr, email: &str, password: &str) -> String {
+    let body = format!("email={email}&password={password}");
     let resp = send(
         addr,
         &format!(
@@ -153,6 +156,11 @@ async fn login(addr: SocketAddr) -> String {
     .await;
     assert_eq!(status_of(&resp), 303, "login should redirect:\n{resp}");
     extract_cookie(&resp, "rustio_session").expect("session cookie")
+}
+
+/// Log in as the seeded admin.
+async fn login(addr: SocketAddr) -> String {
+    login_as(addr, "admin@example.com", "hunter2").await
 }
 
 #[tokio::test]
@@ -294,4 +302,91 @@ async fn delete_form_renders_csrf_and_enforces_it() {
     );
     let gone = send(addr, &get_with_cookie("/admin/notes", &cookie)).await;
     assert!(!gone.contains("DeleteMe"), "row must be deleted:\n{gone}");
+}
+
+/// Phase 9a — the composition editor's GET renders the CSRF token, and the
+/// save POST is CSRF-protected, edit-gated, and rejects an unparseable role
+/// without writing anything.
+#[tokio::test]
+async fn view_editor_csrf_permission_and_reject() {
+    // Any stale view file from a previous run would confuse the no-write
+    // assertion; the save here is exercised only on the rejection path,
+    // which must NOT create the file.
+    let _ = std::fs::remove_file("note.view.json");
+
+    let addr = spawn_server().await;
+    let cookie = login(addr).await;
+
+    // 1. GET editor → 200, renders _csrf and a role <select> per field.
+    let editor = send(addr, &get_with_cookie("/admin/notes/view", &cookie)).await;
+    assert_eq!(status_of(&editor), 200, "editor should render:\n{editor}");
+    assert!(
+        editor.contains(r#"name="_csrf""#),
+        "editor must render the _csrf token"
+    );
+    assert!(
+        editor.contains(r#"name="role[title]""#),
+        "editor must render a role select for the `title` field:\n{editor}"
+    );
+    let csrf = extract_csrf(&editor).expect("csrf on the editor page");
+
+    // 2. POST save WITHOUT _csrf → 403.
+    let no_tok = send(
+        addr,
+        &post_with_cookie("/admin/notes/view", "role[title]=badge", &cookie),
+    )
+    .await;
+    assert_eq!(
+        status_of(&no_tok),
+        403,
+        "save without _csrf must be rejected:\n{no_tok}"
+    );
+
+    // 3. POST save with a VALID token but an UNPARSEABLE role → re-render
+    //    the editor (200) with an error, and write nothing.
+    let bad = send(
+        addr,
+        &post_with_cookie(
+            "/admin/notes/view",
+            &format!("role[title]=banana&_csrf={csrf}"),
+            &cookie,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status_of(&bad),
+        200,
+        "an unparseable role re-renders the editor"
+    );
+    assert!(
+        bad.contains("Not saved"),
+        "the error banner must show:\n{bad}"
+    );
+    assert!(
+        !std::path::Path::new("note.view.json").exists(),
+        "a rejected save must write no file"
+    );
+
+    // 4. Permission: a non-admin (viewer) is rejected on BOTH the editor GET
+    //    and the save POST (defense in depth — not just UI hiding).
+    let viewer = login_as(addr, "viewer@example.com", "hunter2").await;
+    let v_get = send(addr, &get_with_cookie("/admin/notes/view", &viewer)).await;
+    assert_eq!(
+        status_of(&v_get),
+        403,
+        "a non-admin must not reach the editor:\n{v_get}"
+    );
+    let v_post = send(
+        addr,
+        &post_with_cookie("/admin/notes/view", "role[title]=badge", &viewer),
+    )
+    .await;
+    assert_eq!(
+        status_of(&v_post),
+        403,
+        "a non-admin save must be rejected:\n{v_post}"
+    );
+
+    // Final safety: nothing was ever written by this test.
+    assert!(!std::path::Path::new("note.view.json").exists());
 }

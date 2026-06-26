@@ -998,6 +998,113 @@ fn form_fallback(model: &dyn AdminUiModel, editing_id: Option<&str>) -> String {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Composition editor — field-role editing (Phase 9a)
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct RoleOptionView {
+    key: String,
+    label: String,
+}
+
+#[derive(serde::Serialize)]
+struct EditorFieldView {
+    source: String,
+    label: String,
+    /// The field's current role key (matched against `roles[].key` in the
+    /// template to pre-select the `<select>`).
+    role: String,
+}
+
+#[derive(serde::Serialize)]
+struct EditorModelView {
+    display_name: String,
+    singular_name: String,
+    list_url: String,
+}
+
+/// Render the composition editor page (`admin/view_editor.html`): a
+/// field/role table where each field's role can be changed, plus a Save
+/// POST form. Reads the current roles from the resolved ViewSpec (saved or
+/// derived). `error` re-renders the page with a banner after a rejected
+/// save (the editor is shown with the model's *current* roles — nothing
+/// changed). Data-only context; no HTML is built in Rust.
+#[allow(clippy::too_many_arguments)]
+pub async fn view_editor_render(
+    base: &Path,
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[crate::admin::AdminEntry],
+    model: &dyn AdminUiModel,
+    identity: Option<&crate::auth::Identity>,
+    csrf_token: Option<&str>,
+    return_to: &str,
+    error: Option<&str>,
+) -> String {
+    let dashboard_entries = collect_dashboard_entries(db, registry).await;
+    let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, Some(model.slug()));
+
+    let ui_fields = model.fields();
+    let schema_model = schema_model_from_ui(model.model_name(), &ui_fields);
+    let spec = resolve_view(base, model.model_name(), &schema_model);
+
+    let fields: Vec<EditorFieldView> = spec
+        .fields
+        .iter()
+        .map(|fs| {
+            // Prefer the model's UI label; fall back to humanising the source.
+            let label = ui_fields
+                .iter()
+                .find(|f| f.name == fs.source)
+                .map(|f| humanize_field_label(f.label))
+                .unwrap_or_else(|| humanize_field_label(&fs.source));
+            EditorFieldView {
+                source: fs.source.clone(),
+                label,
+                role: field_role_key(fs.role).to_string(),
+            }
+        })
+        .collect();
+
+    let slug = model.slug();
+    let model_view = EditorModelView {
+        display_name: format!("{}s", model.model_name()),
+        singular_name: model.model_name().to_string(),
+        list_url: format!("/admin/{slug}"),
+    };
+    let design = design_view();
+    let user = user_view(identity);
+
+    let env = crate::admin::templating::env();
+    match env.get_template("admin/view_editor.html").and_then(|tmpl| {
+        tmpl.render(minijinja::context! {
+            design => design,
+            current_user => user,
+            sidebar_entries => sidebar,
+            model => model_view,
+            fields => fields,
+            roles => role_options(),
+            save_action => format!("/admin/{slug}/view"),
+            return_to => return_to,
+            error => error,
+            page_title => format!("Edit view · {}s", model.model_name()),
+            csrf_token => csrf_token.unwrap_or(""),
+            rustio_version => env!("CARGO_PKG_VERSION"),
+        })
+    }) {
+        Ok(html) => html,
+        Err(err) => {
+            eprintln!("admin view-editor template render failed: {err}");
+            format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Edit view</title></head><body style=\"font-family:system-ui\"><h1>Edit view — {mn}</h1><p>The view editor failed to render. Check the server log.</p><p><a href=\"/admin/{slug}\">Back to list</a></p></body></html>",
+                mn = html_escape(model.model_name()),
+                slug = html_escape(slug),
+            )
+        }
+    }
+}
+
 impl AdminUiModel for LegacyEntryModel {
     fn slug(&self) -> &'static str {
         self.entry.admin_name
@@ -1256,6 +1363,96 @@ pub(crate) fn parse_layout_strict(raw: Option<&str>) -> Option<crate::viewspec::
     }
 }
 
+/// Parse a field-role value (the `<select>` option / `role[...]` form
+/// value) into a [`FieldRole`](crate::viewspec::FieldRole). Returns `None`
+/// for anything that isn't one of the six exact serialized keys. Mirrors
+/// `FieldRole`'s `#[serde(rename_all = "snake_case")]` naming.
+pub(crate) fn parse_role_strict(s: &str) -> Option<crate::viewspec::FieldRole> {
+    use crate::viewspec::FieldRole;
+    match s {
+        "title" => Some(FieldRole::Title),
+        "subtitle" => Some(FieldRole::Subtitle),
+        "badge" => Some(FieldRole::Badge),
+        "timestamp" => Some(FieldRole::Timestamp),
+        "meta" => Some(FieldRole::Meta),
+        "hidden" => Some(FieldRole::Hidden),
+        _ => None,
+    }
+}
+
+/// Stable serialized key for a field role (for the current-selection in the
+/// editor). In-crate exhaustive — a new variant must be mapped here.
+fn field_role_key(role: crate::viewspec::FieldRole) -> &'static str {
+    use crate::viewspec::FieldRole;
+    match role {
+        FieldRole::Title => "title",
+        FieldRole::Subtitle => "subtitle",
+        FieldRole::Badge => "badge",
+        FieldRole::Timestamp => "timestamp",
+        FieldRole::Meta => "meta",
+        FieldRole::Hidden => "hidden",
+    }
+}
+
+/// The six role options for the editor's `<select>`, in display order.
+fn role_options() -> Vec<RoleOptionView> {
+    [
+        ("title", "Title"),
+        ("subtitle", "Subtitle"),
+        ("badge", "Badge"),
+        ("timestamp", "Timestamp"),
+        ("meta", "Meta"),
+        ("hidden", "Hidden"),
+    ]
+    .iter()
+    .map(|(key, label)| RoleOptionView {
+        key: key.to_string(),
+        label: label.to_string(),
+    })
+    .collect()
+}
+
+/// Build a candidate ViewSpec from `spec` by applying the submitted roles
+/// (Phase 9a). The handler drives off `spec.fields` (the authority), so
+/// **order, merge, filterable, filters, version, and model are preserved**
+/// exactly — only roles change.
+///
+/// For each field, `role[<source>]` is read: a present value MUST parse to
+/// one of the six roles, otherwise this returns `Err(message)` so the
+/// handler re-renders the editor with the error and **writes nothing**
+/// (a bad submission never silently falls back to the existing role). An
+/// omitted key keeps the field's current role.
+///
+/// 9b/9c/9d plug in here: 9b will sort `new_fields` by a submitted order,
+/// 9c will read `filterable[<source>]` + a `filters[]` set, 9d will read a
+/// merge grouping — all feeding the same candidate → `validate` → write.
+pub(crate) fn build_role_edited_spec(
+    spec: &crate::viewspec::ViewSpec,
+    form: &crate::http::FormData,
+) -> Result<crate::viewspec::ViewSpec, String> {
+    let mut new_fields = Vec::with_capacity(spec.fields.len());
+    for f in &spec.fields {
+        let role = match form.get(&format!("role[{}]", f.source)) {
+            Some(value) => parse_role_strict(value).ok_or_else(|| {
+                format!(
+                    "Unknown role \u{201c}{value}\u{201d} for field \u{201c}{}\u{201d}.",
+                    f.source
+                )
+            })?,
+            None => f.role,
+        };
+        new_fields.push(crate::viewspec::FieldSpec {
+            source: f.source.clone(),
+            role,
+            merge: f.merge.clone(),
+            filterable: f.filterable,
+        });
+    }
+    let mut candidate = spec.clone();
+    candidate.fields = new_fields;
+    Ok(candidate)
+}
+
 /// List-page layout precedence (Phase 8):
 ///
 /// 1. a present-**and-valid** `?layout=` wins (ephemeral override, Phase 7);
@@ -1288,6 +1485,32 @@ pub(crate) fn save_layout_default(
     let mut spec = load_saved_view(base, model_name)
         .unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(schema_model));
     spec.layout = layout;
+    save_view_spec(base, model_name, &spec)
+}
+
+/// Resolve the model's current ViewSpec: the saved `<model>.view.json` if
+/// present + valid, otherwise the Phase-2 derived default. The single read
+/// path the editor (and the layout saver) edit from.
+pub(crate) fn resolve_view(
+    base: &Path,
+    model_name: &str,
+    schema_model: &crate::schema::SchemaModel,
+) -> crate::viewspec::ViewSpec {
+    load_saved_view(base, model_name)
+        .unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(schema_model))
+}
+
+/// Generalized writer (Phase 9a): persist a **full** ViewSpec to
+/// `<model>.view.json`. Reuses [`ViewSpec::write_to`](crate::viewspec::ViewSpec::write_to),
+/// which **validates first** (so an invalid spec is never written) and
+/// then writes atomically (temp-file + rename). No new file-writing or
+/// validation logic — the layout saver and the composition editor both go
+/// through here, so there is one write path.
+pub(crate) fn save_view_spec(
+    base: &Path,
+    model_name: &str,
+    spec: &crate::viewspec::ViewSpec,
+) -> Result<(), crate::Error> {
     spec.write_to(&view_file_path(base, model_name))
 }
 
@@ -3244,6 +3467,166 @@ mod tests {
         assert_eq!(parse_layout_strict(Some("table")), Some(ViewLayout::Table));
         assert_eq!(parse_layout_strict(Some("banana")), None);
         assert_eq!(parse_layout_strict(None), None);
+    }
+
+    // --- Phase 9a: composition editor — field-role editing ---------------
+
+    use crate::http::FormData;
+    use crate::viewspec::{FieldRole, FieldSpec, ViewLayout, ViewSpec};
+
+    /// A saved view with a custom role set, a merge, a filterable field, a
+    /// filter, and a non-derived order — to prove role-only edits preserve
+    /// everything else.
+    fn custom_gadget_spec() -> ViewSpec {
+        ViewSpec {
+            version: 1,
+            model: "Gadget".to_string(),
+            layout: ViewLayout::Cards,
+            fields: vec![
+                FieldSpec {
+                    source: "name".to_string(),
+                    role: FieldRole::Title,
+                    merge: Some(vec!["name".to_string(), "email".to_string()]),
+                    filterable: false,
+                },
+                FieldSpec {
+                    source: "status".to_string(),
+                    role: FieldRole::Badge,
+                    merge: None,
+                    filterable: true,
+                },
+                FieldSpec {
+                    source: "notes".to_string(),
+                    role: FieldRole::Meta,
+                    merge: None,
+                    filterable: false,
+                },
+            ],
+            filters: vec!["status".to_string()],
+        }
+    }
+
+    #[test]
+    fn parse_role_strict_round_trips_all_six() {
+        for (key, role) in [
+            ("title", FieldRole::Title),
+            ("subtitle", FieldRole::Subtitle),
+            ("badge", FieldRole::Badge),
+            ("timestamp", FieldRole::Timestamp),
+            ("meta", FieldRole::Meta),
+            ("hidden", FieldRole::Hidden),
+        ] {
+            assert_eq!(parse_role_strict(key), Some(role));
+            assert_eq!(field_role_key(role), key);
+        }
+        assert_eq!(parse_role_strict("banana"), None);
+        assert_eq!(parse_role_strict(""), None);
+    }
+
+    #[test]
+    fn build_role_edited_spec_changes_roles_preserves_everything_else() {
+        let spec = custom_gadget_spec();
+        // Change name → subtitle, notes → hidden; leave status omitted.
+        let form = FormData::parse("role[name]=subtitle&role[notes]=hidden");
+        let edited = build_role_edited_spec(&spec, &form).unwrap();
+
+        // Roles updated.
+        assert_eq!(edited.fields[0].role, FieldRole::Subtitle); // name
+        assert_eq!(edited.fields[2].role, FieldRole::Hidden); // notes
+                                                              // Omitted field keeps its existing role.
+        assert_eq!(edited.fields[1].role, FieldRole::Badge); // status
+
+        // Everything else byte-identical: order, sources, merge, filterable,
+        // filters, layout, version, model.
+        let sources: Vec<&str> = edited.fields.iter().map(|f| f.source.as_str()).collect();
+        assert_eq!(sources, vec!["name", "status", "notes"]);
+        assert_eq!(edited.fields[0].merge, spec.fields[0].merge);
+        assert!(edited.fields[1].filterable);
+        assert_eq!(edited.filters, spec.filters);
+        assert_eq!(edited.layout, spec.layout);
+        assert_eq!(edited.version, spec.version);
+        assert_eq!(edited.model, spec.model);
+    }
+
+    #[test]
+    fn build_role_edited_spec_rejects_unknown_role() {
+        let spec = custom_gadget_spec();
+        let form = FormData::parse("role[name]=banana");
+        let err = build_role_edited_spec(&spec, &form).unwrap_err();
+        assert!(
+            err.contains("banana"),
+            "error should name the bad value: {err}"
+        );
+        assert!(err.contains("name"), "error should name the field: {err}");
+    }
+
+    #[test]
+    fn save_view_spec_rejects_invalid_and_writes_nothing() {
+        let base = tmp_dir();
+        // An invalid spec (no fields) must not be written.
+        let invalid = ViewSpec {
+            version: 1,
+            model: "Gadget".to_string(),
+            layout: ViewLayout::Table,
+            fields: vec![],
+            filters: vec![],
+        };
+        assert!(save_view_spec(&base, "Gadget", &invalid).is_err());
+        assert!(
+            load_saved_view(&base, "Gadget").is_none(),
+            "no file may be written for an invalid spec"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn save_view_spec_preserves_an_existing_file_on_invalid_write() {
+        let base = tmp_dir();
+        // Seed a valid saved view.
+        save_view_spec(&base, "Gadget", &custom_gadget_spec()).unwrap();
+        let before = load_saved_view(&base, "Gadget").unwrap();
+        // An attempted invalid write must leave the existing file unchanged.
+        let invalid = ViewSpec {
+            version: 1,
+            model: "Gadget".to_string(),
+            layout: ViewLayout::Table,
+            fields: vec![],
+            filters: vec![],
+        };
+        assert!(save_view_spec(&base, "Gadget", &invalid).is_err());
+        assert_eq!(load_saved_view(&base, "Gadget").unwrap(), before);
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn role_edit_takes_effect_in_list_render() {
+        // Save an edit (notes → Hidden, service-like field unchanged) and
+        // confirm a no-param list_render reflects it: the Hidden field's
+        // value is gone; a Badge field renders as a pill.
+        let base = tmp_dir();
+        let model = gadget_schema_model();
+        // Start from the derived default, set notes → Hidden via the editor
+        // path, keep status as Badge.
+        let derived = ViewSpec::from_schema_model(&model);
+        let form = FormData::parse("role[notes]=hidden&role[status]=badge");
+        let edited = build_role_edited_spec(&derived, &form).unwrap();
+        save_view_spec(&base, "Gadget", &edited).unwrap();
+
+        // Render the gadget list (Table) from this saved view.
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        // notes is Hidden → its demo value must be gone.
+        assert!(
+            !html.contains("MY-META-NOTE"),
+            "a field set to Hidden must not render: {html}"
+        );
+        // status is Badge → renders as a pill.
+        assert!(
+            html.contains("rio-pill"),
+            "a Badge field should render as a pill"
+        );
+        // Hidden guarantee still holds for the always-hidden secret.
+        assert!(!html.contains("topsecret-xyz"));
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]

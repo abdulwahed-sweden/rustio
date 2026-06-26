@@ -234,6 +234,10 @@ const EMBEDDED: &[(&str, &str)] = &[
         include_str!("../../assets/templates/admin/form.html"),
     ),
     (
+        "admin/view_editor.html",
+        include_str!("../../assets/templates/admin/view_editor.html"),
+    ),
+    (
         "admin/profile.html",
         include_str!("../../assets/templates/admin/profile.html"),
     ),

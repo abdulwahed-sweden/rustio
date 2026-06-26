@@ -63,6 +63,8 @@
             <input type="hidden" name="_return" value="{{ return_to | default('') }}">
             <button type="submit" class="rio-btn rio-btn--ghost" title="Save this layout as the default for everyone">Set as default</button>
           </form>
+          {# Phase 9a — open the composition editor (field-role editing). #}
+          <a href="/admin/{{ model.singular_name | lower }}s/view" class="rio-btn rio-btn--ghost" title="Edit which role each field plays in this view">Edit view</a>
         {% endif %}
       </nav>
     {% endif %}

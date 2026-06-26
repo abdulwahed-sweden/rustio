@@ -890,6 +890,36 @@ impl Admin {
                 async move { admin_model_layout_post(&registry, &legacy_entries, req, params).await }
             });
         }
+        // Phase 9a — the composition editor: GET renders the field-role
+        // editor; POST saves the edited ViewSpec. CSRF-protected, edit-gated.
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let view_get_entries = entries.clone();
+            router =
+                router.get("/admin/:model/view", move |req, params| {
+                    let db = db.clone();
+                    let registry = registry.clone();
+                    let legacy_entries = view_get_entries.clone();
+                    async move {
+                        admin_model_view_get(&db, &registry, &legacy_entries, req, params).await
+                    }
+                });
+        }
+        {
+            let db = db.clone();
+            let registry = admin_new_registry.clone();
+            let view_post_entries = entries.clone();
+            router =
+                router.post("/admin/:model/view", move |req, params| {
+                    let db = db.clone();
+                    let registry = registry.clone();
+                    let legacy_entries = view_post_entries.clone();
+                    async move {
+                        admin_model_view_post(&db, &registry, &legacy_entries, req, params).await
+                    }
+                });
+        }
 
         for registrar in self.registrars {
             router = registrar(router, db, entries.clone());
@@ -5050,6 +5080,110 @@ async fn admin_model_layout_post(
     let target =
         crate::admin::layout::sanitize_return(&model_slug, form.get("_return").unwrap_or(""));
     Ok(with_admin_headers(redirect(&target)))
+}
+
+/// Phase 9a — `GET /admin/:model/view`. Render the composition editor (the
+/// field-role table). Edit-gated via `admin_guard`.
+async fn admin_model_view_get(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+    let identity = crate::auth::identity(req.ctx()).cloned();
+    let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+    let return_to = format!("/admin/{model_slug}");
+
+    let html = crate::admin::layout::view_editor_render(
+        std::path::Path::new("."),
+        db,
+        registry,
+        legacy_entries,
+        resolved.as_ui_model(),
+        identity.as_ref(),
+        csrf.as_deref(),
+        &return_to,
+        None,
+    )
+    .await;
+    Ok(with_admin_headers(crate::http::html(html)))
+}
+
+/// Phase 9a — `POST /admin/:model/view`. Save the edited field roles.
+/// Mirrors `admin_model_layout_post`: `admin_guard` → resolve model → read
+/// form → **CSRF verify** → build the candidate from `role[<source>]`
+/// (preserving order / merge / filterable) → **validate** → write via
+/// `save_view_spec` → redirect. An unparseable role value or a failed
+/// `validate()` re-renders the editor with the error and **writes nothing**.
+async fn admin_model_view_post(
+    db: &Db,
+    registry: &crate::admin::admin_form_bridge::AdminRegistry,
+    legacy_entries: &[AdminEntry],
+    req: Request,
+    params: crate::router::Params,
+) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let model_slug = params.get("model").unwrap_or("").to_string();
+    let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    let identity = crate::auth::identity(&ctx).cloned();
+    let csrf = ctx_csrf(&ctx).map(str::to_string);
+    let return_to =
+        crate::admin::layout::sanitize_return(&model_slug, form.get("_return").unwrap_or(""));
+
+    let ui = resolved.as_ui_model();
+    let ui_fields = ui.fields();
+    let schema_model = crate::admin::layout::schema_model_from_ui(ui.model_name(), &ui_fields);
+    let spec = crate::admin::layout::resolve_view(
+        std::path::Path::new("."),
+        ui.model_name(),
+        &schema_model,
+    );
+
+    // Re-render the editor with an error, writing nothing.
+    macro_rules! reject {
+        ($msg:expr) => {{
+            let html = crate::admin::layout::view_editor_render(
+                std::path::Path::new("."),
+                db,
+                registry,
+                legacy_entries,
+                ui,
+                identity.as_ref(),
+                csrf.as_deref(),
+                &return_to,
+                Some($msg),
+            )
+            .await;
+            return Ok(with_admin_headers(crate::http::html(html)));
+        }};
+    }
+
+    // Build candidate from the submitted roles (order/merge/filterable
+    // preserved). An unknown role value rejects — never a silent fallback.
+    let candidate = match crate::admin::layout::build_role_edited_spec(&spec, &form) {
+        Ok(c) => c,
+        Err(msg) => reject!(&msg),
+    };
+    // Validate before writing (load-bearing for 9c/9d; role edits can't
+    // trip it today, but the guard is wired in now).
+    if let Err(e) = candidate.validate() {
+        reject!(&e.to_string());
+    }
+    crate::admin::layout::save_view_spec(std::path::Path::new("."), ui.model_name(), &candidate)?;
+    Ok(with_admin_headers(redirect(&return_to)))
 }
 
 // ---------------------------------------------------------------------------

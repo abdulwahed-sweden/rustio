@@ -1,0 +1,57 @@
+{% extends "base_admin.html" %}
+
+{% block title %}Edit view · {{ model.display_name }}{% endblock %}
+
+{% block admin_content %}
+  <div class="rio-page-header">
+    <nav class="rio-breadcrumb" aria-label="Breadcrumb">
+      <a href="/admin">Home</a>
+      <span class="rio-breadcrumb__sep">/</span>
+      <a href="{{ model.list_url }}">{{ model.display_name }}</a>
+      <span class="rio-breadcrumb__sep">/</span>
+      <span>Edit view</span>
+    </nav>
+    <h1>Edit view — {{ model.display_name }}</h1>
+  </div>
+
+  {% if error %}
+    <div class="rio-card" style="border-left:4px solid #b91c1c;color:#b91c1c;margin-bottom:14px;">
+      <strong>Not saved.</strong> {{ error }}
+    </div>
+  {% endif %}
+
+  <div class="rio-card">
+    <p style="color:var(--rio-muted,#667);margin-top:0;">
+      Choose the role each field plays in the list view. <em>Hidden</em> fields
+      never render. Reordering, filters, and merging are coming in later
+      sub-phases.
+    </p>
+    <form method="post" action="{{ save_action }}">
+      {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+      <input type="hidden" name="_return" value="{{ return_to }}">
+      <table class="rio-table">
+        <thead>
+          <tr><th scope="col">Field</th><th scope="col">Role</th></tr>
+        </thead>
+        <tbody>
+          {% for field in fields %}
+            <tr>
+              <td>{{ field.label }} <span class="rio-cell-id">{{ field.source }}</span></td>
+              <td>
+                <select class="rio-input" name="role[{{ field.source }}]">
+                  {% for opt in roles %}
+                    <option value="{{ opt.key }}"{% if opt.key == field.role %} selected{% endif %}>{{ opt.label }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button type="submit" class="rio-btn rio-btn--primary">Save view</button>
+        <a href="{{ model.list_url }}" class="rio-btn rio-btn--ghost">Back to list</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}
