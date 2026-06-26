@@ -5099,6 +5099,8 @@ async fn admin_model_view_get(
     let identity = crate::auth::identity(req.ctx()).cloned();
     let csrf = ctx_csrf(req.ctx()).map(str::to_string);
     let return_to = format!("/admin/{model_slug}");
+    // i18n L3 — `?lang=` selects the editing language (GET reload, no save).
+    let editing_lang = req.query().get("lang").unwrap_or("").to_string();
 
     let html = crate::admin::layout::view_editor_render(
         std::path::Path::new("."),
@@ -5110,6 +5112,7 @@ async fn admin_model_view_get(
         csrf.as_deref(),
         &return_to,
         None,
+        &editing_lang,
     )
     .await;
     Ok(with_admin_headers(crate::http::html(html)))
@@ -5152,6 +5155,10 @@ async fn admin_model_view_post(
         &schema_model,
     );
 
+    // i18n L3 — keep the editing language across an error re-render so the
+    // label inputs stay in the language the developer was editing.
+    let editing_lang = form.get("editing_lang").unwrap_or("").to_string();
+
     // Re-render the editor with an error, writing nothing.
     macro_rules! reject {
         ($msg:expr) => {{
@@ -5165,6 +5172,7 @@ async fn admin_model_view_post(
                 csrf.as_deref(),
                 &return_to,
                 Some($msg),
+                &editing_lang,
             )
             .await;
             return Ok(with_admin_headers(crate::http::html(html)));

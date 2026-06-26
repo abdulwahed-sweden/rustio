@@ -24,20 +24,41 @@
     <p style="color:var(--rio-muted,#667);margin-top:0;">
       Choose the role each field plays in the list view, order them with the
       ▲ ▼ controls (top row appears first), tick <strong>Filter</strong> to
-      expose a field as a list filter, and use <strong>Merge into</strong> to
-      combine a field into another field's cell (joined with " · "). <em>Hidden</em>
-      fields never render, can't be filters, and can't be merged.
+      expose a field as a list filter, use <strong>Merge into</strong> to
+      combine a field into another field's cell (joined with " · "), and set a
+      per-language <strong>Display label</strong> (the backend field name on the
+      left never changes — only its shown label). <em>Hidden</em> fields never
+      render, can't be filters, and can't be merged.
     </p>
+
+    {# i18n L3 — editing-language switch. This is a GET reload (no save), so
+       changing it can never clobber another language's label. #}
+    <div class="rio-lang-bar" style="margin:6px 0 14px;display:flex;gap:10px;align-items:center;">
+      <label>Editing labels in:
+        <select class="rio-input" data-lang-switch aria-label="Editing language" style="width:auto;">
+          {% for code in language_options %}
+            <option value="{{ code }}"{% if code == editing_lang %} selected{% endif %}>{{ code }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <span style="color:var(--rio-muted,#667);">View default: <code>{{ view_default_language }}</code></span>
+    </div>
+
     <form method="post" action="{{ save_action }}">
       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
       <input type="hidden" name="_return" value="{{ return_to }}">
-      {# Sentinels: tell the server this submit carries filter + merge state,
-         so it derives filters/filterable and the merge groups from below. #}
+      {# Sentinels: tell the server this submit carries filter + merge + label
+         state, so it derives filters/filterable, the merge groups, and the
+         display labels (for `editing_lang`) from below. #}
       <input type="hidden" name="filters_submitted" value="1">
       <input type="hidden" name="merge_submitted" value="1">
+      <input type="hidden" name="labels_submitted" value="1">
+      {# The language whose labels this submit edits — carried so the server
+         writes label[...] under it and an error re-render keeps it. #}
+      <input type="hidden" name="editing_lang" value="{{ editing_lang }}">
       <table class="rio-table" data-view-editor>
         <thead>
-          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th><th scope="col" style="width:1%;">Filter</th><th scope="col">Merge into</th></tr>
+          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th><th scope="col" style="width:1%;">Filter</th><th scope="col">Merge into</th><th scope="col">Display label (<code>{{ editing_lang }}</code>)</th></tr>
         </thead>
         <tbody>
           {% for field in fields %}
@@ -73,10 +94,27 @@
                   {% endfor %}
                 </select>
               </td>
+              <td>
+                {# Display label for the editing language. Empty value shows the
+                   humanised fallback as a placeholder; clearing it removes the
+                   stored label (server never stores ""). The source (left) is
+                   read-only — only the shown label is editable. #}
+                <input class="rio-input" type="text" name="label[{{ field.source }}]"
+                       value="{{ field.label_value }}" placeholder="{{ field.label }}"
+                       aria-label="Display label for {{ field.source }} in {{ editing_lang }}">
+              </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
+      {# Explicit, separate control: make the editing language the view's stored
+         default (what the list headers render in). Kept distinct from the
+         editing-language switch above so the two never conflate. #}
+      <label style="display:inline-flex;gap:6px;align-items:center;margin-top:12px;">
+        <input type="checkbox" name="set_as_default" value="1">
+        Set <code>{{ editing_lang }}</code> as this view's default display language
+        (currently <code>{{ view_default_language }}</code>)
+      </label>
       <div style="margin-top:14px;display:flex;gap:8px;">
         <button type="submit" class="rio-btn rio-btn--primary">Save view</button>
         <a href="{{ model.list_url }}" class="rio-btn rio-btn--ghost">Back to list</a>
@@ -122,6 +160,14 @@
       if (sel.value === 'hidden') { box.checked = false; box.disabled = true; }
       else { box.disabled = false; }
     });
+    // i18n L3 — switching the editing language is a GET reload (no save), so a
+    // switch can never overwrite another language's label.
+    var langSwitch = document.querySelector('[data-lang-switch]');
+    if (langSwitch) {
+      langSwitch.addEventListener('change', function () {
+        location.search = '?lang=' + encodeURIComponent(this.value);
+      });
+    }
   })();
   </script>
 {% endblock %}

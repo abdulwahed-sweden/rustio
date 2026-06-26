@@ -355,6 +355,15 @@ async fn view_editor_csrf_permission_and_reject() {
         editor.contains(r#"name="merge_submitted""#),
         "editor must send the merge_submitted sentinel"
     );
+    // i18n L3: the per-field display-label input + the labels sentinel.
+    assert!(
+        editor.contains(r#"name="label[title]""#),
+        "editor must render a display-label input per field:\n{editor}"
+    );
+    assert!(
+        editor.contains(r#"name="labels_submitted""#),
+        "editor must send the labels_submitted sentinel"
+    );
     let csrf = extract_csrf(&editor).expect("csrf on the editor page");
 
     // 2. POST save WITHOUT _csrf → 403.

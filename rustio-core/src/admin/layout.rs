@@ -1023,6 +1023,10 @@ struct EditorFieldView {
     /// Phase 9d — the anchor this field is currently merged into (its
     /// `<select>`'s selected value), or `""` for a standalone field.
     merge_into: String,
+    /// i18n L3 — the explicit display label for the editing language
+    /// (`label_for(source, editing_lang)`), or `""` when none is set so the
+    /// input shows its placeholder (the humanised fallback, [`Self::label`]).
+    label_value: String,
 }
 
 /// A field that can be a merge anchor (a standalone, non-Hidden field).
@@ -1056,6 +1060,11 @@ pub async fn view_editor_render(
     csrf_token: Option<&str>,
     return_to: &str,
     error: Option<&str>,
+    // i18n L3 — the language whose labels are being edited (the `?lang=` in
+    // effect). Empty ⇒ use the view's stored default_language. This is purely
+    // the EDITING language; it changes via a GET reload, never on save, so a
+    // language switch can't clobber another language's label.
+    editing_lang: &str,
 ) -> String {
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, Some(model.slug()));
@@ -1083,6 +1092,27 @@ pub async fn view_editor_render(
             .unwrap_or(crate::viewspec::FieldRole::Meta)
     };
 
+    // The editing language: the `?lang=` in effect, or the view's stored
+    // default when none was requested. Labels are pre-filled for THIS language
+    // only; switching it is a GET reload (no save), so no cross-language clobber.
+    let editing_lang = if editing_lang.trim().is_empty() {
+        spec.default_language.clone()
+    } else {
+        editing_lang.trim().to_string()
+    };
+    // The label for the editing language EXACTLY — a strict lookup with NO
+    // fallback to default_language (unlike `label_for`/`label`, which are for
+    // rendering). If the editing language has no label the input is empty, so
+    // switching languages can never show — and therefore never save — another
+    // language's text. "" lets the placeholder show the humanised hint.
+    let label_value = |source: &str| -> String {
+        spec.labels
+            .get(source)
+            .and_then(|by_lang| by_lang.get(&editing_lang))
+            .cloned()
+            .unwrap_or_default()
+    };
+
     // Reconstruct the FULL field universe as editor rows: each standalone
     // field, with its merged-in members listed right after (so they can be
     // un-merged). Members show their derived role + their anchor.
@@ -1095,6 +1125,7 @@ pub async fn view_editor_render(
             filterable: fs.filterable,
             is_hidden: fs.role == crate::viewspec::FieldRole::Hidden,
             merge_into: String::new(),
+            label_value: label_value(&fs.source),
         });
         if let Some(m) = &fs.merge {
             for member in m.iter().filter(|s| *s != &fs.source) {
@@ -1106,10 +1137,22 @@ pub async fn view_editor_render(
                     filterable: false,
                     is_hidden: role == crate::viewspec::FieldRole::Hidden,
                     merge_into: fs.source.clone(),
+                    label_value: label_value(member),
                 });
             }
         }
     }
+
+    // Editing-language options: a small fixed set, unioned with the editing
+    // language and the view's stored default so neither is ever lost. ISO
+    // codes for L3 (endonym display names are the L4 registry).
+    let language_options: Vec<String> = {
+        let mut set: std::collections::BTreeSet<String> =
+            ["en", "sv"].iter().map(|s| s.to_string()).collect();
+        set.insert(editing_lang.clone());
+        set.insert(spec.default_language.clone());
+        set.into_iter().collect()
+    };
 
     // Merge targets = standalone, non-Hidden fields (potential anchors).
     let merge_targets: Vec<MergeTargetView> = spec
@@ -1141,6 +1184,9 @@ pub async fn view_editor_render(
             fields => fields,
             roles => role_options(),
             merge_targets => merge_targets,
+            editing_lang => editing_lang,
+            view_default_language => spec.default_language,
+            language_options => language_options,
             save_action => format!("/admin/{slug}/view"),
             return_to => return_to,
             error => error,
@@ -1507,15 +1553,91 @@ fn role_options() -> Vec<RoleOptionView> {
 /// present, [`build_edited_spec_with_merge`] takes over (it reconstructs the
 /// full field universe so merges can be expanded/collapsed); when absent,
 /// the role/order/filter path below runs unchanged.
+///
+/// i18n L3 (display labels) is applied last, as a post-step over the settled
+/// candidate ([`apply_label_edits`]) — keyed by the candidate's real field
+/// sources — so it composes with all of the above in a single Save.
 pub(crate) fn build_edited_spec(
     spec: &crate::viewspec::ViewSpec,
     form: &crate::http::FormData,
 ) -> Result<crate::viewspec::ViewSpec, String> {
-    if form.get("merge_submitted").is_some() {
-        build_edited_spec_with_merge(spec, form)
+    let mut candidate = if form.get("merge_submitted").is_some() {
+        build_edited_spec_with_merge(spec, form)?
     } else {
-        build_edited_spec_no_merge(spec, form)
+        build_edited_spec_no_merge(spec, form)?
+    };
+    apply_label_edits(&mut candidate, form);
+    Ok(candidate)
+}
+
+/// i18n L3 — apply display-label edits to a settled candidate, keyed by its
+/// **real field sources** (the authority; the source itself is never editable,
+/// and a label for an unknown source is ignored — [`ViewSpec::validate`]'s
+/// `UnknownLabelSource` backstops anyway).
+///
+/// - **Editing language:** `editing_lang` (the `?lang=` the editor was rendered
+///   with, carried as a hidden field); falls back to the view's stored default.
+///   Switching it is a GET reload, never a save, so a switch can't clobber
+///   another language's label — what the inputs show is exactly what saves.
+/// - **Stored default:** changed only by the explicit `set_as_default` control
+///   (kept separate from the editing-language switch, by design).
+/// - **Labels:** gated on the `labels_submitted` sentinel. For each real
+///   source, a non-empty `label[<source>]` is written to
+///   `labels[source][editing_lang]`; an **empty/absent** input **removes** that
+///   entry (never stores `""` — so clearing falls back to the humaniser and a
+///   label-less spec stays byte-identical to pre-i18n). Labels for *other*
+///   languages are preserved.
+/// - **Prune:** labels whose source is no longer a field (e.g. a member merged
+///   away in the same Save) are dropped, so `labels ⊆ fields` holds and
+///   `validate` passes. Unmerging restores the humaniser fallback (consistent
+///   with the 9d "merged-in member loses its role" behaviour).
+fn apply_label_edits(candidate: &mut crate::viewspec::ViewSpec, form: &crate::http::FormData) {
+    let editing_lang = form
+        .get("editing_lang")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| candidate.default_language.clone());
+
+    // Separate, explicit control: make the editing language the view's stored
+    // default. Never inferred from the editing-language switch.
+    if form.get("set_as_default").is_some() && !editing_lang.is_empty() {
+        candidate.default_language = editing_lang.clone();
     }
+
+    if form.get("labels_submitted").is_some() {
+        let sources: Vec<String> = candidate.fields.iter().map(|f| f.source.clone()).collect();
+        for src in &sources {
+            match form
+                .get(&format!("label[{src}]"))
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                Some(value) => {
+                    candidate
+                        .labels
+                        .entry(src.clone())
+                        .or_default()
+                        .insert(editing_lang.clone(), value.to_string());
+                }
+                None => {
+                    if let Some(by_lang) = candidate.labels.get_mut(src) {
+                        by_lang.remove(&editing_lang);
+                        if by_lang.is_empty() {
+                            candidate.labels.remove(src);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Prune any label whose source is no longer a field (merge-away, etc.).
+    let live: std::collections::BTreeSet<&str> =
+        candidate.fields.iter().map(|f| f.source.as_str()).collect();
+    candidate
+        .labels
+        .retain(|src, _| live.contains(src.as_str()));
 }
 
 /// Roles (9a) + order (9b) + filters (9c), with merges **preserved** as-is.
@@ -3363,6 +3485,245 @@ mod tests {
         std::fs::remove_dir_all(&base).ok();
     }
 
+    // --- i18n L3: edit display labels in the composition editor -----------
+
+    fn label_in(spec: &crate::viewspec::ViewSpec, source: &str, lang: &str) -> Option<String> {
+        spec.labels.get(source).and_then(|m| m.get(lang)).cloned()
+    }
+
+    #[test]
+    fn label_edit_persists_under_editing_language() {
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse("labels_submitted=1&editing_lang=sv&label[status]=Status (sv)");
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        assert_eq!(
+            label_in(&edited, "status", "sv").as_deref(),
+            Some("Status (sv)")
+        );
+        edited.validate().unwrap();
+    }
+
+    #[test]
+    fn clearing_label_removes_entry_not_empty_string() {
+        // Start with an sv label, then submit an empty input for it.
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_label(&mut spec, "status", "sv", "Status (sv)");
+        let form = FormData::parse("labels_submitted=1&editing_lang=sv&label[status]=");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(
+            label_in(&edited, "status", "sv"),
+            None,
+            "entry removed, not blanked"
+        );
+        // Source map pruned → byte-identical to a label-less spec.
+        assert!(edited.labels.is_empty());
+        assert!(!edited.to_pretty_json().unwrap().contains("labels"));
+    }
+
+    #[test]
+    fn editing_one_language_does_not_clobber_another() {
+        // THE no-cross-language-clobber test: an en label exists; switch the
+        // editing language to sv and save an sv label → both coexist, en
+        // untouched (the sv save never reads or overwrites the en value).
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_label(&mut spec, "status", "en", "Status (en)");
+        let form = FormData::parse("labels_submitted=1&editing_lang=sv&label[status]=Status (sv)");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(
+            label_in(&edited, "status", "en").as_deref(),
+            Some("Status (en)")
+        );
+        assert_eq!(
+            label_in(&edited, "status", "sv").as_deref(),
+            Some("Status (sv)")
+        );
+        edited.validate().unwrap();
+    }
+
+    #[test]
+    fn label_edit_preserves_roles_order_filters_merge() {
+        // A label-only save leaves roles/order/filters/merge intact.
+        let spec = custom_gadget_spec(); // [name(merge name+email), status(filter), notes]
+        let form = FormData::parse("labels_submitted=1&editing_lang=en&label[status]=State");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(field_order(&edited), field_order(&spec)); // order preserved
+        assert_eq!(edited.filters, spec.filters); // filters preserved
+        let name = edited.fields.iter().find(|f| f.source == "name").unwrap();
+        assert_eq!(name.merge, spec.fields[0].merge); // merge preserved
+        assert_eq!(label_in(&edited, "status", "en").as_deref(), Some("State"));
+    }
+
+    #[test]
+    fn label_preserved_when_only_role_changes() {
+        let mut spec = custom_gadget_spec();
+        put_label(&mut spec, "status", "en", "State");
+        // A role-only submit (no labels_submitted) must preserve the label.
+        let form = FormData::parse("role[name]=subtitle");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(label_in(&edited, "status", "en").as_deref(), Some("State"));
+    }
+
+    #[test]
+    fn label_for_unknown_source_is_ignored() {
+        // The source is never editable: a label for a source that is not a
+        // field is simply not written (apply_label_edits keys off real fields).
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse("labels_submitted=1&editing_lang=en&label[ghost_field]=Ghost");
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        assert!(label_in(&edited, "ghost_field", "en").is_none());
+        edited.validate().unwrap(); // no UnknownLabelSource — nothing was written
+    }
+
+    #[test]
+    fn merge_away_prunes_orphaned_label() {
+        // email has an sv label; merging it into name removes email as a field
+        // → its label is pruned so labels ⊆ fields holds (validate passes).
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_label(&mut spec, "email", "sv", "E-post");
+        let form = FormData::parse("merge_submitted=1&merge[email]=name");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert!(edited.fields.iter().all(|f| f.source != "email"));
+        assert!(
+            label_in(&edited, "email", "sv").is_none(),
+            "orphaned label pruned"
+        );
+        edited.validate().unwrap();
+    }
+
+    #[test]
+    fn set_as_default_changes_stored_default_language() {
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        assert_eq!(derived.default_language, "en");
+        let form = FormData::parse(
+            "labels_submitted=1&editing_lang=sv&set_as_default=1&label[status]=Status (sv)",
+        );
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        assert_eq!(edited.default_language, "sv"); // explicit control changed it
+        assert_eq!(
+            label_in(&edited, "status", "sv").as_deref(),
+            Some("Status (sv)")
+        );
+    }
+
+    #[test]
+    fn label_switch_without_set_as_default_keeps_stored_default() {
+        // Editing sv labels WITHOUT the checkbox leaves the stored default at
+        // "en" (switching the editing language never changes the stored one).
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse("labels_submitted=1&editing_lang=sv&label[status]=Status (sv)");
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        assert_eq!(edited.default_language, "en");
+    }
+
+    #[test]
+    fn label_on_hidden_field_is_stored_harmlessly() {
+        // A field can be set Hidden AND carry a label in the same save — the
+        // label is stored (unused until unhidden); no validate conflict.
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse(
+            "labels_submitted=1&editing_lang=en&role[notes]=hidden&label[notes]=Notes",
+        );
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        let notes = edited.fields.iter().find(|f| f.source == "notes").unwrap();
+        assert_eq!(notes.role, FieldRole::Hidden);
+        assert_eq!(label_in(&edited, "notes", "en").as_deref(), Some("Notes"));
+        edited.validate().unwrap();
+    }
+
+    #[test]
+    fn label_edit_composes_with_role_order_filter_merge() {
+        // One Save: role + order + filter + merge + label, all persist.
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse(
+            "merge_submitted=1&filters_submitted=1&labels_submitted=1&editing_lang=sv\
+             &merge[email]=name&order[status]=0&order[name]=1&filterable[name]=1\
+             &role[status]=badge&label[name]=Namn",
+        );
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        assert!(edited
+            .fields
+            .iter()
+            .find(|f| f.source == "name")
+            .unwrap()
+            .merge
+            .is_some());
+        assert!(edited.fields.iter().all(|f| f.source != "email"));
+        assert!(edited.filters.contains(&"name".to_string()));
+        let order = field_order(&edited);
+        let pos = |s: &str| order.iter().position(|x| x == s).unwrap();
+        assert!(pos("status") < pos("name"));
+        assert_eq!(label_in(&edited, "name", "sv").as_deref(), Some("Namn"));
+        edited.validate().unwrap();
+    }
+
+    #[tokio::test]
+    async fn edited_label_renders_as_header_through_l2() {
+        // End-to-end: set default_language=sv + an sv label via the editor
+        // path, save, and the L2 list render shows the Swedish header.
+        let base = tmp_dir();
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse(
+            "labels_submitted=1&editing_lang=sv&set_as_default=1&label[status]=Status (sv)",
+        );
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        save_view_spec(&base, "Gadget", &edited).unwrap();
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(
+            html.contains("Status (sv)"),
+            "editor label renders as header:\n{html}"
+        );
+        assert!(html.contains("Alpha"), "data unchanged");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn editor_prefills_inputs_for_editing_language_only() {
+        // Render the editor with editing_lang=sv when the field has BOTH en
+        // and sv labels → the input shows the sv value, never the en one.
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_label(&mut spec, "status", "en", "Status (en)");
+        put_label(&mut spec, "status", "sv", "Status (sv)");
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_editor_in(&base, "sv").await;
+        assert!(
+            html.contains(r#"value="Status (sv)""#),
+            "sv input prefilled:\n{html}"
+        );
+        assert!(
+            !html.contains(r#"value="Status (en)""#),
+            "en value must NOT appear in the sv editing view"
+        );
+        // The editing-language hidden field + the labels sentinel are present.
+        assert!(html.contains(r#"name="editing_lang" value="sv""#));
+        assert!(html.contains(r#"name="labels_submitted""#));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn editor_prefill_is_strict_no_default_language_fallback() {
+        // Regression: a field labelled ONLY in the view's default language
+        // (sv), opened for editing in a DIFFERENT language (en), must show an
+        // EMPTY input — never the sv label (which `label_for`'s default-lang
+        // fallback would leak, causing a save to clobber sv as en).
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        spec.default_language = "sv".to_string();
+        put_label(&mut spec, "status", "sv", "Status (sv)");
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_editor_in(&base, "en").await;
+        assert!(
+            !html.contains(r#"value="Status (sv)""#),
+            "the sv label must NOT prefill the en editing view:\n{html}"
+        );
+        // Opening in sv DOES show it.
+        let html_sv = render_editor_in(&base, "sv").await;
+        assert!(html_sv.contains(r#"value="Status (sv)""#));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn load_saved_view_reads_valid_skips_missing_and_invalid() {
         let base = tmp_dir();
@@ -3498,6 +3859,29 @@ mod tests {
             layout,
             None,
             None,
+        )
+        .await
+    }
+
+    /// Render the composition editor for the Gadget model in a given editing
+    /// language (i18n L3). Mirrors `render_gadget_layout_in`.
+    async fn render_editor_in(base: &std::path::Path, editing_lang: &str) -> String {
+        let db = gadget_db().await;
+        let entry = gadget_entry();
+        let model = LegacyEntryModel::new(&entry);
+        let registry = registry_empty();
+        let legacy = [entry.clone()];
+        view_editor_render(
+            base,
+            &db,
+            &registry,
+            &legacy,
+            &model,
+            None,
+            None,
+            "/admin/gadgets",
+            None,
+            editing_lang,
         )
         .await
     }
