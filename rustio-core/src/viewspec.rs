@@ -371,15 +371,29 @@ impl ViewSpec {
     /// zero labels still renders sensibly (the English source is the floor),
     /// which is exactly why labels are optional.
     pub fn label(&self, source: &str, lang: &str) -> String {
-        if let Some(by_lang) = self.labels.get(source) {
-            if let Some(label) = by_lang.get(lang) {
-                return label.clone();
-            }
-            if let Some(label) = by_lang.get(&self.default_language) {
-                return label.clone();
-            }
-        }
-        humanize(source)
+        self.label_for(source, lang)
+            .unwrap_or_else(|| humanize(source))
+    }
+
+    /// Resolve an **explicitly stored** display label for `source` in
+    /// language `lang`, or `None` when none is set — the lookup half of
+    /// [`label`](Self::label) **without** the humanise fallback. Precedence:
+    ///
+    /// 1. `labels[source][lang]` — the requested language;
+    /// 2. `labels[source][self.default_language]` — the view default;
+    /// 3. `None`.
+    ///
+    /// A caller that wants its own fallback (e.g. the admin, which keeps its
+    /// `_id`-stripping field humaniser for unlabelled headers) uses this and
+    /// supplies the fallback itself, instead of getting [`label`](Self::label)'s
+    /// `humanize(source)` floor. The iron rule is unchanged: this only reads
+    /// labels keyed by the English `source`; it never translates the source.
+    pub fn label_for(&self, source: &str, lang: &str) -> Option<String> {
+        let by_lang = self.labels.get(source)?;
+        by_lang
+            .get(lang)
+            .or_else(|| by_lang.get(&self.default_language))
+            .cloned()
     }
 
     /// Parse + validate a ViewSpec document. Both deserialization failure
@@ -859,6 +873,28 @@ mod tests {
             a.find("\"name\"").unwrap() < a.find("\"status\"").unwrap(),
             "label sources must serialise in sorted order:\n{a}"
         );
+    }
+
+    #[test]
+    fn label_for_is_explicit_only_no_humanize() {
+        let spec = sample_with_labels(); // default_language = "sv"; name + status labelled en+sv
+                                         // 1. requested language wins.
+        assert_eq!(spec.label_for("status", "en").as_deref(), Some("Status"));
+        assert_eq!(
+            spec.label_for("status", "sv").as_deref(),
+            Some("Status (sv)")
+        );
+        // 2. missing requested language → default_language ("sv").
+        assert_eq!(
+            spec.label_for("status", "fr").as_deref(),
+            Some("Status (sv)")
+        );
+        // 3. no explicit label for the source → None (NOT humanised — that is
+        //    what distinguishes label_for from label).
+        assert_eq!(spec.label_for("created_at", "sv"), None);
+        assert_eq!(spec.label_for("unknown_source", "en"), None);
+        // label() still humanises where label_for() returns None.
+        assert_eq!(spec.label("created_at", "sv"), "Created At");
     }
 
     #[test]

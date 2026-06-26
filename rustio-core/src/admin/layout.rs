@@ -1876,7 +1876,15 @@ fn view_columns(
             let merged = c.sources.len() > 1;
             Some(ColumnView {
                 name: f.name.to_string(),
-                label: humanize_field_label(f.label),
+                // i18n L2 — header TEXT resolves through the view's display
+                // labels for its default_language; an unlabelled field keeps
+                // the admin's `_id`-stripping humaniser (byte-identical to
+                // pre-i18n). Iron rule intact: `name`/sorting/links/data all
+                // still key off the English `anchor` source — only the header
+                // string is translated. Merged columns use the anchor source.
+                label: spec
+                    .label_for(anchor, &spec.default_language)
+                    .unwrap_or_else(|| humanize_field_label(f.label)),
                 // A merged column has no single sortable source.
                 sortable: f.sortable && !merged,
                 merge: if merged {
@@ -3217,6 +3225,142 @@ mod tests {
         let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
         let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["name", "email", "status"]);
+    }
+
+    // --- i18n L2: headers through display labels --------------------------
+
+    fn header_of(cols: &[ColumnView], name: &str) -> String {
+        cols.iter().find(|c| c.name == name).unwrap().label.clone()
+    }
+
+    /// Widget (name/email/status visible) + a label map helper.
+    fn widget_spec() -> (Vec<AdminUiField>, crate::viewspec::ViewSpec) {
+        let fields = ui_fields_for_selection();
+        let model = schema_model_from_ui("Widget", &fields);
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&model);
+        (fields, spec)
+    }
+    fn put_label(spec: &mut crate::viewspec::ViewSpec, source: &str, lang: &str, text: &str) {
+        spec.labels
+            .entry(source.to_string())
+            .or_default()
+            .insert(lang.to_string(), text.to_string());
+    }
+
+    #[test]
+    fn headers_use_default_language_labels_sv() {
+        let (fields, mut spec) = widget_spec();
+        spec.default_language = "sv".to_string();
+        put_label(&mut spec, "name", "sv", "Namn");
+        put_label(&mut spec, "status", "sv", "Status");
+        spec.validate().unwrap();
+        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        assert_eq!(header_of(&cols, "name"), "Namn"); // sv label
+        assert_eq!(header_of(&cols, "status"), "Status"); // sv label
+        assert_eq!(header_of(&cols, "email"), "Email"); // unlabelled → humanised
+    }
+
+    #[test]
+    fn label_less_headers_are_byte_identical_to_today() {
+        // A label-less view (default "en") → headers are exactly the admin's
+        // own humaniser output, unchanged from pre-i18n.
+        let (fields, spec) = widget_spec();
+        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        for c in &cols {
+            let f = fields.iter().find(|f| f.name == c.name).unwrap();
+            assert_eq!(
+                c.label,
+                humanize_field_label(f.label),
+                "byte-identical fallback"
+            );
+        }
+        assert_eq!(header_of(&cols, "name"), "Name");
+        assert_eq!(header_of(&cols, "email"), "Email");
+    }
+
+    #[test]
+    fn en_labels_override_humanised_header() {
+        let (fields, mut spec) = widget_spec(); // default "en"
+        put_label(&mut spec, "email", "en", "E-mail address");
+        spec.validate().unwrap();
+        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        assert_eq!(header_of(&cols, "email"), "E-mail address"); // en label wins
+        assert_eq!(header_of(&cols, "name"), "Name"); // unlabelled → humanised
+    }
+
+    #[test]
+    fn non_default_language_label_falls_back_to_humanised() {
+        // A label only in "de" with default_language "sv": the sv render must
+        // NOT use the de label — it falls back to the humanised source.
+        let (fields, mut spec) = widget_spec();
+        spec.default_language = "sv".to_string();
+        put_label(&mut spec, "name", "de", "Name(DE)");
+        spec.validate().unwrap();
+        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        assert_eq!(header_of(&cols, "name"), "Name"); // humanised, de ignored
+    }
+
+    #[test]
+    fn view_columns_headers_are_deterministic() {
+        let (fields, mut spec) = widget_spec();
+        spec.default_language = "sv".to_string();
+        put_label(&mut spec, "name", "sv", "Namn");
+        let a = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let b = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let la: Vec<&str> = a.iter().map(|c| c.label.as_str()).collect();
+        let lb: Vec<&str> = b.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(la, lb);
+    }
+
+    #[tokio::test]
+    async fn list_render_translates_headers_data_unchanged() {
+        // Live path: an sv-default view with one sv label → the header is
+        // Swedish, while the data cell and Hidden guarantee are untouched.
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        spec.default_language = "sv".to_string();
+        put_label(&mut spec, "status", "sv", "Status (sv)");
+        spec.validate().unwrap();
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(
+            html.contains("Status (sv)"),
+            "Swedish header rendered:\n{html}"
+        );
+        assert!(
+            html.contains("Alpha"),
+            "data cell unchanged (English value)"
+        );
+        assert!(!html.contains("topsecret-xyz"), "Hidden guarantee intact");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn merged_column_header_uses_anchor_label() {
+        // Merge email into name, label the anchor (name) in the default
+        // language → the single merged column shows the anchor's label.
+        let base = tmp_dir();
+        let derived = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let mut spec = build_edited_spec(
+            &derived,
+            &FormData::parse("merge_submitted=1&merge[email]=name"),
+        )
+        .unwrap();
+        spec.default_language = "sv".to_string();
+        put_label(&mut spec, "name", "sv", "Namn");
+        spec.validate().unwrap();
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        // Anchor's sv label heads the merged column …
+        assert!(
+            html.contains(">Namn</th>"),
+            "merged column uses anchor label:\n{html}"
+        );
+        // … and the merged cell still joins both values.
+        assert!(html.contains("Alpha · alpha@x.example"));
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]

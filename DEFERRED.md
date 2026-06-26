@@ -33,6 +33,50 @@ is the next related thread.
 
 ---
 
+## i18n track — design notes for L4 (decided, not yet built)
+
+The i18n track so far: **L1** (ViewSpec per-language labels + `label`/`label_for`
+resolvers, shipped), **L2** (admin list headers render through labels for the
+view's `default_language`, shipped), **L3** (edit labels in the composition
+editor — next). **L4** is the per-user language preference; these notes capture
+decisions already made so they aren't lost.
+
+### L4-A — Active language = a saved per-user preference
+
+A per-user language preference, saved the same way as the Phase-8 layout
+default (CSRF + atomic write). At render time it **replaces `default_language`
+as the active language**, with precedence:
+
+> user preference → view/project `default_language` → `"en"`.
+
+L2 today passes `&spec.default_language` into `label_for`/`label`; L4 swaps that
+single argument for the resolved active language. The resolver and the iron rule
+are unchanged — only *which* language code is requested changes.
+
+### L4-B — Language switcher: endonym display names, not ISO codes
+
+The switcher must show each language's **endonym display name** — `"English"`,
+`"Svenska"`, `"العربية"` — **never** the ISO code. Storage and all code keys stay
+ISO 639-1 (`en` / `sv` / `ar`). This needs a small **language registry** mapping
+ISO code → endonym display name (the code is the key; the endonym is presentation
+— the same English-key / translated-shell split as the iron rule).
+
+### L4-C — Switcher is ONE reusable component, multiple placements
+
+The switcher is a **single reusable component** (one logic path, no duplicated
+blocks) rendered in multiple locations:
+
+- **topbar** — mandatory; the globally-expected spot near the user/logout menu;
+- **bottom of the sidebar** — also included;
+- **footer** — optional, lower priority for an admin panel.
+
+### L4-D — Enum / stored-value display labels (separate i18n sub-phase)
+
+Out of scope through L2 (noted in the L2 work): translating enum *stored values*
+(e.g. `active` → `"Aktiv"`) is a distinct sub-phase. Stored values stay English
+(the iron rule); only their display labels would be translated, via a mechanism
+parallel to field labels.
+
 ## Other signposted threads (not yet phased)
 
 - **PII masking on the live list path** — `layout::list_render` omits
