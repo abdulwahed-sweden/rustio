@@ -1,0 +1,26 @@
+{# i18n L4b — reusable language switcher. ONE component, included in both the
+   topbar (header.html) and the sidebar bottom (sidebar.html). Endonyms are
+   shown; ISO codes are submitted. POSTs to the L4a /admin/language action
+   (CSRF-protected); changing the select auto-submits (app.js). With JS off it
+   degrades to a normal form — pick a language and the form still submits, but
+   you must use the inline button below. `_return` is filled by app.js to the
+   current page (falls back to /admin server-side). Rendered only when signed
+   in (callers guard on current_user). #}
+{% if current_user is defined and current_user and current_user.language_options is defined %}
+<form method="post" action="/admin/language" class="rio-lang-switcher" data-lang-switcher>
+  {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+  <input type="hidden" name="_return" value="" data-lang-return>
+  <label class="rio-lang-switcher__label">
+    <span class="rio-lang-switcher__icon" aria-hidden="true">🌐</span>
+    <span class="rio-visually-hidden">Language</span>
+    <select name="lang" class="rio-input rio-lang-switcher__select" aria-label="Language">
+      {% for opt in current_user.language_options %}
+        <option value="{{ opt.value }}"{% if opt.selected %} selected{% endif %}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {# No-JS fallback: a small submit button. app.js hides reliance on it by
+     auto-submitting on change. #}
+  <noscript><button type="submit" class="rio-btn rio-btn--ghost">Set</button></noscript>
+</form>
+{% endif %}

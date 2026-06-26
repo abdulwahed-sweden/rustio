@@ -30,4 +30,24 @@
       render();
     });
   }
+
+  // i18n L4b — language switcher. ONE handler for every `[data-lang-switcher]`
+  // form (topbar + sidebar share the same component). On change, stamp the
+  // current page into `_return` so the POST redirects back here, then submit.
+  // With JS off the form still works (the <noscript> button submits; the
+  // server falls back to /admin). Codes are submitted; endonyms are display.
+  var switchers = document.querySelectorAll('[data-lang-switcher]');
+  for (var i = 0; i < switchers.length; i++) {
+    (function (form) {
+      var ret = form.querySelector('[data-lang-return]');
+      var sel = form.querySelector('select[name="lang"]');
+      if (ret) ret.value = window.location.pathname + window.location.search;
+      if (sel) {
+        sel.addEventListener('change', function () {
+          if (ret) ret.value = window.location.pathname + window.location.search;
+          form.submit();
+        });
+      }
+    })(switchers[i]);
+  }
 })();

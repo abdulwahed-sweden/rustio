@@ -222,6 +222,10 @@ const EMBEDDED: &[(&str, &str)] = &[
         include_str!("../../assets/templates/includes/footer.html"),
     ),
     (
+        "includes/lang_switcher.html",
+        include_str!("../../assets/templates/includes/lang_switcher.html"),
+    ),
+    (
         "admin/dashboard.html",
         include_str!("../../assets/templates/admin/dashboard.html"),
     ),

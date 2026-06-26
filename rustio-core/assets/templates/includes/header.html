@@ -13,6 +13,8 @@
     <button type="button" class="rio-theme-toggle" aria-label="Toggle theme">
       <span data-theme-icon></span>
     </button>
+    {# i18n L4b — language switcher (same reusable component as the sidebar). #}
+    {% include "includes/lang_switcher.html" %}
     <form method="post" action="/admin/logout" class="rio-topbar__logout-form">
       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
       <button type="submit" class="rio-btn rio-btn--ghost">Log out</button>

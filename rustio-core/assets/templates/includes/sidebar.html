@@ -30,4 +30,12 @@
       <a href="/admin/profile" class="rio-sidebar__item"><span>Your account</span></a>
     {% endif %}
   </div>
+
+  {# i18n L4b — language switcher at the sidebar bottom (same reusable
+     component as the topbar). #}
+  {% if current_user is defined and current_user %}
+    <div class="rio-sidebar__group rio-sidebar__lang">
+      {% include "includes/lang_switcher.html" %}
+    </div>
+  {% endif %}
 </aside>

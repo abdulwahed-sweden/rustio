@@ -399,6 +399,20 @@ struct DesignView<'a> {
 struct UserView {
     email: String,
     display_name: String,
+    /// i18n L4b — the language-switcher options for this user, carried on
+    /// `current_user` so the topbar + sidebar includes render them without
+    /// every page threading a new context key. Endonyms (display) with ISO
+    /// codes as values (stored); the user's saved preference is `selected`.
+    language_options: Vec<LangOption>,
+}
+
+/// One option in the language switcher (i18n L4b). `value` is the ISO code
+/// (or `""` for "Default" — clears the preference); `label` is the endonym.
+#[derive(serde::Serialize)]
+struct LangOption {
+    value: String,
+    label: String,
+    selected: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -432,10 +446,32 @@ fn design_view() -> DesignView<'static> {
     }
 }
 
-fn user_view(identity: Option<&crate::auth::Identity>) -> Option<UserView> {
-    identity.map(|id| UserView {
+/// Build the `current_user` view, including the i18n L4b language-switcher
+/// options (the user's saved preference marked `selected`; a leading "Default"
+/// option clears it). Async + db because the preference is per-user state.
+async fn user_view(db: &Db, identity: Option<&crate::auth::Identity>) -> Option<UserView> {
+    let id = identity?;
+    // Saved preference (None when unset → "Default" is selected).
+    let pref = crate::auth::user::preferred_language(db, id.user_id)
+        .await
+        .ok()
+        .flatten();
+    let mut language_options = vec![LangOption {
+        value: String::new(),
+        label: "Default".to_string(),
+        selected: pref.is_none(),
+    }];
+    for (code, endonym) in languages() {
+        language_options.push(LangOption {
+            value: code.to_string(),
+            label: endonym.to_string(),
+            selected: pref.as_deref() == Some(*code),
+        });
+    }
+    Some(UserView {
         email: id.email.clone(),
         display_name: id.email.clone(),
+        language_options,
     })
 }
 
@@ -963,7 +999,7 @@ pub async fn form_render(
     };
 
     let design = design_view();
-    let user = user_view(identity);
+    let user = user_view(db, identity).await;
 
     let env = crate::admin::templating::env();
     match env.get_template("admin/form.html").and_then(|tmpl| {
@@ -1172,7 +1208,7 @@ pub async fn view_editor_render(
         list_url: format!("/admin/{slug}"),
     };
     let design = design_view();
-    let user = user_view(identity);
+    let user = user_view(db, identity).await;
 
     let env = crate::admin::templating::env();
     match env.get_template("admin/view_editor.html").and_then(|tmpl| {
@@ -1287,7 +1323,7 @@ pub async fn dashboard_render(
         })
         .collect();
     let design = design_view();
-    let user = user_view(identity);
+    let user = user_view(db, identity).await;
 
     let env = crate::admin::templating::env();
     match env.get_template("admin/dashboard.html").and_then(|tmpl| {
@@ -2357,7 +2393,7 @@ pub async fn list_render(
     };
 
     let design = design_view();
-    let user = user_view(identity);
+    let user = user_view(db, identity).await;
 
     let env = crate::admin::templating::env();
     match env.get_template("admin/list.html").and_then(|tmpl| {
@@ -2560,7 +2596,7 @@ pub async fn profile_render(
     };
 
     let design = design_view();
-    let user_v = user_view(identity);
+    let user_v = user_view(db, identity).await;
 
     let env = crate::admin::templating::env();
     match env.get_template("admin/profile.html").and_then(|tmpl| {
@@ -2618,7 +2654,7 @@ pub async fn actions_render(
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
     let design = design_view();
-    let user_v = user_view(identity);
+    let user_v = user_view(db, identity).await;
 
     let model_options: Vec<OptionView> = legacy_entries
         .iter()
@@ -2745,7 +2781,7 @@ pub async fn suggestion_review_render(
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
     let design = design_view();
-    let user_v = user_view(identity);
+    let user_v = user_view(db, identity).await;
     let env = crate::admin::templating::env();
     match env
         .get_template("admin/suggestion_review.html")
@@ -2781,7 +2817,7 @@ pub async fn suggestion_applied_render(
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
     let design = design_view();
-    let user_v = user_view(identity);
+    let user_v = user_view(db, identity).await;
     let env = crate::admin::templating::env();
     match env
         .get_template("admin/suggestion_applied.html")
@@ -2817,7 +2853,7 @@ pub async fn password_change_render(
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
     let design = design_view();
-    let user_v = user_view(identity);
+    let user_v = user_view(db, identity).await;
     let env = crate::admin::templating::env();
     match env
         .get_template("admin/password_change.html")
@@ -2851,7 +2887,7 @@ pub async fn password_change_done_render(
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, None);
     let design = design_view();
-    let user_v = user_view(identity);
+    let user_v = user_view(db, identity).await;
     let env = crate::admin::templating::env();
     match env
         .get_template("admin/password_change_done.html")
@@ -3944,6 +3980,62 @@ mod tests {
                 .unwrap(),
             None
         );
+    }
+
+    // --- i18n L4b: switcher options on current_user ----------------------
+
+    #[tokio::test]
+    async fn user_view_builds_switcher_options() {
+        let (db, identity) = db_with_user("switcher@example.com").await;
+
+        // No preference → "Default" selected; the endonyms are present and
+        // unselected; values are ISO codes (stored), labels are endonyms.
+        let uv = user_view(&db, Some(&identity)).await.unwrap();
+        let default = uv
+            .language_options
+            .iter()
+            .find(|o| o.value.is_empty())
+            .unwrap();
+        assert_eq!(default.label, "Default");
+        assert!(default.selected, "no pref → Default selected");
+        let en = uv
+            .language_options
+            .iter()
+            .find(|o| o.value == "en")
+            .unwrap();
+        let sv = uv
+            .language_options
+            .iter()
+            .find(|o| o.value == "sv")
+            .unwrap();
+        assert_eq!(
+            (en.label.as_str(), sv.label.as_str()),
+            ("English", "Svenska")
+        );
+        assert!(!en.selected && !sv.selected);
+
+        // Preference set → that endonym is selected, Default no longer is.
+        crate::auth::user::set_preferred_language(&db, identity.user_id, "sv")
+            .await
+            .unwrap();
+        let uv2 = user_view(&db, Some(&identity)).await.unwrap();
+        assert!(
+            uv2.language_options
+                .iter()
+                .find(|o| o.value == "sv")
+                .unwrap()
+                .selected
+        );
+        assert!(
+            !uv2.language_options
+                .iter()
+                .find(|o| o.value.is_empty())
+                .unwrap()
+                .selected
+        );
+
+        // No identity → no user view (login page renders no switcher).
+        assert!(user_view(&db, None).await.is_none());
     }
 
     #[test]

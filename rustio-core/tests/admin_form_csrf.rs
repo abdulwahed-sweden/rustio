@@ -481,3 +481,43 @@ async fn set_language_csrf_and_validation() {
         "clearing the preference is valid:\n{clear}"
     );
 }
+
+/// i18n L4b — the language switcher renders endonyms (not codes) in BOTH the
+/// topbar and the sidebar from one reusable component, posting ISO codes to
+/// the L4a action.
+#[tokio::test]
+async fn language_switcher_renders_in_topbar_and_sidebar() {
+    let addr = spawn_server().await;
+    let cookie = login(addr).await;
+    let page = send(addr, &get_with_cookie("/admin/notes", &cookie)).await;
+
+    // Endonyms are shown (not ISO codes).
+    assert!(page.contains(">English<"), "English endonym shown:\n{page}");
+    assert!(page.contains(">Svenska<"), "Svenska endonym shown");
+    // ISO codes are the option VALUES (stored), endonyms the labels (shown).
+    assert!(
+        page.contains(r#"<option value="sv""#),
+        "sv is the stored value"
+    );
+    assert!(
+        page.contains(r#"<option value="en""#),
+        "en is the stored value"
+    );
+    // ONE reusable component placed in TWO locations → it appears twice.
+    assert_eq!(
+        page.matches("data-lang-switcher").count(),
+        2,
+        "switcher must render in both topbar and sidebar"
+    );
+    // Posts to the L4a action.
+    assert!(
+        page.contains(r#"action="/admin/language""#),
+        "posts to /admin/language"
+    );
+    // No preference yet → the "Default" option is the selected one.
+    assert!(
+        page.contains(r#"<option value=""selected>Default</option>"#)
+            || page.contains(r#"<option value="" selected>Default</option>"#),
+        "Default selected when no preference:\n{page}"
+    );
+}
