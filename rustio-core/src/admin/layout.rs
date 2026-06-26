@@ -1246,12 +1246,25 @@ pub async fn view_editor_render(
         .collect();
 
     // i18n value labels — for each field, the values to label = DISTINCT
-    // stored values (status-shaped fields only) ∪ any value already labelled
-    // (so hand-authored labels for any field stay editable). Pre-filled with
-    // the STRICT explicit label for the editing language (no default fallback,
-    // mirroring the field-label fix), so switching languages can't leak/clobber.
-    const VALUE_CAP: i64 = 50;
+    // stored values ∪ any value already labelled (so hand-authored labels for
+    // any field stay editable). Discovered for status-shaped fields, and for
+    // non-status STRING fields that are low-cardinality (enum-like). Pre-filled
+    // with the STRICT explicit label for the editing language (no default
+    // fallback, mirroring the field-label fix), so a switch can't leak/clobber.
+    const VALUE_CAP: i64 = 50; // display cap for status fields
+    const ENUM_CAP: i64 = 12; // a non-status String field with <= this many distinct values is enum-like
     let table = model.table_name();
+    // A non-status field is an enum candidate when it's a `String` column (FK
+    // ids are integers → excluded by type) whose role renders a translatable
+    // plain cell — so the Title (rendered as the primary cell, not the plain
+    // branch) and Hidden (never rendered) fields are excluded.
+    let field_ty = |source: &str| -> Option<&str> {
+        schema_model
+            .fields
+            .iter()
+            .find(|f| f.name == source)
+            .map(|f| f.ty.as_str())
+    };
     let mut value_label_fields: Vec<ValueLabelField> = Vec::new();
     for fs in &spec.fields {
         let mut values: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -1267,6 +1280,24 @@ pub async fn view_editor_render(
                 let (data_value, _) = normalize_status_pill(&raw);
                 if !data_value.is_empty() {
                     values.insert(data_value);
+                }
+            }
+        } else if !matches!(
+            fs.role,
+            crate::viewspec::FieldRole::Title | crate::viewspec::FieldRole::Hidden
+        ) && field_ty(&fs.source) == Some("String")
+        {
+            // Non-status enum candidate: offer ONLY if low-cardinality. The
+            // LIMIT ENUM_CAP+1 query early-stops; >ENUM_CAP distinct values
+            // means free-text / identity, not an enum → skip. Keys are the
+            // lowercased stored value, matching the plain-cell render lookup.
+            let raws = distinct_values(db, table, &fs.source, ENUM_CAP + 1).await;
+            if (raws.len() as i64) <= ENUM_CAP {
+                for raw in raws {
+                    let key = raw.trim().to_lowercase();
+                    if !key.is_empty() {
+                        values.insert(key);
+                    }
                 }
             }
         }
@@ -4490,6 +4521,90 @@ mod tests {
         std::fs::remove_dir_all(&base).ok();
     }
 
+    #[tokio::test]
+    async fn editor_discovers_low_cardinality_non_status_string_field() {
+        // gadget columns: name(Title), email(Subtitle), status(Badge,status),
+        // notes(Meta), password_hash(Hidden). Seed so notes is HIGH-cardinality
+        // (>12 distinct → not an enum) and email is LOW-cardinality (2 distinct
+        // → enum-like, discovered).
+        let base = tmp_dir();
+        let db = Db::memory().await.unwrap();
+        db.execute(
+            "CREATE TABLE gadgets (id INTEGER PRIMARY KEY, name TEXT, email TEXT, status TEXT, notes TEXT, password_hash TEXT)",
+        )
+        .await
+        .unwrap();
+        for i in 0..15 {
+            let email = if i % 2 == 0 { "a@x" } else { "b@x" }; // 2 distinct
+            db.execute(&format!(
+                "INSERT INTO gadgets (name,email,status,notes,password_hash) \
+                 VALUES ('n{i}','{email}','active','note{i}','h{i}')"
+            ))
+            .await
+            .unwrap();
+        }
+
+        let html = render_editor_with_db(&base, &db, "en").await;
+        // email — String, Subtitle, 2 distinct → enum-like → discovered.
+        assert!(
+            html.contains(r#"name="value_label[email]["#),
+            "low-cardinality non-status string field discovered:\n{html}"
+        );
+        // notes — String, 15 distinct (> ENUM_CAP) → free-text → NOT offered.
+        assert!(
+            !html.contains(r#"name="value_label[notes]["#),
+            "high-cardinality string field must not be offered"
+        );
+        // name — Title (identity, renders via the primary branch) → excluded.
+        assert!(
+            !html.contains(r#"name="value_label[name]["#),
+            "Title field excluded"
+        );
+        // password_hash — Hidden (never renders) → excluded.
+        assert!(
+            !html.contains(r#"name="value_label[password_hash]["#),
+            "Hidden field excluded"
+        );
+        // id — integer (FK ids are ints too) → excluded by type.
+        assert!(
+            !html.contains(r#"name="value_label[id]["#),
+            "non-String field excluded by type"
+        );
+        // status — status-shaped → still auto-discovered.
+        assert!(html.contains(r#"name="value_label[status][active]""#));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn non_status_enum_label_persists_and_renders() {
+        // End-to-end: a discovered non-status value label is editable AND
+        // renders through the plain-cell branch.
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        spec.default_language = "sv".to_string();
+        // notes value 'my-meta-note' (gadget_db single row) → translate.
+        put_value_label(&mut spec, "notes", "my-meta-note", "sv", "Anteckning");
+        spec.validate().unwrap();
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        // Editor offers it (gadget_db has notes='MY-META-NOTE', 1 distinct).
+        let editor = render_editor_in(&base, "sv").await;
+        assert!(editor.contains(r#"name="value_label[notes][my-meta-note]""#));
+        assert!(editor.contains(r#"value="Anteckning""#), "prefilled in sv");
+
+        // And it renders in the list (plain cell).
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(
+            html.contains("Anteckning"),
+            "non-status value translated in list:\n{html}"
+        );
+        assert!(
+            !html.contains("MY-META-NOTE"),
+            "English value text replaced"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn load_saved_view_reads_valid_skips_missing_and_invalid() {
         let base = tmp_dir();
@@ -4633,13 +4748,19 @@ mod tests {
     /// language (i18n L3). Mirrors `render_gadget_layout_in`.
     async fn render_editor_in(base: &std::path::Path, editing_lang: &str) -> String {
         let db = gadget_db().await;
+        render_editor_with_db(base, &db, editing_lang).await
+    }
+
+    /// Like `render_editor_in` but against a caller-supplied db (so a test can
+    /// seed many rows to exercise enum-cardinality discovery).
+    async fn render_editor_with_db(base: &std::path::Path, db: &Db, editing_lang: &str) -> String {
         let entry = gadget_entry();
         let model = LegacyEntryModel::new(&entry);
         let registry = registry_empty();
         let legacy = [entry.clone()];
         view_editor_render(
             base,
-            &db,
+            db,
             &registry,
             &legacy,
             &model,

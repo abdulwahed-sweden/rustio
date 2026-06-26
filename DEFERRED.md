@@ -87,11 +87,14 @@ through the same `build_edited_spec → validate → save_view_spec` path, with 
 strict exact-editing-language prefill, composes with field labels in one Save,
 and prunes on merge-away. Value keys stay the English token (read-only).
 
-**Remaining follow-up (smaller):** auto-discovery for **non-status** enum-like
-string fields (e.g. `service_type`) — today they're hand-authorable and remain
-editable once authored, but the editor won't proactively list their values
-(only status-shaped fields are auto-discovered). A cardinality-based detection
-(`DISTINCT count ≤ N`) for arbitrary string fields would close the gap.
+**Non-status enum auto-discovery — shipped.** The editor now also auto-lists
+non-status **`String`** fields (FK ids are integers → excluded by type; `Title`
+and `Hidden` roles excluded) whose distinct-value count is **≤ 12** (an early-
+stopping `DISTINCT LIMIT 13` per candidate); higher-cardinality (free-text /
+identity) fields are skipped. So `service_type`-style enums are discovered
+alongside status fields, while names/emails/free text are not. This closes the
+L4-D thread end-to-end: storage → resolver → render → per-user switching →
+editor (status + non-status discovery).
 
 ## Other signposted threads (not yet phased)
 
