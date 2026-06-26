@@ -36,7 +36,7 @@
 //! from a model name is **not** done in this phase; [`ViewSpec::write_to`]
 //! takes an explicit path and performs no name-to-path logic.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -85,6 +85,45 @@ pub struct ViewSpec {
     /// Source field names exposed as list filters. Every entry must name
     /// the `source` of a [`FieldSpec`] whose `filterable` is `true`.
     pub filters: Vec<String>,
+    /// The project/view default UI language, an ISO 639-1 code (e.g. `"en"`,
+    /// `"sv"`). The label resolver falls back to this language when a label
+    /// for the requested language is missing, and `"en"` is the ultimate
+    /// fallback after that. Defaults to `"en"`; serialised only when it is
+    /// **not** `"en"`, so an English-default spec stays byte-identical to the
+    /// pre-i18n format.
+    #[serde(
+        default = "default_language_value",
+        skip_serializing_if = "is_default_language"
+    )]
+    pub default_language: String,
+    /// **i18n display labels — THE IRON RULE.** The backend is always
+    /// English: a [`FieldSpec::source`] is the English backend field name and
+    /// is **never** translated. Labels are a *purely additive presentation
+    /// layer*, keyed **by** that English source:
+    /// `source → (language code → display label)`. A Swedish- or Arabic-only
+    /// project still has English sources; only the labels here are
+    /// translated. Data is never translated — there is no path that writes a
+    /// translated value back into a `source`.
+    ///
+    /// `BTreeMap` keeps the serialised form deterministic (sorted by source,
+    /// then by language). Empty by default and skipped on serialisation, so a
+    /// label-less spec round-trips byte-for-byte with the pre-i18n format.
+    /// Resolution is [`ViewSpec::label`]; with no labels at all, a field
+    /// still renders as the humanised English source (the floor).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+/// serde default for [`ViewSpec::default_language`].
+fn default_language_value() -> String {
+    "en".to_string()
+}
+
+/// Skip-serialise predicate: omit `default_language` when it is the default
+/// `"en"`, so an English-default spec is byte-identical to the pre-i18n
+/// format.
+fn is_default_language(lang: &str) -> bool {
+    lang == "en"
 }
 
 /// The four rendering layouts a view may default to. Presentation only —
@@ -178,6 +217,13 @@ pub enum ViewSpecError {
     NonFilterableFilter(String),
     /// A `merge` vector is present but lists fewer than two entries.
     MergeTooShort { source: String, len: usize },
+    /// A `labels` key names a `source` that no [`FieldSpec`] has — i18n
+    /// labels may only exist for a real English field source (the iron rule).
+    UnknownLabelSource(String),
+    /// A label's language-code key is empty.
+    EmptyLabelLanguage { source: String },
+    /// A stored label value is empty (no blank translations).
+    EmptyLabel { source: String, lang: String },
     /// Failed to parse a ViewSpec document from its on-disk bytes.
     Parse(String),
 }
@@ -200,6 +246,18 @@ impl std::fmt::Display for ViewSpecError {
                 "field `{source}` has a merge of {len} entr{plural} (need at least 2)",
                 plural = if *len == 1 { "y" } else { "ies" },
             ),
+            Self::UnknownLabelSource(source) => {
+                write!(f, "label key `{source}` names no field source")
+            }
+            Self::EmptyLabelLanguage { source } => {
+                write!(
+                    f,
+                    "field `{source}` has a label with an empty language code"
+                )
+            }
+            Self::EmptyLabel { source, lang } => {
+                write!(f, "field `{source}` has an empty `{lang}` label")
+            }
             Self::Parse(msg) => write!(f, "viewspec parse error: {msg}"),
         }
     }
@@ -271,7 +329,57 @@ impl ViewSpec {
             }
         }
 
+        // i18n labels (L1). The iron rule made enforceable: every label key
+        // must be a real field source; no empty language codes or values.
+        if self.default_language.is_empty() {
+            return Err(ViewSpecError::EmptyIdentifier("default_language"));
+        }
+        for (source, by_lang) in &self.labels {
+            if !seen.contains(source.as_str()) {
+                return Err(ViewSpecError::UnknownLabelSource(source.clone()));
+            }
+            for (lang, value) in by_lang {
+                if lang.is_empty() {
+                    return Err(ViewSpecError::EmptyLabelLanguage {
+                        source: source.clone(),
+                    });
+                }
+                if value.is_empty() {
+                    return Err(ViewSpecError::EmptyLabel {
+                        source: source.clone(),
+                        lang: lang.clone(),
+                    });
+                }
+            }
+        }
+
         Ok(())
+    }
+
+    /// Resolve the display label for `source` in language `lang`.
+    ///
+    /// **THE IRON RULE.** `source` is the English backend field name — the
+    /// stable key. This method **never translates the source**; it looks up
+    /// an *additive* label keyed by that English source, and the ultimate
+    /// floor is the humanised English source itself. The fallback chain:
+    ///
+    /// 1. `labels[source][lang]` — the requested language;
+    /// 2. `labels[source][self.default_language]` — the view default;
+    /// 3. [`humanize`] of the English `source` (snake_case → "Title Case").
+    ///
+    /// Always returns a **non-empty** string: a brand-new derived spec with
+    /// zero labels still renders sensibly (the English source is the floor),
+    /// which is exactly why labels are optional.
+    pub fn label(&self, source: &str, lang: &str) -> String {
+        if let Some(by_lang) = self.labels.get(source) {
+            if let Some(label) = by_lang.get(lang) {
+                return label.clone();
+            }
+            if let Some(label) = by_lang.get(&self.default_language) {
+                return label.clone();
+            }
+        }
+        humanize(source)
     }
 
     /// Parse + validate a ViewSpec document. Both deserialization failure
@@ -370,6 +478,10 @@ impl ViewSpec {
             layout: ViewLayout::List,
             fields,
             filters,
+            // No labels in a derived spec — fields render as their humanised
+            // English source until a developer adds translations (L3).
+            default_language: default_language_value(),
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -477,6 +589,29 @@ fn is_secret_name(name: &str) -> bool {
         || name.contains("token")
 }
 
+/// Humanise a snake_case English `source` into a display string
+/// (`due_date` → `"Due Date"`). The ultimate fallback of
+/// [`ViewSpec::label`] — the English source is always the floor, which is
+/// why a label-less spec still renders sensibly. A deliberate small copy of
+/// the renderer's `humanise` (the renderer is a separate, out-of-scope
+/// module); keep the two in sync if either changes.
+fn humanize(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut next_upper = true;
+    for ch in source.chars() {
+        if ch == '_' {
+            out.push(' ');
+            next_upper = true;
+        } else if next_upper {
+            out.push(ch.to_ascii_uppercase());
+            next_upper = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// `true` for opaque personal / identity numbers that should never appear
 /// in a default view. These mirror the context-gated PII names
 /// `intelligence` recognises (`personnummer` family, healthcare opaque
@@ -569,6 +704,8 @@ mod tests {
                 },
             ],
             filters: vec!["status".to_string()],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         }
     }
 
@@ -584,6 +721,162 @@ mod tests {
     fn to_pretty_json_ends_with_newline() {
         let json = sample().to_pretty_json().unwrap();
         assert!(json.ends_with('\n'), "viewspec JSON must end with newline");
+    }
+
+    // --- i18n L1: per-language display labels --------------------------------
+
+    /// `sample()` with `name` + `status` labelled in en + sv, default `sv`.
+    fn sample_with_labels() -> ViewSpec {
+        let mut spec = sample();
+        spec.default_language = "sv".to_string();
+        let mut name = BTreeMap::new();
+        name.insert("en".to_string(), "Name".to_string());
+        name.insert("sv".to_string(), "Namn".to_string());
+        let mut status = BTreeMap::new();
+        status.insert("en".to_string(), "Status".to_string());
+        status.insert("sv".to_string(), "Status (sv)".to_string());
+        spec.labels.insert("name".to_string(), name);
+        spec.labels.insert("status".to_string(), status);
+        spec
+    }
+
+    #[test]
+    fn labels_round_trip_unchanged() {
+        let spec = sample_with_labels();
+        spec.validate().unwrap();
+        let json = spec.to_pretty_json().unwrap();
+        assert_eq!(ViewSpec::parse(&json).unwrap(), spec);
+    }
+
+    #[test]
+    fn label_less_spec_is_backward_compatible() {
+        // A label-less spec serialises WITHOUT the new keys → byte-identical
+        // to the pre-i18n format.
+        let json = sample().to_pretty_json().unwrap();
+        assert!(
+            !json.contains("labels"),
+            "no labels key when empty:\n{json}"
+        );
+        assert!(
+            !json.contains("default_language"),
+            "no default_language key when \"en\":\n{json}"
+        );
+        // And an old document missing both fields entirely still parses.
+        let old = r#"{
+  "version": 1,
+  "model": "Note",
+  "layout": "table",
+  "fields": [{ "source": "id", "role": "title" }],
+  "filters": []
+}"#;
+        let parsed = ViewSpec::parse(old).unwrap();
+        assert_eq!(parsed.default_language, "en");
+        assert!(parsed.labels.is_empty());
+        // Re-serialising it adds no spurious i18n keys.
+        let reser = parsed.to_pretty_json().unwrap();
+        assert!(!reser.contains("labels") && !reser.contains("default_language"));
+    }
+
+    #[test]
+    fn label_precedence_chain_never_empty() {
+        let spec = sample_with_labels(); // default_language = "sv"
+                                         // 1. requested language wins.
+        assert_eq!(spec.label("status", "sv"), "Status (sv)");
+        assert_eq!(spec.label("status", "en"), "Status");
+        // 2. missing requested language → default_language ("sv").
+        assert_eq!(spec.label("status", "fr"), "Status (sv)");
+        // 3. no labels at all for the source → humanised English source.
+        assert_eq!(spec.label("created_at", "sv"), "Created At");
+        // Even a source with no FieldSpec resolves (label() is pure lookup).
+        assert_eq!(spec.label("due_date", "ar"), "Due Date");
+        // Never empty for any source/lang combination.
+        for f in &spec.fields {
+            assert!(!spec.label(&f.source, "zz").is_empty());
+        }
+    }
+
+    #[test]
+    fn validate_rejects_empty_label_language() {
+        let mut spec = sample();
+        let mut by_lang = BTreeMap::new();
+        by_lang.insert(String::new(), "Status".to_string());
+        spec.labels.insert("status".to_string(), by_lang);
+        assert_eq!(
+            spec.validate(),
+            Err(ViewSpecError::EmptyLabelLanguage {
+                source: "status".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_empty_label_value() {
+        let mut spec = sample();
+        let mut by_lang = BTreeMap::new();
+        by_lang.insert("sv".to_string(), String::new());
+        spec.labels.insert("status".to_string(), by_lang);
+        assert_eq!(
+            spec.validate(),
+            Err(ViewSpecError::EmptyLabel {
+                source: "status".to_string(),
+                lang: "sv".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_label_for_unknown_source() {
+        // The iron rule: a label key must name a real field source.
+        let mut spec = sample();
+        let mut by_lang = BTreeMap::new();
+        by_lang.insert("en".to_string(), "Ghost".to_string());
+        spec.labels.insert("ghost".to_string(), by_lang);
+        assert_eq!(
+            spec.validate(),
+            Err(ViewSpecError::UnknownLabelSource("ghost".to_string()))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_empty_default_language() {
+        let mut spec = sample();
+        spec.default_language = String::new();
+        assert_eq!(
+            spec.validate(),
+            Err(ViewSpecError::EmptyIdentifier("default_language"))
+        );
+    }
+
+    #[test]
+    fn label_map_serialises_deterministically() {
+        // BTreeMap → byte-stable across serialisations, no HashMap reorder.
+        let spec = sample_with_labels();
+        let a = spec.to_pretty_json().unwrap();
+        let b = spec.to_pretty_json().unwrap();
+        assert_eq!(a, b);
+        // Sources serialise sorted: "name" before "status".
+        assert!(
+            a.find("\"name\"").unwrap() < a.find("\"status\"").unwrap(),
+            "label sources must serialise in sorted order:\n{a}"
+        );
+    }
+
+    #[test]
+    fn iron_rule_label_never_mutates_source() {
+        // Resolving a label in any language leaves every FieldSpec.source —
+        // the English backend key — untouched. Labels are additive only.
+        let spec = sample_with_labels();
+        let before: Vec<String> = spec.fields.iter().map(|f| f.source.clone()).collect();
+        for lang in ["en", "sv", "ar", "zz"] {
+            for f in &spec.fields {
+                let _ = spec.label(&f.source, lang);
+            }
+        }
+        let after: Vec<String> = spec.fields.iter().map(|f| f.source.clone()).collect();
+        assert_eq!(
+            before, after,
+            "source is the stable English key — never translated"
+        );
     }
 
     #[test]
@@ -678,6 +971,8 @@ mod tests {
                 },
             ],
             filters: vec![],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         let parsed = ViewSpec::parse(&spec.to_pretty_json().unwrap()).unwrap();
         assert_eq!(parsed, spec);

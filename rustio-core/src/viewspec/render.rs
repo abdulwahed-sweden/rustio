@@ -494,6 +494,8 @@ mod tests {
                 filterable: false,
             }],
             filters: vec![],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         let rows = vec![row(&[
             ("name", RowValue::Text("Alice".into())),
@@ -521,6 +523,8 @@ mod tests {
                 filterable: false,
             }],
             filters: vec![],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         let rows = vec![row(&[
             ("name", RowValue::Text("Alice".into())),
@@ -589,6 +593,8 @@ mod tests {
                 },
             ],
             filters: vec![],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         let rows = vec![row(&[
             ("id", RowValue::Int(7)),

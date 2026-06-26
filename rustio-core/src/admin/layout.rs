@@ -3828,6 +3828,8 @@ mod tests {
                 },
             ],
             filters: vec!["status".to_string()],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         }
     }
 
@@ -3895,6 +3897,8 @@ mod tests {
             layout: ViewLayout::Table,
             fields: vec![],
             filters: vec![],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         assert!(save_view_spec(&base, "Gadget", &invalid).is_err());
         assert!(
@@ -3917,6 +3921,8 @@ mod tests {
             layout: ViewLayout::Table,
             fields: vec![],
             filters: vec![],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         assert!(save_view_spec(&base, "Gadget", &invalid).is_err());
         assert_eq!(load_saved_view(&base, "Gadget").unwrap(), before);
@@ -4167,6 +4173,8 @@ mod tests {
                 filterable: false, // NOT filterable …
             }],
             filters: vec!["name".to_string()], // … but listed as a filter
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         assert!(
             bad.validate().is_err(),
@@ -4332,6 +4340,8 @@ mod tests {
                 filterable: false,
             }],
             filters: vec![],
+            default_language: "en".to_string(),
+            labels: std::collections::BTreeMap::new(),
         };
         assert!(matches!(
             bad.validate(),
