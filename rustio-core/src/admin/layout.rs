@@ -1072,6 +1072,50 @@ struct MergeTargetView {
     label: String,
 }
 
+/// One value's row in the value-label editor (i18n value labels). `value` is
+/// the canonical (lowercased) stored token shown read-only; `current` is its
+/// explicit label for the editing language (or `""` → placeholder shows the
+/// default display).
+#[derive(serde::Serialize)]
+struct ValueLabelRow {
+    value: String,
+    current: String,
+    placeholder: String,
+}
+
+/// A field that exposes value labels in the editor: its discovered/authored
+/// values, plus `keys` (the comma-joined canonical values) which the editor
+/// submits as a hidden field so the builder knows which `(source, value)`
+/// pairs were offered (FormData can't enumerate keys).
+#[derive(serde::Serialize)]
+struct ValueLabelField {
+    source: String,
+    label: String,
+    keys: String,
+    values: Vec<ValueLabelRow>,
+}
+
+/// Distinct non-empty stored values for a column, capped at `limit`. The
+/// identifiers come from the schema/model (never user input), matching the
+/// existing query builders' interpolation. Handles TEXT and INTEGER columns.
+async fn distinct_values(db: &Db, table: &str, column: &str, limit: i64) -> Vec<String> {
+    use sqlx::Row;
+    let sql = format!(
+        "SELECT DISTINCT \"{column}\" AS v FROM \"{table}\" \
+         WHERE \"{column}\" IS NOT NULL AND \"{column}\" != '' LIMIT {limit}"
+    );
+    let Ok(rows) = sqlx::query(&sql).fetch_all(db.pool()).await else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|r| {
+            r.try_get::<String, _>("v")
+                .ok()
+                .or_else(|| r.try_get::<i64, _>("v").ok().map(|n| n.to_string()))
+        })
+        .collect()
+}
+
 #[derive(serde::Serialize)]
 struct EditorModelView {
     display_name: String,
@@ -1201,6 +1245,68 @@ pub async fn view_editor_render(
         })
         .collect();
 
+    // i18n value labels — for each field, the values to label = DISTINCT
+    // stored values (status-shaped fields only) ∪ any value already labelled
+    // (so hand-authored labels for any field stay editable). Pre-filled with
+    // the STRICT explicit label for the editing language (no default fallback,
+    // mirroring the field-label fix), so switching languages can't leak/clobber.
+    const VALUE_CAP: i64 = 50;
+    let table = model.table_name();
+    let mut value_label_fields: Vec<ValueLabelField> = Vec::new();
+    for fs in &spec.fields {
+        let mut values: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        if is_status_field_name(&fs.source) {
+            let raws = distinct_values(db, table, &fs.source, VALUE_CAP + 1).await;
+            if raws.len() as i64 > VALUE_CAP {
+                eprintln!(
+                    "admin value-labels: `{}` has >{} distinct values; capping the editor list",
+                    fs.source, VALUE_CAP
+                );
+            }
+            for raw in raws.into_iter().take(VALUE_CAP as usize) {
+                let (data_value, _) = normalize_status_pill(&raw);
+                if !data_value.is_empty() {
+                    values.insert(data_value);
+                }
+            }
+        }
+        if let Some(by_value) = spec.value_labels.get(&fs.source) {
+            values.extend(by_value.keys().cloned());
+        }
+        if values.is_empty() {
+            continue;
+        }
+        let is_status = is_status_field_name(&fs.source);
+        let rows: Vec<ValueLabelRow> = values
+            .iter()
+            .map(|v| {
+                let current = spec
+                    .value_labels
+                    .get(&fs.source)
+                    .and_then(|bv| bv.get(v))
+                    .and_then(|bl| bl.get(&editing_lang))
+                    .cloned()
+                    .unwrap_or_default();
+                let placeholder = if is_status {
+                    normalize_status_pill(v).1
+                } else {
+                    v.clone()
+                };
+                ValueLabelRow {
+                    value: v.clone(),
+                    current,
+                    placeholder,
+                }
+            })
+            .collect();
+        value_label_fields.push(ValueLabelField {
+            source: fs.source.clone(),
+            label: label_of(&fs.source),
+            keys: values.iter().cloned().collect::<Vec<_>>().join(","),
+            values: rows,
+        });
+    }
+
     let slug = model.slug();
     let model_view = EditorModelView {
         display_name: format!("{}s", model.model_name()),
@@ -1223,6 +1329,7 @@ pub async fn view_editor_render(
             editing_lang => editing_lang,
             view_default_language => spec.default_language,
             language_options => language_options,
+            value_label_fields => value_label_fields,
             save_action => format!("/admin/{slug}/view"),
             return_to => return_to,
             error => error,
@@ -1603,6 +1710,7 @@ pub(crate) fn build_edited_spec(
         build_edited_spec_no_merge(spec, form)?
     };
     apply_label_edits(&mut candidate, form);
+    apply_value_label_edits(&mut candidate, form);
     Ok(candidate)
 }
 
@@ -1673,6 +1781,74 @@ fn apply_label_edits(candidate: &mut crate::viewspec::ViewSpec, form: &crate::ht
         candidate.fields.iter().map(|f| f.source.as_str()).collect();
     candidate
         .labels
+        .retain(|src, _| live.contains(src.as_str()));
+}
+
+/// i18n value labels — apply per-value display-label edits to the settled
+/// candidate (the value-level analog of [`apply_label_edits`]). Gated on the
+/// `value_labels_submitted` sentinel. For each real field source the editor
+/// submits a hidden `value_keys[<source>]` (the canonical values it offered,
+/// comma-joined, since FormData can't enumerate keys); for each value, a
+/// non-empty `value_label[<source>][<value>]` is written to
+/// `value_labels[source][value][editing_lang]`, and an **empty/absent** input
+/// **removes** that entry (never stores `""`; empty value-/source-maps are
+/// pruned). The value KEY is never editable — it's the English stored token.
+/// Labels whose source is no longer a field are pruned so `validate` passes.
+fn apply_value_label_edits(
+    candidate: &mut crate::viewspec::ViewSpec,
+    form: &crate::http::FormData,
+) {
+    if form.get("value_labels_submitted").is_some() {
+        let editing_lang = form
+            .get("editing_lang")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or_else(|| candidate.default_language.clone());
+
+        let sources: Vec<String> = candidate.fields.iter().map(|f| f.source.clone()).collect();
+        for src in &sources {
+            let Some(keys) = form.get(&format!("value_keys[{src}]")) else {
+                continue;
+            };
+            for val in keys.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                match form
+                    .get(&format!("value_label[{src}][{val}]"))
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    Some(label) => {
+                        candidate
+                            .value_labels
+                            .entry(src.clone())
+                            .or_default()
+                            .entry(val.to_string())
+                            .or_default()
+                            .insert(editing_lang.clone(), label.to_string());
+                    }
+                    None => {
+                        if let Some(by_value) = candidate.value_labels.get_mut(src) {
+                            if let Some(by_lang) = by_value.get_mut(val) {
+                                by_lang.remove(&editing_lang);
+                                if by_lang.is_empty() {
+                                    by_value.remove(val);
+                                }
+                            }
+                            if by_value.is_empty() {
+                                candidate.value_labels.remove(src);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Prune value labels for sources that are no longer fields (merge-away).
+    let live: std::collections::BTreeSet<&str> =
+        candidate.fields.iter().map(|f| f.source.as_str()).collect();
+    candidate
+        .value_labels
         .retain(|src, _| live.contains(src.as_str()));
 }
 
@@ -4145,6 +4321,172 @@ mod tests {
             html.contains("Aktiv"),
             "user's sv preference drives the value label:\n{html}"
         );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    // --- i18n value labels: editor editing -------------------------------
+
+    fn vlabel(
+        spec: &crate::viewspec::ViewSpec,
+        src: &str,
+        val: &str,
+        lang: &str,
+    ) -> Option<String> {
+        spec.value_labels
+            .get(src)
+            .and_then(|bv| bv.get(val))
+            .and_then(|bl| bl.get(lang))
+            .cloned()
+    }
+
+    #[test]
+    fn value_label_edit_persists_and_clears() {
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse(
+            "value_labels_submitted=1&editing_lang=sv\
+             &value_keys[status]=active&value_label[status][active]=Aktiv",
+        );
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(
+            vlabel(&edited, "status", "active", "sv").as_deref(),
+            Some("Aktiv")
+        );
+        edited.validate().unwrap();
+
+        // Clearing the input removes the entry (not "") → pruned to empty.
+        let form2 = FormData::parse(
+            "value_labels_submitted=1&editing_lang=sv\
+             &value_keys[status]=active&value_label[status][active]=",
+        );
+        let edited2 = build_edited_spec(&edited, &form2).unwrap();
+        assert!(
+            edited2.value_labels.is_empty(),
+            "cleared value label pruned"
+        );
+        assert!(!edited2.to_pretty_json().unwrap().contains("value_labels"));
+    }
+
+    #[test]
+    fn value_label_edit_no_cross_language_clobber() {
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_value_label(&mut spec, "status", "active", "en", "Active!");
+        let form = FormData::parse(
+            "value_labels_submitted=1&editing_lang=sv\
+             &value_keys[status]=active&value_label[status][active]=Aktiv",
+        );
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(
+            vlabel(&edited, "status", "active", "en").as_deref(),
+            Some("Active!")
+        );
+        assert_eq!(
+            vlabel(&edited, "status", "active", "sv").as_deref(),
+            Some("Aktiv")
+        );
+    }
+
+    #[test]
+    fn value_label_preserved_on_non_value_save() {
+        // A submit without the value_labels sentinel leaves value labels intact.
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_value_label(&mut spec, "status", "active", "en", "Active!");
+        let edited = build_edited_spec(&spec, &FormData::parse("role[name]=subtitle")).unwrap();
+        assert_eq!(
+            vlabel(&edited, "status", "active", "en").as_deref(),
+            Some("Active!")
+        );
+    }
+
+    #[test]
+    fn value_label_pruned_when_field_merged_away() {
+        // status has a value label; merging it into name removes status as a
+        // field → its value labels are pruned (labels ⊆ fields → validate ok).
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_value_label(&mut spec, "status", "active", "sv", "Aktiv");
+        let edited = build_edited_spec(
+            &spec,
+            &FormData::parse("merge_submitted=1&merge[status]=name"),
+        )
+        .unwrap();
+        assert!(edited.fields.iter().all(|f| f.source != "status"));
+        assert!(
+            !edited.value_labels.contains_key("status"),
+            "orphaned value labels pruned"
+        );
+        edited.validate().unwrap();
+    }
+
+    #[test]
+    fn value_label_composes_with_field_label_in_one_save() {
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse(
+            "labels_submitted=1&value_labels_submitted=1&editing_lang=sv\
+             &label[status]=Status (sv)\
+             &value_keys[status]=active&value_label[status][active]=Aktiv",
+        );
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        // field label …
+        assert_eq!(
+            edited
+                .labels
+                .get("status")
+                .and_then(|m| m.get("sv"))
+                .map(String::as_str),
+            Some("Status (sv)")
+        );
+        // … and value label, together.
+        assert_eq!(
+            vlabel(&edited, "status", "active", "sv").as_deref(),
+            Some("Aktiv")
+        );
+        edited.validate().unwrap();
+    }
+
+    #[tokio::test]
+    async fn editor_discovers_status_values_and_inputs() {
+        // gadget_db stores status='active' → the editor auto-lists it with an
+        // input + the hidden value_keys + the sentinel + a normalized placeholder.
+        let base = tmp_dir();
+        let html = render_editor_in(&base, "sv").await;
+        assert!(
+            html.contains(r#"name="value_label[status][active]""#),
+            "value input for the discovered status value:\n{html}"
+        );
+        assert!(
+            html.contains(r#"name="value_keys[status]""#),
+            "hidden value_keys list"
+        );
+        assert!(
+            html.contains(r#"name="value_labels_submitted""#),
+            "sentinel"
+        );
+        assert!(
+            html.contains(r#"placeholder="Active""#),
+            "normalized default placeholder"
+        );
+    }
+
+    #[tokio::test]
+    async fn editor_value_label_prefill_is_strict_for_editing_language() {
+        // status=active labelled in BOTH en and sv. Editing in sv shows the sv
+        // value only (never the en one); editing in en shows the en value.
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_value_label(&mut spec, "status", "active", "en", "Active(EN)");
+        put_value_label(&mut spec, "status", "active", "sv", "Aktiv(SV)");
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html_sv = render_editor_in(&base, "sv").await;
+        assert!(
+            html_sv.contains(r#"value="Aktiv(SV)""#),
+            "sv value prefilled:\n{html_sv}"
+        );
+        assert!(
+            !html_sv.contains(r#"value="Active(EN)""#),
+            "en value must NOT appear in the sv editing view"
+        );
+        let html_en = render_editor_in(&base, "en").await;
+        assert!(html_en.contains(r#"value="Active(EN)""#));
         std::fs::remove_dir_all(&base).ok();
     }
 

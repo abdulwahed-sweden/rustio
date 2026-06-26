@@ -53,6 +53,7 @@
       <input type="hidden" name="filters_submitted" value="1">
       <input type="hidden" name="merge_submitted" value="1">
       <input type="hidden" name="labels_submitted" value="1">
+      <input type="hidden" name="value_labels_submitted" value="1">
       {# The language whose labels this submit edits — carried so the server
          writes label[...] under it and an error re-render keeps it. #}
       <input type="hidden" name="editing_lang" value="{{ editing_lang }}">
@@ -115,6 +116,39 @@
         Set <code>{{ editing_lang }}</code> as this view's default display language
         (currently <code>{{ view_default_language }}</code>)
       </label>
+
+      {# i18n value labels — translate a field's enum-like STORED VALUES for the
+         editing language. The value on the left is the English backend token
+         (read-only); only its shown label is editable. Auto-discovered for
+         status-shaped fields; any already-labelled value also appears. #}
+      {% if value_label_fields and value_label_fields | length > 0 %}
+        <h2 style="margin-top:22px;font-size:1.05rem;">Value labels <span style="color:var(--rio-muted,#667);font-weight:400;">(<code>{{ editing_lang }}</code>)</span></h2>
+        {% for vf in value_label_fields %}
+          <div class="rio-card" style="margin-top:10px;">
+            <strong>{{ vf.label }}</strong> <span class="rio-cell-id">{{ vf.source }}</span>
+            {# Hidden list of the values offered, so the server knows which
+               (source, value) pairs this submit covers. #}
+            <input type="hidden" name="value_keys[{{ vf.source }}]" value="{{ vf.keys }}">
+            <table class="rio-table" style="margin-top:8px;">
+              <thead><tr><th scope="col" style="width:30%;">Value</th><th scope="col">Display label</th></tr></thead>
+              <tbody>
+                {% for v in vf.values %}
+                  <tr>
+                    <td><span class="rio-cell-id">{{ v.value }}</span></td>
+                    <td>
+                      <input class="rio-input" type="text"
+                             name="value_label[{{ vf.source }}][{{ v.value }}]"
+                             value="{{ v.current }}" placeholder="{{ v.placeholder }}"
+                             aria-label="Label for {{ vf.source }} = {{ v.value }} in {{ editing_lang }}">
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endfor %}
+      {% endif %}
+
       <div style="margin-top:14px;display:flex;gap:8px;">
         <button type="submit" class="rio-btn rio-btn--primary">Save view</button>
         <a href="{{ model.list_url }}" class="rio-btn rio-btn--ghost">Back to list</a>

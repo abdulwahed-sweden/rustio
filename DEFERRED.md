@@ -78,13 +78,20 @@ and the admin list renders status pills and plain string cells through it for
 the active language (the pill colour + sorting + stored values stay English —
 the iron rule). Parallel to L1 (labels) + L2 (render).
 
-**Follow-up (editor editing) — not yet built:** editing value labels in the
-composition editor (the analog of L3 for field labels). Today value labels are
-authored by hand-editing `<model>.view.json`; a per-value editing UI (likely
-grouped under each enum-like field, in the editor's editing language) would
-make them UI-editable, persisted through the same `build_edited_spec → validate
-→ save_view_spec` path. Deferred — the storage/render layer is complete and
-provable via the L4 switcher; the editor surface is the next related thread.
+**Editor editing — shipped.** A "Value labels" section in the composition
+editor: for each status-shaped field the editor auto-discovers its stored
+values (`SELECT DISTINCT`, capped at 50) and offers a label input per value in
+the editing language; any already-labelled value (for any field) also appears,
+so hand-authored labels stay editable. Persisted via `apply_value_label_edits`
+through the same `build_edited_spec → validate → save_view_spec` path, with the
+strict exact-editing-language prefill, composes with field labels in one Save,
+and prunes on merge-away. Value keys stay the English token (read-only).
+
+**Remaining follow-up (smaller):** auto-discovery for **non-status** enum-like
+string fields (e.g. `service_type`) — today they're hand-authorable and remain
+editable once authored, but the editor won't proactively list their values
+(only status-shaped fields are auto-discovered). A cardinality-based detection
+(`DISTINCT count ≤ N`) for arbitrary string fields would close the gap.
 
 ## Other signposted threads (not yet phased)
 
