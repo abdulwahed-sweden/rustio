@@ -112,6 +112,23 @@ pub struct ViewSpec {
     /// still renders as the humanised English source (the floor).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, BTreeMap<String, String>>,
+    /// **i18n value display labels — THE IRON RULE, for enum-like values.**
+    /// Parallel to [`Self::labels`] but one level deeper: it translates a
+    /// field's STORED VALUES, keyed `source → value → (language code →
+    /// label)`. The stored value is the English backend token (e.g.
+    /// `"active"`) and is **never** translated — only its *displayed* label
+    /// is. Value keys are the **lowercased** stored token (the canonical
+    /// form), so `active` / `Active` / a boolean `1`→`active` all resolve to
+    /// one entry. Sorting, filtering, and (in the admin) the status-pill
+    /// colour all still key off the English value; only the shown text
+    /// changes.
+    ///
+    /// Empty by default and skipped on serialisation → byte-identical to the
+    /// pre-value-label format. Resolution is [`Self::value_label_for`]; an
+    /// unlabelled value renders via the caller's own formatting (the admin's
+    /// status pill or raw text), exactly as before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub value_labels: BTreeMap<String, BTreeMap<String, BTreeMap<String, String>>>,
 }
 
 /// serde default for [`ViewSpec::default_language`].
@@ -224,6 +241,18 @@ pub enum ViewSpecError {
     EmptyLabelLanguage { source: String },
     /// A stored label value is empty (no blank translations).
     EmptyLabel { source: String, lang: String },
+    /// A `value_labels` key names a `source` that no [`FieldSpec`] has.
+    UnknownValueLabelSource(String),
+    /// A `value_labels` entry has an empty stored-value key.
+    EmptyValueLabelValue { source: String },
+    /// A value label's language-code key is empty.
+    EmptyValueLabelLanguage { source: String, value: String },
+    /// A stored value label is empty (no blank translations).
+    EmptyValueLabel {
+        source: String,
+        value: String,
+        lang: String,
+    },
     /// Failed to parse a ViewSpec document from its on-disk bytes.
     Parse(String),
 }
@@ -258,6 +287,27 @@ impl std::fmt::Display for ViewSpecError {
             Self::EmptyLabel { source, lang } => {
                 write!(f, "field `{source}` has an empty `{lang}` label")
             }
+            Self::UnknownValueLabelSource(source) => {
+                write!(f, "value-label key `{source}` names no field source")
+            }
+            Self::EmptyValueLabelValue { source } => {
+                write!(
+                    f,
+                    "field `{source}` has a value label with an empty value key"
+                )
+            }
+            Self::EmptyValueLabelLanguage { source, value } => write!(
+                f,
+                "field `{source}` value `{value}` has a label with an empty language code"
+            ),
+            Self::EmptyValueLabel {
+                source,
+                value,
+                lang,
+            } => write!(
+                f,
+                "field `{source}` value `{value}` has an empty `{lang}` label"
+            ),
             Self::Parse(msg) => write!(f, "viewspec parse error: {msg}"),
         }
     }
@@ -353,6 +403,36 @@ impl ViewSpec {
             }
         }
 
+        // i18n value labels (enum-like). Same iron-rule discipline, one level
+        // deeper: real source, non-empty value key / language code / label.
+        for (source, by_value) in &self.value_labels {
+            if !seen.contains(source.as_str()) {
+                return Err(ViewSpecError::UnknownValueLabelSource(source.clone()));
+            }
+            for (value, by_lang) in by_value {
+                if value.is_empty() {
+                    return Err(ViewSpecError::EmptyValueLabelValue {
+                        source: source.clone(),
+                    });
+                }
+                for (lang, label) in by_lang {
+                    if lang.is_empty() {
+                        return Err(ViewSpecError::EmptyValueLabelLanguage {
+                            source: source.clone(),
+                            value: value.clone(),
+                        });
+                    }
+                    if label.is_empty() {
+                        return Err(ViewSpecError::EmptyValueLabel {
+                            source: source.clone(),
+                            value: value.clone(),
+                            lang: lang.clone(),
+                        });
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -390,6 +470,28 @@ impl ViewSpec {
     /// labels keyed by the English `source`; it never translates the source.
     pub fn label_for(&self, source: &str, lang: &str) -> Option<String> {
         let by_lang = self.labels.get(source)?;
+        by_lang
+            .get(lang)
+            .or_else(|| by_lang.get(&self.default_language))
+            .cloned()
+    }
+
+    /// Resolve an explicitly stored display label for a field's **value** —
+    /// the value-level analog of [`label_for`](Self::label_for). `source` is
+    /// the English field name; `value` is the English stored token in its
+    /// **lowercased** canonical form (the caller lowercases before calling).
+    /// Precedence:
+    ///
+    /// 1. `value_labels[source][value][lang]` — the requested language;
+    /// 2. `value_labels[source][value][self.default_language]`;
+    /// 3. `None`.
+    ///
+    /// No fallback floor — the caller supplies its own (the admin keeps its
+    /// status-pill / raw-text formatting), so an unlabelled value renders
+    /// exactly as before. The iron rule holds: this only reads labels keyed by
+    /// the English source + English value; it never translates either.
+    pub fn value_label_for(&self, source: &str, value: &str, lang: &str) -> Option<String> {
+        let by_lang = self.value_labels.get(source)?.get(value)?;
         by_lang
             .get(lang)
             .or_else(|| by_lang.get(&self.default_language))
@@ -496,6 +598,7 @@ impl ViewSpec {
             // English source until a developer adds translations (L3).
             default_language: default_language_value(),
             labels: BTreeMap::new(),
+            value_labels: BTreeMap::new(),
         }
     }
 }
@@ -720,6 +823,7 @@ mod tests {
             filters: vec!["status".to_string()],
             default_language: "en".to_string(),
             labels: std::collections::BTreeMap::new(),
+            value_labels: std::collections::BTreeMap::new(),
         }
     }
 
@@ -897,6 +1001,95 @@ mod tests {
         assert_eq!(spec.label("created_at", "sv"), "Created At");
     }
 
+    // --- i18n enum/value display labels -------------------------------------
+
+    /// `sample()` + a value label for `status` value `active` (en + sv).
+    fn sample_with_value_labels() -> ViewSpec {
+        let mut spec = sample(); // default_language = "en"; has a `status` field
+        let mut by_lang = BTreeMap::new();
+        by_lang.insert("en".to_string(), "Active!".to_string());
+        by_lang.insert("sv".to_string(), "Aktiv".to_string());
+        let mut by_value = BTreeMap::new();
+        by_value.insert("active".to_string(), by_lang);
+        spec.value_labels.insert("status".to_string(), by_value);
+        spec
+    }
+
+    #[test]
+    fn value_label_for_precedence_and_round_trip() {
+        let spec = sample_with_value_labels();
+        spec.validate().unwrap();
+        // requested language wins.
+        assert_eq!(
+            spec.value_label_for("status", "active", "sv").as_deref(),
+            Some("Aktiv")
+        );
+        assert_eq!(
+            spec.value_label_for("status", "active", "en").as_deref(),
+            Some("Active!")
+        );
+        // missing language → default_language ("en").
+        assert_eq!(
+            spec.value_label_for("status", "active", "de").as_deref(),
+            Some("Active!")
+        );
+        // no entry for the value / source → None (NO floor — caller's job).
+        assert_eq!(spec.value_label_for("status", "inactive", "en"), None);
+        assert_eq!(spec.value_label_for("nope", "active", "en"), None);
+        // Round-trips through JSON unchanged.
+        let json = spec.to_pretty_json().unwrap();
+        assert_eq!(ViewSpec::parse(&json).unwrap(), spec);
+    }
+
+    #[test]
+    fn no_value_labels_serialises_without_the_key() {
+        let json = sample().to_pretty_json().unwrap();
+        assert!(
+            !json.contains("value_labels"),
+            "byte-identical when empty:\n{json}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_bad_value_labels() {
+        let put = |spec: &mut ViewSpec, src: &str, val: &str, lang: &str, label: &str| {
+            spec.value_labels
+                .entry(src.to_string())
+                .or_default()
+                .entry(val.to_string())
+                .or_default()
+                .insert(lang.to_string(), label.to_string());
+        };
+        // Unknown source (the iron rule: a value label needs a real field).
+        let mut s = sample();
+        put(&mut s, "ghost", "active", "en", "X");
+        assert!(matches!(
+            s.validate(),
+            Err(ViewSpecError::UnknownValueLabelSource(_))
+        ));
+        // Empty value key.
+        let mut s = sample();
+        put(&mut s, "status", "", "en", "X");
+        assert!(matches!(
+            s.validate(),
+            Err(ViewSpecError::EmptyValueLabelValue { .. })
+        ));
+        // Empty language code.
+        let mut s = sample();
+        put(&mut s, "status", "active", "", "X");
+        assert!(matches!(
+            s.validate(),
+            Err(ViewSpecError::EmptyValueLabelLanguage { .. })
+        ));
+        // Empty label value.
+        let mut s = sample();
+        put(&mut s, "status", "active", "en", "");
+        assert!(matches!(
+            s.validate(),
+            Err(ViewSpecError::EmptyValueLabel { .. })
+        ));
+    }
+
     #[test]
     fn iron_rule_label_never_mutates_source() {
         // Resolving a label in any language leaves every FieldSpec.source —
@@ -1009,6 +1202,7 @@ mod tests {
             filters: vec![],
             default_language: "en".to_string(),
             labels: std::collections::BTreeMap::new(),
+            value_labels: std::collections::BTreeMap::new(),
         };
         let parsed = ViewSpec::parse(&spec.to_pretty_json().unwrap()).unwrap();
         assert_eq!(parsed, spec);

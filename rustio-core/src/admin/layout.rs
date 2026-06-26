@@ -2317,6 +2317,13 @@ pub async fn list_render(
                             return String::new();
                         }
                         let (data_value, label) = normalize_status_pill(&raw);
+                        // i18n value labels — translate the displayed text for
+                        // the active language, keyed by the lowercased English
+                        // value. The pill COLOUR still keys off `data_value`
+                        // (English): only the shown text changes (iron rule).
+                        let label = spec
+                            .value_label_for(&col.name, &data_value, &active_lang)
+                            .unwrap_or(label);
                         format!(
                             r#"<span class="{cls}">{label}</span>"#,
                             cls = status_pill_color(&data_value),
@@ -2329,7 +2336,14 @@ pub async fn list_render(
                             html_escape(&raw)
                         )
                     } else {
-                        html_escape(&raw)
+                        // i18n value labels — an enum-like value's label for the
+                        // active language, keyed by the lowercased stored value;
+                        // falls back to the raw English value.
+                        let key = raw.trim().to_lowercase();
+                        match spec.value_label_for(&col.name, &key, &active_lang) {
+                            Some(translated) => html_escape(&translated),
+                            None => html_escape(&raw),
+                        }
                     }
                 })
                 .collect();
@@ -4038,6 +4052,102 @@ mod tests {
         assert!(user_view(&db, None).await.is_none());
     }
 
+    // --- i18n enum/value display labels (admin render) -------------------
+
+    fn put_value_label(
+        spec: &mut crate::viewspec::ViewSpec,
+        source: &str,
+        value: &str,
+        lang: &str,
+        text: &str,
+    ) {
+        spec.value_labels
+            .entry(source.to_string())
+            .or_default()
+            .entry(value.to_string())
+            .or_default()
+            .insert(lang.to_string(), text.to_string());
+    }
+
+    #[tokio::test]
+    async fn status_value_label_translates_text_keeps_color() {
+        // gadget status = 'active'. Translate the pill TEXT for sv; the pill
+        // COLOUR must still derive from the English value "active".
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        spec.default_language = "sv".to_string();
+        put_value_label(&mut spec, "status", "active", "sv", "Aktiv");
+        spec.validate().unwrap();
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(html.contains("Aktiv"), "status text translated:\n{html}");
+        assert!(!html.contains(">Active</span>"), "English label replaced");
+        // Iron rule: the colour class still keys off the English "active".
+        assert!(
+            html.contains(status_pill_color("active")),
+            "pill colour keyed off the English value, not the translation"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn plain_value_label_translates_cell_text() {
+        // gadget notes = 'MY-META-NOTE' (a plain, non-status cell). The lookup
+        // key is the lowercased stored value.
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        spec.default_language = "sv".to_string();
+        put_value_label(&mut spec, "notes", "my-meta-note", "sv", "Översatt");
+        spec.validate().unwrap();
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(html.contains("Översatt"), "plain cell translated:\n{html}");
+        assert!(
+            !html.contains("MY-META-NOTE"),
+            "English value text replaced"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn unlabelled_value_renders_as_before() {
+        // No value_labels → status pill + plain cell render exactly as today.
+        let base = tmp_dir();
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(
+            html.contains(">Active</span>"),
+            "status English label unchanged"
+        );
+        assert!(html.contains("MY-META-NOTE"), "plain value unchanged");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn user_preference_drives_value_label_language() {
+        // default_language is "en" (no en value label), but the user prefers
+        // sv and an sv value label exists → the pill shows Swedish for them.
+        let base = tmp_dir();
+        let (db, identity) = db_with_user("ev@example.com").await;
+        crate::auth::user::set_preferred_language(&db, identity.user_id, "sv")
+            .await
+            .unwrap();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        assert_eq!(spec.default_language, "en");
+        put_value_label(&mut spec, "status", "active", "sv", "Aktiv");
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_gadget_list_as(&base, &db, Some(&identity)).await;
+        assert!(
+            html.contains("Aktiv"),
+            "user's sv preference drives the value label:\n{html}"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     #[test]
     fn load_saved_view_reads_valid_skips_missing_and_invalid() {
         let base = tmp_dir();
@@ -4734,6 +4844,7 @@ mod tests {
             filters: vec!["status".to_string()],
             default_language: "en".to_string(),
             labels: std::collections::BTreeMap::new(),
+            value_labels: std::collections::BTreeMap::new(),
         }
     }
 
@@ -4803,6 +4914,7 @@ mod tests {
             filters: vec![],
             default_language: "en".to_string(),
             labels: std::collections::BTreeMap::new(),
+            value_labels: std::collections::BTreeMap::new(),
         };
         assert!(save_view_spec(&base, "Gadget", &invalid).is_err());
         assert!(
@@ -4827,6 +4939,7 @@ mod tests {
             filters: vec![],
             default_language: "en".to_string(),
             labels: std::collections::BTreeMap::new(),
+            value_labels: std::collections::BTreeMap::new(),
         };
         assert!(save_view_spec(&base, "Gadget", &invalid).is_err());
         assert_eq!(load_saved_view(&base, "Gadget").unwrap(), before);
@@ -5079,6 +5192,7 @@ mod tests {
             filters: vec!["name".to_string()], // … but listed as a filter
             default_language: "en".to_string(),
             labels: std::collections::BTreeMap::new(),
+            value_labels: std::collections::BTreeMap::new(),
         };
         assert!(
             bad.validate().is_err(),
@@ -5246,6 +5360,7 @@ mod tests {
             filters: vec![],
             default_language: "en".to_string(),
             labels: std::collections::BTreeMap::new(),
+            value_labels: std::collections::BTreeMap::new(),
         };
         assert!(matches!(
             bad.validate(),

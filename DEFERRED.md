@@ -70,12 +70,21 @@ blocks) rendered in multiple locations:
 - **bottom of the sidebar** — also included;
 - **footer** — optional, lower priority for an admin panel.
 
-### L4-D — Enum / stored-value display labels (separate i18n sub-phase)
+### L4-D — Enum / stored-value display labels
 
-Out of scope through L2 (noted in the L2 work): translating enum *stored values*
-(e.g. `active` → `"Aktiv"`) is a distinct sub-phase. Stored values stay English
-(the iron rule); only their display labels would be translated, via a mechanism
-parallel to field labels.
+**Shipped (storage + render):** `ViewSpec.value_labels`
+(`source → value → lang → label`) + `value_label_for` resolver + validation,
+and the admin list renders status pills and plain string cells through it for
+the active language (the pill colour + sorting + stored values stay English —
+the iron rule). Parallel to L1 (labels) + L2 (render).
+
+**Follow-up (editor editing) — not yet built:** editing value labels in the
+composition editor (the analog of L3 for field labels). Today value labels are
+authored by hand-editing `<model>.view.json`; a per-value editing UI (likely
+grouped under each enum-like field, in the editor's editing language) would
+make them UI-editable, persisted through the same `build_edited_spec → validate
+→ save_view_spec` path. Deferred — the storage/render layer is complete and
+provable via the L4 switcher; the editor surface is the next related thread.
 
 ## Other signposted threads (not yet phased)
 
