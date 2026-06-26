@@ -22,20 +22,26 @@
 
   <div class="rio-card">
     <p style="color:var(--rio-muted,#667);margin-top:0;">
-      Choose the role each field plays in the list view. <em>Hidden</em> fields
-      never render. Reordering, filters, and merging are coming in later
-      sub-phases.
+      Choose the role each field plays in the list view and order them with the
+      ▲ ▼ controls (top row appears first). <em>Hidden</em> fields never render.
+      Filters and merging are coming in later sub-phases.
     </p>
     <form method="post" action="{{ save_action }}">
       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
       <input type="hidden" name="_return" value="{{ return_to }}">
-      <table class="rio-table">
+      <table class="rio-table" data-view-editor>
         <thead>
-          <tr><th scope="col">Field</th><th scope="col">Role</th></tr>
+          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th></tr>
         </thead>
         <tbody>
           {% for field in fields %}
-            <tr>
+            <tr data-row data-source="{{ field.source }}">
+              <td style="white-space:nowrap;">
+                {# Position is explicit, not DOM-order — see build_edited_spec. #}
+                <input type="hidden" name="order[{{ field.source }}]" value="{{ loop.index0 }}" data-order>
+                <button type="button" class="rio-btn rio-btn--ghost" data-move="up" aria-label="Move {{ field.label }} up" title="Move up">&#9650;</button>
+                <button type="button" class="rio-btn rio-btn--ghost" data-move="down" aria-label="Move {{ field.label }} down" title="Move down">&#9660;</button>
+              </td>
               <td>{{ field.label }} <span class="rio-cell-id">{{ field.source }}</span></td>
               <td>
                 <select class="rio-input" name="role[{{ field.source }}]">
@@ -54,4 +60,34 @@
       </div>
     </form>
   </div>
+
+  <script>
+  // Phase 9b — client-side reorder. Up/Down swap a row with its DOM
+  // neighbour, then renumber every order[…] input by DOM position. The
+  // server is the source of truth: it reads those explicit indices and
+  // stable-sorts. With JS disabled the indices submit unchanged (no-op).
+  (function () {
+    var table = document.querySelector('table[data-view-editor]');
+    if (!table) return;
+    function renumber() {
+      var inputs = table.querySelectorAll('tbody [data-order]');
+      for (var i = 0; i < inputs.length; i++) inputs[i].value = i;
+    }
+    table.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('[data-move]') : null;
+      if (!btn) return;
+      var row = btn.closest('tr[data-row]');
+      if (!row) return;
+      var dir = btn.getAttribute('data-move');
+      if (dir === 'up') {
+        var prev = row.previousElementSibling;
+        if (prev) row.parentNode.insertBefore(row, prev);      // top row up → no-op
+      } else {
+        var next = row.nextElementSibling;
+        if (next) row.parentNode.insertBefore(next, row);      // bottom row down → no-op
+      }
+      renumber();
+    });
+  })();
+  </script>
 {% endblock %}

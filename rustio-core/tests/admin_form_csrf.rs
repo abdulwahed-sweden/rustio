@@ -328,6 +328,15 @@ async fn view_editor_csrf_permission_and_reject() {
         editor.contains(r#"name="role[title]""#),
         "editor must render a role select for the `title` field:\n{editor}"
     );
+    // Phase 9b: the reorder controls (order index + move buttons) render.
+    assert!(
+        editor.contains(r#"name="order[title]""#),
+        "editor must render an order input per field:\n{editor}"
+    );
+    assert!(
+        editor.contains(r#"data-move="up""#) && editor.contains(r#"data-move="down""#),
+        "editor must render up/down reorder buttons"
+    );
     let csrf = extract_csrf(&editor).expect("csrf on the editor page");
 
     // 2. POST save WITHOUT _csrf → 403.

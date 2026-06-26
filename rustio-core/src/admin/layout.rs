@@ -1412,26 +1412,35 @@ fn role_options() -> Vec<RoleOptionView> {
     .collect()
 }
 
-/// Build a candidate ViewSpec from `spec` by applying the submitted roles
-/// (Phase 9a). The handler drives off `spec.fields` (the authority), so
-/// **order, merge, filterable, filters, version, and model are preserved**
-/// exactly — only roles change.
+/// Build a candidate ViewSpec from `spec` by applying the submitted field
+/// **roles** (9a) and **order** (9b). The handler drives off `spec.fields`
+/// (the authority), so the field **set** is preserved exactly — every field
+/// appears once, **never dropped, duplicated, or invented** — and each
+/// field's `merge`/`filterable`, plus the spec's `filters`/`version`/
+/// `model`/`layout`, are preserved. Only roles and sequence change.
 ///
-/// For each field, `role[<source>]` is read: a present value MUST parse to
-/// one of the six roles, otherwise this returns `Err(message)` so the
-/// handler re-renders the editor with the error and **writes nothing**
-/// (a bad submission never silently falls back to the existing role). An
-/// omitted key keeps the field's current role.
+/// - **Roles:** `role[<source>]`. A present value MUST parse to one of the
+///   six roles, else this returns `Err(message)` so the handler re-renders
+///   the editor with the error and **writes nothing** (a bad submission
+///   never silently falls back to the existing role). Omitted → keep
+///   current role.
+/// - **Order:** `order[<source>]=<index>`. Fields are **stable-sorted by
+///   `(index, original_position)`**. The original-position tiebreaker makes
+///   this a **total, deterministic permutation even under duplicate,
+///   missing, or tampered indices** — and untouched/original indices (the
+///   no-JS / no-change path) sort to **identity**. A missing/garbage index
+///   falls back to the field's original position.
 ///
-/// 9b/9c/9d plug in here: 9b will sort `new_fields` by a submitted order,
-/// 9c will read `filterable[<source>]` + a `filters[]` set, 9d will read a
-/// merge grouping — all feeding the same candidate → `validate` → write.
-pub(crate) fn build_role_edited_spec(
+/// 9c/9d plug in here: 9c reads `filterable[<source>]` + a filters set,
+/// 9d a merge grouping — all feeding the same candidate → `validate` → write.
+pub(crate) fn build_edited_spec(
     spec: &crate::viewspec::ViewSpec,
     form: &crate::http::FormData,
 ) -> Result<crate::viewspec::ViewSpec, String> {
-    let mut new_fields = Vec::with_capacity(spec.fields.len());
-    for f in &spec.fields {
+    // (original_position, order_index, field) — one entry per existing field.
+    let mut entries: Vec<(usize, i64, crate::viewspec::FieldSpec)> =
+        Vec::with_capacity(spec.fields.len());
+    for (pos, f) in spec.fields.iter().enumerate() {
         let role = match form.get(&format!("role[{}]", f.source)) {
             Some(value) => parse_role_strict(value).ok_or_else(|| {
                 format!(
@@ -1441,15 +1450,29 @@ pub(crate) fn build_role_edited_spec(
             })?,
             None => f.role,
         };
-        new_fields.push(crate::viewspec::FieldSpec {
-            source: f.source.clone(),
-            role,
-            merge: f.merge.clone(),
-            filterable: f.filterable,
-        });
+        // Submitted order index; missing/garbage → keep original position.
+        let order = form
+            .get(&format!("order[{}]", f.source))
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(pos as i64);
+        entries.push((
+            pos,
+            order,
+            crate::viewspec::FieldSpec {
+                source: f.source.clone(),
+                role,
+                merge: f.merge.clone(),
+                filterable: f.filterable,
+            },
+        ));
     }
+    // Stable, deterministic permutation: by submitted index, then by
+    // original position to break ties (so duplicate/missing indices can
+    // never drop a field or reorder nondeterministically).
+    entries.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+
     let mut candidate = spec.clone();
-    candidate.fields = new_fields;
+    candidate.fields = entries.into_iter().map(|(_, _, fs)| fs).collect();
     Ok(candidate)
 }
 
@@ -3524,11 +3547,11 @@ mod tests {
     }
 
     #[test]
-    fn build_role_edited_spec_changes_roles_preserves_everything_else() {
+    fn build_edited_spec_changes_roles_preserves_everything_else() {
         let spec = custom_gadget_spec();
         // Change name → subtitle, notes → hidden; leave status omitted.
         let form = FormData::parse("role[name]=subtitle&role[notes]=hidden");
-        let edited = build_role_edited_spec(&spec, &form).unwrap();
+        let edited = build_edited_spec(&spec, &form).unwrap();
 
         // Roles updated.
         assert_eq!(edited.fields[0].role, FieldRole::Subtitle); // name
@@ -3549,10 +3572,10 @@ mod tests {
     }
 
     #[test]
-    fn build_role_edited_spec_rejects_unknown_role() {
+    fn build_edited_spec_rejects_unknown_role() {
         let spec = custom_gadget_spec();
         let form = FormData::parse("role[name]=banana");
-        let err = build_role_edited_spec(&spec, &form).unwrap_err();
+        let err = build_edited_spec(&spec, &form).unwrap_err();
         assert!(
             err.contains("banana"),
             "error should name the bad value: {err}"
@@ -3609,7 +3632,7 @@ mod tests {
         // path, keep status as Badge.
         let derived = ViewSpec::from_schema_model(&model);
         let form = FormData::parse("role[notes]=hidden&role[status]=badge");
-        let edited = build_role_edited_spec(&derived, &form).unwrap();
+        let edited = build_edited_spec(&derived, &form).unwrap();
         save_view_spec(&base, "Gadget", &edited).unwrap();
 
         // Render the gadget list (Table) from this saved view.
@@ -3626,6 +3649,121 @@ mod tests {
         );
         // Hidden guarantee still holds for the always-hidden secret.
         assert!(!html.contains("topsecret-xyz"));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    // --- Phase 9b: field reordering --------------------------------------
+
+    /// Sources of a spec's fields, in order.
+    fn field_order(spec: &ViewSpec) -> Vec<String> {
+        spec.fields.iter().map(|f| f.source.clone()).collect()
+    }
+
+    #[test]
+    fn reorder_sequences_fields_by_submitted_index() {
+        let spec = custom_gadget_spec(); // [name, status, notes]
+                                         // Reverse: notes, status, name.
+        let form = FormData::parse("order[name]=2&order[status]=1&order[notes]=0");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(field_order(&edited), vec!["notes", "status", "name"]);
+    }
+
+    #[test]
+    fn reorder_preserves_field_set_even_with_garbage_indices() {
+        use std::collections::BTreeSet;
+        let spec = custom_gadget_spec();
+        let before: BTreeSet<String> = field_order(&spec).into_iter().collect();
+        // Duplicate + missing + out-of-range indices (tampered).
+        let form = FormData::parse("order[name]=5&order[status]=5&order[notes]=banana");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        let after: BTreeSet<String> = field_order(&edited).into_iter().collect();
+        assert_eq!(
+            before, after,
+            "the field SET must be identical — no drop/dup/invent"
+        );
+        assert_eq!(edited.fields.len(), spec.fields.len(), "no duplicates");
+    }
+
+    #[test]
+    fn reorder_with_original_indices_is_identity() {
+        // The no-JS / no-change path: submit the original indices → order
+        // unchanged (stable-sort identity), never a crash or corruption.
+        let spec = custom_gadget_spec(); // [name(0), status(1), notes(2)]
+        let form = FormData::parse("order[name]=0&order[status]=1&order[notes]=2");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(field_order(&edited), field_order(&spec));
+    }
+
+    #[test]
+    fn reorder_with_no_order_keys_is_identity() {
+        // No order[…] submitted at all (e.g. a role-only client) → fields
+        // keep their existing sequence.
+        let spec = custom_gadget_spec();
+        let form = FormData::parse("role[name]=subtitle");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(field_order(&edited), field_order(&spec));
+        assert_eq!(edited.fields[0].role, FieldRole::Subtitle); // role still applied
+    }
+
+    #[test]
+    fn reorder_composes_with_role_change_in_one_save() {
+        let spec = custom_gadget_spec(); // [name, status, notes]
+                                         // One submit: move notes to top AND change status → hidden.
+        let form =
+            FormData::parse("order[notes]=0&order[name]=1&order[status]=2&role[status]=hidden");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(field_order(&edited), vec!["notes", "name", "status"]);
+        let status = edited.fields.iter().find(|f| f.source == "status").unwrap();
+        assert_eq!(status.role, FieldRole::Hidden);
+    }
+
+    #[test]
+    fn reorder_preserves_merge_filterable_and_spec_metadata() {
+        let spec = custom_gadget_spec();
+        let form = FormData::parse("order[name]=2&order[status]=0&order[notes]=1");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        // name kept its merge; status kept filterable; spec-level fields kept.
+        let name = edited.fields.iter().find(|f| f.source == "name").unwrap();
+        let status = edited.fields.iter().find(|f| f.source == "status").unwrap();
+        assert_eq!(name.merge, spec.fields[0].merge);
+        assert!(status.filterable);
+        assert_eq!(edited.filters, spec.filters);
+        assert_eq!(edited.layout, spec.layout);
+        assert_eq!(edited.version, spec.version);
+        assert_eq!(edited.model, spec.model);
+    }
+
+    #[tokio::test]
+    async fn reorder_takes_effect_in_list_render() {
+        // Move `status` (a Badge) to the front and confirm the rendered
+        // Table columns lead with it; the Hidden guarantee still holds.
+        let base = tmp_dir();
+        let model = gadget_schema_model();
+        let derived = ViewSpec::from_schema_model(&model);
+        // Derived order: id, name, email, status, notes, password_hash.
+        // Put status first (everything else after, original-relative order).
+        let form = FormData::parse(
+            "order[status]=0&order[id]=1&order[name]=2&order[email]=3&order[notes]=4&order[password_hash]=5",
+        );
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        save_view_spec(&base, "Gadget", &edited).unwrap();
+
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        // The first data column header should be Status (id/password_hash are
+        // Hidden, so the first *visible* column is status).
+        let first_th = html
+            .split("<th scope=\"col\">")
+            .nth(1)
+            .and_then(|s| s.split("</th>").next())
+            .unwrap_or("");
+        assert_eq!(
+            first_th, "Status",
+            "reordered column should lead the table: {html}"
+        );
+        assert!(
+            !html.contains("topsecret-xyz"),
+            "Hidden guarantee after reorder"
+        );
         std::fs::remove_dir_all(&base).ok();
     }
 

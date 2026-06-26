@@ -5171,9 +5171,9 @@ async fn admin_model_view_post(
         }};
     }
 
-    // Build candidate from the submitted roles (order/merge/filterable
+    // Build candidate from the submitted roles + order (merge/filterable
     // preserved). An unknown role value rejects — never a silent fallback.
-    let candidate = match crate::admin::layout::build_role_edited_spec(&spec, &form) {
+    let candidate = match crate::admin::layout::build_edited_spec(&spec, &form) {
         Ok(c) => c,
         Err(msg) => reject!(&msg),
     };
