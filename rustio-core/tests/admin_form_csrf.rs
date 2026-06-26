@@ -346,6 +346,15 @@ async fn view_editor_csrf_permission_and_reject() {
         editor.contains(r#"name="filters_submitted""#),
         "editor must send the filters_submitted sentinel"
     );
+    // Phase 9d: the merge select per field + the merge_submitted sentinel.
+    assert!(
+        editor.contains(r#"name="merge[title]""#),
+        "editor must render a merge select per field:\n{editor}"
+    );
+    assert!(
+        editor.contains(r#"name="merge_submitted""#),
+        "editor must send the merge_submitted sentinel"
+    );
     let csrf = extract_csrf(&editor).expect("csrf on the editor page");
 
     // 2. POST save WITHOUT _csrf → 403.

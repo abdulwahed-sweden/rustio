@@ -23,19 +23,21 @@
   <div class="rio-card">
     <p style="color:var(--rio-muted,#667);margin-top:0;">
       Choose the role each field plays in the list view, order them with the
-      ▲ ▼ controls (top row appears first), and tick <strong>Filter</strong> to
-      expose a field as a list filter. <em>Hidden</em> fields never render and
-      cannot be filters. Merging is coming in a later sub-phase.
+      ▲ ▼ controls (top row appears first), tick <strong>Filter</strong> to
+      expose a field as a list filter, and use <strong>Merge into</strong> to
+      combine a field into another field's cell (joined with " · "). <em>Hidden</em>
+      fields never render, can't be filters, and can't be merged.
     </p>
     <form method="post" action="{{ save_action }}">
       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
       <input type="hidden" name="_return" value="{{ return_to }}">
-      {# Sentinel: tells the server this submit carries filter state, so it
-         derives filters/filterable from the checkboxes below. #}
+      {# Sentinels: tell the server this submit carries filter + merge state,
+         so it derives filters/filterable and the merge groups from below. #}
       <input type="hidden" name="filters_submitted" value="1">
+      <input type="hidden" name="merge_submitted" value="1">
       <table class="rio-table" data-view-editor>
         <thead>
-          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th><th scope="col" style="width:1%;">Filter</th></tr>
+          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th><th scope="col" style="width:1%;">Filter</th><th scope="col">Merge into</th></tr>
         </thead>
         <tbody>
           {% for field in fields %}
@@ -58,6 +60,18 @@
                 <input type="checkbox" name="filterable[{{ field.source }}]" value="1" data-filterable
                        {% if field.filterable %} checked{% endif %}{% if field.is_hidden %} disabled{% endif %}
                        aria-label="Use {{ field.label }} as a filter">
+              </td>
+              <td>
+                <select class="rio-input" name="merge[{{ field.source }}]" data-merge
+                        {% if field.is_hidden %} disabled{% endif %}
+                        aria-label="Merge {{ field.label }} into another field">
+                  <option value="">—</option>
+                  {% for t in merge_targets %}
+                    {% if t.source != field.source %}
+                      <option value="{{ t.source }}"{% if t.source == field.merge_into %} selected{% endif %}>{{ t.label }}</option>
+                    {% endif %}
+                  {% endfor %}
+                </select>
               </td>
             </tr>
           {% endfor %}

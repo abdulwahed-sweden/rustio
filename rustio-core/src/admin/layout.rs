@@ -1020,6 +1020,16 @@ struct EditorFieldView {
     /// `true` when the current role is Hidden — the template disables the
     /// filter checkbox (the server also enforces Hidden ⇒ not filterable).
     is_hidden: bool,
+    /// Phase 9d — the anchor this field is currently merged into (its
+    /// `<select>`'s selected value), or `""` for a standalone field.
+    merge_into: String,
+}
+
+/// A field that can be a merge anchor (a standalone, non-Hidden field).
+#[derive(serde::Serialize)]
+struct MergeTargetView {
+    source: String,
+    label: String,
 }
 
 #[derive(serde::Serialize)]
@@ -1053,24 +1063,62 @@ pub async fn view_editor_render(
     let ui_fields = model.fields();
     let schema_model = schema_model_from_ui(model.model_name(), &ui_fields);
     let spec = resolve_view(base, model.model_name(), &schema_model);
+    // Derived defaults supply a role for any merged-in member (its standalone
+    // role isn't stored while merged — unmerging restores the derived role).
+    let derived = crate::viewspec::ViewSpec::from_schema_model(&schema_model);
 
-    let fields: Vec<EditorFieldView> = spec
+    let label_of = |source: &str| -> String {
+        ui_fields
+            .iter()
+            .find(|f| f.name == source)
+            .map(|f| humanize_field_label(f.label))
+            .unwrap_or_else(|| humanize_field_label(source))
+    };
+    let derived_role = |source: &str| -> crate::viewspec::FieldRole {
+        derived
+            .fields
+            .iter()
+            .find(|f| f.source == source)
+            .map(|f| f.role)
+            .unwrap_or(crate::viewspec::FieldRole::Meta)
+    };
+
+    // Reconstruct the FULL field universe as editor rows: each standalone
+    // field, with its merged-in members listed right after (so they can be
+    // un-merged). Members show their derived role + their anchor.
+    let mut fields: Vec<EditorFieldView> = Vec::new();
+    for fs in &spec.fields {
+        fields.push(EditorFieldView {
+            source: fs.source.clone(),
+            label: label_of(&fs.source),
+            role: field_role_key(fs.role).to_string(),
+            filterable: fs.filterable,
+            is_hidden: fs.role == crate::viewspec::FieldRole::Hidden,
+            merge_into: String::new(),
+        });
+        if let Some(m) = &fs.merge {
+            for member in m.iter().filter(|s| *s != &fs.source) {
+                let role = derived_role(member);
+                fields.push(EditorFieldView {
+                    source: member.clone(),
+                    label: label_of(member),
+                    role: field_role_key(role).to_string(),
+                    filterable: false,
+                    is_hidden: role == crate::viewspec::FieldRole::Hidden,
+                    merge_into: fs.source.clone(),
+                });
+            }
+        }
+    }
+
+    // Merge targets = standalone, non-Hidden fields (potential anchors).
+    let merge_targets: Vec<MergeTargetView> = spec
         .fields
         .iter()
-        .map(|fs| {
-            // Prefer the model's UI label; fall back to humanising the source.
-            let label = ui_fields
-                .iter()
-                .find(|f| f.name == fs.source)
-                .map(|f| humanize_field_label(f.label))
-                .unwrap_or_else(|| humanize_field_label(&fs.source));
-            EditorFieldView {
-                source: fs.source.clone(),
-                label,
-                role: field_role_key(fs.role).to_string(),
-                filterable: fs.filterable,
-                is_hidden: fs.role == crate::viewspec::FieldRole::Hidden,
-            }
+        .filter(|f| f.role != crate::viewspec::FieldRole::Hidden)
+        .map(|f| MergeTargetView {
+            source: f.source.clone(),
+            label: label_of(&f.source),
         })
         .collect();
 
@@ -1092,6 +1140,7 @@ pub async fn view_editor_render(
             model => model_view,
             fields => fields,
             roles => role_options(),
+            merge_targets => merge_targets,
             save_action => format!("/admin/{slug}/view"),
             return_to => return_to,
             error => error,
@@ -1230,6 +1279,11 @@ struct ColumnView {
     name: String,
     label: String,
     sortable: bool,
+    /// Phase 9d — when this column is a merged cell, the full list of merge
+    /// sources (anchor first). Empty for a normal single-source column. The
+    /// row renderer joins these sources' values with " · ".
+    #[serde(skip)]
+    merge: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -1449,8 +1503,25 @@ fn role_options() -> Vec<RoleOptionView> {
 ///   construction, [`ViewSpec::validate`](crate::viewspec::ViewSpec::validate)'s
 ///   filter rule passes — and still runs as the load-bearing guard.
 ///
-/// 9d plugs in here: a merge grouping → the same candidate → `validate` → write.
+/// 9d (merge) is gated on a separate `merge_submitted` sentinel: when
+/// present, [`build_edited_spec_with_merge`] takes over (it reconstructs the
+/// full field universe so merges can be expanded/collapsed); when absent,
+/// the role/order/filter path below runs unchanged.
 pub(crate) fn build_edited_spec(
+    spec: &crate::viewspec::ViewSpec,
+    form: &crate::http::FormData,
+) -> Result<crate::viewspec::ViewSpec, String> {
+    if form.get("merge_submitted").is_some() {
+        build_edited_spec_with_merge(spec, form)
+    } else {
+        build_edited_spec_no_merge(spec, form)
+    }
+}
+
+/// Roles (9a) + order (9b) + filters (9c), with merges **preserved** as-is.
+/// This is the path for non-merge-editing submits; merges are only touched
+/// when the `merge_submitted` sentinel is present (see [`build_edited_spec`]).
+fn build_edited_spec_no_merge(
     spec: &crate::viewspec::ViewSpec,
     form: &crate::http::FormData,
 ) -> Result<crate::viewspec::ViewSpec, String> {
@@ -1513,6 +1584,182 @@ pub(crate) fn build_edited_spec(
             .map(|f| f.source.clone())
             .collect();
     }
+    Ok(candidate)
+}
+
+/// Roles + order + filters + **merge** (9d). Reconstructs the full field
+/// universe — standalone fields plus members currently collapsed inside
+/// anchors' `merge` vecs — so the editor can expand (unmerge) any field.
+///
+/// Merge model (collapsed, renderer-correct): a merged cell is one anchor
+/// `FieldSpec` whose `merge` vec lists `[anchor, members…]`; the non-anchor
+/// members are **removed** from `fields` (the renderer would otherwise emit
+/// them twice). Server-side enforcements:
+/// - the merge target must be a standalone field (its own `merge[...]`
+///   empty) — kills chains/self-loops;
+/// - one source → one target (a single `<select>`) ⇒ **no overlap**;
+/// - **Hidden** sources are dropped from any merge (the Hidden value never
+///   enters the join), and a Hidden anchor forms no group;
+/// - a group below 2 members after drops is dropped entirely (all
+///   standalone). [`ViewSpec::validate`](crate::viewspec::ViewSpec::validate)
+///   backstops `MergeTooShort`.
+///
+/// Round-trip note: a member's role/order/filterable aren't stored while
+/// merged, so **unmerging restores it at its derived-default role** (the
+/// editor pre-fills that; here a member reconstructed without a submitted
+/// role falls back to `Meta`).
+fn build_edited_spec_with_merge(
+    spec: &crate::viewspec::ViewSpec,
+    form: &crate::http::FormData,
+) -> Result<crate::viewspec::ViewSpec, String> {
+    use crate::viewspec::{FieldRole, FieldSpec};
+    use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+    let filters_submitted = form.get("filters_submitted").is_some();
+
+    // --- Field universe: standalone sources, each anchor's members after it.
+    struct Uni {
+        source: String,
+        role_fallback: FieldRole,
+        filterable_fallback: bool,
+    }
+    let mut uni: Vec<Uni> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for f in &spec.fields {
+        uni.push(Uni {
+            source: f.source.clone(),
+            role_fallback: f.role,
+            filterable_fallback: f.filterable,
+        });
+        seen.insert(f.source.clone());
+        if let Some(m) = &f.merge {
+            for member in m.iter().filter(|s| *s != &f.source) {
+                if seen.insert(member.clone()) {
+                    uni.push(Uni {
+                        source: member.clone(),
+                        role_fallback: FieldRole::Meta,
+                        filterable_fallback: false,
+                    });
+                }
+            }
+        }
+    }
+
+    // --- Per-source: role, order, filterable, merge target.
+    struct Built {
+        source: String,
+        role: FieldRole,
+        order: i64,
+        filterable: bool,
+        merge_into: Option<String>,
+    }
+    let mut built: Vec<Built> = Vec::with_capacity(uni.len());
+    for (pos, u) in uni.iter().enumerate() {
+        let role = match form.get(&format!("role[{}]", u.source)) {
+            Some(value) => parse_role_strict(value).ok_or_else(|| {
+                format!(
+                    "Unknown role \u{201c}{value}\u{201d} for field \u{201c}{}\u{201d}.",
+                    u.source
+                )
+            })?,
+            None => u.role_fallback,
+        };
+        let order = form
+            .get(&format!("order[{}]", u.source))
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .unwrap_or(pos as i64);
+        let filterable = if filters_submitted {
+            form.get(&format!("filterable[{}]", u.source)).is_some() && role != FieldRole::Hidden
+        } else {
+            u.filterable_fallback
+        };
+        let merge_into = form
+            .get(&format!("merge[{}]", u.source))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        built.push(Built {
+            source: u.source.clone(),
+            role,
+            order,
+            filterable,
+            merge_into,
+        });
+    }
+
+    let by_source: HashMap<&str, &Built> = built.iter().map(|b| (b.source.as_str(), b)).collect();
+    let order_of = |s: &str| -> i64 { by_source.get(s).map(|b| b.order).unwrap_or(i64::MAX) };
+
+    // --- Resolve groups: anchor -> members. A member is valid only when its
+    // target is a standalone, non-Hidden field and the member itself isn't
+    // Hidden. Single-select ⇒ a source is in at most one group (no overlap).
+    let mut members_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for b in &built {
+        if b.role == FieldRole::Hidden {
+            continue; // Hidden never participates in a merge.
+        }
+        let Some(anchor) = &b.merge_into else {
+            continue;
+        };
+        if anchor == &b.source {
+            continue;
+        }
+        let anchor_ok = by_source
+            .get(anchor.as_str())
+            .map(|a| a.merge_into.is_none() && a.role != FieldRole::Hidden)
+            .unwrap_or(false);
+        if anchor_ok {
+            members_of
+                .entry(anchor.clone())
+                .or_default()
+                .push(b.source.clone());
+        }
+    }
+    // Drop groups that fell below 2 (anchor + members) → all standalone.
+    members_of.retain(|_, members| 1 + members.len() >= 2);
+    let mut is_member: BTreeSet<String> = BTreeSet::new();
+    for members in members_of.values() {
+        for m in members {
+            is_member.insert(m.clone());
+        }
+    }
+
+    // --- Final fields: non-members → FieldSpec; anchors carry the merge vec.
+    let mut final_entries: Vec<(i64, usize, FieldSpec)> = Vec::new();
+    for (pos, b) in built.iter().enumerate() {
+        if is_member.contains(&b.source) {
+            continue; // members live only inside the anchor's merge vec
+        }
+        let merge = members_of.get(&b.source).map(|members| {
+            let mut sorted = members.clone();
+            sorted.sort_by_key(|m| (order_of(m), m.clone()));
+            let mut v = vec![b.source.clone()];
+            v.extend(sorted);
+            v
+        });
+        final_entries.push((
+            b.order,
+            pos,
+            FieldSpec {
+                source: b.source.clone(),
+                role: b.role,
+                merge,
+                filterable: b.filterable,
+            },
+        ));
+    }
+    final_entries.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+    let mut candidate = spec.clone();
+    candidate.fields = final_entries.into_iter().map(|(_, _, fs)| fs).collect();
+    // Re-derive filters from the surviving filterable fields (a field merged
+    // away can't be a filter) so filters ⊆ filterable holds → validate passes.
+    candidate.filters = candidate
+        .fields
+        .iter()
+        .filter(|f| f.filterable)
+        .map(|f| f.source.clone())
+        .collect();
     Ok(candidate)
 }
 
@@ -1617,24 +1864,26 @@ fn view_columns(
     // List drops Meta, Compact = Title + Badge, …); the admin adds none.
     let probe: Vec<crate::viewspec::render::Row> = vec![std::collections::BTreeMap::new()];
     let view = crate::viewspec::render::RenderedView::render_with_layout(spec, layout, &probe);
-    let selected: Vec<&str> = view
-        .rows
-        .first()
-        .map(|r| {
-            r.cells
-                .iter()
-                .filter_map(|c| c.sources.first().map(String::as_str))
-                .collect()
-        })
-        .unwrap_or_default();
+    let cells: &[crate::viewspec::render::RenderedCell] =
+        view.rows.first().map(|r| r.cells.as_slice()).unwrap_or(&[]);
 
-    selected
+    cells
         .iter()
-        .filter_map(|name| {
-            fields.iter().find(|f| f.name == *name).map(|f| ColumnView {
+        .filter_map(|c| {
+            // Anchor source = first; a merged cell carries every source.
+            let anchor = c.sources.first()?;
+            let f = fields.iter().find(|f| f.name == anchor)?;
+            let merged = c.sources.len() > 1;
+            Some(ColumnView {
                 name: f.name.to_string(),
                 label: humanize_field_label(f.label),
-                sortable: f.sortable,
+                // A merged column has no single sortable source.
+                sortable: f.sortable && !merged,
+                merge: if merged {
+                    c.sources.clone()
+                } else {
+                    Vec::new()
+                },
             })
         })
         .collect()
@@ -1815,6 +2064,19 @@ pub async fn list_render(
                 .iter()
                 .enumerate()
                 .map(|(col_idx, col)| {
+                    // §9d — merged cell: join each merge source's value with
+                    // " · " (matching the Phase-3 renderer). Checked first so
+                    // a merged anchor isn't treated as FK/status/primary.
+                    if !col.merge.is_empty() {
+                        return col
+                            .merge
+                            .iter()
+                            .map(|s| row.get(s).cloned().unwrap_or_default())
+                            .filter(|v| !v.is_empty())
+                            .map(|v| html_escape(&v))
+                            .collect::<Vec<_>>()
+                            .join(" · ");
+                    }
                     let raw = row.get(&col.name).cloned().unwrap_or_default();
                     if col.name.as_str() == pk {
                         // §3.4 — ID column: rust mono `#<id>`.
@@ -3967,6 +4229,196 @@ mod tests {
         let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
         assert!(!html.contains("topsecret-xyz"));
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    // --- Phase 9d: merge ----------------------------------------------------
+
+    fn merge_of<'a>(spec: &'a ViewSpec, source: &str) -> Option<&'a Vec<String>> {
+        spec.fields
+            .iter()
+            .find(|f| f.source == source)
+            .and_then(|f| f.merge.as_ref())
+    }
+
+    #[test]
+    fn merge_groups_anchor_and_removes_member() {
+        // gadget derived: name (Title) anchor, email (Subtitle) member.
+        let derived = ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse("merge_submitted=1&merge[email]=name");
+        let edited = build_edited_spec(&derived, &form).unwrap();
+
+        assert_eq!(
+            merge_of(&edited, "name"),
+            Some(&vec!["name".to_string(), "email".to_string()])
+        );
+        // The member exists ONLY inside the anchor's merge vec, never as its
+        // own FieldSpec (else the renderer would emit it twice).
+        assert!(
+            edited.fields.iter().all(|f| f.source != "email"),
+            "merged member must be removed from fields"
+        );
+        assert!(edited.validate().is_ok());
+    }
+
+    #[tokio::test]
+    async fn merge_renders_one_joined_cell_in_list() {
+        let base = tmp_dir();
+        let derived = ViewSpec::from_schema_model(&gadget_schema_model());
+        let edited = build_edited_spec(
+            &derived,
+            &FormData::parse("merge_submitted=1&merge[email]=name"),
+        )
+        .unwrap();
+        save_view_spec(&base, "Gadget", &edited).unwrap();
+
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        // gadget_db row: name='Alpha', email='alpha@x.example'.
+        assert!(
+            html.contains("<td>Alpha · alpha@x.example</td>"),
+            "one joined merged cell expected:\n{html}"
+        );
+        // Email is not its own column anymore.
+        assert!(
+            !html.contains(">Email</th>"),
+            "email must not be a separate column"
+        );
+        assert!(!html.contains("topsecret-xyz"));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn hidden_field_dropped_from_merge_value_absent() {
+        // Set status → Hidden AND try to merge it into name (with email so the
+        // group stays ≥ 2). status must be dropped from the merge and its
+        // value must never enter the joined cell.
+        let base = tmp_dir();
+        let derived = ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse(
+            "merge_submitted=1&role[status]=hidden&merge[status]=name&merge[email]=name",
+        );
+        let edited = build_edited_spec(&derived, &form).unwrap();
+
+        let m = merge_of(&edited, "name").unwrap();
+        assert!(
+            !m.contains(&"status".to_string()),
+            "a Hidden field must be dropped from the merge: {m:?}"
+        );
+        assert!(m.contains(&"email".to_string()));
+
+        save_view_spec(&base, "Gadget", &edited).unwrap();
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        // The joined cell is exactly name · email — the status value 'active'
+        // is NOT appended (and status, now Hidden, renders no pill at all).
+        assert!(html.contains("<td>Alpha · alpha@x.example</td>"));
+        assert!(
+            !html.contains("rio-pill"),
+            "hidden status value must not render: {html}"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn one_member_merge_rejected_by_validate_no_write() {
+        // A hand-built spec with a 1-entry merge must be rejected (teeth).
+        let base = tmp_dir();
+        let bad = ViewSpec {
+            version: 1,
+            model: "Gadget".to_string(),
+            layout: ViewLayout::Table,
+            fields: vec![FieldSpec {
+                source: "name".to_string(),
+                role: FieldRole::Title,
+                merge: Some(vec!["name".to_string()]), // only 1 entry
+                filterable: false,
+            }],
+            filters: vec![],
+        };
+        assert!(matches!(
+            bad.validate(),
+            Err(crate::viewspec::ViewSpecError::MergeTooShort { .. })
+        ));
+        assert!(save_view_spec(&base, "Gadget", &bad).is_err());
+        assert!(
+            load_saved_view(&base, "Gadget").is_none(),
+            "no write for invalid merge"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn merge_chain_or_mutual_forms_no_group() {
+        // Mutual: name→email and email→name. Neither is a standalone target
+        // (both have a merge target), so NO group forms — both standalone.
+        let derived = ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse("merge_submitted=1&merge[name]=email&merge[email]=name");
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        assert!(merge_of(&edited, "name").is_none());
+        assert!(merge_of(&edited, "email").is_none());
+        assert!(edited.fields.iter().any(|f| f.source == "name"));
+        assert!(edited.fields.iter().any(|f| f.source == "email"));
+    }
+
+    #[test]
+    fn unmerge_restores_member_as_standalone_with_role() {
+        // Merge, then submit merge[email]="" (+ its derived role) to unmerge.
+        let derived = ViewSpec::from_schema_model(&gadget_schema_model());
+        let merged = build_edited_spec(
+            &derived,
+            &FormData::parse("merge_submitted=1&merge[email]=name"),
+        )
+        .unwrap();
+        assert!(merge_of(&merged, "name").is_some());
+        assert!(!merged.fields.iter().any(|f| f.source == "email"));
+
+        // The editor pre-fills role[email] with the derived role (subtitle).
+        let unmerged = build_edited_spec(
+            &merged,
+            &FormData::parse("merge_submitted=1&role[email]=subtitle&merge[email]="),
+        )
+        .unwrap();
+        assert!(
+            merge_of(&unmerged, "name").is_none(),
+            "name no longer merged"
+        );
+        let email = unmerged
+            .fields
+            .iter()
+            .find(|f| f.source == "email")
+            .expect("email restored as a standalone field");
+        assert_eq!(email.role, FieldRole::Subtitle);
+    }
+
+    #[test]
+    fn merge_composes_with_role_order_filter_in_one_save() {
+        let derived = ViewSpec::from_schema_model(&gadget_schema_model());
+        let form = FormData::parse(
+            "merge_submitted=1&filters_submitted=1&merge[email]=name\
+             &order[status]=0&order[name]=1&filterable[name]=1",
+        );
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        // merge applied …
+        assert!(merge_of(&edited, "name").is_some());
+        assert!(edited.fields.iter().all(|f| f.source != "email"));
+        // … order applied (status before name) …
+        let order = field_order(&edited);
+        let pos = |s: &str| order.iter().position(|x| x == s).unwrap();
+        assert!(pos("status") < pos("name"));
+        // … filter applied (name is filterable + in filters).
+        assert!(edited.filters.contains(&"name".to_string()));
+        assert!(edited.validate().is_ok());
+    }
+
+    #[test]
+    fn merge_preserves_layout_version_model() {
+        let derived = ViewSpec::from_schema_model(&gadget_schema_model());
+        let edited = build_edited_spec(
+            &derived,
+            &FormData::parse("merge_submitted=1&merge[email]=name"),
+        )
+        .unwrap();
+        assert_eq!(edited.layout, derived.layout);
+        assert_eq!(edited.version, derived.version);
+        assert_eq!(edited.model, derived.model);
     }
 
     #[test]
