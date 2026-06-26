@@ -1015,6 +1015,11 @@ struct EditorFieldView {
     /// The field's current role key (matched against `roles[].key` in the
     /// template to pre-select the `<select>`).
     role: String,
+    /// Whether the field is currently a list filter (pre-checks the box).
+    filterable: bool,
+    /// `true` when the current role is Hidden — the template disables the
+    /// filter checkbox (the server also enforces Hidden ⇒ not filterable).
+    is_hidden: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -1063,6 +1068,8 @@ pub async fn view_editor_render(
                 source: fs.source.clone(),
                 label,
                 role: field_role_key(fs.role).to_string(),
+                filterable: fs.filterable,
+                is_hidden: fs.role == crate::viewspec::FieldRole::Hidden,
             }
         })
         .collect();
@@ -1431,12 +1438,27 @@ fn role_options() -> Vec<RoleOptionView> {
 ///   no-JS / no-change path) sort to **identity**. A missing/garbage index
 ///   falls back to the field's original position.
 ///
-/// 9c/9d plug in here: 9c reads `filterable[<source>]` + a filters set,
-/// 9d a merge grouping — all feeding the same candidate → `validate` → write.
+/// - **Filters (9c):** gated on a `filters_submitted` sentinel the editor
+///   always sends. When present, each field's `filterable` is DERIVED from
+///   its `filterable[<source>]` checkbox **and** `role != Hidden` (a Hidden
+///   field is never filterable — the server wins even if the box was
+///   checked), and the spec's `filters` list is rebuilt as the
+///   filterable sources in display order. When the sentinel is **absent**
+///   (older / role-or-order-only submits), `filterable` and `filters` are
+///   preserved unchanged. Because `filters` ⊆ filterable sources by
+///   construction, [`ViewSpec::validate`](crate::viewspec::ViewSpec::validate)'s
+///   filter rule passes — and still runs as the load-bearing guard.
+///
+/// 9d plugs in here: a merge grouping → the same candidate → `validate` → write.
 pub(crate) fn build_edited_spec(
     spec: &crate::viewspec::ViewSpec,
     form: &crate::http::FormData,
 ) -> Result<crate::viewspec::ViewSpec, String> {
+    use crate::viewspec::FieldRole;
+    // The real editor always sends this; its presence means "filters were
+    // edited — derive them", its absence means "leave filters untouched".
+    let filters_submitted = form.get("filters_submitted").is_some();
+
     // (original_position, order_index, field) — one entry per existing field.
     let mut entries: Vec<(usize, i64, crate::viewspec::FieldSpec)> =
         Vec::with_capacity(spec.fields.len());
@@ -1455,6 +1477,13 @@ pub(crate) fn build_edited_spec(
             .get(&format!("order[{}]", f.source))
             .and_then(|s| s.trim().parse::<i64>().ok())
             .unwrap_or(pos as i64);
+        // Role is decided above, so the Hidden ⇒ not-filterable rule is
+        // applied against the *new* role within the same submit.
+        let filterable = if filters_submitted {
+            form.get(&format!("filterable[{}]", f.source)).is_some() && role != FieldRole::Hidden
+        } else {
+            f.filterable
+        };
         entries.push((
             pos,
             order,
@@ -1462,7 +1491,7 @@ pub(crate) fn build_edited_spec(
                 source: f.source.clone(),
                 role,
                 merge: f.merge.clone(),
-                filterable: f.filterable,
+                filterable,
             },
         ));
     }
@@ -1473,6 +1502,17 @@ pub(crate) fn build_edited_spec(
 
     let mut candidate = spec.clone();
     candidate.fields = entries.into_iter().map(|(_, _, fs)| fs).collect();
+    // Derive `filters` from the (now display-ordered) filterable fields, so
+    // `filters` and `filterable` can never disagree. Only when filters were
+    // submitted; otherwise the cloned spec's filters are kept as-is.
+    if filters_submitted {
+        candidate.filters = candidate
+            .fields
+            .iter()
+            .filter(|f| f.filterable)
+            .map(|f| f.source.clone())
+            .collect();
+    }
     Ok(candidate)
 }
 
@@ -3764,6 +3804,168 @@ mod tests {
             !html.contains("topsecret-xyz"),
             "Hidden guarantee after reorder"
         );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    // --- Phase 9c: filter toggles ----------------------------------------
+
+    /// Assert a spec is internally consistent: every `filters` entry names a
+    /// `filterable == true` field (i.e. `validate()` would pass the rule).
+    fn assert_filters_consistent(spec: &ViewSpec) {
+        let filterable: std::collections::BTreeSet<&str> = spec
+            .fields
+            .iter()
+            .filter(|f| f.filterable)
+            .map(|f| f.source.as_str())
+            .collect();
+        for name in &spec.filters {
+            assert!(
+                filterable.contains(name.as_str()),
+                "filters entry `{name}` is not a filterable field"
+            );
+        }
+        assert!(spec.validate().is_ok(), "candidate must validate");
+    }
+
+    #[test]
+    fn filter_toggle_on_persists_and_off_removes() {
+        // Start from custom_gadget_spec: status is the only filter.
+        let spec = custom_gadget_spec();
+        assert_eq!(spec.filters, vec!["status".to_string()]);
+
+        // Turn status OFF, turn name ON (sentinel + the name checkbox only).
+        let form = FormData::parse("filters_submitted=1&filterable[name]=1");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(edited.filters, vec!["name".to_string()]);
+        let name = edited.fields.iter().find(|f| f.source == "name").unwrap();
+        let status = edited.fields.iter().find(|f| f.source == "status").unwrap();
+        assert!(name.filterable, "name is now filterable");
+        assert!(!status.filterable, "status filter turned off");
+        assert_filters_consistent(&edited);
+    }
+
+    #[test]
+    fn filters_derived_in_display_order() {
+        // custom_gadget_spec fields: name, status, notes. Mark name + notes
+        // filterable → filters in display order [name, notes].
+        let spec = custom_gadget_spec();
+        let form = FormData::parse("filters_submitted=1&filterable[notes]=1&filterable[name]=1");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(
+            edited.filters,
+            vec!["name".to_string(), "notes".to_string()]
+        );
+    }
+
+    #[test]
+    fn no_sentinel_preserves_filters_and_filterable() {
+        // A role/order-only submit (no filters_submitted) leaves filters and
+        // filterable untouched — the 9a/9b behaviour.
+        let spec = custom_gadget_spec();
+        let form = FormData::parse("role[name]=subtitle");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(edited.filters, spec.filters);
+        let status = edited.fields.iter().find(|f| f.source == "status").unwrap();
+        assert!(
+            status.filterable,
+            "filterable preserved without the sentinel"
+        );
+    }
+
+    #[test]
+    fn hidden_field_cannot_be_filter_server_enforced() {
+        // One submit sets `status` → Hidden AND checks its filter box. The
+        // server must drop it: not in filters, filterable = false.
+        let spec = custom_gadget_spec();
+        let form = FormData::parse(
+            "filters_submitted=1&role[status]=hidden&filterable[status]=1&filterable[name]=1",
+        );
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        let status = edited.fields.iter().find(|f| f.source == "status").unwrap();
+        assert_eq!(status.role, FieldRole::Hidden);
+        assert!(!status.filterable, "a Hidden field must not be filterable");
+        assert!(!edited.filters.contains(&"status".to_string()));
+        assert!(edited.filters.contains(&"name".to_string()));
+        assert_filters_consistent(&edited);
+    }
+
+    #[test]
+    fn save_view_spec_rejects_inconsistent_filters_no_write() {
+        // The guard now has teeth: a hand-built spec with a filter on a
+        // non-filterable field is rejected and nothing is written.
+        let base = tmp_dir();
+        let bad = ViewSpec {
+            version: 1,
+            model: "Gadget".to_string(),
+            layout: ViewLayout::Table,
+            fields: vec![FieldSpec {
+                source: "name".to_string(),
+                role: FieldRole::Title,
+                merge: None,
+                filterable: false, // NOT filterable …
+            }],
+            filters: vec!["name".to_string()], // … but listed as a filter
+        };
+        assert!(
+            bad.validate().is_err(),
+            "validate must catch the inconsistency"
+        );
+        assert!(save_view_spec(&base, "Gadget", &bad).is_err());
+        assert!(
+            load_saved_view(&base, "Gadget").is_none(),
+            "no file may be written for an inconsistent spec"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn filter_composes_with_role_and_order_in_one_save() {
+        let spec = custom_gadget_spec(); // [name, status, notes], filter=status
+                                         // One submit: reorder (notes first), change name → badge, filters = {notes}.
+        let form = FormData::parse(
+            "filters_submitted=1&order[notes]=0&order[name]=1&order[status]=2\
+             &role[name]=badge&filterable[notes]=1",
+        );
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        assert_eq!(field_order(&edited), vec!["notes", "name", "status"]);
+        let name = edited.fields.iter().find(|f| f.source == "name").unwrap();
+        assert_eq!(name.role, FieldRole::Badge);
+        assert_eq!(edited.filters, vec!["notes".to_string()]);
+        assert_filters_consistent(&edited);
+    }
+
+    #[test]
+    fn filter_edit_preserves_merge_and_spec_metadata() {
+        let spec = custom_gadget_spec();
+        let form = FormData::parse("filters_submitted=1&filterable[name]=1");
+        let edited = build_edited_spec(&spec, &form).unwrap();
+        // name keeps its merge; layout/version/model preserved.
+        let name = edited.fields.iter().find(|f| f.source == "name").unwrap();
+        assert_eq!(name.merge, spec.fields[0].merge);
+        assert_eq!(edited.layout, spec.layout);
+        assert_eq!(edited.version, spec.version);
+        assert_eq!(edited.model, spec.model);
+    }
+
+    #[tokio::test]
+    async fn filter_save_round_trips_and_keeps_hidden_guarantee() {
+        // A full editor-style save (sentinel) persists to disk; reloading
+        // shows the new filters; the always-hidden secret never leaks.
+        let base = tmp_dir();
+        let model = gadget_schema_model();
+        let derived = ViewSpec::from_schema_model(&model);
+        // Make `email` a filter (it's a Subtitle, non-hidden).
+        let form = FormData::parse("filters_submitted=1&filterable[email]=1");
+        let edited = build_edited_spec(&derived, &form).unwrap();
+        save_view_spec(&base, "Gadget", &edited).unwrap();
+
+        let reloaded = load_saved_view(&base, "Gadget").unwrap();
+        assert_eq!(reloaded.filters, vec!["email".to_string()]);
+        assert_filters_consistent(&reloaded);
+
+        // Render still hides the secret field.
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(!html.contains("topsecret-xyz"));
         std::fs::remove_dir_all(&base).ok();
     }
 

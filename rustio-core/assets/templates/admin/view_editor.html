@@ -22,16 +22,20 @@
 
   <div class="rio-card">
     <p style="color:var(--rio-muted,#667);margin-top:0;">
-      Choose the role each field plays in the list view and order them with the
-      ▲ ▼ controls (top row appears first). <em>Hidden</em> fields never render.
-      Filters and merging are coming in later sub-phases.
+      Choose the role each field plays in the list view, order them with the
+      ▲ ▼ controls (top row appears first), and tick <strong>Filter</strong> to
+      expose a field as a list filter. <em>Hidden</em> fields never render and
+      cannot be filters. Merging is coming in a later sub-phase.
     </p>
     <form method="post" action="{{ save_action }}">
       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
       <input type="hidden" name="_return" value="{{ return_to }}">
+      {# Sentinel: tells the server this submit carries filter state, so it
+         derives filters/filterable from the checkboxes below. #}
+      <input type="hidden" name="filters_submitted" value="1">
       <table class="rio-table" data-view-editor>
         <thead>
-          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th></tr>
+          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th><th scope="col" style="width:1%;">Filter</th></tr>
         </thead>
         <tbody>
           {% for field in fields %}
@@ -44,11 +48,16 @@
               </td>
               <td>{{ field.label }} <span class="rio-cell-id">{{ field.source }}</span></td>
               <td>
-                <select class="rio-input" name="role[{{ field.source }}]">
+                <select class="rio-input" name="role[{{ field.source }}]" data-role>
                   {% for opt in roles %}
                     <option value="{{ opt.key }}"{% if opt.key == field.role %} selected{% endif %}>{{ opt.label }}</option>
                   {% endfor %}
                 </select>
+              </td>
+              <td style="text-align:center;">
+                <input type="checkbox" name="filterable[{{ field.source }}]" value="1" data-filterable
+                       {% if field.filterable %} checked{% endif %}{% if field.is_hidden %} disabled{% endif %}
+                       aria-label="Use {{ field.label }} as a filter">
               </td>
             </tr>
           {% endfor %}
@@ -87,6 +96,17 @@
         if (next) row.parentNode.insertBefore(next, row);      // bottom row down → no-op
       }
       renumber();
+    });
+    // Phase 9c — keep the Filter checkbox honest with the Role select:
+    // Hidden ⇒ disabled + unchecked (the server enforces this regardless).
+    table.addEventListener('change', function (e) {
+      var sel = e.target;
+      if (!sel || sel.getAttribute('data-role') === null) return;
+      var row = sel.closest('tr[data-row]');
+      var box = row && row.querySelector('[data-filterable]');
+      if (!box) return;
+      if (sel.value === 'hidden') { box.checked = false; box.disabled = true; }
+      else { box.disabled = false; }
     });
   })();
   </script>

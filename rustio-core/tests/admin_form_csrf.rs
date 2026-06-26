@@ -337,6 +337,15 @@ async fn view_editor_csrf_permission_and_reject() {
         editor.contains(r#"data-move="up""#) && editor.contains(r#"data-move="down""#),
         "editor must render up/down reorder buttons"
     );
+    // Phase 9c: the filter checkbox per field + the filters_submitted sentinel.
+    assert!(
+        editor.contains(r#"name="filterable[title]""#),
+        "editor must render a filter checkbox per field:\n{editor}"
+    );
+    assert!(
+        editor.contains(r#"name="filters_submitted""#),
+        "editor must send the filters_submitted sentinel"
+    );
     let csrf = extract_csrf(&editor).expect("csrf on the editor page");
 
     // 2. POST save WITHOUT _csrf → 403.
