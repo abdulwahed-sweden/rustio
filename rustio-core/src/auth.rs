@@ -464,6 +464,35 @@ pub mod user {
         Ok(row.try_get(0)?)
     }
 
+    /// i18n L4 — the user's saved UI language preference (an ISO 639-1 code),
+    /// or `None` when unset (empty string in storage). Storage only: this is
+    /// the user's choice, not a view setting. The *admin* combines it with the
+    /// view's `default_language` and `"en"` to pick the active render language;
+    /// core never resolves user state into a label itself.
+    pub async fn preferred_language(db: &Db, user_id: i64) -> Result<Option<String>, Error> {
+        let lang: Option<String> =
+            sqlx::query_scalar("SELECT preferred_language FROM rustio_users WHERE id = ?")
+                .bind(user_id)
+                .fetch_optional(db.pool())
+                .await?;
+        // Missing row → None; empty string → None ("no preference").
+        Ok(lang.filter(|s| !s.is_empty()))
+    }
+
+    /// i18n L4 — save (or, with an empty `lang`, clear) the user's UI language
+    /// preference. Validation of `lang` against the known set is the caller's
+    /// job (the admin's language registry); this just persists the code. Does
+    /// NOT touch any ViewSpec — setting a language is a per-user preference,
+    /// never an edit to a view.
+    pub async fn set_preferred_language(db: &Db, user_id: i64, lang: &str) -> Result<(), Error> {
+        sqlx::query("UPDATE rustio_users SET preferred_language = ? WHERE id = ?")
+            .bind(lang)
+            .bind(user_id)
+            .execute(db.pool())
+            .await?;
+        Ok(())
+    }
+
     fn user_from_row(r: &sqlx::sqlite::SqliteRow) -> Result<User, Error> {
         Ok(User {
             id: r.try_get("id")?,
@@ -751,6 +780,7 @@ pub async fn ensure_core_tables(db: &Db) -> Result<(), Error> {
             password_hash TEXT NOT NULL,
             is_active INTEGER NOT NULL DEFAULT 1,
             role TEXT NOT NULL DEFAULT 'user',
+            preferred_language TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )",
     )
@@ -778,6 +808,21 @@ pub async fn ensure_core_tables(db: &Db) -> Result<(), Error> {
     if !cols.iter().any(|c| c == "csrf_token") {
         db.execute("ALTER TABLE rustio_sessions ADD COLUMN csrf_token TEXT NOT NULL DEFAULT ''")
             .await?;
+    }
+
+    // Back-port the per-user `preferred_language` column (i18n L4) for DBs
+    // created before it. Same O(1) ADD COLUMN with a DEFAULT; an empty string
+    // means "no preference" → the admin falls back to the view's
+    // default_language, then "en". ISO 639-1 code; never a translated value.
+    let user_cols: Vec<String> =
+        sqlx::query_scalar::<_, String>("SELECT name FROM pragma_table_info('rustio_users')")
+            .fetch_all(db.pool())
+            .await?;
+    if !user_cols.iter().any(|c| c == "preferred_language") {
+        db.execute(
+            "ALTER TABLE rustio_users ADD COLUMN preferred_language TEXT NOT NULL DEFAULT ''",
+        )
+        .await?;
     }
 
     // Admin action log (audit trail). One row per create / update /

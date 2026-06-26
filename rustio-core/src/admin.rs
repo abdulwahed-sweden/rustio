@@ -546,6 +546,14 @@ impl Admin {
             Ok::<Response, Error>(logout_confirmation_response(signed_in, csrf.as_deref()))
         });
 
+        // i18n L4a — set the signed-in user's UI language preference
+        // (per-user; never mutates a ViewSpec). CSRF-protected POST.
+        let lang_db = db.clone();
+        router = router.post("/admin/language", move |req, _params| {
+            let db = lang_db.clone();
+            async move { admin_language_post(req, &db).await }
+        });
+
         // Password change (self-service). GET renders the form, POST
         // validates + rotates the hash + re-issues the session cookie.
         let pw_get_entries = entries.clone();
@@ -5044,6 +5052,47 @@ async fn admin_model_delete_post(
 /// [`save_layout_default`](crate::admin::layout::save_layout_default)
 /// (which reuses `ViewSpec::write_to`'s atomic temp+rename) → redirect to a
 /// **sanitized** `_return` path.
+/// Validate a post-action redirect target for the language switcher. Unlike
+/// `sanitize_return` (scoped to one model's pages), this allows any admin page
+/// — the user could set their language from anywhere — while still rejecting
+/// open-redirects / traversal. Falls back to `/admin`.
+fn safe_admin_return(raw: &str) -> String {
+    let ok = raw.starts_with("/admin")
+        && !raw.contains("..")
+        && !raw.contains('\\')
+        && !raw.contains("//");
+    if ok {
+        raw.to_string()
+    } else {
+        "/admin".to_string()
+    }
+}
+
+/// i18n L4a — `POST /admin/language`. Save the signed-in user's UI language
+/// preference. **Per-user; never mutates a ViewSpec or its default_language.**
+/// Mirrors `admin_model_layout_post`: `admin_guard` → read form → CSRF verify →
+/// validate `lang` (a known code, or empty = clear) → persist → redirect back.
+async fn admin_language_post(req: Request, db: &Db) -> Result<Response, Error> {
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+
+    let lang = form.get("lang").unwrap_or("").trim().to_string();
+    // A known language, or empty (clears the preference → revert to the view's
+    // default_language). Anything else is rejected — never stored.
+    if !lang.is_empty() && !crate::admin::layout::is_known_language(&lang) {
+        return Err(Error::BadRequest("unknown language".into()));
+    }
+    let identity = crate::auth::identity(&ctx).ok_or(Error::Unauthorized)?;
+    crate::auth::user::set_preferred_language(db, identity.user_id, &lang).await?;
+
+    let target = safe_admin_return(form.get("_return").unwrap_or(""));
+    Ok(with_admin_headers(redirect(&target)))
+}
+
 async fn admin_model_layout_post(
     registry: &crate::admin::admin_form_bridge::AdminRegistry,
     legacy_entries: &[AdminEntry],

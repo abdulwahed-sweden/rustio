@@ -426,3 +426,58 @@ async fn view_editor_csrf_permission_and_reject() {
     // Final safety: nothing was ever written by this test.
     assert!(!std::path::Path::new("note.view.json").exists());
 }
+
+/// i18n L4a — the set-language action is CSRF-protected, validates the code,
+/// and persists per-user. (Rendering of the chosen language is covered by the
+/// layout unit tests; here we exercise the HTTP action + CSRF + validation.)
+#[tokio::test]
+async fn set_language_csrf_and_validation() {
+    let addr = spawn_server().await;
+    let cookie = login(addr).await;
+    let page = send(addr, &get_with_cookie("/admin/notes", &cookie)).await;
+    let csrf = extract_csrf(&page).expect("csrf token on an admin page");
+
+    // No token → 403, nothing set.
+    let no_tok = send(
+        addr,
+        &post_with_cookie("/admin/language", "lang=sv", &cookie),
+    )
+    .await;
+    assert_eq!(
+        status_of(&no_tok),
+        403,
+        "set-language without _csrf rejected:\n{no_tok}"
+    );
+
+    // Unknown language → 400.
+    let bad = send(
+        addr,
+        &post_with_cookie("/admin/language", &format!("lang=xx&_csrf={csrf}"), &cookie),
+    )
+    .await;
+    assert_eq!(status_of(&bad), 400, "unknown language rejected:\n{bad}");
+
+    // Valid code → 303 redirect to the (sanitised) return.
+    let ok = send(
+        addr,
+        &post_with_cookie(
+            "/admin/language",
+            &format!("lang=sv&_csrf={csrf}&_return=/admin/notes"),
+            &cookie,
+        ),
+    )
+    .await;
+    assert_eq!(status_of(&ok), 303, "valid set-language redirects:\n{ok}");
+
+    // Clearing ("") is also valid → 303.
+    let clear = send(
+        addr,
+        &post_with_cookie("/admin/language", &format!("lang=&_csrf={csrf}"), &cookie),
+    )
+    .await;
+    assert_eq!(
+        status_of(&clear),
+        303,
+        "clearing the preference is valid:\n{clear}"
+    );
+}

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Per-user UI language preference (i18n L4a).** Each admin user can store a
+  language preference; at render time the active language for list headers is
+  resolved as **user preference → the view's `default_language` → `"en"`**. The
+  preference is per-user and **never** mutates a ViewSpec — setting a language
+  is not editing a view. Data, field sources, sorting, and links stay English
+  (the iron rule); only display labels resolve through the active language.
+  Builds on the i18n label foundation (L1–L3). The reusable language switcher
+  UI (topbar + sidebar) lands in L4b.
+
+### Upgrading
+
+- **i18n L4a adds a `preferred_language` column to `rustio_users`.** Existing
+  projects must run **`rustio migrate apply`** to back-port it (the column is
+  added by `ensure_core_tables`, which the migration driver calls — the server
+  does **not** migrate on boot). Until then, setting a language returns a 500
+  ("no such column: preferred_language"). Fresh databases get the column
+  automatically. See `UPGRADING.md`.
+
 ### Changed
 
 - **Examples replaced with `bookflow`.** The `medflow` and `taskhub`

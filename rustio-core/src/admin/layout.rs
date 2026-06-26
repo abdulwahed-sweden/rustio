@@ -1975,10 +1975,48 @@ pub(crate) fn sanitize_return(slug: &str, raw: &str) -> String {
 /// A merged ViewSpec cell maps to its anchor (`sources[0]`) column; a
 /// source naming a field that isn't on the model (e.g. a stale saved view)
 /// is skipped rather than crashing the page.
+/// i18n L4 — the admin-layer language registry: ISO 639-1 code → endonym
+/// display name. Open/extensible (add a tuple to support a language). Codes
+/// are what's stored everywhere; endonyms are shown by the switcher (L4b).
+pub(crate) fn languages() -> &'static [(&'static str, &'static str)] {
+    &[("en", "English"), ("sv", "Svenska")]
+}
+
+/// Whether `code` is a known language. Used to validate the set-language
+/// action; an empty code is handled separately (it clears the preference).
+pub(crate) fn is_known_language(code: &str) -> bool {
+    languages().iter().any(|(c, _)| *c == code)
+}
+
+/// i18n L4 — resolve the ACTIVE render language for a request:
+/// **user preference → view/project `default_language` → `"en"`**. The admin
+/// reads user state here and passes the resulting string into the *pure* label
+/// resolver ([`ViewSpec::label_for`]); core never reads the user. Setting a
+/// language never mutates a ViewSpec — this is read-only resolution.
+pub(crate) async fn resolve_active_language(
+    db: &Db,
+    identity: Option<&crate::auth::Identity>,
+    spec: &crate::viewspec::ViewSpec,
+) -> String {
+    if let Some(id) = identity {
+        if let Ok(Some(pref)) = crate::auth::user::preferred_language(db, id.user_id).await {
+            return pref;
+        }
+    }
+    if !spec.default_language.is_empty() {
+        return spec.default_language.clone();
+    }
+    "en".to_string()
+}
+
 fn view_columns(
     spec: &crate::viewspec::ViewSpec,
     layout: crate::viewspec::ViewLayout,
     fields: &[AdminUiField],
+    // i18n L4 — the ACTIVE render language (admin-resolved: user pref →
+    // default_language → "en"). L2/L3 callers pass `&spec.default_language`,
+    // preserving their behaviour exactly.
+    active_lang: &str,
 ) -> Vec<ColumnView> {
     // Selection is independent of row data — probe with a single empty row
     // and read which sources the requested layout surfaces, in order. The
@@ -1998,14 +2036,14 @@ fn view_columns(
             let merged = c.sources.len() > 1;
             Some(ColumnView {
                 name: f.name.to_string(),
-                // i18n L2 — header TEXT resolves through the view's display
-                // labels for its default_language; an unlabelled field keeps
-                // the admin's `_id`-stripping humaniser (byte-identical to
-                // pre-i18n). Iron rule intact: `name`/sorting/links/data all
-                // still key off the English `anchor` source — only the header
-                // string is translated. Merged columns use the anchor source.
+                // i18n L2/L4 — header TEXT resolves through the view's display
+                // labels for the ACTIVE language; an unlabelled field keeps the
+                // admin's `_id`-stripping humaniser (byte-identical to pre-i18n).
+                // Iron rule intact: `name`/sorting/links/data all still key off
+                // the English `anchor` source — only the header string is
+                // translated. Merged columns use the anchor source.
                 label: spec
-                    .label_for(anchor, &spec.default_language)
+                    .label_for(anchor, active_lang)
                     .unwrap_or_else(|| humanize_field_label(f.label)),
                 // A merged column has no single sortable source.
                 sortable: f.sortable && !merged,
@@ -2170,7 +2208,9 @@ pub async fn list_render(
     let saved = load_saved_view(base, model.model_name());
     let active_layout = resolve_effective_layout(layout, saved.as_ref());
     let spec = saved.unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(&schema_model));
-    let columns: Vec<ColumnView> = view_columns(&spec, active_layout, &fields);
+    // i18n L4 — the active render language for THIS user (pref → default → en).
+    let active_lang = resolve_active_language(db, identity, &spec).await;
+    let columns: Vec<ColumnView> = view_columns(&spec, active_layout, &fields, &active_lang);
 
     // One batch `SELECT … WHERE id IN (…)` per FK column visible on
     // this page of rows. Cells for matching FK values are rewritten
@@ -3344,7 +3384,12 @@ mod tests {
         let fields = ui_fields_for_selection();
         let model = schema_model_from_ui("Widget", &fields);
         let spec = crate::viewspec::ViewSpec::from_schema_model(&model);
-        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let cols = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+        );
         let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["name", "email", "status"]);
     }
@@ -3376,7 +3421,12 @@ mod tests {
         put_label(&mut spec, "name", "sv", "Namn");
         put_label(&mut spec, "status", "sv", "Status");
         spec.validate().unwrap();
-        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let cols = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+        );
         assert_eq!(header_of(&cols, "name"), "Namn"); // sv label
         assert_eq!(header_of(&cols, "status"), "Status"); // sv label
         assert_eq!(header_of(&cols, "email"), "Email"); // unlabelled → humanised
@@ -3387,7 +3437,12 @@ mod tests {
         // A label-less view (default "en") → headers are exactly the admin's
         // own humaniser output, unchanged from pre-i18n.
         let (fields, spec) = widget_spec();
-        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let cols = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+        );
         for c in &cols {
             let f = fields.iter().find(|f| f.name == c.name).unwrap();
             assert_eq!(
@@ -3405,7 +3460,12 @@ mod tests {
         let (fields, mut spec) = widget_spec(); // default "en"
         put_label(&mut spec, "email", "en", "E-mail address");
         spec.validate().unwrap();
-        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let cols = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+        );
         assert_eq!(header_of(&cols, "email"), "E-mail address"); // en label wins
         assert_eq!(header_of(&cols, "name"), "Name"); // unlabelled → humanised
     }
@@ -3418,7 +3478,12 @@ mod tests {
         spec.default_language = "sv".to_string();
         put_label(&mut spec, "name", "de", "Name(DE)");
         spec.validate().unwrap();
-        let cols = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let cols = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+        );
         assert_eq!(header_of(&cols, "name"), "Name"); // humanised, de ignored
     }
 
@@ -3427,8 +3492,18 @@ mod tests {
         let (fields, mut spec) = widget_spec();
         spec.default_language = "sv".to_string();
         put_label(&mut spec, "name", "sv", "Namn");
-        let a = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
-        let b = view_columns(&spec, crate::viewspec::ViewLayout::Table, &fields);
+        let a = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+        );
+        let b = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+        );
         let la: Vec<&str> = a.iter().map(|c| c.label.as_str()).collect();
         let lb: Vec<&str> = b.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(la, lb);
@@ -3724,6 +3799,153 @@ mod tests {
         std::fs::remove_dir_all(&base).ok();
     }
 
+    // --- i18n L4a: per-user language preference + resolution -------------
+
+    #[test]
+    fn language_registry_has_endonyms_and_validates_codes() {
+        assert_eq!(languages(), &[("en", "English"), ("sv", "Svenska")]);
+        assert!(is_known_language("en") && is_known_language("sv"));
+        assert!(!is_known_language("xx") && !is_known_language(""));
+    }
+
+    #[tokio::test]
+    async fn resolve_active_language_precedence() {
+        let (db, identity) = db_with_user("pref@example.com").await;
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        spec.default_language = "de".to_string(); // view default (not en)
+
+        // No preference yet → view default_language.
+        assert_eq!(
+            resolve_active_language(&db, Some(&identity), &spec).await,
+            "de"
+        );
+        // Preference set → it wins over default_language.
+        crate::auth::user::set_preferred_language(&db, identity.user_id, "sv")
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_active_language(&db, Some(&identity), &spec).await,
+            "sv"
+        );
+        // Cleared ("") → back to default_language.
+        crate::auth::user::set_preferred_language(&db, identity.user_id, "")
+            .await
+            .unwrap();
+        assert_eq!(
+            resolve_active_language(&db, Some(&identity), &spec).await,
+            "de"
+        );
+        // No identity → default_language.
+        assert_eq!(resolve_active_language(&db, None, &spec).await, "de");
+        // No identity + empty default_language → ultimate fallback "en".
+        spec.default_language = String::new();
+        assert_eq!(resolve_active_language(&db, None, &spec).await, "en");
+    }
+
+    #[tokio::test]
+    async fn user_preference_overrides_default_language_in_headers() {
+        // The saved view's default_language is "en", but the user prefers sv,
+        // and an sv label exists → the header renders Swedish for THIS user.
+        let base = tmp_dir();
+        let (db, identity) = db_with_user("sv-user@example.com").await;
+        crate::auth::user::set_preferred_language(&db, identity.user_id, "sv")
+            .await
+            .unwrap();
+
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        assert_eq!(spec.default_language, "en"); // view default is English
+        put_label(&mut spec, "status", "sv", "Status (sv)");
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_gadget_list_as(&base, &db, Some(&identity)).await;
+        assert!(
+            html.contains("Status (sv)"),
+            "user's sv preference must override default_language=en:\n{html}"
+        );
+        assert!(html.contains("Alpha"), "data unchanged (iron rule)");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn preference_is_per_user_not_global() {
+        // Two users on the same db + same view: only the one who set sv sees
+        // Swedish; the other still sees the English default.
+        let base = tmp_dir();
+        let (db, sv_user) = db_with_user("a@example.com").await;
+        let other = crate::auth::user::create(&db, "b@example.com", "pw-12345678", "admin")
+            .await
+            .unwrap();
+        let en_user = crate::auth::Identity {
+            user_id: other.id,
+            email: other.email.clone(),
+            is_admin: true,
+        };
+        crate::auth::user::set_preferred_language(&db, sv_user.user_id, "sv")
+            .await
+            .unwrap();
+
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        put_label(&mut spec, "status", "sv", "Status (sv)");
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html_sv = render_gadget_list_as(&base, &db, Some(&sv_user)).await;
+        let html_en = render_gadget_list_as(&base, &db, Some(&en_user)).await;
+        assert!(html_sv.contains("Status (sv)"), "sv user sees Swedish");
+        assert!(
+            !html_en.contains("Status (sv)"),
+            "the OTHER user is unaffected (per-user, not global)"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn no_preference_renders_byte_identical_to_l3() {
+        // Backward compat: a user with no preference renders exactly as before
+        // L4 (active language == the view's default_language).
+        let base = tmp_dir();
+        let (db, identity) = db_with_user("nopref@example.com").await;
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let with_identity = render_gadget_list_as(&base, &db, Some(&identity)).await;
+        let anon = render_gadget_list_as(&base, &db, None).await;
+        // Same headers either way (no pref → default_language "en" → humaniser).
+        assert!(with_identity.contains(">Status</th>"));
+        assert!(anon.contains(">Status</th>"));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn set_preferred_language_round_trips_and_clears() {
+        let (db, identity) = db_with_user("rt@example.com").await;
+        assert_eq!(
+            crate::auth::user::preferred_language(&db, identity.user_id)
+                .await
+                .unwrap(),
+            None
+        );
+        crate::auth::user::set_preferred_language(&db, identity.user_id, "sv")
+            .await
+            .unwrap();
+        assert_eq!(
+            crate::auth::user::preferred_language(&db, identity.user_id)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("sv")
+        );
+        // Empty clears → None ("no preference").
+        crate::auth::user::set_preferred_language(&db, identity.user_id, "")
+            .await
+            .unwrap();
+        assert_eq!(
+            crate::auth::user::preferred_language(&db, identity.user_id)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
     #[test]
     fn load_saved_view_reads_valid_skips_missing_and_invalid() {
         let base = tmp_dir();
@@ -3884,6 +4106,68 @@ mod tests {
             editing_lang,
         )
         .await
+    }
+
+    /// Render the Gadget list against a CALLER-SUPPLIED db (so a user row +
+    /// preference set on it is visible) for a given identity (i18n L4a).
+    async fn render_gadget_list_as(
+        base: &std::path::Path,
+        db: &Db,
+        identity: Option<&crate::auth::Identity>,
+    ) -> String {
+        let entry = gadget_entry();
+        let model = LegacyEntryModel::new(&entry);
+        let registry = registry_empty();
+        let legacy = [entry.clone()];
+        list_render(
+            base,
+            db,
+            &registry,
+            &legacy,
+            &model,
+            Some(&entry),
+            None,
+            1,
+            &HashMap::new(),
+            None,
+            None,
+            Some("table"),
+            identity,
+            None,
+        )
+        .await
+    }
+
+    /// Insert the gadgets fixture into an arbitrary db (gadget_db makes a fresh
+    /// in-memory one; here we reuse a db that also has the core user tables).
+    async fn seed_gadgets(db: &Db) {
+        db.execute(
+            "CREATE TABLE gadgets (id INTEGER PRIMARY KEY, name TEXT, email TEXT, status TEXT, notes TEXT, password_hash TEXT)",
+        )
+        .await
+        .unwrap();
+        db.execute(
+            "INSERT INTO gadgets (name,email,status,notes,password_hash) VALUES ('Alpha','alpha@x.example','active','MY-META-NOTE','topsecret-xyz')",
+        )
+        .await
+        .unwrap();
+    }
+
+    /// A db with core auth tables + the gadgets fixture + one user, returning
+    /// the user's identity.
+    async fn db_with_user(email: &str) -> (Db, crate::auth::Identity) {
+        let db = Db::memory().await.unwrap();
+        crate::auth::ensure_core_tables(&db).await.unwrap();
+        seed_gadgets(&db).await;
+        let user = crate::auth::user::create(&db, email, "pw-12345678", "admin")
+            .await
+            .unwrap();
+        let identity = crate::auth::Identity {
+            user_id: user.id,
+            email: user.email.clone(),
+            is_admin: true,
+        };
+        (db, identity)
     }
 
     #[tokio::test]

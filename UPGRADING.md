@@ -4,6 +4,38 @@ A per-release migration guide. Items here only cover externally-observable chang
 
 ---
 
+## Unreleased — i18n L4a (per-user language preference)
+
+Adds a per-user UI language preference. **Action required for existing projects.**
+
+### Required: back-port the new column
+
+i18n L4a adds a `preferred_language TEXT NOT NULL DEFAULT ''` column to the
+`rustio_users` table. The column is created by `auth::ensure_core_tables`, which
+the migration driver runs — **the server does not migrate on boot**. So an
+existing project on a database created before L4a must run:
+
+```bash
+rustio migrate apply
+```
+
+This is an `O(1)` `ALTER TABLE … ADD COLUMN` (the same back-port mechanism used
+for `rustio_sessions.csrf_token`); existing rows default to `''` (no
+preference). Fresh databases get the column from `CREATE TABLE` automatically
+and need no action.
+
+**Symptom if skipped:** setting a language (`POST /admin/language`) returns a
+500 with `no such column: preferred_language`. Rendering is unaffected until
+then — with no preference, the active language is the view's `default_language`,
+exactly as before.
+
+### No data or ViewSpec changes
+
+Setting a language is per-user state only; it never modifies a `<model>.view.json`
+or its `default_language`, and never translates stored data (the iron rule).
+
+---
+
 ## 0.9.0 → 0.9.1
 
 Destructive-op gate lights up. No action required for projects that don't plan `remove_field` / `remove_relation`.
