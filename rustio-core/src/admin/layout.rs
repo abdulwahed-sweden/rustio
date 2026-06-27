@@ -3054,6 +3054,222 @@ struct ProfileView {
     is_active: bool,
 }
 
+/// One permission row on the account page (Console theme): a named capability
+/// and whether the signed-in user's role allows it.
+#[derive(serde::Serialize)]
+struct AccountPermView {
+    label: String,
+    detail: String,
+    allowed: bool,
+}
+
+/// One role in the "Roles in this workspace" reference list.
+#[derive(serde::Serialize)]
+struct AccountRoleRefView {
+    name: String,
+    style: String, // "admin" | "developer" | "customer"
+    initials: String,
+    desc: String,
+    is_you: bool,
+}
+
+/// The full account-page model — identity, role narrative, real permission
+/// map, roles reference, and account/security details, all derived from the
+/// signed-in user and the RBAC matrix.
+#[derive(serde::Serialize)]
+struct AccountView {
+    name: String,
+    email: String,
+    initials: String,
+    role_name: String,
+    role_style: String,
+    role_blurb: String,
+    user_id: i64,
+    member_since: String,
+    language: String,
+    sessions: i64,
+    perms: Vec<AccountPermView>,
+    roles: Vec<AccountRoleRefView>,
+}
+
+/// Map a stored role string to a display name, a Console badge/avatar style
+/// (`admin`/`developer`/`customer` — the three styles the theme defines), and
+/// a first-person blurb. Unknown roles degrade to view-only "Viewer".
+fn account_role_display(role_str: &str) -> (&'static str, &'static str, &'static str) {
+    use crate::admin::rbac::Role;
+    match Role::from_role_string(role_str) {
+        Some(Role::SuperAdmin) => (
+            "Administrator",
+            "admin",
+            "You can manage every record, user, and list view in this workspace. Schema evolution and the CLI are developer tools, run outside the admin.",
+        ),
+        Some(Role::Admin) => (
+            "Administrator",
+            "admin",
+            "You manage records and list views across the workspace; framework tables stay read-only.",
+        ),
+        Some(Role::Editor) => (
+            "Editor",
+            "developer",
+            "You can create and edit records across every model, but not delete them.",
+        ),
+        Some(Role::Viewer) | None => (
+            "Viewer",
+            "customer",
+            "You have read-only access to every record in this workspace.",
+        ),
+    }
+}
+
+/// First two alphanumeric characters of an email's local part, uppercased.
+fn account_initials(email: &str) -> String {
+    let local = email.split('@').next().unwrap_or(email);
+    let s: String = local
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .take(2)
+        .collect::<String>()
+        .to_uppercase();
+    if s.is_empty() {
+        "?".to_string()
+    } else {
+        s
+    }
+}
+
+/// Build the account-page view from the signed-in user + the RBAC matrix and
+/// a couple of cheap lookups (created-at, language preference, live sessions).
+async fn build_account_view(db: &Db, user: &crate::auth::User) -> AccountView {
+    use crate::admin::rbac::Role;
+    let (role_name, role_style, role_blurb) = account_role_display(&user.role);
+    let role = Role::from_role_string(&user.role).unwrap_or(Role::Viewer);
+
+    // App-model matrix vs framework-table matrix — "manage users" keys off the
+    // latter (the users model is a `rustio_*` system table).
+    let app = role.permissions_for("records");
+    let sys = role.permissions_for("rustio_users");
+    let perm = |label: &str, detail: &str, allowed: bool| AccountPermView {
+        label: label.to_string(),
+        detail: detail.to_string(),
+        allowed,
+    };
+    let perms = vec![
+        perm(
+            "View records",
+            "Read every model in the workspace",
+            app.view,
+        ),
+        perm(
+            "Create & edit",
+            "Add and update records across all models",
+            app.create && app.edit,
+        ),
+        perm(
+            "Delete records",
+            "Remove records, with confirmation",
+            app.delete,
+        ),
+        perm(
+            "Manage users & roles",
+            "Create users and assign their roles",
+            sys.create,
+        ),
+        perm(
+            "Reshape list views",
+            "Edit ViewSpec roles, filters, and labels",
+            app.edit,
+        ),
+        perm(
+            "Evolve schema",
+            "Add or change fields — a developer / CLI tool",
+            false,
+        ),
+        perm(
+            "Run migrations & CLI",
+            "Apply migrations and use the rustio CLI",
+            false,
+        ),
+    ];
+
+    let you_style = role_style;
+    let mk = |name: &str, style: &str, initials: &str, desc: &str| AccountRoleRefView {
+        name: name.to_string(),
+        style: style.to_string(),
+        initials: initials.to_string(),
+        desc: desc.to_string(),
+        is_you: style == you_style,
+    };
+    let roles = vec![
+        mk(
+            "Viewer",
+            "customer",
+            "VI",
+            "Read-only access to every record in the workspace.",
+        ),
+        mk(
+            "Editor",
+            "developer",
+            "ED",
+            "Create and edit records across all models; cannot delete.",
+        ),
+        mk(
+            "Administrator",
+            "admin",
+            "AD",
+            "Manages all records, users, and list views.",
+        ),
+    ];
+
+    // Cheap account facts.
+    let member_since: String =
+        sqlx::query_scalar::<_, String>("SELECT created_at FROM rustio_users WHERE id = ?")
+            .bind(user.id)
+            .fetch_optional(db.pool())
+            .await
+            .ok()
+            .flatten()
+            .map(|s| s.chars().take(10).collect()) // YYYY-MM-DD
+            .unwrap_or_default();
+    let sessions: i64 =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rustio_sessions WHERE user_id = ?")
+            .bind(user.id)
+            .fetch_one(db.pool())
+            .await
+            .unwrap_or(0);
+    let language = match crate::auth::user::preferred_language(db, user.id).await {
+        Ok(Some(code)) => languages()
+            .iter()
+            .find(|(c, _)| *c == code)
+            .map(|(_, endonym)| endonym.to_string())
+            .unwrap_or(code),
+        _ => "Project default".to_string(),
+    };
+
+    let name = {
+        let local = user.email.split('@').next().unwrap_or(&user.email);
+        let mut chars = local.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            None => user.email.clone(),
+        }
+    };
+
+    AccountView {
+        name,
+        email: user.email.clone(),
+        initials: account_initials(&user.email),
+        role_name: role_name.to_string(),
+        role_style: role_style.to_string(),
+        role_blurb: role_blurb.to_string(),
+        user_id: user.id,
+        member_since,
+        language,
+        sessions,
+        perms,
+        roles,
+    }
+}
+
 /// 0.10+ renderer for `GET /admin/profile`. Builds the merged
 /// sidebar (same as dashboard / list) and renders
 /// `admin/profile.html`.
@@ -3083,6 +3299,24 @@ pub async fn profile_render(
         },
     };
 
+    // Rich account model for the Console account page (real role + RBAC).
+    let account = match user {
+        Some(u) => build_account_view(db, u).await,
+        None => {
+            build_account_view(
+                db,
+                &crate::auth::User {
+                    id: 0,
+                    email: "unknown".into(),
+                    password_hash: String::new(),
+                    is_active: false,
+                    role: "viewer".into(),
+                },
+            )
+            .await
+        }
+    };
+
     let design = design_view();
     let user_v = user_view(db, identity).await;
 
@@ -3093,6 +3327,7 @@ pub async fn profile_render(
             current_user => user_v,
             sidebar_entries => sidebar,
             profile => profile,
+            account => account,
             page_title => "Your account",
             csrf_token => csrf_token.unwrap_or(""),
             rustio_version => env!("CARGO_PKG_VERSION"),
@@ -4908,6 +5143,74 @@ mod tests {
             eq3.contains_key("notes") && !like3.contains_key("notes"),
             "a dropdown (exact_match) filter matches exactly, not by substring"
         );
+    }
+
+    #[test]
+    fn account_role_display_and_initials() {
+        assert_eq!(account_role_display("admin").0, "Administrator"); // legacy admin → SuperAdmin
+        assert_eq!(account_role_display("admin").1, "admin");
+        assert_eq!(account_role_display("editor").0, "Editor");
+        assert_eq!(account_role_display("editor").1, "developer");
+        assert_eq!(account_role_display("viewer").0, "Viewer");
+        assert_eq!(account_role_display("nonsense").0, "Viewer"); // unknown → safe view-only
+        assert_eq!(account_initials("admin@bookflow.local"), "AD");
+        assert_eq!(account_initials("x@y"), "X");
+    }
+
+    #[tokio::test]
+    async fn account_view_reflects_real_role_permissions() {
+        let db = Db::memory().await.unwrap();
+        crate::auth::ensure_core_tables(&db).await.unwrap();
+        let admin = crate::auth::user::create(&db, "a@x.com", "pw-12345678", "admin")
+            .await
+            .unwrap();
+        let av = build_account_view(&db, &admin).await;
+        assert_eq!(av.role_name, "Administrator");
+        let allowed: Vec<&str> = av
+            .perms
+            .iter()
+            .filter(|p| p.allowed)
+            .map(|p| p.label.as_str())
+            .collect();
+        assert!(allowed.contains(&"Delete records") && allowed.contains(&"Manage users & roles"));
+        assert!(av
+            .perms
+            .iter()
+            .any(|p| p.label == "Evolve schema" && !p.allowed));
+        assert!(av
+            .roles
+            .iter()
+            .any(|r| r.name == "Administrator" && r.is_you));
+
+        // A viewer: read-only, no create/edit/delete.
+        let viewer = crate::auth::user::create(&db, "v@x.com", "pw-12345678", "user")
+            .await
+            .unwrap();
+        db.execute(&format!(
+            "UPDATE rustio_users SET role = 'viewer' WHERE id = {}",
+            viewer.id
+        ))
+        .await
+        .unwrap();
+        let reloaded = crate::auth::user::find_by_id(&db, viewer.id)
+            .await
+            .unwrap()
+            .unwrap();
+        let vv = build_account_view(&db, &reloaded).await;
+        assert_eq!(vv.role_name, "Viewer");
+        assert!(vv
+            .perms
+            .iter()
+            .any(|p| p.label == "View records" && p.allowed));
+        assert!(vv
+            .perms
+            .iter()
+            .any(|p| p.label == "Create & edit" && !p.allowed));
+        assert!(vv
+            .perms
+            .iter()
+            .any(|p| p.label == "Delete records" && !p.allowed));
+        assert!(vv.roles.iter().any(|r| r.name == "Viewer" && r.is_you));
     }
 
     #[tokio::test]

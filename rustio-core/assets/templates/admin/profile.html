@@ -10,29 +10,78 @@
       <span>Your account</span>
     </nav>
     <h1>Your account</h1>
+    <div class="rio-page-header__actions">
+      <a href="/admin/password_change" class="rio-btn rio-btn--ghost">Change password</a>
+      <a href="/admin/logout" class="rio-btn rio-btn--ghost">Sign out</a>
+    </div>
   </div>
 
-  <div class="rio-card">
-    <dl class="rio-detail-list">
-      <dt>Email</dt>
-      <dd>{{ profile.email }}</dd>
-
-      <dt>User ID</dt>
-      <dd>#{{ profile.user_id }}</dd>
-
-      <dt>Role</dt>
-      <dd>{{ profile.role }}</dd>
-
-      <dt>Status</dt>
-      <dd>{% if profile.is_active %}Active{% else %}Inactive{% endif %}</dd>
-    </dl>
-
-    <div class="rio-form__actions">
-      <a href="/admin" class="rio-btn rio-btn--ghost">Back to admin</a>
-      <div style="display:flex;gap:var(--space-3);">
-        <a href="/admin/logout" class="rio-btn">Sign out</a>
-        <a href="/admin/password_change" class="rio-btn rio-btn--primary">Change password</a>
+  {# Identity card — avatar (role-coloured), name, email, role badge. #}
+  <section class="rio-card rio-profile">
+    <div class="rio-profile__id">
+      <span class="rio-avatar rio-avatar--xl rio-avatar--{{ account.role_style }}">{{ account.initials }}</span>
+      <div class="rio-profile__meta">
+        <h2 class="rio-profile__name">{{ account.name }}</h2>
+        <p class="rio-profile__email">{{ account.email }}</p>
+        <div class="rio-profile__tags">
+          <span class="rio-role-badge rio-role-badge--{{ account.role_style }}">{{ account.role_name }}</span>
+        </div>
       </div>
     </div>
+  </section>
+
+  <div class="rio-detail-grid">
+    <div class="rio-detail-main">
+      <section class="rio-card">
+        <h3 class="rio-card__title">Role &amp; permissions</h3>
+        <p>You're signed in as <strong>{{ account.role_name }}</strong>. {{ account.role_blurb }}</p>
+        <ul class="rio-perm-list">
+          {% for p in account.perms %}
+            <li class="rio-perm {% if p.allowed %}is-allowed{% else %}is-denied{% endif %}">
+              <span class="rio-perm__icon">{% if p.allowed %}&#10003;{% else %}&#10005;{% endif %}</span>
+              <span class="rio-perm__body"><strong>{{ p.label }}</strong><span>{{ p.detail }}</span></span>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="rio-card" style="margin-top:var(--space-4);">
+        <h3 class="rio-card__title">Roles in this workspace</h3>
+        <ul class="rio-role-list">
+          {% for r in account.roles %}
+            <li>
+              <span class="rio-avatar rio-avatar--{{ r.style }}">{{ r.initials }}</span>
+              <div>
+                <span class="rio-role-badge rio-role-badge--{{ r.style }}">{{ r.name }}</span>
+                {% if r.is_you %}<span class="rio-pill rio-pill-emerald" style="margin-left:6px;">You</span>{% endif %}
+                <p>{{ r.desc }}</p>
+              </div>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
+
+    <aside class="rio-detail-side">
+      <section class="rio-card">
+        <h3 class="rio-card__title">Account details</h3>
+        <dl class="rio-meta-list" style="margin-top:var(--space-3);">
+          <dt>Email</dt><dd>{{ account.email }}</dd>
+          <dt>Role</dt><dd>{{ account.role_name }}</dd>
+          <dt>User ID</dt><dd>#{{ account.user_id }}</dd>
+          {% if account.member_since %}<dt>Member since</dt><dd>{{ account.member_since }}</dd>{% endif %}
+          <dt>Language</dt><dd>{{ account.language }}</dd>
+        </dl>
+      </section>
+      <section class="rio-card" style="margin-top:var(--space-4);">
+        <h3 class="rio-card__title">Security</h3>
+        <dl class="rio-meta-list" style="margin-top:var(--space-3);">
+          <dt>Active sessions</dt><dd>{{ account.sessions }}</dd>
+        </dl>
+        <div style="margin-top:var(--space-4);">
+          <a href="/admin/password_change" class="rio-btn rio-btn--primary">Change password</a>
+        </div>
+      </section>
+    </aside>
   </div>
 {% endblock %}
