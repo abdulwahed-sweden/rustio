@@ -12,10 +12,53 @@ use crate::router::{Params, Router};
 
 const HOME_HTML: &str = include_str!("../assets/home.html");
 
+/// HTML-escape config-sourced text before splicing it into the landing page.
+fn esc(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Turn a project's display name into a CLI-safe slug (lowercase, runs of
+/// non-alphanumerics collapsed to a single `-`), for the `init`/`cd` commands
+/// shown in the landing-page terminal. Empty input falls back to `myproject`.
+fn project_slug(name: &str) -> String {
+    let mut out = String::new();
+    let mut pending_dash = false;
+    for c in name.trim().chars() {
+        if c.is_alphanumeric() {
+            if pending_dash && !out.is_empty() {
+                out.push('-');
+            }
+            pending_dash = false;
+            out.extend(c.to_lowercase());
+        } else {
+            pending_dash = true;
+        }
+    }
+    if out.is_empty() {
+        "myproject".to_string()
+    } else {
+        out
+    }
+}
+
 pub fn homepage() -> Response {
-    // Stamp the crate version into the `__RUSTIO_VERSION__` placeholders so the
-    // default landing page shows the running framework version.
-    html(HOME_HTML.replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION")))
+    // Stamp the running framework version and the project's own identity (name,
+    // logo initial, and a CLI-safe slug) from `rustio.design.json` into the
+    // default landing page. Config text is HTML-escaped; the slug is
+    // alphanumeric-and-dash only, so it's already safe.
+    let design = crate::admin::design::Design::global();
+    let body = HOME_HTML
+        .replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION"))
+        .replace("__PROJECT_NAME__", &esc(&design.project_name))
+        .replace("__PROJECT_INITIAL__", &esc(&design.logo_initial))
+        .replace(
+            "__PROJECT_SLUG__",
+            &esc(&project_slug(&design.project_name)),
+        );
+    html(body)
 }
 
 pub fn docs_placeholder() -> Response {
@@ -93,15 +136,37 @@ mod tests {
     }
 
     #[test]
-    fn homepage_stamps_version_and_marks_itself_a_dev_page() {
-        let stamped = HOME_HTML.replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION"));
-        // The version placeholder is fully filled in (no literal left).
-        assert!(!stamped.contains("__RUSTIO_VERSION__"));
+    fn homepage_stamps_all_placeholders_and_marks_itself_a_dev_page() {
+        let stamped = HOME_HTML
+            .replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION"))
+            .replace("__PROJECT_NAME__", "X")
+            .replace("__PROJECT_INITIAL__", "X")
+            .replace("__PROJECT_SLUG__", "x");
+        // Every placeholder is filled in — none leak to the page.
+        for ph in [
+            "__RUSTIO_VERSION__",
+            "__PROJECT_NAME__",
+            "__PROJECT_INITIAL__",
+            "__PROJECT_SLUG__",
+        ] {
+            assert!(!stamped.contains(ph), "placeholder {ph} not filled");
+        }
         assert!(stamped.contains(env!("CARGO_PKG_VERSION")));
         // It is unmistakably a developer page to be replaced in production,
         // and carries the Swedish toggle the project relies on.
         assert!(HOME_HTML.contains("replace before production"));
         assert!(HOME_HTML.contains("data-set-lang=\"sv\""));
+    }
+
+    #[test]
+    fn project_slug_is_cli_safe() {
+        assert_eq!(project_slug("Aurora"), "aurora");
+        assert_eq!(project_slug("My Clinic"), "my-clinic");
+        assert_eq!(project_slug("RustIO"), "rustio");
+        assert_eq!(project_slug("  spaced   out  "), "spaced-out");
+        assert_eq!(project_slug("clinic_v2"), "clinic-v2");
+        assert_eq!(project_slug("***"), "myproject");
+        assert_eq!(project_slug(""), "myproject");
     }
 
     #[test]

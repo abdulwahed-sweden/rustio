@@ -136,8 +136,8 @@
 <body>
 <header>
   <div class="brand">
-    <span class="brand-mark">R</span>
-    <span class="brand-name">RustIO</span>
+    <span class="brand-mark">__PROJECT_INITIAL__</span>
+    <span class="brand-name">__PROJECT_NAME__</span>
     <span class="pill-version">v__RUSTIO_VERSION__</span>
   </div>
   <nav class="top-right">
@@ -159,15 +159,15 @@
      From plain Rust structs to a working admin — here's all it took.</p>
 
   <!-- The developer's own commands, syntax-highlighted. -->
-  <div class="term" role="img" aria-label="Terminal: cargo install rustio-cli; rustio init aurora; cd aurora; rustio run">
+  <div class="term" role="img" aria-label="Terminal: cargo install rustio-cli; rustio init __PROJECT_SLUG__; cd __PROJECT_SLUG__; rustio run">
     <div class="term__bar">
       <span class="term__dot r"></span><span class="term__dot y"></span><span class="term__dot g"></span>
-      <span class="term__title">aurora — zsh</span>
+      <span class="term__title">__PROJECT_SLUG__ — zsh</span>
     </div>
     <div class="term__body">
 <span class="ln"><span class="pr">$</span> <span class="cmd">cargo</span> <span class="sub">install</span> <span class="arg">rustio-cli</span>   <span class="cmt" data-en="# install the toolkit" data-sv="# installera verktyget"># install the toolkit</span></span>
-<span class="ln"><span class="pr">$</span> <span class="cmd">rustio</span> <span class="sub">init</span> <span class="arg">aurora</span>          <span class="cmt" data-en="# scaffold a new project" data-sv="# skapa ett nytt projekt"># scaffold a new project</span></span>
-<span class="ln"><span class="pr">$</span> <span class="cmd">cd</span> <span class="arg">aurora</span></span>
+<span class="ln"><span class="pr">$</span> <span class="cmd">rustio</span> <span class="sub">init</span> <span class="arg">__PROJECT_SLUG__</span>   <span class="cmt" data-en="# scaffold a new project" data-sv="# skapa ett nytt projekt"># scaffold a new project</span></span>
+<span class="ln"><span class="pr">$</span> <span class="cmd">cd</span> <span class="arg">__PROJECT_SLUG__</span></span>
 <span class="ln"><span class="pr">$</span> <span class="cmd">rustio</span> <span class="sub">run</span>                  <span class="cmt" data-en="# build &amp; serve" data-sv="# bygg &amp; servera"># build &amp; serve</span></span>
 <span class="blank"></span>
 <span class="ln">  <span class="out">→</span> <span class="out">http://127.0.0.1:8000</span>   <span class="cmt" data-en="admin ready ✓" data-sv="admin redo ✓">admin ready ✓</span></span>
