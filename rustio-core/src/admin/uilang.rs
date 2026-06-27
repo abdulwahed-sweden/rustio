@@ -101,6 +101,67 @@ fn builtin() -> HashMap<&'static str, &'static [(&'static str, &'static str)]> {
         ("Administrator", "Administratör"),
         ("Editor", "Redaktör"),
         ("Viewer", "Visare"),
+        ("You're signed in as", "Du är inloggad som"),
+        // Account page — role blurbs (one per role tier)
+        (
+            "You can manage every record, user, and list view in this workspace. Schema evolution and the CLI are developer tools, run outside the admin.",
+            "Du kan hantera alla poster, användare och listvyer i arbetsytan. Schemaändringar och CLI är utvecklarverktyg som körs utanför admin.",
+        ),
+        (
+            "You manage records and list views across the workspace; framework tables stay read-only.",
+            "Du hanterar poster och listvyer i arbetsytan; ramverkets tabeller förblir skrivskyddade.",
+        ),
+        (
+            "You can create and edit records across every model, but not delete them.",
+            "Du kan skapa och redigera poster i alla modeller, men inte ta bort dem.",
+        ),
+        (
+            "You have read-only access to every record in this workspace.",
+            "Du har skrivskyddad åtkomst till alla poster i arbetsytan.",
+        ),
+        // Account page — permission rows (label + detail)
+        ("View records", "Visa poster"),
+        ("Read every model in the workspace", "Läs alla modeller i arbetsytan"),
+        ("Create & edit", "Skapa och redigera"),
+        (
+            "Add and update records across all models",
+            "Lägg till och uppdatera poster i alla modeller",
+        ),
+        ("Delete records", "Ta bort poster"),
+        ("Remove records, with confirmation", "Ta bort poster, med bekräftelse"),
+        ("Manage users & roles", "Hantera användare och roller"),
+        (
+            "Create users and assign their roles",
+            "Skapa användare och tilldela roller",
+        ),
+        ("Reshape list views", "Forma om listvyer"),
+        (
+            "Edit ViewSpec roles, filters, and labels",
+            "Redigera ViewSpec-roller, filter och etiketter",
+        ),
+        ("Evolve schema", "Utveckla schemat"),
+        (
+            "Add or change fields — a developer / CLI tool",
+            "Lägg till eller ändra fält – ett utvecklar-/CLI-verktyg",
+        ),
+        ("Run migrations & CLI", "Kör migreringar och CLI"),
+        (
+            "Apply migrations and use the rustio CLI",
+            "Tillämpa migreringar och använd rustio-CLI:t",
+        ),
+        // Account page — role reference descriptions
+        (
+            "Read-only access to every record in the workspace.",
+            "Skrivskyddad åtkomst till alla poster i arbetsytan.",
+        ),
+        (
+            "Create and edit records across all models; cannot delete.",
+            "Skapa och redigera poster i alla modeller; kan inte ta bort.",
+        ),
+        (
+            "Manages all records, users, and list views.",
+            "Hanterar alla poster, användare och listvyer.",
+        ),
         // Pagination
         ("Previous", "Föregående"),
         ("Next", "Nästa"),

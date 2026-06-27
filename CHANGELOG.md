@@ -28,7 +28,10 @@ sources, stored values, sorting, links, data are never translated); only the
   the minijinja environment, reading the active language from
   `current_user.active_language`) resolves every shell string for the active
   language, falling back to the English source when a translation is missing —
-  never blank. (`rustio-core/src/admin/uilang.rs`.)
+  never blank. (`rustio-core/src/admin/uilang.rs`.) Rust-generated UI prose is
+  translated through the same catalog too — the account page's role narrative,
+  permission rows (label + description), and roles reference all follow the
+  language switch, not just the static template strings.
 - **`rustio.locale.json` — an editable translation file.** A new optional
   project-root input (sibling to `rustio.design.json` / `rustio.context.json`):
   `{ "sv": { "Add": "Lägg till" }, "de": { … } }`. Keys are the English source

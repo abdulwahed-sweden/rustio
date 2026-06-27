@@ -3167,13 +3167,24 @@ async fn build_account_view(db: &Db, user: &crate::auth::User) -> AccountView {
     let (role_name, role_style, role_blurb) = account_role_display(&user.role);
     let role = Role::from_role_string(&user.role).unwrap_or(Role::Viewer);
 
+    // Active language for this user (preference → English) — the role narrative,
+    // permission rows, and role reference are translated through the same
+    // `uilang` catalog as the shell, so the whole account page follows the
+    // language switch.
+    let pref = crate::auth::user::preferred_language(db, user.id)
+        .await
+        .ok()
+        .flatten();
+    let lang = pref.clone().unwrap_or_else(|| "en".to_string());
+    let tr = |s: &str| crate::admin::uilang::translate(&lang, s);
+
     // App-model matrix vs framework-table matrix — "manage users" keys off the
     // latter (the users model is a `rustio_*` system table).
     let app = role.permissions_for("records");
     let sys = role.permissions_for("rustio_users");
     let perm = |label: &str, detail: &str, allowed: bool| AccountPermView {
-        label: label.to_string(),
-        detail: detail.to_string(),
+        label: tr(label),
+        detail: tr(detail),
         allowed,
     };
     let perms = vec![
@@ -3216,10 +3227,10 @@ async fn build_account_view(db: &Db, user: &crate::auth::User) -> AccountView {
 
     let you_style = role_style;
     let mk = |name: &str, style: &str, initials: &str, desc: &str| AccountRoleRefView {
-        name: name.to_string(),
+        name: tr(name),
         style: style.to_string(),
         initials: initials.to_string(),
-        desc: desc.to_string(),
+        desc: tr(desc),
         is_you: style == you_style,
     };
     let roles = vec![
@@ -3256,13 +3267,9 @@ async fn build_account_view(db: &Db, user: &crate::auth::User) -> AccountView {
     let sessions: i64 = crate::auth::session::count_active(db, user.id)
         .await
         .unwrap_or(0);
-    let language = match crate::auth::user::preferred_language(db, user.id).await {
-        Ok(Some(code)) => languages()
-            .iter()
-            .find(|(c, _)| *c == code)
-            .map(|(_, endonym)| endonym.to_string())
-            .unwrap_or(code),
-        _ => "Project default".to_string(),
+    let language = match &pref {
+        Some(code) => crate::admin::uilang::endonym(code),
+        None => tr("Project default"),
     };
 
     let name = {
@@ -3278,9 +3285,9 @@ async fn build_account_view(db: &Db, user: &crate::auth::User) -> AccountView {
         name,
         email: user.email.clone(),
         initials: account_initials(&user.email),
-        role_name: role_name.to_string(),
+        role_name: tr(role_name),
         role_style: role_style.to_string(),
-        role_blurb: role_blurb.to_string(),
+        role_blurb: tr(role_blurb),
         user_id: user.id,
         member_since,
         language,

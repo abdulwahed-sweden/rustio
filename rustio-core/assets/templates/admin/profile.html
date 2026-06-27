@@ -34,7 +34,7 @@
     <div class="rio-detail-main">
       <section class="rio-card">
         <h3 class="rio-card__title">{{ t("Role & permissions") }}</h3>
-        <p>You're signed in as <strong>{{ account.role_name }}</strong>. {{ account.role_blurb }}</p>
+        <p>{{ t("You're signed in as") }} <strong>{{ account.role_name }}</strong>. {{ account.role_blurb }}</p>
         <ul class="rio-perm-list">
           {% for p in account.perms %}
             <li class="rio-perm {% if p.allowed %}is-allowed{% else %}is-denied{% endif %}">
