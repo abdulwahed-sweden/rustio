@@ -13,140 +13,124 @@
     framework-owned and is not affected.
 -->
 <style>
-  *, *::before, *::after { box-sizing: border-box; }
+  *, *::before, *::after { box-sizing:border-box; }
   :root {
-    --ink-0:#0B0F17; --ink-1:#0E121A; --ink-2:#161B24; --ink-3:#1C222E;
-    --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.14);
-    --text:#E8ECF3; --muted:#97A3B4; --faint:#6B7686;
-    --accent:#3B62E8; --accent-2:#7E9BFF; --accent-soft: rgba(126,155,255,.12);
-    --warn:#E0A93B; --warn-soft: rgba(224,169,59,.10);
+    --paper:#F4F6FB; --surface:#FFFFFF; --raise:#FAFBFE;
+    --line:#E5E9F2; --line-2:#D5DBE8;
+    --ink:#162038; --text:#33405A; --muted:#697892; --faint:#93A0B6;
+    --accent:#2B54E0; --accent-deep:#1E3FB8; --accent-soft:#EEF1FE;
+    --warn:#9A6B12; --warn-soft:#FBF3E0; --warn-line:#F0DEB4;
+    /* terminal syntax palette (on the dark code card) */
+    --t-bg:#0F1524; --t-bg2:#131A2C; --t-line:rgba(255,255,255,.07);
+    --t-prompt:#7E8CA8; --t-cmd:#8FB2FF; --t-sub:#5FD3C0; --t-arg:#F2B45C;
+    --t-flag:#C9ABFF; --t-cmt:#6B7894; --t-out:#79DBA0; --t-dim:#A9B4C9;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-    --radius:12px;
   }
   html,body { margin:0; padding:0; }
   body {
-    font-family:var(--sans); background:var(--ink-1); color:var(--text);
-    font-size:16px; line-height:1.6; min-height:100vh;
+    font-family:var(--sans); color:var(--text); background:var(--paper);
+    font-size:16px; line-height:1.6; min-height:100vh; display:flex; flex-direction:column;
     -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
-    display:flex; flex-direction:column;
-    /* Blueprint grid + a soft cobalt aurora at the top — the Console identity. */
-    background-image:
-      radial-gradient(900px 480px at 50% -8%, rgba(59,98,232,.20), transparent 70%),
-      linear-gradient(var(--line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--line) 1px, transparent 1px);
-    background-size: 100% 100%, 44px 44px, 44px 44px;
-    background-position: center top, center top, center top;
+    background-image:radial-gradient(820px 420px at 50% -10%, rgba(43,84,224,.08), transparent 70%);
   }
-  a { color:var(--accent-2); text-decoration:none; }
-  a:hover { color:#A8BCFF; }
-  code, kbd {
-    font-family:var(--mono); font-size:.86em;
-    background:rgba(255,255,255,.05); border:1px solid var(--line);
-    padding:1.5px 6px; border-radius:6px; color:#D7DEEC;
-  }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { color:var(--accent-deep); }
 
-  /* ── Top bar ─────────────────────────────────────────────── */
+  /* ── Top bar ───────────────────────────────────────────── */
   header {
     display:flex; align-items:center; justify-content:space-between; gap:16px;
-    padding:18px 28px; border-bottom:1px solid var(--line);
-    background:rgba(11,15,23,.55); backdrop-filter:saturate(140%) blur(8px);
+    padding:18px 30px; border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.7); backdrop-filter:saturate(150%) blur(8px);
     position:sticky; top:0; z-index:5;
   }
   .brand { display:flex; align-items:center; gap:11px; }
-  .brand-mark {
-    width:30px; height:30px; border-radius:8px; display:grid; place-items:center;
+  .brand-mark { width:30px; height:30px; border-radius:8px; display:grid; place-items:center;
     font-weight:800; font-size:15px; color:#fff;
-    background:linear-gradient(135deg, var(--accent) 0%, #2742B8 100%);
-    box-shadow:0 2px 10px -2px rgba(59,98,232,.7), inset 0 1px 0 rgba(255,255,255,.25);
-  }
-  .brand-name { font-weight:650; letter-spacing:-.01em; }
-  .pill-version {
-    font-family:var(--mono); font-size:11.5px; color:var(--muted);
-    border:1px solid var(--line); border-radius:999px; padding:2px 9px;
-  }
+    background:linear-gradient(135deg,var(--accent),#1A39A8);
+    box-shadow:0 3px 10px -3px rgba(43,84,224,.6); }
+  .brand-name { font-weight:680; letter-spacing:-.01em; color:var(--ink); }
+  .pill-version { font-family:var(--mono); font-size:11.5px; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px; padding:2px 9px; }
   .top-right { display:flex; align-items:center; gap:14px; }
-  .doclink { color:var(--muted); font-size:14px; font-weight:550; }
-  .doclink:hover { color:var(--text); }
-  /* Language toggle — segmented, mono. */
-  .lang { display:inline-flex; border:1px solid var(--line-2); border-radius:999px; overflow:hidden; }
-  .lang button {
-    appearance:none; border:0; background:transparent; cursor:pointer;
+  .doclink { color:var(--muted); font-size:14px; font-weight:600; }
+  .doclink:hover { color:var(--ink); }
+  .lang { display:inline-flex; border:1px solid var(--line-2); border-radius:999px; overflow:hidden; background:var(--surface); }
+  .lang button { appearance:none; border:0; background:transparent; cursor:pointer;
     font-family:var(--mono); font-size:11.5px; font-weight:700; letter-spacing:.06em;
-    color:var(--muted); padding:5px 11px; transition:color .15s, background .15s;
-  }
+    color:var(--muted); padding:5px 11px; transition:color .15s, background .15s; }
   .lang button[aria-pressed="true"] { color:#fff; background:var(--accent); }
-  .lang button:hover:not([aria-pressed="true"]) { color:var(--text); }
+  .lang button:hover:not([aria-pressed="true"]) { color:var(--ink); }
 
-  /* ── Main ────────────────────────────────────────────────── */
-  main { flex:1; width:100%; max-width:760px; margin:0 auto; padding:72px 28px 40px; }
-  .eyebrow {
-    display:inline-flex; align-items:center; gap:8px;
-    font-family:var(--mono); font-size:11.5px; font-weight:700;
-    letter-spacing:.16em; text-transform:uppercase; color:var(--accent-2);
-    background:var(--accent-soft); border:1px solid rgba(126,155,255,.22);
-    padding:5px 12px; border-radius:999px; margin-bottom:22px;
-  }
-  .eyebrow .dot { width:6px; height:6px; border-radius:50%; background:var(--accent-2);
-    box-shadow:0 0 0 0 rgba(126,155,255,.6); animation:pulse 2.4s ease-out infinite; }
-  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(126,155,255,.5)} 70%{box-shadow:0 0 0 7px rgba(126,155,255,0)} 100%{box-shadow:0 0 0 0 rgba(126,155,255,0)} }
-  h1 { margin:0 0 16px; font-size:44px; line-height:1.08; font-weight:800; letter-spacing:-.025em; }
-  h1 .accent { background:linear-gradient(90deg,#8FA8FF,#5C7CFF); -webkit-background-clip:text; background-clip:text; color:transparent; }
-  .lede { margin:0 0 28px; font-size:18px; line-height:1.55; color:var(--muted); max-width:60ch; }
+  /* ── Main ──────────────────────────────────────────────── */
+  main { flex:1; width:100%; max-width:720px; margin:0 auto; padding:64px 28px 44px; }
+  .eyebrow { display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--accent); background:var(--accent-soft); border:1px solid #DCE3FB;
+    padding:5px 12px; border-radius:999px; margin-bottom:20px; }
+  .eyebrow .dot { width:6px; height:6px; border-radius:50%; background:var(--accent);
+    animation:pulse 2.4s ease-out infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(43,84,224,.45)} 70%{box-shadow:0 0 0 7px rgba(43,84,224,0)} 100%{box-shadow:0 0 0 0 rgba(43,84,224,0)} }
+  h1 { margin:0 0 12px; font-size:42px; line-height:1.06; font-weight:800; letter-spacing:-.025em; color:var(--ink); }
+  .lede { margin:0 0 30px; font-size:17px; color:var(--muted); max-width:50ch; }
 
-  /* Developer / production notice */
-  .notice {
-    display:flex; gap:13px; align-items:flex-start;
-    background:var(--warn-soft); border:1px solid rgba(224,169,59,.28);
-    border-radius:var(--radius); padding:15px 17px; margin:0 0 34px;
-  }
-  .notice .ico { flex:0 0 auto; width:22px; height:22px; border-radius:6px; display:grid; place-items:center;
-    background:rgba(224,169,59,.18); color:var(--warn); font-weight:800; font-size:13px; margin-top:1px; }
-  .notice .body { font-size:14px; line-height:1.55; color:#D8DEEA; }
-  .notice .body b { color:#F1D79B; font-weight:700; }
+  /* ── Terminal ──────────────────────────────────────────── */
+  .term { border-radius:14px; overflow:hidden; background:var(--t-bg);
+    border:1px solid rgba(0,0,0,.06);
+    box-shadow:0 1px 0 rgba(255,255,255,.6), 0 24px 50px -24px rgba(22,32,56,.45), 0 8px 20px -12px rgba(22,32,56,.25); }
+  .term__bar { display:flex; align-items:center; gap:8px; padding:11px 14px;
+    background:linear-gradient(180deg,#1A2336,#141B2C); border-bottom:1px solid var(--t-line); }
+  .term__dot { width:11px; height:11px; border-radius:50%; }
+  .term__dot.r{background:#ED6A5E} .term__dot.y{background:#F4BE4F} .term__dot.g{background:#61C554}
+  .term__title { margin-inline-start:8px; font-family:var(--mono); font-size:12px; color:var(--t-prompt); }
+  .term__body { padding:18px 18px 20px; font-family:var(--mono); font-size:13.5px; line-height:1.95; color:var(--t-dim);
+    overflow-x:auto; background:radial-gradient(120% 80% at 0% 0%, rgba(63,98,232,.06), transparent 60%); }
+  .ln { white-space:pre; }
+  .pr { color:var(--t-prompt); user-select:none; }
+  .cmd { color:var(--t-cmd); font-weight:600; }
+  .sub { color:var(--t-sub); }
+  .arg { color:var(--t-arg); }
+  .flag { color:var(--t-flag); }
+  .cmt { color:var(--t-cmt); }
+  .out { color:var(--t-out); }
+  .term__body .blank { display:block; height:6px; }
 
-  .actions { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:52px; }
-  .btn {
-    display:inline-flex; align-items:center; gap:9px; padding:12px 20px; border-radius:10px;
-    font-size:15px; font-weight:650; line-height:1; white-space:nowrap; cursor:pointer;
-    border:1px solid transparent; transition:transform .12s, background .15s, border-color .15s, box-shadow .15s;
-  }
+  /* Suggested next step */
+  .next { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    margin:14px 0 34px; padding:13px 16px; background:var(--surface);
+    border:1px solid var(--line); border-inline-start:3px solid var(--accent); border-radius:11px; }
+  .next__tag { font-family:var(--mono); font-size:10.5px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--accent); white-space:nowrap; }
+  .next__cmd { font-family:var(--mono); font-size:13px; color:var(--ink);
+    background:var(--accent-soft); border:1px solid #DCE3FB; border-radius:7px; padding:5px 10px; }
+
+  .actions { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:30px; }
+  .btn { display:inline-flex; align-items:center; gap:9px; padding:12px 20px; border-radius:10px;
+    font-size:15px; font-weight:680; line-height:1; white-space:nowrap; cursor:pointer;
+    border:1px solid transparent; transition:transform .12s, background .15s, border-color .15s, box-shadow .15s; }
   .btn:hover { transform:translateY(-1px); }
-  .btn-primary { background:var(--accent); color:#fff; box-shadow:0 6px 20px -6px rgba(59,98,232,.8); }
-  .btn-primary:hover { background:#3457D8; color:#fff; }
-  .btn-ghost { background:transparent; border-color:var(--line-2); color:var(--text); }
-  .btn-ghost:hover { border-color:#3A465A; background:rgba(255,255,255,.03); color:#fff; }
+  .btn-primary { background:var(--accent); color:#fff; box-shadow:0 8px 20px -8px rgba(43,84,224,.7); }
+  .btn-primary:hover { background:var(--accent-deep); color:#fff; }
+  .btn-ghost { background:var(--surface); border-color:var(--line-2); color:var(--ink); }
+  .btn-ghost:hover { border-color:var(--faint); color:var(--ink); }
   .btn .arrow { transition:transform .15s; }
   .btn:hover .arrow { transform:translateX(3px); }
 
-  /* Quick start card */
-  .card { background:linear-gradient(180deg, var(--ink-2), var(--ink-1)); border:1px solid var(--line); border-radius:16px; padding:26px 26px 22px; }
-  .card h2 { margin:0 0 4px; font-size:13px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); font-family:var(--mono); }
-  .steps { list-style:none; margin:18px 0 0; padding:0; display:grid; gap:10px; }
-  .steps li { display:grid; grid-template-columns:26px 1fr; gap:13px; align-items:center; }
-  .steps .n { width:26px; height:26px; border-radius:8px; display:grid; place-items:center;
-    font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent-2);
-    background:var(--accent-soft); border:1px solid rgba(126,155,255,.22); }
-  .steps .txt { min-width:0; }
-  .steps .label { font-size:13px; color:var(--muted); margin-bottom:3px; }
-  .steps .cmd { display:block; font-family:var(--mono); font-size:13px; color:#DCE3F1;
-    background:var(--ink-0); border:1px solid var(--line); border-radius:8px; padding:7px 11px; overflow-x:auto; white-space:nowrap; }
+  /* dev / production notice — compact */
+  .notice { display:flex; gap:9px; align-items:center; font-size:13px; color:var(--warn);
+    background:var(--warn-soft); border:1px solid var(--warn-line); border-radius:10px; padding:9px 14px; }
+  .notice .ico { font-weight:800; }
 
-  footer {
-    margin-top:auto; padding:22px 28px; border-top:1px solid var(--line);
+  footer { margin-top:auto; padding:20px 30px; border-top:1px solid var(--line);
     display:flex; gap:8px 18px; justify-content:space-between; align-items:center; flex-wrap:wrap;
-    color:var(--faint); font-size:13px;
-  }
+    color:var(--faint); font-size:13px; }
   footer .mono { font-family:var(--mono); }
 
   @media (max-width:560px) {
-    header { padding:14px 18px; }
-    main { padding:48px 18px 32px; }
-    h1 { font-size:34px; }
-    .lede { font-size:16px; }
-    .doclink { display:none; }
+    header { padding:14px 18px; } main { padding:44px 18px 30px; }
+    h1 { font-size:33px; } .lede { font-size:16px; } .doclink { display:none; }
   }
-  @media (prefers-reduced-motion: reduce) { *{ animation:none !important; transition:none !important; } }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important;} }
 </style>
 </head>
 <body>
@@ -169,21 +153,30 @@
 <main>
   <span class="eyebrow"><span class="dot"></span><span data-en="Developer preview" data-sv="Förhandsvisning för utvecklare">Developer preview</span></span>
 
-  <h1>
-    <span data-en="Your project is" data-sv="Ditt projekt är">Your project is</span>
-    <span class="accent" data-en="live." data-sv="igång.">live.</span>
-  </h1>
+  <h1 data-en="Up and running." data-sv="Igång direkt.">Up and running.</h1>
+  <p class="lede" data-en="From plain Rust structs to a working admin — here's all it took."
+                  data-sv="Från vanliga Rust-structar till en färdig admin — det här var allt som krävdes.">
+     From plain Rust structs to a working admin — here's all it took.</p>
 
-  <p class="lede"
-     data-en="RustIO generated the admin, database, auth, and HTTP server from your Rust structs. This is the development home page — yours to make your own."
-     data-sv="RustIO genererade admin, databas, autentisering och HTTP-server från dina Rust-structar. Detta är utvecklingsstartsidan — din att forma.">
-     RustIO generated the admin, database, auth, and HTTP server from your Rust structs. This is the development home page — yours to make your own.</p>
+  <!-- The developer's own commands, syntax-highlighted. -->
+  <div class="term" role="img" aria-label="Terminal: cargo install rustio-cli; rustio init aurora; cd aurora; rustio run">
+    <div class="term__bar">
+      <span class="term__dot r"></span><span class="term__dot y"></span><span class="term__dot g"></span>
+      <span class="term__title">aurora — zsh</span>
+    </div>
+    <div class="term__body">
+<span class="ln"><span class="pr">$</span> <span class="cmd">cargo</span> <span class="sub">install</span> <span class="arg">rustio-cli</span>   <span class="cmt" data-en="# install the toolkit" data-sv="# installera verktyget"># install the toolkit</span></span>
+<span class="ln"><span class="pr">$</span> <span class="cmd">rustio</span> <span class="sub">init</span> <span class="arg">aurora</span>          <span class="cmt" data-en="# scaffold a new project" data-sv="# skapa ett nytt projekt"># scaffold a new project</span></span>
+<span class="ln"><span class="pr">$</span> <span class="cmd">cd</span> <span class="arg">aurora</span></span>
+<span class="ln"><span class="pr">$</span> <span class="cmd">rustio</span> <span class="sub">run</span>                  <span class="cmt" data-en="# build &amp; serve" data-sv="# bygg &amp; servera"># build &amp; serve</span></span>
+<span class="blank"></span>
+<span class="ln">  <span class="out">→</span> <span class="out">http://127.0.0.1:8000</span>   <span class="cmt" data-en="admin ready ✓" data-sv="admin redo ✓">admin ready ✓</span></span>
+    </div>
+  </div>
 
-  <div class="notice" role="note">
-    <span class="ico" aria-hidden="true">!</span>
-    <span class="body"
-          data-en="<b>For developers — replace before production.</b> This default page is served by the framework. Make it yours by adding <code>templates/home.html</code> or registering your own <code>GET /</code> handler. The admin at <code>/admin</code> stays framework-owned."
-          data-sv="<b>För utvecklare — ersätt före produktion.</b> Den här standardsidan levereras av ramverket. Gör den till din genom att lägga till <code>templates/home.html</code> eller registrera en egen <code>GET /</code>-hanterare. Adminpanelen på <code>/admin</code> förblir ramverkets."><b>For developers — replace before production.</b> This default page is served by the framework. Make it yours by adding <code>templates/home.html</code> or registering your own <code>GET /</code> handler. The admin at <code>/admin</code> stays framework-owned.</span>
+  <div class="next">
+    <span class="next__tag" data-en="Suggested next" data-sv="Föreslaget nästa steg">Suggested next</span>
+    <code class="next__cmd">rustio evolve "add email to customers"</code>
   </div>
 
   <div class="actions">
@@ -195,23 +188,12 @@
        data-en="Documentation" data-sv="Dokumentation">Documentation</a>
   </div>
 
-  <section class="card">
-    <h2 data-en="Get going" data-sv="Kom igång">Get going</h2>
-    <ul class="steps">
-      <li><span class="n">1</span><span class="txt">
-        <span class="label" data-en="Apply migrations" data-sv="Tillämpa migreringar">Apply migrations</span>
-        <code class="cmd">rustio migrate apply</code></span></li>
-      <li><span class="n">2</span><span class="txt">
-        <span class="label" data-en="Create an admin user" data-sv="Skapa en admin-användare">Create an admin user</span>
-        <code class="cmd">rustio user create --email you@example.com --role admin</code></span></li>
-      <li><span class="n">3</span><span class="txt">
-        <span class="label" data-en="Add a model" data-sv="Lägg till en modell">Add a model</span>
-        <code class="cmd">rustio new app &lt;name&gt;</code></span></li>
-      <li><span class="n">4</span><span class="txt">
-        <span class="label" data-en="Evolve the schema in plain English" data-sv="Utveckla schemat på vanlig svenska">Evolve the schema in plain English</span>
-        <code class="cmd">rustio evolve "add date_of_birth as DateTime to customers"</code></span></li>
-    </ul>
-  </section>
+  <div class="notice" role="note">
+    <span class="ico" aria-hidden="true">!</span>
+    <span data-en="Developer page — replace before production (templates/home.html or your own GET / handler)."
+          data-sv="Utvecklarsida — ersätt före produktion (templates/home.html eller en egen GET /-hanterare).">
+      Developer page — replace before production (templates/home.html or your own GET / handler).</span>
+  </div>
 </main>
 
 <footer>
@@ -222,7 +204,7 @@
 
 <script>
   // Tiny self-contained EN/SV toggle. No framework, no network. Swaps every
-  // [data-en]/[data-sv] node, flips the <html lang>, and remembers the choice.
+  // [data-en]/[data-sv] node, flips <html lang>, remembers the choice.
   (function () {
     var KEY = "rustio-home-lang";
     var nodes = document.querySelectorAll("[data-en]");
@@ -232,7 +214,6 @@
       for (var i = 0; i < nodes.length; i++) {
         var el = nodes[i], val = el.getAttribute("data-" + lang);
         if (val == null) continue;
-        // A few nodes carry inline <code>/<b> markup; render it as HTML.
         if (/[<&]/.test(val)) { el.innerHTML = val; } else { el.textContent = val; }
       }
       var btns = document.querySelectorAll("[data-set-lang]");
