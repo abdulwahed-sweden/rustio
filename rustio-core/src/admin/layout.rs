@@ -2698,12 +2698,22 @@ pub async fn list_render(
                 .map(|(col_idx, col)| {
                     // §9d — merged cell: join each merge source's value with
                     // " · " (matching the Phase-3 renderer). Checked first so
-                    // a merged anchor isn't treated as FK/status/primary.
+                    // a merged anchor isn't treated as FK/status/primary. PII —
+                    // each merge source is masked individually if it's
+                    // sensitive, so a merge can never leak a value its own
+                    // column would have masked.
                     if !col.merge.is_empty() {
                         return col
                             .merge
                             .iter()
-                            .map(|s| row.get(s).cloned().unwrap_or_default())
+                            .map(|s| {
+                                let v = row.get(s).cloned().unwrap_or_default();
+                                if !v.is_empty() && sensitive_cols.contains(s.as_str()) {
+                                    crate::admin::intelligence::mask_pii(&v)
+                                } else {
+                                    v
+                                }
+                            })
                             .filter(|v| !v.is_empty())
                             .map(|v| html_escape(&v))
                             .collect::<Vec<_>>()

@@ -108,8 +108,8 @@ editor (status + non-status discovery).
   `intelligence::classify_field`) with `mask_pii`, **context-gated**: masking
   only activates when the project declares a `rustio.context.json` (no
   surprises; default rendering unchanged). Hidden fields are still omitted.
-  *Remaining nit:* a merged cell (9d) bypasses the per-column mask — a merge
-  that includes a sensitive source isn't masked; tighten if it ever matters.
+  A merged cell (9d) masks each sensitive source individually, so a merge
+  never leaks a value its own column would have masked.
 - **Per-model RBAC in the templated list — shipped.** List actions are now
   gated on the signed-in user's role resolved via `rbac::Role` →
   `permissions_for(table)` (SuperAdmin/Admin → full on app models, Editor →
