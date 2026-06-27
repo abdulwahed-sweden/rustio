@@ -19,17 +19,22 @@ filter values from the query string* (applied to the query in
 `fetch_users_table_state`), and `ViewSpec.filters` is never read by the
 live list path.
 
-**Deferred work:** wire `ViewSpec.filters` into the list page — render a
-filter control per filterable field (the right widget per
-type/relation, e.g. a dropdown for `status`/FK columns), feeding the
-existing `filters` query map so the controls actually filter rows. This is
-a rendering feature (parallel to how Phase 6 wired *column* selection but
-left *filter* rendering unwired), meaningfully larger than the 9c "filter
-toggles," so it is its own phase — **not** built in 9c.
+**Shipped.** The toolbar now renders a filter control per `ViewSpec.filters`
+field: a tri-state select for booleans, a dropdown of distinct values
+(low-cardinality, displayed via i18n value labels, value = English token) for
+enum-like columns, and a free-text box for high-cardinality columns; controls
+auto-submit (app.js) with a no-JS Apply and a Clear link, preserving
+search/sort/layout. Crucially, the **application** now honours `ViewSpec.filters`
+too — `classify_filters` accepts a field declared by the view (not just
+`AdminUiField.filterable`), so filters actually filter on the live list (a
+verified gap: new-style models set no macro-`filterable`, so filters were dead).
 
-**Disposition:** deferred — its own phase. 9c is complete as the editor
-capability (toggle + persist + validate); the list-side filter rendering
-is the next related thread.
+**Remaining follow-up:** **FK (relation) filters** are skipped — a proper
+related-row dropdown (from the FK target's labels) is its own piece; the
+relation-options machinery currently lives only in the dead typed
+`list_response` path. Also: a low-cardinality dropdown on an `Exact`-typed
+column applies a substring (`LIKE`) match, not strict equality — fine for
+distinct enum tokens, worth tightening if collisions ever matter.
 
 ---
 

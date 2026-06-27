@@ -31,6 +31,19 @@
     });
   }
 
+  // DW-1 — list filter controls. A `[data-filter]` select submits its toolbar
+  // form on change; a text filter submits on Enter (native) or blur. With JS
+  // off, the <noscript> Apply button covers it.
+  var filterEls = document.querySelectorAll('[data-filter]');
+  for (var f = 0; f < filterEls.length; f++) {
+    var el = filterEls[f];
+    var ev = el.tagName === 'SELECT' ? 'change' : 'change';
+    el.addEventListener(ev, function (e) {
+      var form = e.target.form;
+      if (form) form.submit();
+    });
+  }
+
   // i18n L4b — language switcher. ONE handler for every `[data-lang-switcher]`
   // form (topbar + sidebar share the same component). On change, stamp the
   // current page into `_return` so the POST redirects back here, then submit.

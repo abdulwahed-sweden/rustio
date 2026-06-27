@@ -134,6 +134,7 @@ async fn fetch_users_table_state(
     model: &dyn AdminUiModel,
     query: Option<&str>,
     filters: &HashMap<String, String>,
+    view_filters: &[String],
     page: i64,
     sort: Option<&str>,
     dir: Option<&str>,
@@ -148,7 +149,7 @@ async fn fetch_users_table_state(
     const PAGE_SIZE: i64 = 20;
     let table = model.table_name();
     let searchable: Vec<&str> = model.searchable_fields();
-    let (eq_filters, like_filters) = classify_filters(model, filters);
+    let (eq_filters, like_filters) = classify_filters(model, filters, view_filters);
     let (validated_sort, validated_dir) = validate_sort_state(model, sort, dir);
 
     let total = persistence::count_filtered_records(
@@ -231,18 +232,25 @@ fn validate_sort_state(
 fn classify_filters(
     model: &dyn AdminUiModel,
     raw: &HashMap<String, String>,
+    // i18n DW-1 — the view's declared filter set (`ViewSpec.filters`). A field
+    // is filterable on the live list if the view declares it OR the admin model
+    // marked it `filterable`/`advanced_filter` (back-compat with typed models).
+    view_filters: &[String],
 ) -> (HashMap<String, String>, HashMap<String, String>) {
     let fields = model.fields();
     let mut eq = HashMap::new();
     let mut like = HashMap::new();
     for (k, v) in raw {
+        // Empty value = "All" / no filter — never apply `column = ''`.
+        if v.is_empty() {
+            continue;
+        }
         let Some(field) = fields.iter().find(|f| f.name == k.as_str()) else {
             continue;
         };
-        // Don't filter on a column the admin model didn't mark
-        // filterable — same idea as the unknown-key drop above,
-        // just for declared-but-unfilterable columns.
-        if !field.filterable && !field.advanced_filter {
+        // Don't filter on a column the view didn't expose AND the admin model
+        // didn't mark filterable.
+        if !field.filterable && !field.advanced_filter && !view_filters.iter().any(|s| s == k) {
             continue;
         }
         match resolve_filter_type(field) {
@@ -1506,6 +1514,28 @@ struct ColumnView {
     merge: Vec<String>,
 }
 
+/// DW-1 — one filter control in the list toolbar, built from a `ViewSpec.filters`
+/// entry. `kind` is `"boolean" | "select" | "exact"`; `current` is the value in
+/// effect (from the query). For boolean/select, `options` carry the choices.
+#[derive(serde::Serialize)]
+struct FilterControlView {
+    source: String,
+    label: String,
+    kind: String,
+    options: Vec<FilterOptionView>,
+    current: String,
+}
+
+/// One option in a select/boolean filter. `value` is the English stored token
+/// submitted to the query; `label` is its display (translated via value labels
+/// where available). DW-1.
+#[derive(serde::Serialize)]
+struct FilterOptionView {
+    value: String,
+    label: String,
+    selected: bool,
+}
+
 #[derive(serde::Serialize)]
 struct RowView {
     id: String,
@@ -2416,10 +2446,18 @@ pub async fn list_render(
     let dashboard_entries = collect_dashboard_entries(db, registry).await;
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, Some(model.slug()));
 
-    let (rows_raw, total, current_page, total_pages, validated_sort, validated_dir) =
-        fetch_users_table_state(db, model, query, filters, page, sort, dir).await;
-
     let fields = model.fields();
+    // Resolve the view up front: its `filters` set gates which query params
+    // actually filter (DW-1), and the spec also drives columns + active lang.
+    let schema_model = schema_model_from_ui(model.model_name(), &fields);
+    let saved = load_saved_view(base, model.model_name());
+    let spec = saved
+        .clone()
+        .unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(&schema_model));
+
+    let (rows_raw, total, current_page, total_pages, validated_sort, validated_dir) =
+        fetch_users_table_state(db, model, query, filters, &spec.filters, page, sort, dir).await;
+
     // Phase 6 — column selection runs through the model's ViewSpec via the
     // deterministic Phase-3 renderer (`crate::viewspec::render`), replacing
     // the raw `visible_in_table` dump. The ViewSpec decides WHICH columns
@@ -2447,13 +2485,99 @@ pub async fn list_render(
     // This CHANGES Phase 6's "always Table": a saved layout now wins over
     // Table when no `?layout=` is present. The renderer still picks the
     // cell set per layout; the template arranges those same cells.
-    let schema_model = schema_model_from_ui(model.model_name(), &fields);
-    let saved = load_saved_view(base, model.model_name());
     let active_layout = resolve_effective_layout(layout, saved.as_ref());
-    let spec = saved.unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(&schema_model));
     // i18n L4 — the active render language for THIS user (pref → default → en).
     let active_lang = resolve_active_language(db, identity, &spec).await;
     let columns: Vec<ColumnView> = view_columns(&spec, active_layout, &fields, &active_lang);
+
+    // DW-1 — filter controls for each field the view declares as a filter.
+    // Boolean → tri-state select; a low-cardinality field → a Select dropdown
+    // of its distinct stored values (displayed via i18n value labels, value =
+    // English token); a high-cardinality field → a free-text (substring) box.
+    // FK (relation) filters are deferred — skipped here.
+    const FILTER_ENUM_CAP: usize = 20;
+    use crate::admin::admin_form_bridge::FilterType;
+    let table = model.table_name();
+    let mut filter_controls: Vec<FilterControlView> = Vec::new();
+    for source in &spec.filters {
+        let Some(field) = fields.iter().find(|f| f.name == *source) else {
+            continue;
+        };
+        if field.is_relation {
+            continue; // FK relation filters deferred (need a related-row dropdown)
+        }
+        let current = filters.get(source).cloned().unwrap_or_default();
+        let header = spec
+            .label_for(source, &active_lang)
+            .unwrap_or_else(|| humanize_field_label(field.label));
+
+        // Helper: an "All" option followed by one option per distinct value,
+        // with the English token as the value and a value-label display.
+        let select_options = |raws: Vec<String>| -> Vec<FilterOptionView> {
+            let mut opts = vec![FilterOptionView {
+                value: String::new(),
+                label: "All".to_string(),
+                selected: current.is_empty(),
+            }];
+            for raw in raws {
+                let key = raw.trim().to_lowercase();
+                let label = spec
+                    .value_label_for(source, &key, &active_lang)
+                    .unwrap_or_else(|| raw.clone());
+                let selected = current == raw;
+                opts.push(FilterOptionView {
+                    value: raw,
+                    label,
+                    selected,
+                });
+            }
+            opts
+        };
+
+        let (kind, options) = match resolve_filter_type(field) {
+            FilterType::Boolean => (
+                "boolean",
+                vec![
+                    FilterOptionView {
+                        value: String::new(),
+                        label: "All".to_string(),
+                        selected: current.is_empty(),
+                    },
+                    FilterOptionView {
+                        value: "1".to_string(),
+                        label: "Yes".to_string(),
+                        selected: current == "1",
+                    },
+                    FilterOptionView {
+                        value: "0".to_string(),
+                        label: "No".to_string(),
+                        selected: current == "0",
+                    },
+                ],
+            ),
+            // Declared-options / enum column → dropdown of its distinct values.
+            FilterType::Select => (
+                "select",
+                select_options(distinct_values(db, table, source, 51).await),
+            ),
+            // Plain column: low-cardinality → dropdown; else free-text box.
+            FilterType::Exact => {
+                let raws = distinct_values(db, table, source, FILTER_ENUM_CAP as i64 + 1).await;
+                if !raws.is_empty() && raws.len() <= FILTER_ENUM_CAP {
+                    ("select", select_options(raws))
+                } else {
+                    ("exact", Vec::new())
+                }
+            }
+        };
+        filter_controls.push(FilterControlView {
+            source: source.clone(),
+            label: header,
+            kind: kind.to_string(),
+            options,
+            current,
+        });
+    }
 
     // One batch `SELECT … WHERE id IN (…)` per FK column visible on
     // this page of rows. Cells for matching FK values are rewritten
@@ -2596,6 +2720,10 @@ pub async fn list_render(
     // param, so the saved default applies after redirect).
     let return_to = list_return_href(slug, query, sort, dir, filters);
 
+    // DW-1 — "Clear filters" target = the same view minus the filter params.
+    let clear_filters_href = list_return_href(slug, query, sort, dir, &HashMap::new());
+    let any_filter_active = filter_controls.iter().any(|c| !c.current.is_empty());
+
     let model_view = ModelView {
         display_name: format!("{}s", model.model_name()),
         singular_name: model.model_name().to_string(),
@@ -2633,6 +2761,11 @@ pub async fn list_render(
             return_to => return_to,
             page_title => format!("{}s", model.model_name()),
             query => query.unwrap_or(""),
+            sort => validated_sort.clone().unwrap_or_default(),
+            dir => validated_dir.clone().unwrap_or_default(),
+            filter_controls => filter_controls,
+            clear_filters_href => clear_filters_href,
+            any_filter_active => any_filter_active,
             csrf_token => csrf_token.unwrap_or(""),
             rustio_version => env!("CARGO_PKG_VERSION"),
         })
@@ -4601,6 +4734,92 @@ mod tests {
         assert!(
             !html.contains("MY-META-NOTE"),
             "English value text replaced"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    // --- DW-1: ViewSpec.filters → live list filter bar -------------------
+
+    #[test]
+    fn classify_filters_honors_view_filters_and_skips_empty() {
+        let entry = gadget_entry();
+        let model = LegacyEntryModel::new(&entry);
+        let mut raw = HashMap::new();
+        raw.insert("notes".to_string(), "x".to_string());
+        raw.insert("name".to_string(), String::new()); // empty → never applied
+
+        // The view declares `notes` a filter → it's accepted even though the
+        // gadget model didn't mark it filterable.
+        let (eq, like) = classify_filters(&model, &raw, &["notes".to_string()]);
+        assert!(
+            eq.contains_key("notes") || like.contains_key("notes"),
+            "a ViewSpec.filters field is applied"
+        );
+        assert!(
+            !eq.contains_key("name") && !like.contains_key("name"),
+            "empty filter value ('All') is never applied"
+        );
+
+        // Without the view declaring it (and not macro-filterable) → dropped.
+        let (eq2, like2) = classify_filters(&model, &raw, &[]);
+        assert!(
+            !eq2.contains_key("notes") && !like2.contains_key("notes"),
+            "a field neither view-declared nor macro-filterable is dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_renders_filter_control_for_view_filter() {
+        // gadget's derived spec has filters=["status"]; status is low-card
+        // (1 distinct: 'active') → a Select dropdown control renders.
+        let base = tmp_dir();
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        assert!(
+            html.contains(r#"name="status" data-filter"#),
+            "a filter control for the view's status filter renders:\n{html}"
+        );
+        assert!(
+            html.contains(r#"<option value="active""#),
+            "the distinct value is an option"
+        );
+        // No control for a non-filter field.
+        assert!(!html.contains(r#"name="email" data-filter"#));
+    }
+
+    #[tokio::test]
+    async fn view_filter_applies_and_excludes_on_live_list() {
+        // The filter now actually filters rows on the live list path.
+        let base = tmp_dir();
+        let mut matching = HashMap::new();
+        matching.insert("status".to_string(), "active".to_string());
+        let hit = render_gadget_layout_in(&base, Some("table"), &matching).await;
+        assert!(hit.contains("Alpha"), "matching filter keeps the row");
+
+        let mut nonmatching = HashMap::new();
+        nonmatching.insert("status".to_string(), "archived".to_string());
+        let miss = render_gadget_layout_in(&base, Some("table"), &nonmatching).await;
+        assert!(
+            !miss.contains("Alpha"),
+            "a non-matching filter excludes the row:\n{miss}"
+        );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn filter_option_uses_value_label_display() {
+        // The dropdown shows the translated value label but submits the English
+        // token (iron rule), composing with the value-label work.
+        let base = tmp_dir();
+        let mut spec = crate::viewspec::ViewSpec::from_schema_model(&gadget_schema_model());
+        spec.default_language = "sv".to_string();
+        put_value_label(&mut spec, "status", "active", "sv", "Aktiv");
+        save_view_spec(&base, "Gadget", &spec).unwrap();
+
+        let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
+        // Option value = English token; label = translation.
+        assert!(
+            html.contains(r#"<option value="active">Aktiv</option>"#),
+            "{html}"
         );
         std::fs::remove_dir_all(&base).ok();
     }

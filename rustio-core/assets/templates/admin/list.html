@@ -36,9 +36,41 @@
   </style>
 
   <form class="rio-toolbar" method="get" action="/admin/{{ model.singular_name | lower }}s" role="search">
-    {# Keep the active layout across a search submit. #}
+    {# Keep the active layout + sort across a search/filter submit. #}
     <input type="hidden" name="layout" value="{{ layout | default('table') }}">
+    <input type="hidden" name="sort" value="{{ sort | default('') }}">
+    <input type="hidden" name="dir" value="{{ dir | default('') }}">
     <input class="rio-input" name="q" value="{{ query | default('') }}" placeholder="Search {{ model.display_name | lower }}…" style="max-width: 320px;">
+
+    {# DW-1 — filter controls from the view's `filters`. Submitting the toolbar
+       applies them via the query string; the server honours ViewSpec.filters.
+       Selects/text auto-submit on change (app.js); a <noscript> Apply button
+       and a Clear link cover the no-JS and reset cases. Option values are the
+       English stored tokens; labels are translated via value labels. #}
+    {% if filter_controls is defined and filter_controls | length > 0 %}
+      <span class="rio-filters" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        {% for f in filter_controls %}
+          {% if f.kind == 'exact' %}
+            <label class="rio-filter" style="display:inline-flex;gap:4px;align-items:center;">{{ f.label }}
+              <input class="rio-input" name="{{ f.source }}" value="{{ f.current }}" placeholder="{{ f.label }}…" data-filter style="max-width:150px;">
+            </label>
+          {% else %}
+            <label class="rio-filter" style="display:inline-flex;gap:4px;align-items:center;">{{ f.label }}
+              <select class="rio-input" name="{{ f.source }}" data-filter style="width:auto;">
+                {% for o in f.options %}
+                  <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+        {% endfor %}
+        {% if any_filter_active %}
+          <a href="{{ clear_filters_href }}" class="rio-btn rio-btn--ghost">Clear</a>
+        {% endif %}
+        <noscript><button type="submit" class="rio-btn rio-btn--ghost">Apply</button></noscript>
+      </span>
+    {% endif %}
+
     <span class="rio-toolbar__count">
       {% if pagination is defined and pagination.total > 0 %}
         Showing {{ pagination.from }}–{{ pagination.to }} of {{ pagination.total }}
