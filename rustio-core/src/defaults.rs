@@ -44,21 +44,28 @@ fn project_slug(name: &str) -> String {
     }
 }
 
-pub fn homepage() -> Response {
-    // Stamp the running framework version and the project's own identity (name,
-    // logo initial, and a CLI-safe slug) from `rustio.design.json` into the
-    // default landing page. Config text is HTML-escaped; the slug is
-    // alphanumeric-and-dash only, so it's already safe.
+/// Stamp the running framework version and the project's own identity (name,
+/// logo initial, and a CLI-safe slug from `rustio.design.json`) into a landing
+/// page. Config text is HTML-escaped; the slug is alphanumeric-and-dash only.
+fn stamp_home(src: &str) -> String {
     let design = crate::admin::design::Design::global();
-    let body = HOME_HTML
-        .replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION"))
+    src.replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION"))
         .replace("__PROJECT_NAME__", &esc(&design.project_name))
         .replace("__PROJECT_INITIAL__", &esc(&design.logo_initial))
         .replace(
             "__PROJECT_SLUG__",
             &esc(&project_slug(&design.project_name)),
-        );
-    html(body)
+        )
+}
+
+pub fn homepage() -> Response {
+    // Project override (as the in-file note promises): a `templates/home.html`
+    // in the project root replaces the built-in page, with the same placeholder
+    // substitution. Any read error (absent / unreadable) falls back to the
+    // embedded default, so `/` always renders something.
+    let source =
+        std::fs::read_to_string("templates/home.html").unwrap_or_else(|_| HOME_HTML.to_string());
+    html(stamp_home(&source))
 }
 
 pub fn docs_placeholder() -> Response {
@@ -156,6 +163,22 @@ mod tests {
         // and carries the Swedish toggle the project relies on.
         assert!(HOME_HTML.contains("replace before production"));
         assert!(HOME_HTML.contains("data-set-lang=\"sv\""));
+    }
+
+    #[test]
+    fn stamp_home_fills_every_placeholder() {
+        let out = stamp_home(
+            "<i>__PROJECT_INITIAL__</i> __PROJECT_NAME__ / __PROJECT_SLUG__ / v__RUSTIO_VERSION__",
+        );
+        for ph in [
+            "__PROJECT_NAME__",
+            "__PROJECT_INITIAL__",
+            "__PROJECT_SLUG__",
+            "__RUSTIO_VERSION__",
+        ] {
+            assert!(!out.contains(ph));
+        }
+        assert!(out.contains(env!("CARGO_PKG_VERSION")));
     }
 
     #[test]

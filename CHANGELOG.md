@@ -17,6 +17,27 @@ sources, stored values, sorting, links, data are never translated); only the
 
 ### Added
 
+#### Developer landing page + project starter files
+
+- **A real `/` landing page that's the project's own.** The framework default
+  page (served at `/` for every project) is a light, bilingual (EN/SV)
+  developer page with a syntax-highlighted terminal walking the real setup flow.
+  It reads the project identity from `rustio.design.json` — brand name, logo
+  initial, and a CLI-safe slug used in the terminal commands — and stamps the
+  framework version in. Clearly marked "developer page — replace before
+  production".
+- **`templates/home.html` override now actually works.** `homepage()` serves a
+  project's `templates/home.html` when present (with the same
+  `__PROJECT_NAME__` / `__PROJECT_INITIAL__` / `__PROJECT_SLUG__` /
+  `__RUSTIO_VERSION__` substitution), falling back to the embedded default —
+  matching what the in-page note has always promised.
+- **`rustio init` now scaffolds helper/starter files** so a new project is
+  customisable with zero framework knowledge: `rustio.design.json` (brand
+  identity, pre-filled with the project name), `rustio.locale.json` (admin UI
+  translations — Swedish built-in, with an example of adding a language), and a
+  plain-English `DEVELOPMENT.md` guide covering the workflow, models, the home
+  page, branding, and languages (including RTL).
+
 #### Admin shell i18n (UI translation)
 
 - **The admin's own UI strings now translate with the active language.** Until

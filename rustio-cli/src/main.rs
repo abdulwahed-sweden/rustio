@@ -837,6 +837,28 @@ pub(crate) fn new_project(name: &str) -> Result<(), String> {
     fs::write(root.join(".gitignore"), GITIGNORE).map_err(err_str)?;
     fs::write(root.join("README.md"), render(README_MD, &[("NAME", name)])).map_err(err_str)?;
 
+    // Helper / starter files — zero-config knobs the developer can edit:
+    //   rustio.design.json  → brand identity (name, logo, colours)
+    //   rustio.locale.json  → admin UI translations (add languages here)
+    //   DEVELOPMENT.md      → a plain-English guide to everything above
+    let display = capitalize(name);
+    let initial = display
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "R".to_string());
+    fs::write(
+        root.join("rustio.design.json"),
+        render(DESIGN_JSON, &[("NAME", &display), ("INITIAL", &initial)]),
+    )
+    .map_err(err_str)?;
+    fs::write(root.join("rustio.locale.json"), LOCALE_JSON).map_err(err_str)?;
+    fs::write(
+        root.join("DEVELOPMENT.md"),
+        render(DEVELOPMENT_MD, &[("NAME", &display)]),
+    )
+    .map_err(err_str)?;
+
     out::success("Created project", &format!("\"{name}\""));
     println!();
     out::hint(&format!("cd {name}"));
@@ -3844,6 +3866,119 @@ Replace before deploying.
 - `Authorization: Bearer dev-admin` — admin access
 - `Authorization: Bearer dev-user` — non-admin
 "#;
+
+/// Brand identity. Drives the admin (sidebar/login wordmark + accent) and the
+/// public landing page at `/` (brand + the project name shown in its terminal).
+/// Only these keys are allowed — unknown keys are rejected, so the page falls
+/// back to defaults rather than half-applying.
+const DESIGN_JSON: &str = r##"{
+  "project_name": "{{NAME}}",
+  "logo_initial": "{{INITIAL}}",
+  "primary_color": "#2B54E0",
+  "accent_color": "#2B54E0"
+}
+"##;
+
+/// Admin UI translations. Swedish ships built-in; this file overrides or
+/// extends it and is where you add new languages. The `_comment` key is
+/// ignored, so it's safe to keep as inline documentation.
+const LOCALE_JSON: &str = r#"{
+  "_comment": "Translate the admin UI. Keys are the exact English text shown in the admin; values are the translation for that language code. Swedish (sv) ships built-in — entries here override or extend it. Add any language code (de, fr, ar, ...); right-to-left languages (ar, fa, ur) mirror the layout automatically. Record DATA is never translated here — field and value labels live in the admin's view editor.",
+  "sv": {
+    "Recent actions": "Senaste händelser"
+  },
+  "de": {
+    "Add": "Hinzufügen",
+    "Edit": "Bearbeiten",
+    "Delete": "Löschen",
+    "Save": "Speichern"
+  }
+}
+"#;
+
+/// A plain-English developer guide written into every new project.
+const DEVELOPMENT_MD: &str = r##"# Developing {{NAME}}
+
+A short, practical guide to everything you can change — no deep framework
+knowledge required.
+
+## Run it
+
+    rustio migrate apply                 # apply schema changes to the database
+    rustio user create --email you@example.com --password secret --role admin
+    rustio run                           # build + serve on http://127.0.0.1:8000
+
+Then open <http://127.0.0.1:8000> for the landing page, and
+<http://127.0.0.1:8000/admin> to sign in.
+
+## Project layout
+
+- `main.rs` — entry point (mostly boilerplate; add your own routes here)
+- `apps/<name>/` — one folder per model: `models.rs` (the struct = source of
+  truth), `admin.rs`, `views.rs`
+- `migrations/` — SQL files, applied in filename order
+- `templates/`, `static/` — your public assets (RustIO stays out of these)
+- `rustio.design.json`, `rustio.locale.json` — the two config files below
+- `app.db` — SQLite database (gitignored)
+
+## Add a model
+
+    rustio new app customers             # scaffolds apps/customers/ + a migration
+    # edit apps/customers/models.rs to add fields, then:
+    rustio migrate apply
+
+Or describe the change in plain English and let RustIO write the diff:
+
+    rustio evolve "add email and date_of_birth to customers"
+
+## Branding — `rustio.design.json`
+
+Change how the admin and landing page look without touching any code:
+
+    {
+      "project_name": "{{NAME}}",   // shown in the sidebar, title, and landing page
+      "logo_initial": "{{NAME}}"[0],// the single letter in the square logo
+      "primary_color": "#2B54E0",   // primary button + logo background
+      "accent_color":  "#2B54E0"    // focus rings + links
+    }
+
+## Languages — `rustio.locale.json`
+
+The admin UI translates itself. **Swedish ships built-in.** To add or change a
+translation, edit `rustio.locale.json`: the key is the exact English text, the
+value is your translation. Add any language by adding its code:
+
+    { "de": { "Add": "Hinzufügen", "Save": "Speichern" } }
+
+- A language you add becomes selectable from the switcher in the admin top bar.
+- Right-to-left languages (`ar`, `fa`, `ur`, …) mirror the whole layout
+  automatically (`dir="rtl"`).
+- Missing translations fall back to English — never blank.
+- Record **data** is never translated here; per-field and per-value labels live
+  in the admin's **Edit view** (composition editor).
+
+## The home page (`/`)
+
+The landing page is served for you and already shows your `project_name`. It is
+a **developer page — replace it before production.** Two ways:
+
+1. **Rebrand instantly:** just edit `rustio.design.json` (above).
+2. **Full control:** create `templates/home.html` — it replaces the built-in
+   page. You may use `__PROJECT_NAME__`, `__PROJECT_INITIAL__`,
+   `__PROJECT_SLUG__`, and `__RUSTIO_VERSION__` placeholders.
+
+## The admin (`/admin`)
+
+Framework-owned. Every model you register gets list/create/edit/delete screens,
+search, filters, foreign-key links, RBAC, and an audit log — generated from
+your structs. You don't build it; you just register models.
+
+## Going further
+
+- Docs: <https://docs.rs/rustio-core>
+- Run `rustio` with no arguments for a context-aware "what next" hint, or
+  `rustio doctor` to health-check the project.
+"##;
 
 const MAIN_RS: &str = r#"use rustio_core::auth::authenticate;
 use rustio_core::defaults::with_defaults;
