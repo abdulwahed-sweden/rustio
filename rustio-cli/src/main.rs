@@ -3886,12 +3886,6 @@ const LOCALE_JSON: &str = r#"{
   "_comment": "Translate the admin UI. Keys are the exact English text shown in the admin; values are the translation for that language code. Swedish (sv) ships built-in — entries here override or extend it. Add any language code (de, fr, ar, ...); right-to-left languages (ar, fa, ur) mirror the layout automatically. Record DATA is never translated here — field and value labels live in the admin's view editor.",
   "sv": {
     "Recent actions": "Senaste händelser"
-  },
-  "de": {
-    "Add": "Hinzufügen",
-    "Edit": "Bearbeiten",
-    "Delete": "Löschen",
-    "Save": "Speichern"
   }
 }
 "#;
