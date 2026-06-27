@@ -13,7 +13,9 @@ use crate::router::{Params, Router};
 const HOME_HTML: &str = include_str!("../assets/home.html");
 
 pub fn homepage() -> Response {
-    html(HOME_HTML)
+    // Stamp the crate version into the `__RUSTIO_VERSION__` placeholders so the
+    // default landing page shows the running framework version.
+    html(HOME_HTML.replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION")))
 }
 
 pub fn docs_placeholder() -> Response {
@@ -88,6 +90,18 @@ mod tests {
         } else {
             Ok(())
         }
+    }
+
+    #[test]
+    fn homepage_stamps_version_and_marks_itself_a_dev_page() {
+        let stamped = HOME_HTML.replace("__RUSTIO_VERSION__", env!("CARGO_PKG_VERSION"));
+        // The version placeholder is fully filled in (no literal left).
+        assert!(!stamped.contains("__RUSTIO_VERSION__"));
+        assert!(stamped.contains(env!("CARGO_PKG_VERSION")));
+        // It is unmistakably a developer page to be replaced in production,
+        // and carries the Swedish toggle the project relies on.
+        assert!(HOME_HTML.contains("replace before production"));
+        assert!(HOME_HTML.contains("data-set-lang=\"sv\""));
     }
 
     #[test]

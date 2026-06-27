@@ -1,206 +1,152 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RustIO</title>
+<title>RustIO — developer preview</title>
 <!--
-  Default public landing page. Override by editing templates/home.html or
-  your project's root handler. Admin lives at /admin (framework-owned).
+  Default public landing page served by rustio-core at `/`.
+
+  ▸ THIS PAGE IS FOR DEVELOPERS AND MUST BE REPLACED BEFORE PRODUCTION.
+    Override it by adding `templates/home.html` to your project, or by
+    registering your own `GET /` handler. The admin at /admin is
+    framework-owned and is not affected.
 -->
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
+  :root {
+    --ink-0:#0B0F17; --ink-1:#0E121A; --ink-2:#161B24; --ink-3:#1C222E;
+    --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.14);
+    --text:#E8ECF3; --muted:#97A3B4; --faint:#6B7686;
+    --accent:#3B62E8; --accent-2:#7E9BFF; --accent-soft: rgba(126,155,255,.12);
+    --warn:#E0A93B; --warn-soft: rgba(224,169,59,.10);
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --radius:12px;
+  }
+  html,body { margin:0; padding:0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                 "Helvetica Neue", Arial, sans-serif;
-    background: #f9fafb;
-    color: #111827;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
-    font-size: 16px;
-    line-height: 1.6;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
+    font-family:var(--sans); background:var(--ink-1); color:var(--text);
+    font-size:16px; line-height:1.6; min-height:100vh;
+    -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    display:flex; flex-direction:column;
+    /* Blueprint grid + a soft cobalt aurora at the top — the Console identity. */
+    background-image:
+      radial-gradient(900px 480px at 50% -8%, rgba(59,98,232,.20), transparent 70%),
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 100% 100%, 44px 44px, 44px 44px;
+    background-position: center top, center top, center top;
   }
-  a { color: #005293; text-decoration: none; }
-  a:hover { color: #003d6e; text-decoration: underline; }
-  code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    background: #f3f4f6;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 14px;
-    color: #374151;
+  a { color:var(--accent-2); text-decoration:none; }
+  a:hover { color:#A8BCFF; }
+  code, kbd {
+    font-family:var(--mono); font-size:.86em;
+    background:rgba(255,255,255,.05); border:1px solid var(--line);
+    padding:1.5px 6px; border-radius:6px; color:#D7DEEC;
   }
+
+  /* ── Top bar ─────────────────────────────────────────────── */
   header {
-    padding: 20px 32px;
-    border-bottom: 1px solid #e5e7eb;
-    background: white;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:18px 28px; border-bottom:1px solid var(--line);
+    background:rgba(11,15,23,.55); backdrop-filter:saturate(140%) blur(8px);
+    position:sticky; top:0; z-index:5;
   }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
+  .brand { display:flex; align-items:center; gap:11px; }
   .brand-mark {
-    width: 32px; height: 32px;
-    background: #111827;
-    color: white;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 15px;
+    width:30px; height:30px; border-radius:8px; display:grid; place-items:center;
+    font-weight:800; font-size:15px; color:#fff;
+    background:linear-gradient(135deg, var(--accent) 0%, #2742B8 100%);
+    box-shadow:0 2px 10px -2px rgba(59,98,232,.7), inset 0 1px 0 rgba(255,255,255,.25);
   }
-  .brand-name {
-    font-weight: 500;
-    font-size: 16px;
+  .brand-name { font-weight:650; letter-spacing:-.01em; }
+  .pill-version {
+    font-family:var(--mono); font-size:11.5px; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px; padding:2px 9px;
   }
-  .version {
-    font-size: 13px;
-    color: #6b7280;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    background: #f3f4f6;
-    padding: 3px 8px;
-    border-radius: 4px;
+  .top-right { display:flex; align-items:center; gap:14px; }
+  .doclink { color:var(--muted); font-size:14px; font-weight:550; }
+  .doclink:hover { color:var(--text); }
+  /* Language toggle — segmented, mono. */
+  .lang { display:inline-flex; border:1px solid var(--line-2); border-radius:999px; overflow:hidden; }
+  .lang button {
+    appearance:none; border:0; background:transparent; cursor:pointer;
+    font-family:var(--mono); font-size:11.5px; font-weight:700; letter-spacing:.06em;
+    color:var(--muted); padding:5px 11px; transition:color .15s, background .15s;
   }
-  .top-right { display: flex; align-items: center; gap: 16px; }
-  .top-right a { color: #374151; font-weight: 500; font-size: 15px; }
-  .top-right a:hover { color: #111827; }
+  .lang button[aria-pressed="true"] { color:#fff; background:var(--accent); }
+  .lang button:hover:not([aria-pressed="true"]) { color:var(--text); }
 
-  main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 48px 32px;
+  /* ── Main ────────────────────────────────────────────────── */
+  main { flex:1; width:100%; max-width:760px; margin:0 auto; padding:72px 28px 40px; }
+  .eyebrow {
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--mono); font-size:11.5px; font-weight:700;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--accent-2);
+    background:var(--accent-soft); border:1px solid rgba(126,155,255,.22);
+    padding:5px 12px; border-radius:999px; margin-bottom:22px;
   }
-  .hero {
-    max-width: 640px;
-    text-align: center;
+  .eyebrow .dot { width:6px; height:6px; border-radius:50%; background:var(--accent-2);
+    box-shadow:0 0 0 0 rgba(126,155,255,.6); animation:pulse 2.4s ease-out infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(126,155,255,.5)} 70%{box-shadow:0 0 0 7px rgba(126,155,255,0)} 100%{box-shadow:0 0 0 0 rgba(126,155,255,0)} }
+  h1 { margin:0 0 16px; font-size:44px; line-height:1.08; font-weight:800; letter-spacing:-.025em; }
+  h1 .accent { background:linear-gradient(90deg,#8FA8FF,#5C7CFF); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .lede { margin:0 0 28px; font-size:18px; line-height:1.55; color:var(--muted); max-width:60ch; }
+
+  /* Developer / production notice */
+  .notice {
+    display:flex; gap:13px; align-items:flex-start;
+    background:var(--warn-soft); border:1px solid rgba(224,169,59,.28);
+    border-radius:var(--radius); padding:15px 17px; margin:0 0 34px;
   }
-  .hero h1 {
-    margin: 0 0 12px;
-    font-size: 34px;
-    font-weight: 600;
-    line-height: 1.2;
-    color: #111827;
-  }
-  .hero p {
-    margin: 0 0 32px;
-    color: #374151;
-    font-size: 17px;
-    line-height: 1.55;
-  }
-  .actions {
-    display: inline-flex;
-    gap: 12px;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
+  .notice .ico { flex:0 0 auto; width:22px; height:22px; border-radius:6px; display:grid; place-items:center;
+    background:rgba(224,169,59,.18); color:var(--warn); font-weight:800; font-size:13px; margin-top:1px; }
+  .notice .body { font-size:14px; line-height:1.55; color:#D8DEEA; }
+  .notice .body b { color:#F1D79B; font-weight:700; }
+
+  .actions { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:52px; }
   .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 11px 20px;
-    border-radius: 6px;
-    font-size: 15px;
-    font-weight: 500;
-    text-decoration: none;
-    border: 1px solid transparent;
-    line-height: 1.2;
-    white-space: nowrap;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    display:inline-flex; align-items:center; gap:9px; padding:12px 20px; border-radius:10px;
+    font-size:15px; font-weight:650; line-height:1; white-space:nowrap; cursor:pointer;
+    border:1px solid transparent; transition:transform .12s, background .15s, border-color .15s, box-shadow .15s;
   }
-  .btn:hover { text-decoration: none; }
-  .btn-primary {
-    background: #005293;
-    border-color: #005293;
-    color: white;
-  }
-  .btn-primary:hover {
-    background: #003d6e;
-    border-color: #003d6e;
-    color: white;
-  }
-  .btn-secondary {
-    background: white;
-    border-color: #d1d5db;
-    color: #111827;
-  }
-  .btn-secondary:hover {
-    background: #f3f4f6;
-    border-color: #9ca3af;
-    color: #111827;
-  }
+  .btn:hover { transform:translateY(-1px); }
+  .btn-primary { background:var(--accent); color:#fff; box-shadow:0 6px 20px -6px rgba(59,98,232,.8); }
+  .btn-primary:hover { background:#3457D8; color:#fff; }
+  .btn-ghost { background:transparent; border-color:var(--line-2); color:var(--text); }
+  .btn-ghost:hover { border-color:#3A465A; background:rgba(255,255,255,.03); color:#fff; }
+  .btn .arrow { transition:transform .15s; }
+  .btn:hover .arrow { transform:translateX(3px); }
 
-  .panel {
-    margin: 48px auto 0;
-    max-width: 820px;
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 28px 32px;
-  }
-  .panel h2 {
-    margin: 0 0 12px;
-    font-size: 17px;
-    font-weight: 500;
-    color: #111827;
-  }
-  .panel p {
-    margin: 0 0 8px;
-    color: #374151;
-    font-size: 15px;
-    line-height: 1.6;
-  }
-  .panel p:last-child { margin-bottom: 0; }
-  .panel ul {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 12px;
-  }
-  .panel li {
-    padding: 12px 14px;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    font-size: 14px;
-    color: #374151;
-  }
-  .panel li strong { color: #111827; font-weight: 500; }
+  /* Quick start card */
+  .card { background:linear-gradient(180deg, var(--ink-2), var(--ink-1)); border:1px solid var(--line); border-radius:16px; padding:26px 26px 22px; }
+  .card h2 { margin:0 0 4px; font-size:13px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--faint); font-family:var(--mono); }
+  .steps { list-style:none; margin:18px 0 0; padding:0; display:grid; gap:10px; }
+  .steps li { display:grid; grid-template-columns:26px 1fr; gap:13px; align-items:center; }
+  .steps .n { width:26px; height:26px; border-radius:8px; display:grid; place-items:center;
+    font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent-2);
+    background:var(--accent-soft); border:1px solid rgba(126,155,255,.22); }
+  .steps .txt { min-width:0; }
+  .steps .label { font-size:13px; color:var(--muted); margin-bottom:3px; }
+  .steps .cmd { display:block; font-family:var(--mono); font-size:13px; color:#DCE3F1;
+    background:var(--ink-0); border:1px solid var(--line); border-radius:8px; padding:7px 11px; overflow-x:auto; white-space:nowrap; }
 
   footer {
-    padding: 20px 32px;
-    border-top: 1px solid #e5e7eb;
-    background: white;
-    color: #6b7280;
-    font-size: 13px;
-    display: flex;
-    gap: 16px;
-    justify-content: center;
-    flex-wrap: wrap;
+    margin-top:auto; padding:22px 28px; border-top:1px solid var(--line);
+    display:flex; gap:8px 18px; justify-content:space-between; align-items:center; flex-wrap:wrap;
+    color:var(--faint); font-size:13px;
   }
-  footer a { color: #6b7280; }
-  footer a:hover { color: #111827; }
+  footer .mono { font-family:var(--mono); }
 
-  @media (max-width: 640px) {
-    header { padding: 16px 20px; }
-    main { padding: 40px 20px; }
-    .hero h1 { font-size: 28px; }
+  @media (max-width:560px) {
+    header { padding:14px 18px; }
+    main { padding:48px 18px 32px; }
+    h1 { font-size:34px; }
+    .lede { font-size:16px; }
+    .doclink { display:none; }
   }
+  @media (prefers-reduced-motion: reduce) { *{ animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
@@ -208,39 +154,103 @@
   <div class="brand">
     <span class="brand-mark">R</span>
     <span class="brand-name">RustIO</span>
-    <span class="version">v0.4</span>
+    <span class="pill-version">v__RUSTIO_VERSION__</span>
   </div>
   <nav class="top-right">
-    <a href="/admin">Admin</a>
-    <a href="/docs">Docs</a>
+    <a class="doclink" href="https://docs.rs/rustio-core" target="_blank" rel="noopener"
+       data-en="Documentation ↗" data-sv="Dokumentation ↗">Documentation ↗</a>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-set-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-set-lang="sv" aria-pressed="false">SV</button>
+    </div>
   </nav>
 </header>
+
 <main>
-  <div class="hero">
-    <h1>Your server is running.</h1>
-    <p>
-      This is the default landing page served by <code>rustio-core</code>.
-      Replace it by editing <code>templates/home.html</code> or your
-      project's root handler.
-    </p>
-    <div class="actions">
-      <a class="btn btn-primary" href="/admin">Open the admin</a>
-      <a class="btn btn-secondary" href="/docs">Read the docs</a>
-    </div>
+  <span class="eyebrow"><span class="dot"></span><span data-en="Developer preview" data-sv="Förhandsvisning för utvecklare">Developer preview</span></span>
+
+  <h1>
+    <span data-en="Your project is" data-sv="Ditt projekt är">Your project is</span>
+    <span class="accent" data-en="live." data-sv="igång.">live.</span>
+  </h1>
+
+  <p class="lede"
+     data-en="RustIO generated the admin, database, auth, and HTTP server from your Rust structs. This is the development home page — yours to make your own."
+     data-sv="RustIO genererade admin, databas, autentisering och HTTP-server från dina Rust-structar. Detta är utvecklingsstartsidan — din att forma.">
+     RustIO generated the admin, database, auth, and HTTP server from your Rust structs. This is the development home page — yours to make your own.</p>
+
+  <div class="notice" role="note">
+    <span class="ico" aria-hidden="true">!</span>
+    <span class="body"
+          data-en="<b>For developers — replace before production.</b> This default page is served by the framework. Make it yours by adding <code>templates/home.html</code> or registering your own <code>GET /</code> handler. The admin at <code>/admin</code> stays framework-owned."
+          data-sv="<b>För utvecklare — ersätt före produktion.</b> Den här standardsidan levereras av ramverket. Gör den till din genom att lägga till <code>templates/home.html</code> eller registrera en egen <code>GET /</code>-hanterare. Adminpanelen på <code>/admin</code> förblir ramverkets."><b>For developers — replace before production.</b> This default page is served by the framework. Make it yours by adding <code>templates/home.html</code> or registering your own <code>GET /</code> handler. The admin at <code>/admin</code> stays framework-owned.</span>
   </div>
-  <section class="panel">
-    <h2>What's next</h2>
-    <ul>
-      <li><strong>Models:</strong> scaffold with <code>rustio new app &lt;name&gt;</code>, then add fields in <code>apps/&lt;name&gt;/models.rs</code>.</li>
-      <li><strong>Migrations:</strong> <code>rustio migrate generate add_field</code> then <code>rustio migrate apply</code>.</li>
-      <li><strong>Users:</strong> create an admin with <code>rustio user create --email you@example.com --role admin</code>.</li>
-      <li><strong>Schema export:</strong> <code>rustio schema</code> writes <code>rustio.schema.json</code>.</li>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="/admin">
+      <span data-en="Open the admin" data-sv="Öppna admin">Open the admin</span>
+      <span class="arrow" aria-hidden="true">→</span>
+    </a>
+    <a class="btn btn-ghost" href="https://docs.rs/rustio-core" target="_blank" rel="noopener"
+       data-en="Documentation" data-sv="Dokumentation">Documentation</a>
+  </div>
+
+  <section class="card">
+    <h2 data-en="Get going" data-sv="Kom igång">Get going</h2>
+    <ul class="steps">
+      <li><span class="n">1</span><span class="txt">
+        <span class="label" data-en="Apply migrations" data-sv="Tillämpa migreringar">Apply migrations</span>
+        <code class="cmd">rustio migrate apply</code></span></li>
+      <li><span class="n">2</span><span class="txt">
+        <span class="label" data-en="Create an admin user" data-sv="Skapa en admin-användare">Create an admin user</span>
+        <code class="cmd">rustio user create --email you@example.com --role admin</code></span></li>
+      <li><span class="n">3</span><span class="txt">
+        <span class="label" data-en="Add a model" data-sv="Lägg till en modell">Add a model</span>
+        <code class="cmd">rustio new app &lt;name&gt;</code></span></li>
+      <li><span class="n">4</span><span class="txt">
+        <span class="label" data-en="Evolve the schema in plain English" data-sv="Utveckla schemat på vanlig svenska">Evolve the schema in plain English</span>
+        <code class="cmd">rustio evolve "add date_of_birth as DateTime to customers"</code></span></li>
     </ul>
   </section>
 </main>
+
 <footer>
-  <span>Public pages live under <code>templates/</code> and <code>static/</code>.</span>
-  <span>Admin under <code>/admin</code> is framework-owned.</span>
+  <span data-en="Public pages stay yours — RustIO is opinion-free outside /admin."
+        data-sv="Publika sidor är dina — RustIO är åsiktsfritt utanför /admin.">Public pages stay yours — RustIO is opinion-free outside /admin.</span>
+  <span class="mono">rustio-core v__RUSTIO_VERSION__</span>
 </footer>
+
+<script>
+  // Tiny self-contained EN/SV toggle. No framework, no network. Swaps every
+  // [data-en]/[data-sv] node, flips the <html lang>, and remembers the choice.
+  (function () {
+    var KEY = "rustio-home-lang";
+    var nodes = document.querySelectorAll("[data-en]");
+    function apply(lang) {
+      document.documentElement.lang = lang;
+      document.documentElement.setAttribute("data-lang", lang);
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i], val = el.getAttribute("data-" + lang);
+        if (val == null) continue;
+        // A few nodes carry inline <code>/<b> markup; render it as HTML.
+        if (/[<&]/.test(val)) { el.innerHTML = val; } else { el.textContent = val; }
+      }
+      var btns = document.querySelectorAll("[data-set-lang]");
+      for (var j = 0; j < btns.length; j++) {
+        btns[j].setAttribute("aria-pressed", btns[j].getAttribute("data-set-lang") === lang ? "true" : "false");
+      }
+    }
+    document.addEventListener("click", function (e) {
+      var b = e.target.closest ? e.target.closest("[data-set-lang]") : null;
+      if (!b) return;
+      var lang = b.getAttribute("data-set-lang");
+      try { localStorage.setItem(KEY, lang); } catch (_) {}
+      apply(lang);
+    });
+    var saved = "en";
+    try { saved = localStorage.getItem(KEY) || "en"; } catch (_) {}
+    apply(saved === "sv" ? "sv" : "en");
+  })();
+</script>
 </body>
 </html>
