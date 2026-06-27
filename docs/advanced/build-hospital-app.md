@@ -471,6 +471,6 @@ Share it, bookmark it, paste it into a runbook. The page reloads the exact same 
 
 ## What's next
 
-The medflow example in `examples/medflow/` extends this pattern into **Clinical** (`MedicalRecord`, `Diagnosis`, `Prescription`), **Billing** (`Invoice`, `Payment`), and **Workflow** (`Room`, `Staff`, `CheckIn`). The shape is identical — one Rust struct, one `Model` impl, one migration, one `admin.model::<T>()` line. You've already seen everything the admin layer does; adding models is additive.
+The bookflow example in `examples/bookflow/` extends this same pattern across several apps — customers, bookings, resources, schedules, invoices, and more — each adding its own models. The shape is identical — one Rust struct, one `Model` impl, one migration, one `admin.model::<T>()` line. You've already seen everything the admin layer does; adding models is additive.
 
 When you're ready to evolve the schema without hand-editing: `rustio ai plan "..." --save p.json && rustio ai review p.json && rustio ai apply p.json --yes`. See `demo-walkthrough.md` for why the planner/executor split exists and what it refuses to do.

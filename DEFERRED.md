@@ -101,15 +101,24 @@ alongside status fields, while names/emails/free text are not. This closes the
 L4-D thread end-to-end: storage → resolver → render → per-user switching →
 editor (status + non-status discovery).
 
-## Other signposted threads (not yet phased)
+## Other signposted threads — all shipped
 
-- **PII masking on the live list path** — `layout::list_render` omits
-  Hidden fields but applies no masking to shown cells (noted in the
-  Phase 6/7/8 `list_render` comments).
-- **Per-model RBAC in the templated list** — list permissions are gated on
-  `signed_in` only; the `admin/rbac.rs` subsystem isn't wired into this
-  path (noted in the Phase 6 `list_render` comment).
-- **Phase-5 docs/asset cleanup** — `docs/advanced/*healthcare*` and a few
-  `admin.css` / `ai/executor.rs` strings still reference the deleted
-  `medflow` example.
-- **9d — merge UI** in the composition editor (the remaining sub-phase).
+- **PII masking on the live list path — shipped.** `list_render` now masks
+  shown sensitive cells (email / phone / personal id, via
+  `intelligence::classify_field`) with `mask_pii`, **context-gated**: masking
+  only activates when the project declares a `rustio.context.json` (no
+  surprises; default rendering unchanged). Hidden fields are still omitted.
+  *Remaining nit:* a merged cell (9d) bypasses the per-column mask — a merge
+  that includes a sensitive source isn't masked; tighten if it ever matters.
+- **Per-model RBAC in the templated list — shipped.** List actions are now
+  gated on the signed-in user's role resolved via `rbac::Role` →
+  `permissions_for(table)` (SuperAdmin/Admin → full on app models, Editor →
+  no delete, Viewer → view-only; system `rustio_` tables are stricter).
+- **FK relation filters — shipped.** The filter bar renders a related-row
+  dropdown for FK columns (distinct ids → resolved labels via
+  `fk_lookup_batch`), matched exactly.
+- **Phase-5 docs/asset cleanup — done.** `medflow` references removed from
+  `docs/advanced/*`, `ai/executor.rs`, and `admin.css`; the stale
+  `examples/medflow` + `examples/taskhub` directories deleted (only
+  `examples/bookflow` remains).
+- **9d — merge UI:** shipped earlier (see the 9d commit).

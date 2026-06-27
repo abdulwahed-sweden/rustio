@@ -177,7 +177,7 @@
      below; switching to `.rio-density-compact` on <body> flips them
      all together. The row-y/row-x names are kept for back-compat.
      `row-x` trimmed from 20 → 16 in the v7.1 refresh so wide tables
-     (e.g. 10-column medflow patients) read without excessive
+     (e.g. a 10-column bookflow table) read without excessive
      horizontal whitespace per cell. */
   --rio-row-y: 14px;
   --rio-row-x: 16px;

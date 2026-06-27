@@ -135,6 +135,7 @@ async fn fetch_users_table_state(
     query: Option<&str>,
     filters: &HashMap<String, String>,
     view_filters: &[String],
+    exact_match: &[String],
     page: i64,
     sort: Option<&str>,
     dir: Option<&str>,
@@ -149,7 +150,7 @@ async fn fetch_users_table_state(
     const PAGE_SIZE: i64 = 20;
     let table = model.table_name();
     let searchable: Vec<&str> = model.searchable_fields();
-    let (eq_filters, like_filters) = classify_filters(model, filters, view_filters);
+    let (eq_filters, like_filters) = classify_filters(model, filters, view_filters, exact_match);
     let (validated_sort, validated_dir) = validate_sort_state(model, sort, dir);
 
     let total = persistence::count_filtered_records(
@@ -236,6 +237,9 @@ fn classify_filters(
     // is filterable on the live list if the view declares it OR the admin model
     // marked it `filterable`/`advanced_filter` (back-compat with typed models).
     view_filters: &[String],
+    // DW-1 — fields whose filter renders as a dropdown (a discrete choice), so
+    // they match exactly (`=`) instead of substring (`LIKE`).
+    exact_match: &[String],
 ) -> (HashMap<String, String>, HashMap<String, String>) {
     let fields = model.fields();
     let mut eq = HashMap::new();
@@ -253,8 +257,12 @@ fn classify_filters(
         if !field.filterable && !field.advanced_filter && !view_filters.iter().any(|s| s == k) {
             continue;
         }
+        let force_eq = exact_match.iter().any(|s| s == k);
         match resolve_filter_type(field) {
             FilterType::Boolean | FilterType::Select => {
+                eq.insert(k.clone(), v.clone());
+            }
+            FilterType::Exact if force_eq => {
                 eq.insert(k.clone(), v.clone());
             }
             FilterType::Exact => {
@@ -2455,46 +2463,15 @@ pub async fn list_render(
         .clone()
         .unwrap_or_else(|| crate::viewspec::ViewSpec::from_schema_model(&schema_model));
 
-    let (rows_raw, total, current_page, total_pages, validated_sort, validated_dir) =
-        fetch_users_table_state(db, model, query, filters, &spec.filters, page, sort, dir).await;
-
-    // Phase 6 — column selection runs through the model's ViewSpec via the
-    // deterministic Phase-3 renderer (`crate::viewspec::render`), replacing
-    // the raw `visible_in_table` dump. The ViewSpec decides WHICH columns
-    // appear, their ORDER, and which are Hidden; the cell rendering below
-    // (FK linked labels, status pills, primary cell) is unchanged, so those
-    // live features are preserved.
-    //
-    // Deliberate behaviour changes vs. the pre-ViewSpec list:
-    //   * The primary-key / `id` column is Hidden by default (raw ids
-    //     aren't shown), as are secret-shaped fields (`*_hash`, `password`,
-    //     `token`) and opaque PII — the end-to-end Hidden guarantee.
-    //   * The old row-expansion of overflow columns is gone (no expand
-    //     panel); Meta-role fields are just normal columns.
-    //   * A saved `<model_snake>.view.json` in `base` overrides the derived
-    //     default; a missing/invalid file silently derives it.
-    //   * NOTE: the live list path applies NO PII masking today — it only
-    //     OMITS Hidden fields. Adding masking to shown cells here is a
-    //     deliberate follow-up, intentionally out of this phase's scope.
-    //
-    // Phase 7 — the `?layout=` switcher selects which of the four layouts
-    // the renderer arranges. Phase 8 — layout precedence is now:
-    //   1. present-and-valid `?layout=` (ephemeral),
-    //   2. else the saved ViewSpec's `layout` (persisted default),
-    //   3. else Table.
-    // This CHANGES Phase 6's "always Table": a saved layout now wins over
-    // Table when no `?layout=` is present. The renderer still picks the
-    // cell set per layout; the template arranges those same cells.
     let active_layout = resolve_effective_layout(layout, saved.as_ref());
     // i18n L4 — the active render language for THIS user (pref → default → en).
     let active_lang = resolve_active_language(db, identity, &spec).await;
-    let columns: Vec<ColumnView> = view_columns(&spec, active_layout, &fields, &active_lang);
 
-    // DW-1 — filter controls for each field the view declares as a filter.
-    // Boolean → tri-state select; a low-cardinality field → a Select dropdown
-    // of its distinct stored values (displayed via i18n value labels, value =
-    // English token); a high-cardinality field → a free-text (substring) box.
-    // FK (relation) filters are deferred — skipped here.
+    // DW-1 — filter controls for each field the view declares as a filter,
+    // built BEFORE the fetch so the dropdown-vs-text decision drives `=` vs
+    // `LIKE`. Boolean → tri-state; FK → related-row dropdown (resolved labels);
+    // low-cardinality column → value dropdown (i18n value labels, value =
+    // English token); high-cardinality → free-text box.
     const FILTER_ENUM_CAP: usize = 20;
     use crate::admin::admin_form_bridge::FilterType;
     let table = model.table_name();
@@ -2503,13 +2480,61 @@ pub async fn list_render(
         let Some(field) = fields.iter().find(|f| f.name == *source) else {
             continue;
         };
-        if field.is_relation {
-            continue; // FK relation filters deferred (need a related-row dropdown)
-        }
         let current = filters.get(source).cloned().unwrap_or_default();
         let header = spec
             .label_for(source, &active_lang)
             .unwrap_or_else(|| humanize_field_label(field.label));
+
+        // FK relation filter — dropdown of distinct related ids, displayed as
+        // their resolved labels (value = the id, matched exactly).
+        if field.is_relation {
+            let resolved = legacy_source
+                .and_then(|src| {
+                    src.fields
+                        .iter()
+                        .find(|f| f.name == *source)
+                        .and_then(|f| f.relation)
+                })
+                .and_then(|rel| {
+                    legacy_entries
+                        .iter()
+                        .find(|e| e.singular_name == rel.model)
+                        .map(|t| (t, rel.display_field))
+                });
+            let Some((target_entry, display_field)) = resolved else {
+                continue; // can't resolve the FK target → no control
+            };
+            let ids = distinct_values(db, table, source, 51).await;
+            if ids.is_empty() {
+                continue;
+            }
+            let id_to_label = fk_lookup_batch(db, target_entry, display_field, &ids).await;
+            let mut options = vec![FilterOptionView {
+                value: String::new(),
+                label: "All".to_string(),
+                selected: current.is_empty(),
+            }];
+            for id in ids {
+                let label = id_to_label
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("#{id}"));
+                let selected = current == id;
+                options.push(FilterOptionView {
+                    value: id,
+                    label,
+                    selected,
+                });
+            }
+            filter_controls.push(FilterControlView {
+                source: source.clone(),
+                label: header,
+                kind: "select".to_string(),
+                options,
+                current,
+            });
+            continue;
+        }
 
         // Helper: an "All" option followed by one option per distinct value,
         // with the English token as the value and a value-label display.
@@ -2555,12 +2580,10 @@ pub async fn list_render(
                     },
                 ],
             ),
-            // Declared-options / enum column → dropdown of its distinct values.
             FilterType::Select => (
                 "select",
                 select_options(distinct_values(db, table, source, 51).await),
             ),
-            // Plain column: low-cardinality → dropdown; else free-text box.
             FilterType::Exact => {
                 let raws = distinct_values(db, table, source, FILTER_ENUM_CAP as i64 + 1).await;
                 if !raws.is_empty() && raws.len() <= FILTER_ENUM_CAP {
@@ -2578,6 +2601,55 @@ pub async fn list_render(
             current,
         });
     }
+    // Dropdown filters (boolean/select) match exactly; text filters substring.
+    let exact_match: Vec<String> = filter_controls
+        .iter()
+        .filter(|c| c.kind != "exact")
+        .map(|c| c.source.clone())
+        .collect();
+
+    let (rows_raw, total, current_page, total_pages, validated_sort, validated_dir) =
+        fetch_users_table_state(
+            db,
+            model,
+            query,
+            filters,
+            &spec.filters,
+            &exact_match,
+            page,
+            sort,
+            dir,
+        )
+        .await;
+
+    // Phase 6 — column selection runs through the model's ViewSpec via the
+    // deterministic Phase-3 renderer (`crate::viewspec::render`), replacing
+    // the raw `visible_in_table` dump. The ViewSpec decides WHICH columns
+    // appear, their ORDER, and which are Hidden; the cell rendering below
+    // (FK linked labels, status pills, primary cell) is unchanged, so those
+    // live features are preserved.
+    //
+    // Deliberate behaviour changes vs. the pre-ViewSpec list:
+    //   * The primary-key / `id` column is Hidden by default (raw ids
+    //     aren't shown), as are secret-shaped fields (`*_hash`, `password`,
+    //     `token`) and opaque PII — the end-to-end Hidden guarantee.
+    //   * The old row-expansion of overflow columns is gone (no expand
+    //     panel); Meta-role fields are just normal columns.
+    //   * A saved `<model_snake>.view.json` in `base` overrides the derived
+    //     default; a missing/invalid file silently derives it.
+    //   * NOTE: the live list path applies NO PII masking today — it only
+    //     OMITS Hidden fields. Adding masking to shown cells here is a
+    //     deliberate follow-up, intentionally out of this phase's scope.
+    //
+    // Phase 7 — the `?layout=` switcher selects which of the four layouts
+    // the renderer arranges. Phase 8 — layout precedence is now:
+    //   1. present-and-valid `?layout=` (ephemeral),
+    //   2. else the saved ViewSpec's `layout` (persisted default),
+    //   3. else Table.
+    // This CHANGES Phase 6's "always Table": a saved layout now wins over
+    // Table when no `?layout=` is present. The renderer still picks the
+    // cell set per layout; the template arranges those same cells.
+    let columns: Vec<ColumnView> = view_columns(&spec, active_layout, &fields, &active_lang);
 
     // One batch `SELECT … WHERE id IN (…)` per FK column visible on
     // this page of rows. Cells for matching FK values are rewritten
@@ -2593,6 +2665,29 @@ pub async fn list_render(
         .iter()
         .find(|c| c.name.as_str() != pk)
         .map(|c| c.name.clone());
+    // PII masking — columns whose field the intelligence layer classifies as
+    // sensitive (email / phone / personal id) are masked in their shown cells.
+    // (Hidden fields are already omitted; this covers SHOWN sensitive ones.)
+    // Context-gated, as the intelligence layer intends ("sensitive up, never
+    // down — no surprises"): mask shown sensitive cells (email / phone /
+    // personal id) ONLY when the project declares a `rustio.context.json`.
+    // Without a context the list renders exactly as before — masking is an
+    // explicit, opt-in posture, not a silent default.
+    let sensitive_cols: std::collections::HashSet<&str> =
+        match crate::admin::intelligence::context_global() {
+            Some(ctx) => legacy_source
+                .map(|src| {
+                    src.fields
+                        .iter()
+                        .filter(|f| {
+                            crate::admin::intelligence::classify_field(f, Some(ctx)).is_sensitive()
+                        })
+                        .map(|f| f.name)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            None => std::collections::HashSet::new(),
+        };
     let rows: Vec<RowView> = rows_raw
         .iter()
         .map(|row| {
@@ -2615,6 +2710,15 @@ pub async fn list_render(
                             .join(" · ");
                     }
                     let raw = row.get(&col.name).cloned().unwrap_or_default();
+                    // PII — mask a shown sensitive cell (keeps a short prefix,
+                    // rest as •). Overrides FK/status/primary formatting.
+                    if sensitive_cols.contains(col.name.as_str()) {
+                        return if raw.is_empty() {
+                            String::new()
+                        } else {
+                            html_escape(&crate::admin::intelligence::mask_pii(&raw))
+                        };
+                    }
                     if col.name.as_str() == pk {
                         // §3.4 — ID column: rust mono `#<id>`.
                         if raw.is_empty() {
@@ -2730,15 +2834,35 @@ pub async fn list_render(
         new_url: format!("/admin/{slug}/new"),
     };
 
-    // Stage 4f-b: full CRUD wired. Gate each action on "user is
-    // signed in" for now; per-model RBAC resolution lands in a
-    // follow-up once the Role is surfaced in the request context.
-    let signed_in = identity.is_some();
-    let permissions = ListPermissionsView {
-        view: true,
-        create: signed_in,
-        edit: signed_in,
-        delete: signed_in,
+    // Per-model RBAC — resolve the signed-in user's role and derive the
+    // permission matrix for THIS model's table (app tables vs framework
+    // `rustio_` tables differ). SuperAdmin/Admin → full on app models, Editor
+    // → no delete, Viewer → view-only; a signed-in user with an unrecognised
+    // role degrades to view-only (safe), and no identity → nothing.
+    let permissions = {
+        let perms = if let Some(id) = identity {
+            let role_str: Option<String> =
+                sqlx::query_scalar("SELECT role FROM rustio_users WHERE id = ?")
+                    .bind(id.user_id)
+                    .fetch_optional(db.pool())
+                    .await
+                    .ok()
+                    .flatten();
+            role_str
+                .and_then(|s| crate::admin::rbac::Role::from_role_string(&s))
+                .map(|r| r.permissions_for(model.table_name()))
+                .unwrap_or(crate::admin::rbac::PermissionSet::VIEW_ONLY)
+        } else {
+            // No identity (only reachable in tests; `admin_guard` blocks
+            // unauthenticated requests in production) → view-only.
+            crate::admin::rbac::PermissionSet::VIEW_ONLY
+        };
+        ListPermissionsView {
+            view: perms.view,
+            create: perms.create,
+            edit: perms.edit,
+            delete: perms.delete,
+        }
     };
 
     let design = design_view();
@@ -4750,7 +4874,7 @@ mod tests {
 
         // The view declares `notes` a filter → it's accepted even though the
         // gadget model didn't mark it filterable.
-        let (eq, like) = classify_filters(&model, &raw, &["notes".to_string()]);
+        let (eq, like) = classify_filters(&model, &raw, &["notes".to_string()], &[]);
         assert!(
             eq.contains_key("notes") || like.contains_key("notes"),
             "a ViewSpec.filters field is applied"
@@ -4761,11 +4885,60 @@ mod tests {
         );
 
         // Without the view declaring it (and not macro-filterable) → dropped.
-        let (eq2, like2) = classify_filters(&model, &raw, &[]);
+        let (eq2, like2) = classify_filters(&model, &raw, &[], &[]);
         assert!(
             !eq2.contains_key("notes") && !like2.contains_key("notes"),
             "a field neither view-declared nor macro-filterable is dropped"
         );
+
+        // exact_match forces `=` (eq) instead of `LIKE` for a dropdown field.
+        let (eq3, like3) =
+            classify_filters(&model, &raw, &["notes".to_string()], &["notes".to_string()]);
+        assert!(
+            eq3.contains_key("notes") && !like3.contains_key("notes"),
+            "a dropdown (exact_match) filter matches exactly, not by substring"
+        );
+    }
+
+    #[tokio::test]
+    async fn rbac_gates_list_actions_by_role() {
+        // gadgets is an app table → Admin gets full CRUD, Viewer view-only.
+        let base = tmp_dir();
+        let db = Db::memory().await.unwrap();
+        crate::auth::ensure_core_tables(&db).await.unwrap();
+        seed_gadgets(&db).await;
+        let admin = crate::auth::user::create(&db, "adm@x.com", "pw-12345678", "admin")
+            .await
+            .unwrap();
+        let viewer = crate::auth::user::create(&db, "view@x.com", "pw-12345678", "user")
+            .await
+            .unwrap();
+        // Promote the second user to the explicit Viewer role (the create API
+        // only mints admin/user; richer roles are assigned directly).
+        db.execute(&format!(
+            "UPDATE rustio_users SET role = 'viewer' WHERE id = {}",
+            viewer.id
+        ))
+        .await
+        .unwrap();
+        let id = |u: &crate::auth::User| crate::auth::Identity {
+            user_id: u.id,
+            email: u.email.clone(),
+            is_admin: true,
+        };
+
+        let admin_html = render_gadget_list_as(&base, &db, Some(&id(&admin))).await;
+        let viewer_html = render_gadget_list_as(&base, &db, Some(&id(&viewer))).await;
+        // Admin → create allowed; Viewer → not (the "+ Add" control is gated
+        // on `permissions.create`).
+        assert!(
+            admin_html.contains("+ Add"),
+            "admin can create:\n{admin_html}"
+        );
+        assert!(!viewer_html.contains("+ Add"), "viewer cannot create");
+        // Both can view the rows.
+        assert!(admin_html.contains("Alpha") && viewer_html.contains("Alpha"));
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[tokio::test]

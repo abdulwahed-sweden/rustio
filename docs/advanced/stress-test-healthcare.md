@@ -8,7 +8,7 @@ A deliberately uncomfortable test of RustIO's admin under realistic relational c
 The goal was **not** to build a demo — it was to expose where RustIO breaks once you go
 past a single flat table.
 
-The full worked example lives at `examples/medflow/`. This document is its lab notebook.
+The full worked example lives at `examples/bookflow/`. This document is its lab notebook.
 
 > **Addendum — 0.9.0 Relation Intelligence Layer.** Four of the "Critical"
 > findings from §7.1 (raw-id FK columns, no inverse views, opaque delete 500,
@@ -41,8 +41,8 @@ points at the in-tree `rustio-core`.
 | # | Command | Why it exists | What it touches |
 |---|---|---|---|
 | 1 | `cargo install rustio-cli` | Installs the `rustio` binary into `~/.cargo/bin`. Skip if you're using the in-tree CLI. | `~/.cargo/bin/rustio` |
-| 2 | `cd examples && rustio init medflow --preset basic` | Scaffolds a new project with a minimal `main.rs`, auth wiring, and an empty `apps/` module. | Creates `examples/medflow/` with `Cargo.toml`, `main.rs`, `apps/mod.rs`, `static/`, `templates/`. |
-| 3 | `cd medflow` | All subsequent commands are project-relative. | — |
+| 2 | `cd examples && rustio init bookflow --preset basic` | Scaffolds a new project with a minimal `main.rs`, auth wiring, and an empty `apps/` module. | Creates `examples/bookflow/` with `Cargo.toml`, `main.rs`, `apps/mod.rs`, `static/`, `templates/`. |
+| 3 | `cd bookflow` | All subsequent commands are project-relative. | — |
 | 4 | `rustio new app people` | Scaffolds a new app module for Patient / Doctor / Department. The CLI **edits `apps/mod.rs`** via marker comments to register the new app. | Creates `apps/people/{mod,admin,models,views}.rs` and `migrations/0001_create_peoples.sql`. |
 | 5 | `rustio new app care` | Same, for Appointment / Prescription. | Creates `apps/care/…` and `migrations/0002_create_cares.sql`. |
 | 6 | `rustio new app billing` | Same, for Invoice. | Creates `apps/billing/…` and `migrations/0003_create_billings.sql`. |
@@ -51,11 +51,11 @@ points at the in-tree `rustio-core`.
 | 9 | *(manual)* Rewrite `apps/people/models.rs`, `apps/care/models.rs`, `apps/billing/models.rs`. | The scaffolder produces one struct per app matching the app's name. We replace those with the six real structs. `#[derive(RustioAdmin)]` + `impl Model` must match the SQL exactly. | 3 heavily-edited `.rs` files. |
 | 10 | *(manual)* Update each `apps/<name>/admin.rs` to register every model the app owns. | `people::admin::install` goes from `admin.model::<People>()` to `admin.model::<Department>().model::<Doctor>().model::<Patient>()`. | 3 small edits. |
 | 11 | *(manual)* Empty each `apps/<name>/views.rs` down to a no-op `register`. | The scaffolder emits a welcome HTML page at `/people`, `/care`, `/billing`. This stress test is admin-only — we delete them to keep the surface clean. | 3 small edits. |
-| 12 | *(manual)* Add an empty `[workspace]` table at the top of `Cargo.toml`. | `examples/medflow/` sits inside the RustIO workspace tree but must not be part of the workspace, or `cargo build` at the workspace root tries to compile it. The empty `[workspace]` table is cargo's idiomatic "this crate is its own root." | `Cargo.toml` +3 lines. |
+| 12 | *(manual)* Add an empty `[workspace]` table at the top of `Cargo.toml`. | `examples/bookflow/` sits inside the RustIO workspace tree but must not be part of the workspace, or `cargo build` at the workspace root tries to compile it. The empty `[workspace]` table is cargo's idiomatic "this crate is its own root." | `Cargo.toml` +3 lines. |
 | 13 | `cargo build` | Surfaces macro / schema mismatches before touching the DB. Without the `RustioAdmin` derive being happy, the admin can't register the model. | `target/` gets populated; no source changes. |
 | 14 | `rustio migrate apply` | Runs every pending migration inside a tracked transaction; then regenerates `rustio.schema.json` from the compiled admin. | Creates `app.db` (SQLite), writes `rustio.schema.json`. |
 | 15 | `sqlite3 app.db < seed.sql` | Populates all six tables. Deliberately uses `sqlite3` (not the admin UI) because seeding 303 rows through browser forms is how you test the admin's patience, not your productivity. | `app.db` gains 278 rows across 6 tables. |
-| 16 | `rustio user create --email admin@medflow.local --password medflow123 --role admin` | Creates a row in `rustio_users` so you can log into the admin. Auth is not automatic — new DBs have no users. | `app.db` gains 1 `rustio_users` row. |
+| 16 | `rustio user create --email admin@bookflow.local --password bookflow123 --role admin` | Creates a row in `rustio_users` so you can log into the admin. Auth is not automatic — new DBs have no users. | `app.db` gains 1 `rustio_users` row. |
 | 17 | `rustio schema` | Regenerates `rustio.schema.json` from the compiled admin. Redundant right after `migrate apply` (which also runs it), but worth remembering — the schema is the only stable contract external tooling reads. | Rewrites `rustio.schema.json`. |
 | 18 | `rustio run` | Boots hyper on `127.0.0.1:8000`. | Binds a port. No file changes. |
 | 19 | *(browser)* Open `http://127.0.0.1:8000/admin`, log in. | Everything below §6 was tested in this UI. | — |
@@ -115,7 +115,7 @@ Department (8) ──< Doctor (10) ──< Appointment (120) >── Patient (40
 
 ## 4. Migrations
 
-One migration per table, in FK-dependency order. Full SQL in `examples/medflow/migrations/`.
+One migration per table, in FK-dependency order. Full SQL in `examples/bookflow/migrations/`.
 
 | # | File | What it creates |
 |---|---|---|
@@ -217,7 +217,7 @@ See §7 — that's where the stress test earned its name.
 
 ## 7. Pain points and limitations
 
-Observed on `examples/medflow/` on RustIO 0.3.1. All claims are backed by
+Observed on `examples/bookflow/` on RustIO 0.3.1. All claims are backed by
 reading the source and/or the admin HTML the server returned.
 
 ### 7.1 Critical
@@ -343,10 +343,10 @@ scaffolder for their project. Every subsequent `rustio new app` will
 succeed at the CLI level but won't show up in the admin.
 
 **16 · Example projects and the workspace conflict.** `cargo build` at
-the repo root refuses to compile `examples/medflow/` unless the project
+the repo root refuses to compile `examples/bookflow/` unless the project
 carries an empty `[workspace]` table or the root workspace lists it. There
 is no hint of this anywhere in the generated `Cargo.toml`. First-time
-contributors who try `cargo run -p medflow` from the workspace root get
+contributors who try `cargo run -p bookflow` from the workspace root get
 the "current package believes it's in a workspace when it's not" cargo
 error and have to guess.
 
@@ -434,7 +434,7 @@ RustIO, you already know which are cheap.
 
 ## Appendix — measured numbers
 
-- Fresh `cargo build` of `examples/medflow/` against local `rustio-core`:
+- Fresh `cargo build` of `examples/bookflow/` against local `rustio-core`:
   ~60 seconds on a 2021 M1 MacBook Pro.
 - `rustio migrate apply` over 6 migrations: <200 ms.
 - `sqlite3 app.db < seed.sql`: <50 ms for 278 rows across 6 tables.

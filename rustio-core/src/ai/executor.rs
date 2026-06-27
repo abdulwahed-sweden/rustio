@@ -2670,7 +2670,7 @@ fn find_table_for_struct(src: &str, struct_name: &str) -> Option<String> {
     // 0.9.1: scoped by struct name. Older callers that want the
     // whole-file first match should pass an empty string — but no
     // in-tree site does. The previous "one Model impl per file"
-    // assumption breaks on real projects like medflow that declare
+    // assumption breaks on real projects like bookflow that declare
     // several models per app.
     let impl_anchor = format!("impl Model for {struct_name}");
     let slice = if let Some(impl_start) = src.find(&impl_anchor) {
