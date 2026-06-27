@@ -9,16 +9,16 @@
     {% if card.value > total.max %}{% set total.max = card.value %}{% endif %}
   {% endfor %}
 
-  <span class="rio-pill rio-pill--lift">Workspace overview</span>
+  <span class="rio-pill rio-pill--lift">{{ t("Workspace overview") }}</span>
 
   <header class="rio-page-head">
-    <h1>Your <span class="rio-accent-word">workspace</span></h1>
+    <h1>{{ t("Your") }} <span class="rio-accent-word">{{ t("workspace") }}</span></h1>
     <p>
       {% if dashboard_cards | length == 0 %}
-        No models registered yet. Add one with <code>rustio new app &lt;name&gt;</code>.
+        {{ t("No models registered yet. Add one with") }} <code>rustio new app &lt;name&gt;</code>.
       {% else %}
-        {{ dashboard_cards | length }} model{% if dashboard_cards | length != 1 %}s{% endif %} registered,
-        {{ total.records }} record{% if total.records != 1 %}s{% endif %} across all of them.
+        {{ dashboard_cards | length }} {% if dashboard_cards | length != 1 %}{{ t("models") }}{% else %}{{ t("model") }}{% endif %} {{ t("registered,") }}
+        {{ total.records }} {% if total.records != 1 %}{{ t("records") }}{% else %}{{ t("record") }}{% endif %} {{ t("across all of them.") }}
       {% endif %}
     </p>
   </header>

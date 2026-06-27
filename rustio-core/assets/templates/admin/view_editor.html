@@ -35,7 +35,7 @@
        changing it can never clobber another language's label. #}
     <div class="rio-lang-bar" style="margin:6px 0 14px;display:flex;gap:10px;align-items:center;">
       <label>{{ t("Editing labels in:") }}
-        <select class="rio-input" data-lang-switch aria-label="Editing language" style="width:auto;">
+        <select class="rio-input" data-lang-switch aria-label="{{ t('Editing language') }}" style="width:auto;">
           {% for code in language_options %}
             <option value="{{ code }}"{% if code == editing_lang %} selected{% endif %}>{{ code }}</option>
           {% endfor %}
@@ -67,8 +67,8 @@
               <td style="white-space:nowrap;">
                 {# Position is explicit, not DOM-order — see build_edited_spec. #}
                 <input type="hidden" name="order[{{ field.source }}]" value="{{ loop.index0 }}" data-order>
-                <button type="button" class="rio-btn rio-btn--ghost" data-move="up" aria-label="Move {{ field.label }} up" title="Move up">&#9650;</button>
-                <button type="button" class="rio-btn rio-btn--ghost" data-move="down" aria-label="Move {{ field.label }} down" title="Move down">&#9660;</button>
+                <button type="button" class="rio-btn rio-btn--ghost" data-move="up" aria-label="Move {{ field.label }} up" title="{{ t('Move up') }}">&#9650;</button>
+                <button type="button" class="rio-btn rio-btn--ghost" data-move="down" aria-label="Move {{ field.label }} down" title="{{ t('Move down') }}">&#9660;</button>
               </td>
               <td>{{ field.label }} <span class="rio-cell-id">{{ field.source }}</span></td>
               <td>

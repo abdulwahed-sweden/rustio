@@ -165,6 +165,114 @@ fn builtin() -> HashMap<&'static str, &'static [(&'static str, &'static str)]> {
         // Pagination
         ("Previous", "Föregående"),
         ("Next", "Nästa"),
+        // Dashboard
+        ("Workspace overview", "Översikt över arbetsytan"),
+        ("Your", "Din"),
+        ("workspace", "arbetsyta"),
+        ("model", "modell"),
+        ("models", "modeller"),
+        (
+            "No models registered yet. Add one with",
+            "Inga modeller registrerade ännu. Lägg till en med",
+        ),
+        ("registered,", "registrerade,"),
+        ("across all of them.", "totalt."),
+        ("Reload schema", "Läs om schemat"),
+        // Detail form
+        ("Save changes", "Spara ändringar"),
+        ("About", "Om"),
+        // Activity log (recent actions)
+        ("All models", "Alla modeller"),
+        ("Reset", "Återställ"),
+        ("Filter actions", "Filtrera åtgärder"),
+        ("Filter by model", "Filtrera efter modell"),
+        ("Filter by action", "Filtrera efter åtgärd"),
+        ("No actions match these filters", "Inga åtgärder matchar dessa filter"),
+        (
+            "Once operators create, edit, or delete records through the admin, the activity shows up here.",
+            "När operatörer skapar, redigerar eller tar bort poster via admin visas aktiviteten här.",
+        ),
+        ("When", "När"),
+        ("User", "Användare"),
+        ("Action", "Åtgärd"),
+        ("Model", "Modell"),
+        ("Object", "Objekt"),
+        ("Summary", "Sammanfattning"),
+        // Empty list state
+        ("No", "Inga"),
+        ("yet", "ännu"),
+        (
+            "Get started by creating your first",
+            "Kom igång genom att skapa din första",
+        ),
+        ("It only takes a moment.", "Det tar bara en stund."),
+        // List toolbar — accessibility + titles
+        ("Layout", "Layout"),
+        (
+            "Save this layout as the default for everyone",
+            "Spara den här layouten som standard för alla",
+        ),
+        (
+            "Edit which role each field plays in this view",
+            "Redigera vilken roll varje fält har i denna vy",
+        ),
+        // Topbar / switcher
+        ("Toggle theme", "Växla tema"),
+        ("Set", "Ställ in"),
+        // Composition editor — accessibility + controls
+        ("Move up", "Flytta upp"),
+        ("Move down", "Flytta ned"),
+        ("Editing language", "Redigeringsspråk"),
+        // Password change
+        (
+            "For security, enter your current password first. Then choose a new password and enter it twice to confirm.",
+            "Av säkerhetsskäl, ange ditt nuvarande lösenord först. Välj sedan ett nytt lösenord och ange det två gånger för att bekräfta.",
+        ),
+        ("Current password", "Nuvarande lösenord"),
+        ("New password", "Nytt lösenord"),
+        ("New password confirmation", "Bekräfta nytt lösenord"),
+        (
+            "At least 8 characters. All other active sessions on your account will be signed out.",
+            "Minst 8 tecken. Alla andra aktiva sessioner på ditt konto loggas ut.",
+        ),
+        ("Password changed", "Lösenord ändrat"),
+        (
+            "Your password was changed. All other sessions for your account have been signed out; this one was re-issued so you stay logged in here.",
+            "Ditt lösenord har ändrats. Alla andra sessioner för ditt konto har loggats ut; den här återskapades så att du förblir inloggad här.",
+        ),
+        ("Return to the admin", "Tillbaka till admin"),
+        // Schema-suggestion review / applied (AI flow)
+        ("Planned changes", "Planerade ändringar"),
+        ("Explanation.", "Förklaring."),
+        ("Risk", "Risk"),
+        ("Impact", "Påverkan"),
+        ("Validation", "Validering"),
+        (
+            "Plan passes validation against the current schema.",
+            "Planen godkänns vid validering mot nuvarande schema.",
+        ),
+        ("Warnings", "Varningar"),
+        ("None", "Ingen"),
+        ("Approve and apply", "Godkänn och tillämpa"),
+        ("Changes applied", "Ändringar tillämpade"),
+        ("Files written", "Skrivna filer"),
+        ("Back to dashboard", "Tillbaka till panelen"),
+        ("View recent actions", "Visa senaste åtgärder"),
+        // Pre-auth / error pages (translated for browsers that send a language)
+        ("Sign in", "Logga in"),
+        ("Password", "Lösenord"),
+        ("Access denied", "Åtkomst nekad"),
+        ("403 Forbidden", "403 Förbjuden"),
+        (
+            "You're signed in, but you don't have admin access. Ask an administrator to promote your account, or sign out and come back with different credentials.",
+            "Du är inloggad, men du har inte admin-åtkomst. Be en administratör att uppgradera ditt konto, eller logga ut och kom tillbaka med andra uppgifter.",
+        ),
+        ("404 Not Found", "404 Hittades inte"),
+        ("Page not found", "Sidan hittades inte"),
+        (
+            "The URL doesn't match any admin route or record. It may have been moved or deleted.",
+            "URL:en matchar ingen admin-rutt eller post. Den kan ha flyttats eller tagits bort.",
+        ),
     ];
     let mut m = HashMap::new();
     m.insert("sv", sv);

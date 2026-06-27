@@ -7,7 +7,7 @@
 <div class="rio-auth">
   <div class="rio-auth__header">
     <div class="rio-auth__mark">{{ design.logo_initial | default('R') }}</div>
-    <h1 class="rio-auth__title">Sign in</h1>
+    <h1 class="rio-auth__title">{{ t("Sign in") }}</h1>
     <p class="rio-auth__subtitle">{{ design.project_name | default('RustIO') }}</p>
   </div>
 
@@ -22,10 +22,10 @@
       <input type="email" class="rio-form__input" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
     </div>
     <div class="rio-form__field">
-      <label for="password" class="rio-form__label">Password</label>
+      <label for="password" class="rio-form__label">{{ t("Password") }}</label>
       <input type="password" class="rio-form__input" id="password" name="password" autocomplete="current-password" required>
     </div>
-    <button type="submit" class="rio-btn rio-btn--primary rio-btn--block">Sign in</button>
+    <button type="submit" class="rio-btn rio-btn--primary rio-btn--block">{{ t("Sign in") }}</button>
   </form>
 </div>
 {% endblock %}

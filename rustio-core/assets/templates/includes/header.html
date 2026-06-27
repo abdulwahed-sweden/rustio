@@ -10,7 +10,7 @@
     {# v8 §3.6 — environment chip. Defaults to the non-prod mint treatment;
        a project can flip it by passing `env_is_prod` into the context. #}
     <span class="rio-env-chip{% if env_is_prod is defined and env_is_prod %} is-prod{% endif %}">{{ env_label | default('Dev') }}</span>
-    <button type="button" class="rio-theme-toggle" aria-label="Toggle theme">
+    <button type="button" class="rio-theme-toggle" aria-label="{{ t('Toggle theme') }}">
       <span data-theme-icon></span>
     </button>
     {# i18n L4b — language switcher (same reusable component as the sidebar). #}

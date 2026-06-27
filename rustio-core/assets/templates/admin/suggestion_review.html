@@ -16,7 +16,7 @@
   {% endif %}
 
   <div class="rio-card">
-    <h2>Planned changes</h2>
+    <h2>{{ t("Planned changes") }}</h2>
     <ul>
       {% for step in view.step_descriptions %}
         <li>{{ step | safe }}</li>
@@ -27,30 +27,30 @@
       <div style="margin-top: var(--space-4);">{{ view.schema_diff_html | safe }}</div>
     {% endif %}
 
-    <p style="margin-top: var(--space-4);"><strong>Explanation.</strong> {{ view.explanation }}</p>
+    <p style="margin-top: var(--space-4);"><strong>{{ t("Explanation.") }}</strong> {{ view.explanation }}</p>
 
     <dl class="rio-detail-list" style="margin-top: var(--space-4);">
-      <dt>Risk</dt>
+      <dt>{{ t("Risk") }}</dt>
       <dd>{{ view.risk_label }}</dd>
 
-      <dt>Impact</dt>
+      <dt>{{ t("Impact") }}</dt>
       <dd>
         Add {{ view.adds_fields }} field{% if view.adds_fields != 1 %}s{% endif %}{% if view.destructive %}; includes a destructive step{% endif %}
       </dd>
 
-      <dt>Validation</dt>
+      <dt>{{ t("Validation") }}</dt>
       <dd>
         {% if view.validation_ok %}
-          Plan passes validation against the current schema.
+          {{ t("Plan passes validation against the current schema.") }}
         {% else %}
           <div class="rio-alert rio-alert--danger" style="margin:0;">{{ view.validation_message }}</div>
         {% endif %}
       </dd>
     </dl>
 
-    <h2 style="margin-top: var(--space-5);">Warnings</h2>
+    <h2 style="margin-top: var(--space-5);">{{ t("Warnings") }}</h2>
     {% if view.warnings | length == 0 %}
-      <p>None</p>
+      <p>{{ t("None") }}</p>
     {% else %}
       <ul>
         {% for w in view.warnings %}<li>{{ w }}</li>{% endfor %}
@@ -58,14 +58,14 @@
     {% endif %}
 
     <div class="rio-form__actions">
-      <a href="/admin" class="rio-btn rio-btn--ghost">Cancel</a>
+      <a href="/admin" class="rio-btn rio-btn--ghost">{{ t("Cancel") }}</a>
       {% if view.can_apply %}
         <form method="post" action="{{ view.apply_url }}" style="display:inline;margin:0;">
           {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-          <button type="submit" class="rio-btn rio-btn--primary">Approve and apply</button>
+          <button type="submit" class="rio-btn rio-btn--primary">{{ t("Approve and apply") }}</button>
         </form>
       {% else %}
-        <button type="button" class="rio-btn rio-btn--primary" disabled title="Risk is Critical or plan is invalid — apply is blocked">Approve and apply</button>
+        <button type="button" class="rio-btn rio-btn--primary" disabled title="Risk is Critical or plan is invalid — apply is blocked">{{ t("Approve and apply") }}</button>
       {% endif %}
     </div>
   </div>

@@ -79,7 +79,7 @@
       {% endif %}
     </span>
     {% if layout_options is defined %}
-      <nav class="rio-layout-switch" aria-label="Layout">
+      <nav class="rio-layout-switch" aria-label="{{ t('Layout') }}">
         {% for opt in layout_options %}
           <a href="{{ opt.href }}" class="rio-btn rio-btn--ghost{% if opt.active %} is-active{% endif %}"
              {% if opt.active %}aria-current="true"{% endif %}>{{ opt.label }}</a>
@@ -93,10 +93,10 @@
             {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
             <input type="hidden" name="layout" value="{{ layout | default('table') }}">
             <input type="hidden" name="_return" value="{{ return_to | default('') }}">
-            <button type="submit" class="rio-btn rio-btn--ghost" title="Save this layout as the default for everyone">{{ t("Set as default") }}</button>
+            <button type="submit" class="rio-btn rio-btn--ghost" title="{{ t('Save this layout as the default for everyone') }}">{{ t("Set as default") }}</button>
           </form>
           {# Phase 9a — open the composition editor (field-role editing). #}
-          <a href="/admin/{{ model.singular_name | lower }}s/view" class="rio-btn rio-btn--ghost" title="Edit which role each field plays in this view">{{ t("Edit view") }}</a>
+          <a href="/admin/{{ model.singular_name | lower }}s/view" class="rio-btn rio-btn--ghost" title="{{ t('Edit which role each field plays in this view') }}">{{ t("Edit view") }}</a>
         {% endif %}
       </nav>
     {% endif %}
@@ -104,8 +104,8 @@
 
   {% if rows | length == 0 %}
     <div class="rio-empty">
-      <h3 class="rio-card__title">No {{ model.display_name | lower }} yet</h3>
-      <p>Get started by creating your first {{ model.singular_name | lower }}. It only takes a moment.</p>
+      <h3 class="rio-card__title">{{ t("No") }} {{ model.display_name | lower }} {{ t("yet") }}</h3>
+      <p>{{ t("Get started by creating your first") }} {{ model.singular_name | lower }}. {{ t("It only takes a moment.") }}</p>
       {% if permissions.create %}
         <p style="margin-top: 18px;"><a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ {{ t("Add") }} {{ model.singular_name | lower }}</a></p>
       {% endif %}
@@ -127,7 +127,7 @@
             {% if permissions.edit or permissions.delete %}
               <div class="rio-list-actions">
                 {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -143,7 +143,7 @@
             {% if permissions.edit or permissions.delete %}
               <div class="rio-card-actions">
                 {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -183,7 +183,7 @@
                     <a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>
                   {% endif %}
                   {% if permissions.delete %}
-                    <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">
+                    <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">
                       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
                       <button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button>
                     </form>

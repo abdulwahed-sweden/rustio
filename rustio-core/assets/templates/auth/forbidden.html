@@ -7,9 +7,9 @@
 <div class="rio-auth">
   <div class="rio-auth__header">
     <div class="rio-auth__mark">!</div>
-    <p class="rio-meta">403 Forbidden</p>
-    <h1 class="rio-auth__title">Access denied</h1>
-    <p class="rio-auth__subtitle">You're signed in, but you don't have admin access. Ask an administrator to promote your account, or sign out and come back with different credentials.</p>
+    <p class="rio-meta">{{ t("403 Forbidden") }}</p>
+    <h1 class="rio-auth__title">{{ t("Access denied") }}</h1>
+    <p class="rio-auth__subtitle">{{ t("You're signed in, but you don't have admin access. Ask an administrator to promote your account, or sign out and come back with different credentials.") }}</p>
   </div>
 
   <form method="post" action="/admin/logout" style="margin:0;">

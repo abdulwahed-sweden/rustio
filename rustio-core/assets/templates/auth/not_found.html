@@ -7,11 +7,11 @@
 <div class="rio-auth">
   <div class="rio-auth__header">
     <div class="rio-auth__mark">?</div>
-    <p class="rio-meta">404 Not Found</p>
-    <h1 class="rio-auth__title">Page not found</h1>
-    <p class="rio-auth__subtitle">The URL doesn't match any admin route or record. It may have been moved or deleted.</p>
+    <p class="rio-meta">{{ t("404 Not Found") }}</p>
+    <h1 class="rio-auth__title">{{ t("Page not found") }}</h1>
+    <p class="rio-auth__subtitle">{{ t("The URL doesn't match any admin route or record. It may have been moved or deleted.") }}</p>
   </div>
 
-  <a href="/admin" class="rio-btn rio-btn--block">Back to dashboard</a>
+  <a href="/admin" class="rio-btn rio-btn--block">{{ t("Back to dashboard") }}</a>
 </div>
 {% endblock %}

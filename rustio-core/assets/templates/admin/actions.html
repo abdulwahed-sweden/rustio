@@ -12,41 +12,41 @@
     <h1>{{ t("Recent actions") }}</h1>
   </div>
 
-  <form class="rio-toolbar" method="get" action="/admin/actions" aria-label="Filter actions">
-    <select class="rio-form__input rio-form__input--inline" name="model" aria-label="Filter by model">
-      <option value="">All models</option>
+  <form class="rio-toolbar" method="get" action="/admin/actions" aria-label="{{ t('Filter actions') }}">
+    <select class="rio-form__input rio-form__input--inline" name="model" aria-label="{{ t('Filter by model') }}">
+      <option value="">{{ t("All models") }}</option>
       {% for m in model_options %}
         <option value="{{ m.value }}"{% if m.selected %} selected{% endif %}>{{ m.label }}</option>
       {% endfor %}
     </select>
-    <select class="rio-form__input rio-form__input--inline" name="action" aria-label="Filter by action">
+    <select class="rio-form__input rio-form__input--inline" name="action" aria-label="{{ t('Filter by action') }}">
       {% for a in action_options %}
         <option value="{{ a.value }}"{% if a.selected %} selected{% endif %}>{{ a.label }}</option>
       {% endfor %}
     </select>
     <button type="submit" class="rio-btn">{{ t("Apply") }}</button>
     {% if filters_active %}
-      <a class="rio-btn rio-btn--ghost" href="/admin/actions">Reset</a>
+      <a class="rio-btn rio-btn--ghost" href="/admin/actions">{{ t("Reset") }}</a>
     {% endif %}
     <span class="rio-toolbar__count">{{ count_label }}</span>
   </form>
 
   {% if actions | length == 0 %}
     <div class="rio-empty">
-      <h3 class="rio-card__title">No actions match these filters</h3>
-      <p>Once operators create, edit, or delete records through the admin, the activity shows up here.</p>
+      <h3 class="rio-card__title">{{ t("No actions match these filters") }}</h3>
+      <p>{{ t("Once operators create, edit, or delete records through the admin, the activity shows up here.") }}</p>
     </div>
   {% else %}
     <div class="rio-card">
       <table class="rio-table">
         <thead>
           <tr>
-            <th>When</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Model</th>
-            <th>Object</th>
-            <th>Summary</th>
+            <th>{{ t("When") }}</th>
+            <th>{{ t("User") }}</th>
+            <th>{{ t("Action") }}</th>
+            <th>{{ t("Model") }}</th>
+            <th>{{ t("Object") }}</th>
+            <th>{{ t("Summary") }}</th>
           </tr>
         </thead>
         <tbody>

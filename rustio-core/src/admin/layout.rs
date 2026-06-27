@@ -1019,16 +1019,27 @@ pub async fn form_render(
         })
         .collect();
 
+    // Active language so the action verbs (Edit/New/Create/Save changes)
+    // translate while the model name stays as-is.
+    let lang = match identity {
+        Some(id) => crate::auth::user::preferred_language(db, id.user_id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "en".to_string()),
+        None => "en".to_string(),
+    };
+    let tr = |s: &str| crate::admin::uilang::translate(&lang, s);
     let (title, action, submit_label) = match editing_id {
         Some(id) => (
-            format!("Edit {}", model.model_name()),
+            format!("{} {}", tr("Edit"), model.model_name()),
             format!("/admin/{slug}/{id}/edit"),
-            "Save changes".to_string(),
+            tr("Save changes"),
         ),
         None => (
-            format!("New {}", model.model_name()),
+            format!("{} {}", tr("New"), model.model_name()),
             format!("/admin/{slug}/new"),
-            format!("Create {}", model.model_name()),
+            format!("{} {}", tr("Create"), model.model_name()),
         ),
     };
 
