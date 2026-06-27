@@ -154,7 +154,7 @@
         {% for row in rows %}
           <div class="rio-compact-row">
             {% for cell in row.cells %}<span class="rio-compact-cell">{{ cell | safe }}</span>{% endfor %}
-            {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}" style="margin-left:auto;">{{ t("Edit") }}</a>{% endif %}
+            {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}" style="margin-inline-start:auto;">{{ t("Edit") }}</a>{% endif %}
           </div>
         {% endfor %}
       </div>
