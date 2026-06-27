@@ -78,8 +78,14 @@
         <dl class="rio-meta-list" style="margin-top:var(--space-3);">
           <dt>Active sessions</dt><dd>{{ account.sessions }}</dd>
         </dl>
-        <div style="margin-top:var(--space-4);">
+        <div style="margin-top:var(--space-4);display:flex;flex-wrap:wrap;gap:var(--space-2);">
           <a href="/admin/password_change" class="rio-btn rio-btn--primary">Change password</a>
+          {% if account.sessions > 1 %}
+            <form method="post" action="/admin/sessions/clear" style="margin:0;" data-confirm="Sign out all your other sessions? You'll stay signed in here.">
+              {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+              <button type="submit" class="rio-btn rio-btn--ghost">Sign out other sessions</button>
+            </form>
+          {% endif %}
         </div>
       </section>
     </aside>

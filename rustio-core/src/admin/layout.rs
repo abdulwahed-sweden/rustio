@@ -3230,12 +3230,9 @@ async fn build_account_view(db: &Db, user: &crate::auth::User) -> AccountView {
             .flatten()
             .map(|s| s.chars().take(10).collect()) // YYYY-MM-DD
             .unwrap_or_default();
-    let sessions: i64 =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM rustio_sessions WHERE user_id = ?")
-            .bind(user.id)
-            .fetch_one(db.pool())
-            .await
-            .unwrap_or(0);
+    let sessions: i64 = crate::auth::session::count_active(db, user.id)
+        .await
+        .unwrap_or(0);
     let language = match crate::auth::user::preferred_language(db, user.id).await {
         Ok(Some(code)) => languages()
             .iter()

@@ -344,6 +344,30 @@ pub mod session {
             .await?;
         Ok(result.rows_affected())
     }
+
+    /// Count a user's currently-valid (non-expired) sessions.
+    pub async fn count_active(db: &Db, user_id: i64) -> Result<i64, Error> {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM rustio_sessions WHERE user_id = ? AND expires_at > ?",
+        )
+        .bind(user_id)
+        .bind(Utc::now())
+        .fetch_one(db.pool())
+        .await?;
+        Ok(n)
+    }
+
+    /// "Sign out everywhere else" — delete every session for `user_id` except
+    /// `keep_id` (the caller's current session). Returns how many were removed.
+    /// Idempotent.
+    pub async fn delete_others(db: &Db, user_id: i64, keep_id: &str) -> Result<u64, Error> {
+        let result = sqlx::query("DELETE FROM rustio_sessions WHERE user_id = ? AND id != ?")
+            .bind(user_id)
+            .bind(keep_id)
+            .execute(db.pool())
+            .await?;
+        Ok(result.rows_affected())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1146,6 +1170,29 @@ mod tests {
         let db = setup().await;
         let out = session::find_valid(&db, "deadbeef").await.unwrap();
         assert!(out.is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_others_keeps_current_session_only() {
+        let db = setup().await;
+        let u = user::create(&db, "a@b.co", "pw", ROLE_USER).await.unwrap();
+        let keep = session::create(&db, u.id).await.unwrap();
+        let _s2 = session::create(&db, u.id).await.unwrap();
+        let _s3 = session::create(&db, u.id).await.unwrap();
+        // A second user's sessions must be untouched.
+        let other = user::create(&db, "b@b.co", "pw", ROLE_USER).await.unwrap();
+        let other_s = session::create(&db, other.id).await.unwrap();
+
+        assert_eq!(session::count_active(&db, u.id).await.unwrap(), 3);
+        let removed = session::delete_others(&db, u.id, &keep.id).await.unwrap();
+        assert_eq!(removed, 2);
+        assert_eq!(session::count_active(&db, u.id).await.unwrap(), 1);
+        // The kept session is still valid; the other user is unaffected.
+        assert!(session::find_valid(&db, &keep.id).await.unwrap().is_some());
+        assert!(session::find_valid(&db, &other_s.id)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[tokio::test]

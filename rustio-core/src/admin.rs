@@ -540,6 +540,12 @@ impl Admin {
             let db = logout_db.clone();
             async move { handle_logout(req, &db).await }
         });
+        // "Sign out other sessions" from the account page.
+        let sessions_db = db.clone();
+        router = router.post("/admin/sessions/clear", move |req, _params| {
+            let db = sessions_db.clone();
+            async move { handle_clear_other_sessions(req, &db).await }
+        });
         router = router.get("/admin/logout", move |req, _params| async move {
             let signed_in = req.ctx().get::<crate::auth::Identity>().is_some();
             let csrf = ctx_csrf(req.ctx()).map(str::to_string);
@@ -6198,6 +6204,24 @@ async fn handle_logout(req: Request, db: &crate::orm::Db) -> Result<Response, Er
         &build_session_cookie(auth::SESSION_COOKIE, "", 0),
     );
     Ok(with_admin_headers(resp))
+}
+
+/// `POST /admin/sessions/clear` — "sign out everywhere else". Deletes all of
+/// the signed-in user's sessions except the current one (kept via the request
+/// cookie), then returns to the account page. CSRF-protected, admin-gated.
+async fn handle_clear_other_sessions(req: Request, db: &crate::orm::Db) -> Result<Response, Error> {
+    use crate::auth;
+    if let Err(resp) = admin_guard(req.ctx()) {
+        return Ok(resp);
+    }
+    let cookie_token = req.cookie(auth::SESSION_COOKIE);
+    let (_, body, ctx) = req.into_parts();
+    let form = read_form_from_parts(body).await?;
+    require_csrf(&ctx, &form)?;
+    if let (Some(token), Some(id)) = (cookie_token, auth::identity(&ctx)) {
+        let _ = auth::session::delete_others(db, id.user_id, &token).await;
+    }
+    Ok(with_admin_headers(redirect("/admin/profile")))
 }
 
 /// `POST /admin/password_change` — self-service password change.
