@@ -1,20 +1,22 @@
 /* ============================================================================
- * RustIO admin — design system  ·  "Bureau" (classic institutional)
+ * RustIO admin — design system  ·  "Studio" (modern professional)
  *
- * A redesign of the admin skin. Same contract, new look:
+ * Same contract, refined look:
  *   - rio-* class names, minijinja logic, and {% block %} names are untouched.
  *   - Only appearance changes: palette, type, spacing, components, motion.
  *
  * Aesthetic point of view
  * -----------------------
- * Classic institutional. A composed navy-and-slate palette — the colour of
- * banks, courts, and universities — on cool paper, with crisp borders and a
- * formal, confident type voice. Type is large and the weights are heavy:
- * headings are extra-bold, labels are uppercase bold sans, body text is set
- * in medium. Numeric data (ids, counts, versions, code) keeps a monospace
- * voice for legibility. All fonts are the OS-native UI stack, so the admin
- * renders identically offline, behind a strict CSP, and inside the single
- * binary: no CDN @import, no runtime webfont download.
+ * Modern professional. A confident **indigo** accent on a cool slate-and-paper
+ * neutral scale — the calm, premium palette of contemporary product tools.
+ * Type is clear with composed (not shouty) display sizes; headings are bold
+ * (700), labels are uppercase bold-sans, body is medium for comfortable
+ * reading. Corners are gently rounded and shadows are soft and diffuse so
+ * cards lift off the paper without a hard edge. Numeric data (ids, counts,
+ * versions, code) keeps a monospace voice for legibility. All fonts are the
+ * OS-native UI stack, so the admin renders identically offline, behind a
+ * strict CSP, and inside the single binary: no CDN @import, no runtime
+ * webfont download. The accent is overrideable via rustio.design.json.
  *
  * File structure (compiled by build.rs with Tailwind v4; also valid as a
  * verbatim passthrough copy):
@@ -49,27 +51,30 @@
   --color-light-700: #28344A;   /* tertiary emphasis */
   --color-light-900: #141D2B;   /* primary text / headings — slate-ink */
 
-  /* Institutional blue accent (new) ---------------------------------------- */
-  --color-accent:      #1E4C8A;   /* confident navy/institutional blue */
+  /* Indigo accent — modern, professional. A confident blue-violet that
+     reads premium on cool paper; the project brand can still override it
+     via rustio.design.json. ------------------------------------------------ */
+  --color-accent:      #4F46E5;   /* indigo-600 */
   --color-accent-text: #FFFFFF;   /* text on a solid accent surface */
-  --color-accent-deep: #163A6B;   /* hover / pressed */
-  --color-accent-soft: #E8EFF8;   /* pale blue tint — active nav background */
+  --color-accent-deep: #4338CA;   /* indigo-700 — hover / pressed */
+  --color-accent-soft: #EEF0FF;   /* pale indigo tint — active nav background */
 
-  /* Type scale — enlarged across the board --------------------------------- */
-  --text-hero:  38px;
-  --text-stat:  34px;
-  --text-h2:    26px;
-  --text-h3:    20px;
-  --text-body:  16.5px;
-  --text-meta:  15px;
-  --text-small: 14px;
-  --text-mono:  13.5px;
-  --text-micro: 12.5px;
+  /* Type scale — clear hierarchy, gently moderated so display sizes feel
+     composed rather than shouty (body stays comfortably readable). -------- */
+  --text-hero:  32px;
+  --text-stat:  28px;
+  --text-h2:    22px;
+  --text-h3:    18px;
+  --text-body:  15.5px;
+  --text-meta:  14.5px;
+  --text-small: 13.5px;
+  --text-mono:  13px;
+  --text-micro: 12px;
 
-  /* Radius — crisp, formal ------------------------------------------------- */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
+  /* Radius — softened for a contemporary, friendly-but-precise feel ------- */
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 13px;
 
   /* Space scale ------------------------------------------------------------ */
   --space-1: 4px;
@@ -86,10 +91,14 @@
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-  /* Elevation */
-  --shadow-sm: 0 1px 2px rgba(20, 29, 43, 0.06);
-  --shadow-md: 0 8px 24px -12px rgba(20, 29, 43, 0.24);
-  --shadow-pop: 0 22px 54px -20px rgba(20, 29, 43, 0.36);
+  /* Elevation — soft, diffuse, layered (a hairline ring + a gentle drop)
+     so cards and popovers lift off the cool paper without a hard edge. */
+  --shadow-sm: 0 1px 2px rgba(20, 29, 43, 0.05),
+               0 0 0 1px rgba(20, 29, 43, 0.02);
+  --shadow-md: 0 1px 3px rgba(20, 29, 43, 0.06),
+               0 10px 28px -14px rgba(20, 29, 43, 0.22);
+  --shadow-pop: 0 4px 12px -4px rgba(20, 29, 43, 0.12),
+                0 24px 56px -20px rgba(20, 29, 43, 0.30);
 
   /* Legacy aliases — older templates still reference these names. */
   --gray-950: var(--color-gray-950);
@@ -131,22 +140,21 @@
   --color-text-tertiary:  var(--color-light-700);
   --color-text-muted:     var(--color-light-500);
   --color-highlight-soft: var(--color-accent-soft);
-  --row-hover: rgba(30, 76, 138, 0.05);
-  --grain: rgba(20, 29, 43, 0.035);
+  --row-hover: rgba(79, 70, 229, 0.045);
+  --grain: rgba(20, 29, 43, 0.03);
 }
 
 /* Dark theme — soft, low-glare slate. No pure black, no near-black: the
  * dimmest surface is a desaturated charcoal (#171B22), and the elevation
  * ladder steps up logically from there. Text is off-white, never #FFF, to
- * kill glare. Accent is a lighter institutional blue tuned for AA on dark.
+ * kill glare. Accent is a light indigo (#A5B4FC) tuned for AA on dark.
  *
  * Measured WCAG contrast (computed, sRGB):
  *   text-primary   #E6EAF1 vs canvas #171B22 = 14.31:1  (AAA)
  *   text-secondary #AEB8C6 vs canvas          =  8.61:1  (AAA)
  *   text-muted     #7E8896 vs canvas          =  4.81:1  (AA, body)
- *   accent         #6E9BE6 vs canvas          =  6.16:1  (AA, UI/large)
- *   text-primary   #E6EAF1 vs surface #1F242E = 12.89:1  (AAA)
- *   accent         #6E9BE6 vs surface         =  5.55:1  (AA)
+ *   accent         #A5B4FC vs canvas          =  9.7:1   (AAA, UI/large)
+ *   accent         #A5B4FC vs surface #1F242E =  8.7:1   (AAA)
  * Body text vs canvas ≥ 4.5:1 and large/UI ≥ 3:1 are satisfied. */
 [data-theme="dark"] {
   --color-canvas:         #171B22;   /* dimmest — soft charcoal, not black */
@@ -158,14 +166,15 @@
   --color-text-secondary: #AEB8C6;
   --color-text-tertiary:  #C3CBD7;
   --color-text-muted:     #7E8896;
-  /* Lighter institutional blue — gentle, AA on the dark surface. */
-  --color-accent:         #6E9BE6;
-  --color-accent-text:    #0E1726;   /* dark ink on the lighter accent (buttons) */
-  --color-accent-deep:    #5A86CF;
-  --color-accent-soft:    rgba(110, 155, 230, 0.15);
-  --color-highlight-soft: rgba(110, 155, 230, 0.15);
-  --row-hover: rgba(110, 155, 230, 0.07);
-  --grain: rgba(255, 255, 255, 0.022);
+  /* Lighter indigo — gentle, AA on the dark surface (#A5B4FC vs #171B22
+     ≈ 9.7:1 AAA; vs surface #1F242E ≈ 8.7:1 AAA). */
+  --color-accent:         #A5B4FC;
+  --color-accent-text:    #1E1B4B;   /* deep indigo ink on the lighter accent */
+  --color-accent-deep:    #818CF8;
+  --color-accent-soft:    rgba(129, 140, 248, 0.16);
+  --color-highlight-soft: rgba(129, 140, 248, 0.16);
+  --row-hover: rgba(129, 140, 248, 0.08);
+  --grain: rgba(255, 255, 255, 0.02);
 }
 
 /* ----------------------------------------------------------------------------
@@ -194,10 +203,10 @@
   --color-light-700: #28344A;
   --color-light-900: #141D2B;
 
-  --color-accent:      #1E4C8A;
+  --color-accent:      #4F46E5;
   --color-accent-text: #FFFFFF;
-  --color-accent-deep: #163A6B;
-  --color-accent-soft: #E8EFF8;
+  --color-accent-deep: #4338CA;
+  --color-accent-soft: #EEF0FF;
 
   --color-canvas:        var(--color-light-50);
   --color-surface:       var(--color-light-100);
@@ -244,7 +253,7 @@
   h1, h2, h3, h4 {
     margin: 0;
     font-family: var(--font-sans);
-    font-weight: 800;
+    font-weight: 700;
     color: var(--color-text-primary);
     letter-spacing: -0.01em;
   }
@@ -255,7 +264,7 @@
   p  { margin: 0; font-size: var(--text-body); line-height: 1.7; font-weight: 500; color: var(--color-text-secondary); }
   a  { color: var(--color-accent); text-decoration: none; font-weight: 600; transition: color .14s ease; }
   a:hover { color: var(--color-accent-deep); }
-  strong { font-weight: 800; color: var(--color-text-primary); }
+  strong { font-weight: 700; color: var(--color-text-primary); }
   code {
     font-family: var(--font-mono);
     font-size: 0.86em;
@@ -335,13 +344,13 @@
     color: var(--color-accent-text);
     border-radius: var(--radius-md);
     font-family: var(--font-sans);
-    font-weight: 800;
+    font-weight: 700;
     font-size: 18px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,.16), var(--shadow-sm);
   }
   .rio-sidebar__wordmark {
     font-family: var(--font-sans);
-    font-weight: 800;
+    font-weight: 700;
     font-size: 18px;
     letter-spacing: -0.015em;
     color: var(--color-text-primary);
@@ -350,7 +359,7 @@
   .rio-sidebar__section {
     font-family: var(--font-sans);
     font-size: var(--text-micro);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--color-text-muted);
@@ -378,7 +387,7 @@
   .rio-sidebar__item.is-current {
     background: var(--color-accent-soft);
     color: var(--color-accent-deep);
-    font-weight: 800;
+    font-weight: 700;
     box-shadow: inset 3px 0 0 var(--color-accent);
   }
   [data-theme="dark"] .rio-sidebar__item.is-active,
@@ -435,9 +444,9 @@
     width: 28px; height: 28px;
     background: var(--color-accent); color: var(--color-accent-text);
     border-radius: var(--radius-sm);
-    font-family: var(--font-sans); font-weight: 800; font-size: 15px;
+    font-family: var(--font-sans); font-weight: 700; font-size: 15px;
   }
-  .rio-topbar__wordmark { font-family: var(--font-sans); font-weight: 800; }
+  .rio-topbar__wordmark { font-family: var(--font-sans); font-weight: 700; }
   .rio-topbar__nav { display: flex; align-items: center; gap: var(--space-2); }
   .rio-topbar__link {
     font-size: var(--text-meta);
@@ -453,7 +462,7 @@
   .rio-env-chip {
     font-family: var(--font-sans);
     font-size: var(--text-micro);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
@@ -548,10 +557,10 @@
     box-shadow: var(--shadow-sm);
   }
   .rio-card--featured { border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); }
-  .rio-card__title { font-size: var(--text-h3); font-weight: 800; margin: 0 0 var(--space-3); }
+  .rio-card__title { font-size: var(--text-h3); font-weight: 700; margin: 0 0 var(--space-3); }
   .rio-card__meta { font-family: var(--font-sans); font-size: var(--text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--color-text-muted); }
   .rio-card > table.rio-table { margin: 0; }
-  .rio-card > h2 { font-size: var(--text-h3); font-weight: 800; margin: 0 0 var(--space-3); }
+  .rio-card > h2 { font-size: var(--text-h3); font-weight: 700; margin: 0 0 var(--space-3); }
   .rio-card > h2:not(:first-child) { margin-top: var(--space-5); }
   .rio-card ul, .rio-card ol { margin: 0; padding-left: 1.3rem; color: var(--color-text-secondary); }
   .rio-card li { margin: var(--space-2) 0; line-height: 1.55; font-weight: 500; }
@@ -596,7 +605,7 @@
   .rio-stat:hover::after { background: var(--color-border-strong); }
   .rio-stat__value {
     font-size: var(--text-stat);
-    font-weight: 800;
+    font-weight: 700;
     line-height: 1;
     letter-spacing: -0.025em;
     font-variant-numeric: tabular-nums;
@@ -604,7 +613,7 @@
   .rio-stat__label {
     font-family: var(--font-sans);
     font-size: var(--text-small);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-muted);
@@ -663,7 +672,7 @@
   .rio-form__field, .rio-field { display: flex; flex-direction: column; gap: var(--space-2); }
   .rio-form__label, .rio-label {
     font-size: var(--text-small);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-tertiary);
@@ -740,7 +749,7 @@
     padding: var(--space-3) var(--space-4);
     font-family: var(--font-sans);
     font-size: var(--text-micro);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-muted);
@@ -772,7 +781,7 @@
   .is-selected { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
 
   /* Rust-rendered cell classes */
-  .rio-cell-primary { font-weight: 800; color: var(--color-text-primary); }
+  .rio-cell-primary { font-weight: 700; color: var(--color-text-primary); }
   .rio-cell-id {
     font-family: var(--font-mono);
     font-size: var(--text-mono);
@@ -789,7 +798,7 @@
     gap: 6px;
     font-family: var(--font-sans);
     font-size: var(--text-micro);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     line-height: 1;
@@ -822,7 +831,7 @@
     display: inline-flex; align-items: center; gap: 6px;
     font-family: var(--font-sans);
     font-size: var(--text-micro);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     padding: 5px 10px;
@@ -842,7 +851,7 @@
   .rio-detail-list dt, .rio-meta-list dt {
     font-family: var(--font-sans);
     font-size: var(--text-micro);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.07em;
     text-transform: uppercase;
     color: var(--color-text-muted);
@@ -943,7 +952,7 @@
   .rio-meta {
     font-family: var(--font-sans);
     font-size: var(--text-micro);
-    font-weight: 800;
+    font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-muted);
@@ -970,7 +979,7 @@
     width: 52px; height: 52px;
     background: var(--color-accent); color: var(--color-accent-text);
     border-radius: var(--radius-md);
-    font-family: var(--font-sans); font-weight: 800; font-size: 24px;
+    font-family: var(--font-sans); font-weight: 700; font-size: 24px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,.16), var(--shadow-md);
     margin-bottom: var(--space-2);
   }
