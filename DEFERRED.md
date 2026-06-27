@@ -29,12 +29,11 @@ too — `classify_filters` accepts a field declared by the view (not just
 `AdminUiField.filterable`), so filters actually filter on the live list (a
 verified gap: new-style models set no macro-`filterable`, so filters were dead).
 
-**Remaining follow-up:** **FK (relation) filters** are skipped — a proper
-related-row dropdown (from the FK target's labels) is its own piece; the
-relation-options machinery currently lives only in the dead typed
-`list_response` path. Also: a low-cardinality dropdown on an `Exact`-typed
-column applies a substring (`LIKE`) match, not strict equality — fine for
-distinct enum tokens, worth tightening if collisions ever matter.
+**Follow-ups — also shipped.** FK (relation) filters now render a related-row
+dropdown (distinct ids → resolved labels via `fk_lookup_batch`); and a
+low-cardinality dropdown matches exactly (`=`) while only free-text boxes use
+substring (`LIKE`). See the "Other signposted threads — all shipped" section
+below.
 
 ---
 

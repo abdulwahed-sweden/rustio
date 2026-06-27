@@ -11,6 +11,7 @@ These docs assume you're already comfortable with a basic RustIO project
 - **[Quickstart (long form)](quickstart.md)** — a 15-minute, opinion-heavy walkthrough that builds the same project the main README covers, but with more detail on every step (why each line is there, what flags exist, where the bodies are buried).
 - **[Build a hospital management system](build-hospital-app.md)** — a four-model CRUD example (Departments · Doctors · Patients · Appointments) that exercises relations, FK delete-guards, RBAC, audit logging, and the AI pipeline end-to-end. Treat it as a worked example of "what does a real RustIO system look like."
 - **[Healthcare stress test](stress-test-healthcare.md)** — a deliberate stress test of the admin under realistic relational complexity. Useful when you need to understand the framework's limits or design around them.
+- **[Composition editor & i18n](composition-editor-and-i18n.md)** — reshape a model's admin list (roles, order, filters, merge), add per-language display labels for fields and values, and switch UI languages — all without touching data.
 
 ## What's *not* here yet
 

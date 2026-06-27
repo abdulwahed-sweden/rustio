@@ -205,6 +205,7 @@ If any release regresses any of these, it doesn't ship.
 ## Going further
 
 - **[`docs/glossary.md`](docs/glossary.md)** — every framework term in plain English.
+- **[`docs/advanced/composition-editor-and-i18n.md`](docs/advanced/composition-editor-and-i18n.md)** — reshape a model's admin list (roles, order, filters, merge) and add per-language display labels for fields and values, all without touching data.
 - **[`docs/advanced/`](docs/advanced/)** — deeper walkthroughs (long-form quickstart, the hospital example, the healthcare stress test). Read these once you're comfortable with the basics.
 - **[`docs/design-system.md`](docs/design-system.md)** — what's shipping in the admin today vs the v7 spec in `rustio-core/assets/admin.css`, and the migration path between them.
 - **[`ROADMAP.md`](ROADMAP.md)** — the three phases (Foundation / Intelligence / Systems) and where each release fits.

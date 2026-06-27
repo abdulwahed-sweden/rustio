@@ -107,6 +107,7 @@ Sample shape (current at 0.8.0):
 - **0.7.0–0.7.2 Admin intelligence.** Per-field role classification, `FieldUI` metadata, filter inference, search-intent inference, masking, and a trust dashboard.
 - **0.7.3 Runtime truth.** Admin dashboard reads the schema on disk live; `[Reload schema]` updates suggestions without a process restart.
 - **0.8.0 Relations (foundational).** `link X to Y` / `connect X to Y` / `add relation from X to Y` grammar. Executor adds a `<target>_id i64` column. **No SQL `FOREIGN KEY`** — enforcement is the 0.9.0 follow-up. The review layer warns about the gap and raises a GDPR-minimisation flag when the target model carries PII.
+- **0.10.x+ Admin presentation layer.** The admin is templated (`minijinja`) and renders every model's list through a declarative **`ViewSpec`** (`<model_snake>.view.json`): field roles, display order, filters, field merging, default layout, and per-language display labels. A visual **composition editor** (`/admin/<model>/view`) authors the ViewSpec; the list gains a `?layout=` switcher, a **working filter bar** (incl. FK dropdowns), **per-model RBAC**, and **context-gated PII masking**. Full **i18n of the admin shell** — per-language field *and* value display labels plus a per-user language switcher — keeps the backend English (the iron rule: sources / data / sorting are never translated). See `CHANGELOG.md` [Unreleased] and [`docs/advanced/composition-editor-and-i18n.md`](docs/advanced/composition-editor-and-i18n.md).
 
 ### Remaining Intelligence-layer work
 

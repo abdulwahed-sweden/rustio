@@ -7,36 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The **presentation layer**: a declarative `ViewSpec` that owns how each model
+renders, a visual composition editor to author it, full internationalisation of
+the admin shell (field + value display labels, per-user language), and a working
+list filter bar — plus per-model RBAC and context-gated PII masking on the live
+list. Throughout, one **iron rule** holds: the backend stays English (field
+sources, stored values, sorting, links, data are never translated); only the
+*displayed* shell text resolves through the active language.
+
 ### Added
 
-- **Per-user UI language preference (i18n L4a).** Each admin user can store a
-  language preference; at render time the active language for list headers is
-  resolved as **user preference → the view's `default_language` → `"en"`**. The
-  preference is per-user and **never** mutates a ViewSpec — setting a language
-  is not editing a view. Data, field sources, sorting, and links stay English
-  (the iron rule); only display labels resolve through the active language.
-  Builds on the i18n label foundation (L1–L3). The reusable language switcher
-  UI (topbar + sidebar) lands in L4b.
+#### ViewSpec & list rendering
 
-### Upgrading
+- **`ViewSpec` — a per-model presentation document.** Saved as
+  `<model_snake_case>.view.json` next to the schema, it declares field display
+  order, the role each field plays, which fields are filters, field merging,
+  the default layout, and i18n labels. Pure declarative data: versioned,
+  `deny_unknown_fields`-locked, and byte-for-byte deterministic on serialise
+  (sorted maps, no `HashMap`, no timestamps). `ViewSpec::from_schema_model`
+  derives a sensible default from any schema; `validate()` + atomic
+  temp-and-rename writes keep a broken view off disk.
+- **Deterministic renderer.** `viewspec::render` turns a ViewSpec + data rows
+  into a structured `RenderedView` (no HTML, no AI) — the contract the admin
+  and the `rustio view` CLI both consume.
+- **`rustio view` CLI command** — render a model's ViewSpec against the schema
+  (and optional sample rows) from the terminal.
+- **The admin list renders through the ViewSpec.** Columns, order, and the
+  Hidden guarantee (ids, `*_hash`/`password`/`token`, opaque PII are omitted)
+  all come from the view. A **`?layout=` switcher** picks Table / List / Cards /
+  Compact; the active layout can be **persisted as the model's default**
+  ("Set as default", CSRF-protected, written back into the ViewSpec).
 
-- **i18n L4a adds a `preferred_language` column to `rustio_users`.** Existing
-  projects must run **`rustio migrate apply`** to back-port it (the column is
-  added by `ensure_core_tables`, which the migration driver calls — the server
-  does **not** migrate on boot). Until then, setting a language returns a 500
-  ("no such column: preferred_language"). Fresh databases get the column
-  automatically. See `UPGRADING.md`.
+#### Composition editor (`/admin/<model>/view`, edit-gated)
+
+- **Visual ViewSpec editing — one page, one Save.** Everything flows through
+  the same `build_edited_spec → validate → save_view_spec` path:
+  - **Field roles** — set each field's role (Title / Subtitle / Badge /
+    Timestamp / Meta / Hidden).
+  - **Order** — reorder fields with ▲ ▼ controls (order = display order),
+    via explicit indices so it works without JavaScript.
+  - **Filters** — a checkbox per field marks it a list filter; a Hidden field
+    can never be a filter (UI + server enforced).
+  - **Merge** — combine fields into one cell via a "Merge into" select
+    (joined with " · "); members are removed from the field list and restored
+    on unmerge. No overlaps, Hidden never merges, validate backstops a group
+    of fewer than two.
+
+#### Internationalisation (i18n) — display labels only
+
+- **Per-language field labels.** `ViewSpec.labels` (`source → lang → label`)
+  translates a field's *header*; an unlabelled field falls back to the admin's
+  humanised English name, so label-less views render exactly as before.
+  Editable in the composition editor's **Display label** column.
+- **Per-value (enum) labels.** `ViewSpec.value_labels`
+  (`source → value → lang → label`) translates a field's stored values
+  (e.g. status `assigned` → `"Tilldelad"`). The stored value, sorting, and the
+  status-pill **colour** stay English; only the shown text changes. The editor
+  **auto-discovers** values for status-shaped fields and low-cardinality
+  (`≤ 12` distinct) String fields and offers a label input per value.
+- **Editing language switch (`?lang=`).** Switching the language you edit in
+  is a GET reload, never a save, so it can't clobber another language's labels;
+  inputs prefill strictly for the editing language only. A separate "Set as
+  default" control makes the editing language the view's stored
+  `default_language`.
+- **Per-user language preference.** Each admin user picks their UI language
+  (stored on `rustio_users.preferred_language`). The active render language
+  resolves as **user preference → the view's `default_language` → `"en"`** and
+  **never** mutates a ViewSpec.
+- **Reusable language switcher.** One component, shown in the topbar and the
+  sidebar bottom; displays **endonyms** (`English`, `Svenska`) while storing
+  ISO 639-1 codes. The language set is open/extensible.
+
+#### List filtering, RBAC & PII (admin list)
+
+- **Working filter bar.** The toolbar renders a control per `ViewSpec.filters`
+  field — tri-state select for booleans, a **value dropdown** for enum-like
+  columns (option labels translated via value labels; value = English token), a
+  **related-row dropdown** for foreign keys (showing the target's display
+  label), and a free-text box for high-cardinality columns. Controls
+  auto-submit; a **Clear** link resets; filters compose with search, sort, and
+  layout. Dropdown choices match exactly (`=`); text filters match by substring
+  (`LIKE`). (The live filter query now honours `ViewSpec.filters`, fixing a gap
+  where new-style models — which set no macro-`filterable` flag — had no working
+  filters at all.)
+- **Per-model RBAC on list actions.** Create / edit / delete are gated on the
+  signed-in user's role (`rbac::Role::permissions_for(table)`): SuperAdmin /
+  Admin get full CRUD on app models, Editor loses delete, Viewer is view-only;
+  framework `rustio_*` tables are stricter.
+- **Context-gated PII masking.** When the project declares a
+  `rustio.context.json`, shown sensitive cells (email / phone / personal id) are
+  masked (short prefix, rest as `•`), including each sensitive source inside a
+  merged cell. Without that context, nothing is masked — masking is an explicit
+  posture, not a silent default. Hidden fields are always omitted.
 
 ### Changed
 
-- **Examples replaced with `bookflow`.** The `medflow` and `taskhub`
-  example projects are removed in favour of a single canonical example,
+- **Examples replaced with `bookflow`.** The `medflow` and `taskhub` example
+  projects are removed in favour of a single canonical example,
   `examples/bookflow/` — a general-purpose seven-model booking system
   (customers, resources, bookings, locations, schedules, assignments,
-  invoices). It is domain-agnostic on purpose: the same schema fits
-  container logistics, equipment rental, or appointments, reshaped purely
-  by editing the ViewSpec. The README walks through the `rustio view`
-  step end to end.
+  invoices). It is domain-agnostic on purpose: the same schema fits container
+  logistics, equipment rental, or appointments, reshaped purely by editing the
+  ViewSpec. The README walks through the `rustio view` step end to end.
+
+### Fixed
+
+- **CSRF tokens now render in templated admin forms (SF-1).** The create /
+  edit / delete forms (and every other admin POST form) now emit their `_csrf`
+  hidden input, so CSRF verification works as intended on the templated path.
+
+### Upgrading
+
+- **A `preferred_language` column is added to `rustio_users`** (per-user i18n).
+  Existing projects must run **`rustio migrate apply`** to back-port it — the
+  column is added by `ensure_core_tables`, which the migration driver calls; the
+  server does **not** migrate on boot. Until then, setting a language returns a
+  500 (`no such column: preferred_language`); rendering is unaffected (no
+  preference → the view's `default_language`, as before). Fresh databases get
+  the column automatically. See `UPGRADING.md`.
 
 ## [2.0.5] - 2026-05-30
 
