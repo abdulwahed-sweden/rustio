@@ -32,8 +32,8 @@ sources, stored values, sorting, links, data are never translated); only the
   translated through the same catalog too — the account page's role narrative,
   permission rows (label + description), and roles reference all follow the
   language switch, not just the static template strings.
-- **Right-to-left layout.** When the active language is RTL (Arabic, Hebrew,
-  Persian, …), the document renders `dir="rtl"` and the entire admin layout
+- **Right-to-left layout.** When the active language is RTL (Arabic, Persian,
+  Urdu, …), the document renders `dir="rtl"` and the entire admin layout
   mirrors — sidebar to the right, text right-aligned, accents and dividers
   flipped. The Console theme's directional CSS was converted to logical
   properties (`margin-inline-start`, `border-inline-end`, `text-align: start`,

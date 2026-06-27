@@ -424,7 +424,7 @@ struct UserView {
     /// read by the templates' `t()` function. Carried on `current_user` so
     /// every page can translate its chrome without threading a new key.
     active_language: String,
-    /// Text direction for the active language (`"rtl"` for Arabic/Hebrew/…,
+    /// Text direction for the active language (`"rtl"` for Arabic/Persian/…,
     /// else `"ltr"`). Set as `dir` on `<html>` so the layout mirrors.
     text_dir: String,
 }

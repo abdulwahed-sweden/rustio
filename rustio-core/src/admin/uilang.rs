@@ -221,11 +221,11 @@ pub fn catalog_languages() -> Vec<String> {
 }
 
 /// Whether a language is written right-to-left. Drives the `dir="rtl"` on the
-/// document so the admin's whole layout mirrors (Arabic, Hebrew, Persian, …).
+/// document so the admin's whole layout mirrors (Arabic, Persian, Urdu, …).
 pub fn is_rtl(code: &str) -> bool {
     matches!(
         code,
-        "ar" | "he" | "fa" | "ur" | "ps" | "sd" | "ug" | "yi" | "dv" | "ckb"
+        "ar" | "fa" | "ur" | "ps" | "sd" | "ug" | "yi" | "dv" | "ckb"
     )
 }
 
@@ -304,7 +304,6 @@ mod tests {
     #[test]
     fn rtl_languages_are_flagged() {
         assert!(is_rtl("ar"));
-        assert!(is_rtl("he"));
         assert!(is_rtl("fa"));
         assert!(!is_rtl("en"));
         assert!(!is_rtl("sv"));
