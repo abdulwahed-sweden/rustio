@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ lang | default('en') }}" data-theme="light">
+<html lang="{{ current_user.active_language | default(lang | default('en')) }}" dir="{{ current_user.text_dir | default('ltr') }}" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

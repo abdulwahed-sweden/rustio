@@ -424,6 +424,9 @@ struct UserView {
     /// read by the templates' `t()` function. Carried on `current_user` so
     /// every page can translate its chrome without threading a new key.
     active_language: String,
+    /// Text direction for the active language (`"rtl"` for Arabic/Hebrew/…,
+    /// else `"ltr"`). Set as `dir` on `<html>` so the layout mirrors.
+    text_dir: String,
 }
 
 /// One option in the language switcher (i18n L4b). `value` is the ISO code
@@ -501,11 +504,17 @@ async fn user_view(db: &Db, identity: Option<&crate::auth::Identity>) -> Option<
     // header labels resolve their own active language including the view's
     // default; the shell has no per-view default, so it's preference → "en".)
     let active_language = pref.clone().unwrap_or_else(|| "en".to_string());
+    let text_dir = if crate::admin::uilang::is_rtl(&active_language) {
+        "rtl".to_string()
+    } else {
+        "ltr".to_string()
+    };
     Some(UserView {
         email: id.email.clone(),
         display_name: id.email.clone(),
         language_options,
         active_language,
+        text_dir,
     })
 }
 

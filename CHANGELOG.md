@@ -32,6 +32,14 @@ sources, stored values, sorting, links, data are never translated); only the
   translated through the same catalog too — the account page's role narrative,
   permission rows (label + description), and roles reference all follow the
   language switch, not just the static template strings.
+- **Right-to-left layout.** When the active language is RTL (Arabic, Hebrew,
+  Persian, …), the document renders `dir="rtl"` and the entire admin layout
+  mirrors — sidebar to the right, text right-aligned, accents and dividers
+  flipped. The Console theme's directional CSS was converted to logical
+  properties (`margin-inline-start`, `border-inline-end`, `text-align: start`,
+  …), so a single stylesheet serves both directions with no duplication and no
+  change to the left-to-right rendering. The example `rustio.locale.json` ships
+  an Arabic locale to demonstrate it.
 - **`rustio.locale.json` — an editable translation file.** A new optional
   project-root input (sibling to `rustio.design.json` / `rustio.context.json`):
   `{ "sv": { "Add": "Lägg till" }, "de": { … } }`. Keys are the English source

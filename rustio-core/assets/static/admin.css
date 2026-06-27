@@ -132,7 +132,7 @@
 
 /* In dark, the sidebar sits just below the canvas — separate it with a soft
    light seam instead of a hard black edge for a crisp, professional layer. */
-[data-theme="dark"] .rio-sidebar { border-right: 1px solid rgba(255,255,255,.06); }
+[data-theme="dark"] .rio-sidebar { border-inline-end: 1px solid rgba(255,255,255,.06); }
 [data-theme="dark"] .rio-topbar--inset { border-bottom-color: var(--color-border); }
 
 /* ============================================================================
@@ -215,7 +215,7 @@ body.admin-shell, body.admin-auth {
   height: 100vh; overflow-y: auto;
   background:
     linear-gradient(180deg, var(--side-bg) 0%, var(--side-bg-2) 100%);
-  border-right: 1px solid rgba(0,0,0,.4);
+  border-inline-end: 1px solid rgba(0,0,0,.4);
   padding: var(--space-5) var(--space-4) var(--space-5);
   display: flex; flex-direction: column; gap: var(--space-6);
 }
@@ -259,7 +259,7 @@ body.admin-shell, body.admin-auth {
 }
 .rio-sidebar__item.is-active::before,
 .rio-sidebar__item.is-current::before {
-  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+  content: ""; position: absolute; inset-inline-start: 0; top: 8px; bottom: 8px;
   width: 3px; border-radius: 0 3px 3px 0;
   background: var(--side-accent); box-shadow: 0 0 12px var(--side-accent);
 }
@@ -470,12 +470,12 @@ body.admin-shell, body.admin-auth {
  * Toolbar / filters / layout switch
  * ========================================================================== */
 .rio-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.rio-toolbar__count { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; color: var(--color-text-muted); margin-left: auto; white-space: nowrap; }
+.rio-toolbar__count { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; color: var(--color-text-muted); margin-inline-start: auto; white-space: nowrap; }
 .rio-filters { color: var(--color-text-secondary); font-size: var(--text-small); font-weight: 600; }
 .rio-filter { color: var(--color-text-secondary); }
 
 /* segmented layout switch — override the page's inline .is-active rule */
-nav.rio-layout-switch { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; padding: 3px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+nav.rio-layout-switch { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-inline-start: auto; padding: 3px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 nav.rio-layout-switch .rio-btn { border-color: transparent; background: transparent; color: var(--color-text-muted); font-size: var(--text-small); padding: 6px 11px; }
 nav.rio-layout-switch a.is-active { background: var(--color-surface); color: var(--color-accent-deep); font-weight: 700; text-decoration: none; box-shadow: var(--shadow-sm); }
 [data-theme="dark"] nav.rio-layout-switch a.is-active { color: var(--color-accent); }
@@ -485,8 +485,8 @@ nav.rio-layout-switch a.is-active { background: var(--color-surface); color: var
    Note: the inner <form> is dropped by the parser (forms can't nest), so the
    "Set as default" control is a bare <button> child of the nav. */
 nav.rio-layout-switch > button.rio-btn {
-  margin-left: 4px; padding-left: 12px;
-  border-left: 1px solid var(--color-border-strong);
+  margin-inline-start: 4px; padding-inline-start: 12px;
+  border-inline-start: 1px solid var(--color-border-strong);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--ok-text); font-weight: 650;
 }
@@ -522,7 +522,7 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
   font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700;
   letter-spacing: .07em; text-transform: uppercase; color: var(--color-text-muted);
 }
-.rio-form__required { color: var(--color-accent); margin-left: 2px; }
+.rio-form__required { color: var(--color-accent); margin-inline-start: 2px; }
 .rio-form__help { font-size: var(--text-small); color: var(--color-text-muted); line-height: 1.5; }
 .rio-form__help--error { color: var(--bad-text); font-weight: 600; }
 .rio-form__actions {
@@ -546,7 +546,7 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
 .rio-table-wrap { overflow-x: auto; }
 .rio-table { width: 100%; border-collapse: collapse; font-size: var(--text-meta); }
 .rio-table thead th {
-  text-align: left; padding: var(--space-3) var(--space-4);
+  text-align: start; padding: var(--space-3) var(--space-4);
   font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
   letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted);
   background: var(--color-elevated); border-bottom: 1px solid var(--color-border-strong);
@@ -559,7 +559,7 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
 .rio-table tbody tr:hover td { color: var(--color-text-primary); }
 .rio-table a { color: var(--color-accent); font-weight: 650; }
 .rio-table a:hover { color: var(--color-accent-deep); text-decoration: underline; text-underline-offset: 2px; }
-.rio-table td:last-child { white-space: nowrap; text-align: right; }
+.rio-table td:last-child { white-space: nowrap; text-align: end; }
 .rio-cell-primary { font-family: var(--font-mono); font-weight: 700; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
 .rio-cell-id { font-family: var(--font-mono); font-size: var(--text-mono); font-weight: 600; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 .rio-num { font-variant-numeric: tabular-nums; }
@@ -607,7 +607,7 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
   letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-muted);
 }
 .rio-cards .rio-card-field:not(:first-child) .rio-card-value {
-  flex: 1; min-width: 0; text-align: right;
+  flex: 1; min-width: 0; text-align: end;
   color: var(--color-text-primary); font-weight: 550; font-size: var(--text-meta);
   overflow-wrap: anywhere;
 }
@@ -659,8 +659,8 @@ body.admin-auth { display: grid; place-items: center; min-height: 100vh; padding
 /* ============================================================================
  * Alerts / empty / pagination (defensive coverage)
  * ========================================================================== */
-.rio-alert { padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-border); border-left-width: 3px; font-size: var(--text-meta); font-weight: 550; color: var(--color-text-primary); background: var(--color-surface); }
-.rio-alert--danger { color: var(--bad-text); background: var(--bad-bg); border-color: var(--bad-bd); border-left-color: var(--bad-dot); }
+.rio-alert { padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-border); border-inline-start-width: 3px; font-size: var(--text-meta); font-weight: 550; color: var(--color-text-primary); background: var(--color-surface); }
+.rio-alert--danger { color: var(--bad-text); background: var(--bad-bg); border-color: var(--bad-bd); border-inline-start-color: var(--bad-dot); }
 .rio-empty { text-align: center; padding: var(--space-8) var(--space-5); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--color-surface) 60%, transparent); }
 .rio-empty p { color: var(--color-text-muted); max-width: 44ch; margin: var(--space-2) auto 0; }
 .rio-pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; color: var(--color-text-muted); }
@@ -691,7 +691,7 @@ body.admin-auth { display: grid; place-items: center; min-height: 100vh; padding
 .rio-card:has([data-view-editor]) > p:first-of-type {
   margin: 0 0 var(--space-4); padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
   background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface));
-  border: 1px solid var(--color-border); border-left: 3px solid var(--color-accent);
+  border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
   border-radius: var(--radius-md); color: var(--color-text-secondary) !important;
   font-size: var(--text-small); line-height: 1.65;
 }
@@ -712,12 +712,12 @@ table[data-view-editor] tbody tr:last-child td { border-bottom: 0; }
 
 /* Field name + backend id chip */
 table[data-view-editor] td:nth-child(2) { font-weight: 650; color: var(--color-text-primary); white-space: nowrap; }
-table[data-view-editor] .rio-cell-id { display: inline-block; margin-left: 6px; padding: 1px 8px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: 999px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
+table[data-view-editor] .rio-cell-id { display: inline-block; margin-inline-start: 6px; padding: 1px 8px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: 999px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
 
 /* Order move buttons — compact paired control */
 table[data-view-editor] td:first-child { white-space: nowrap; }
 table[data-view-editor] [data-move] { padding: 4px 7px; font-size: 10px; line-height: 1; color: var(--color-text-muted); border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-sm); }
-table[data-view-editor] [data-move]:first-of-type { margin-right: 2px; }
+table[data-view-editor] [data-move]:first-of-type { margin-inline-end: 2px; }
 table[data-view-editor] [data-move]:hover { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
 
 /* Inputs / selects */
@@ -769,7 +769,7 @@ table[data-view-editor] td:nth-child(4) { text-align: center; }
 }
 .rio-card:has([data-view-editor]) .rio-card > strong { font-size: var(--text-meta); font-weight: 700; color: var(--color-text-primary); }
 .rio-card:has([data-view-editor]) .rio-card > .rio-cell-id {
-  display: inline-block; margin-left: 6px; padding: 1px 8px;
+  display: inline-block; margin-inline-start: 6px; padding: 1px 8px;
   background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: 999px;
   font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--color-text-muted);
 }
@@ -874,8 +874,8 @@ table[data-view-editor] td:nth-child(4) { text-align: center; }
 .rio-timeline time, .rio-timeline__time { font-family: var(--font-mono); font-size: var(--text-small); color: var(--color-text-muted); }
 
 /* Alerts — extra variants */
-.rio-alert--warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); border-left-color: var(--warn-dot); }
-.rio-alert--info { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); border-left-color: var(--color-accent); }
+.rio-alert--warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); border-inline-start-color: var(--warn-dot); }
+.rio-alert--info { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); border-inline-start-color: var(--color-accent); }
 [data-theme="dark"] .rio-alert--info { color: var(--color-accent); }
 
 /* Topbar brand (shells that render an identity inside the topbar) */
@@ -910,8 +910,8 @@ table[data-view-editor] td:nth-child(4) { text-align: center; }
  * ========================================================================== */
 @media (max-width: 980px) {
   .rio-shell { grid-template-columns: 1fr; }
-  .rio-sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-3); border-right: 0; border-bottom: 1px solid rgba(0,0,0,.4); padding: var(--space-3) var(--space-4); }
-  .rio-sidebar__brand { padding: 0; margin-right: var(--space-2); border-bottom: 0; }
+  .rio-sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-3); border-inline-end: 0; border-bottom: 1px solid rgba(0,0,0,.4); padding: var(--space-3) var(--space-4); }
+  .rio-sidebar__brand { padding: 0; margin-inline-end: var(--space-2); border-bottom: 0; }
   .rio-sidebar__group { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
   .rio-sidebar__section { display: none; }
   .rio-sidebar__lang { margin: 0; padding: 0; border-top: 0; }
