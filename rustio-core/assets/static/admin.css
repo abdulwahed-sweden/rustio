@@ -1,1073 +1,927 @@
 /* ============================================================================
- * RustIO admin — design system  ·  "Studio" (modern professional)
- *
- * Same contract, refined look:
- *   - rio-* class names, minijinja logic, and {% block %} names are untouched.
- *   - Only appearance changes: palette, type, spacing, components, motion.
- *
- * Aesthetic point of view
- * -----------------------
- * Modern professional. A confident **indigo** accent on a cool slate-and-paper
- * neutral scale — the calm, premium palette of contemporary product tools.
- * Type is clear with composed (not shouty) display sizes; headings are bold
- * (700), labels are uppercase bold-sans, body is medium for comfortable
- * reading. Corners are gently rounded and shadows are soft and diffuse so
- * cards lift off the paper without a hard edge. Numeric data (ids, counts,
- * versions, code) keeps a monospace voice for legibility. All fonts are the
- * OS-native UI stack, so the admin renders identically offline, behind a
- * strict CSP, and inside the single binary: no CDN @import, no runtime
- * webfont download. The accent is overrideable via rustio.design.json.
- *
- * File structure (compiled by build.rs with Tailwind v4; also valid as a
- * verbatim passthrough copy):
- *   :root            — token definitions browsers honour even without Tailwind
- *   [data-theme=…]   — light (default) / dark surface aliases
- *   @theme           — same tokens, for Tailwind's utility generator
- *   @layer base      — element resets and global type
- *   @layer components— every .rio-* primitive
- *   (un-layered)     — atmosphere + motion, so they win the cascade
- * ============================================================================ */
+ * RustIO admin — "Console" theme  ·  engineered, editorial, professional
+ * ----------------------------------------------------------------------------
+ * A creative restyle on the EXACT same rio-* markup. Nothing in the templates
+ * changes — only the look:
+ *   - a deep ink sidebar rail (signature element, kept dark in both themes)
+ *   - a cool "blueprint" grid canvas with a soft accent glow
+ *   - a confident cobalt accent, reserved for emphasis + primary actions
+ *   - monospaced, uppercase technical labels (eyebrows, sections, table heads)
+ *   - tight display headings, refined status chips, quiet hairline tables
+ * Drop into rustio-core/assets/static/admin.css. Light is default; dark is
+ * opt-in via [data-theme="dark"] and the existing theme toggle.
+ * ========================================================================== */
 
 :root {
-  /* Cool slate ladder (dark theme surfaces) -------------------------------- */
-  --color-gray-950: #0D1420;
-  --color-gray-900: #15202F;
-  --color-gray-800: #1E2B3D;
-  --color-gray-700: #2C3A4F;
-  --color-gray-600: #3D4D64;
-  --color-gray-500: #5E6E86;
-  --color-gray-400: #8A98AD;
-  --color-gray-300: #BAC5D4;
-  --color-gray-100: #E9EEF5;
-
-  /* Cool paper / slate-ink ladder (light theme), lightest first ------------ */
-  --color-light-50:  #F2F5F9;   /* page canvas — cool paper */
-  --color-light-100: #FFFFFF;   /* primary surface / cards */
-  --color-light-200: #FAFBFD;   /* elevated surface / sidebar / topbar */
-  --color-light-300: #DCE3EC;   /* default borders, dividers */
-  --color-light-400: #C2CCDA;   /* strong borders */
-  --color-light-500: #6E7B8F;   /* muted text / icons */
-  --color-light-600: #45526A;   /* secondary text */
-  --color-light-700: #28344A;   /* tertiary emphasis */
-  --color-light-900: #141D2B;   /* primary text / headings — slate-ink */
-
-  /* Indigo accent — modern, professional. A confident blue-violet that
-     reads premium on cool paper; the project brand can still override it
-     via rustio.design.json. ------------------------------------------------ */
-  --color-accent:      #4F46E5;   /* indigo-600 */
-  --color-accent-text: #FFFFFF;   /* text on a solid accent surface */
-  --color-accent-deep: #4338CA;   /* indigo-700 — hover / pressed */
-  --color-accent-soft: #EEF0FF;   /* pale indigo tint — active nav background */
-
-  /* Type scale — clear hierarchy, gently moderated so display sizes feel
-     composed rather than shouty (body stays comfortably readable). -------- */
-  --text-hero:  32px;
-  --text-stat:  28px;
-  --text-h2:    22px;
-  --text-h3:    18px;
-  --text-body:  15.5px;
-  --text-meta:  14.5px;
-  --text-small: 13.5px;
-  --text-mono:  13px;
-  --text-micro: 12px;
-
-  /* Radius — softened for a contemporary, friendly-but-precise feel ------- */
-  --radius-sm: 6px;
-  --radius-md: 9px;
-  --radius-lg: 13px;
-
-  /* Space scale ------------------------------------------------------------ */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 22px;
-  --space-6: 28px;
-  --space-7: 38px;
-  --space-8: 52px;
-
-  /* Fonts. Sans = native OS UI font (offline-safe, no external download).
-     Mono = native programming font, reserved for numeric / code data. */
+  /* Type ------------------------------------------------------------------ */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-  /* Elevation — soft, diffuse, layered (a hairline ring + a gentle drop)
-     so cards and popovers lift off the cool paper without a hard edge. */
-  --shadow-sm: 0 1px 2px rgba(20, 29, 43, 0.05),
-               0 0 0 1px rgba(20, 29, 43, 0.02);
-  --shadow-md: 0 1px 3px rgba(20, 29, 43, 0.06),
-               0 10px 28px -14px rgba(20, 29, 43, 0.22);
-  --shadow-pop: 0 4px 12px -4px rgba(20, 29, 43, 0.12),
-                0 24px 56px -20px rgba(20, 29, 43, 0.30);
+  --text-hero:  34px;
+  --text-stat:  30px;
+  --text-h2:    22px;
+  --text-h3:    17px;
+  --text-body:  15px;
+  --text-meta:  14px;
+  --text-small: 13px;
+  --text-mono:  12.5px;
+  --text-micro: 11.5px;
 
-  /* Legacy aliases — older templates still reference these names. */
-  --gray-950: var(--color-gray-950);
-  --gray-900: var(--color-gray-900);
-  --gray-800: var(--color-gray-800);
-  --gray-700: var(--color-gray-700);
-  --gray-600: var(--color-gray-600);
-  --gray-500: var(--color-gray-500);
-  --gray-400: var(--color-gray-400);
-  --gray-300: var(--color-gray-300);
-  --gray-100: var(--color-gray-100);
-  --accent:        var(--color-accent);
-  --accent-text:   var(--color-accent-text);
-  --accent-deep:   var(--color-accent-deep);
-  --bg-canvas:      var(--color-canvas);
-  --bg-surface:     var(--color-surface);
-  --bg-elevated:    var(--color-elevated);
-  --border-default: var(--color-border);
-  --border-strong:  var(--color-border-strong);
-  --text-primary:   var(--color-text-primary);
-  --text-secondary: var(--color-text-secondary);
-  --text-tertiary:  var(--color-text-tertiary);
-}
+  /* Space ----------------------------------------------------------------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 22px; --space-6: 28px; --space-7: 38px; --space-8: 52px;
 
-/* ----------------------------------------------------------------------------
- * Theme aliases. Components only reference semantic names, so flipping
- * `data-theme` on <html> swaps the entire surface palette at once.
- * -------------------------------------------------------------------------- */
+  /* Radius ---------------------------------------------------------------- */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
 
-:root,
-[data-theme="light"] {
-  --color-canvas:         var(--color-light-50);
-  --color-surface:        var(--color-light-100);
-  --color-elevated:       var(--color-light-200);
-  --color-border:         var(--color-light-300);
-  --color-border-strong:  var(--color-light-400);
-  --color-text-primary:   var(--color-light-900);
-  --color-text-secondary: var(--color-light-600);
-  --color-text-tertiary:  var(--color-light-700);
-  --color-text-muted:     var(--color-light-500);
-  --color-highlight-soft: var(--color-accent-soft);
-  --row-hover: rgba(79, 70, 229, 0.045);
-  --grain: rgba(20, 29, 43, 0.03);
-}
+  /* Cool slate-paper neutrals (light) ------------------------------------ */
+  --color-canvas:        #E9EDF3;   /* page — cool paper */
+  --color-surface:       #FFFFFF;   /* cards */
+  --color-elevated:      #F6F8FC;   /* raised fills, table head */
+  --color-border:        #DCE2EC;
+  --color-border-strong: #C3CCDA;
+  --color-text-primary:  #151A23;
+  --color-text-secondary:#4E5A6E;
+  --color-text-tertiary: #2A3342;
+  --color-text-muted:    #818D9F;
 
-/* Dark theme — soft, low-glare slate. No pure black, no near-black: the
- * dimmest surface is a desaturated charcoal (#171B22), and the elevation
- * ladder steps up logically from there. Text is off-white, never #FFF, to
- * kill glare. Accent is a light indigo (#A5B4FC) tuned for AA on dark.
- *
- * Measured WCAG contrast (computed, sRGB):
- *   text-primary   #E6EAF1 vs canvas #171B22 = 14.31:1  (AAA)
- *   text-secondary #AEB8C6 vs canvas          =  8.61:1  (AAA)
- *   text-muted     #7E8896 vs canvas          =  4.81:1  (AA, body)
- *   accent         #A5B4FC vs canvas          =  9.7:1   (AAA, UI/large)
- *   accent         #A5B4FC vs surface #1F242E =  8.7:1   (AAA)
- * Body text vs canvas ≥ 4.5:1 and large/UI ≥ 3:1 are satisfied. */
-[data-theme="dark"] {
-  --color-canvas:         #171B22;   /* dimmest — soft charcoal, not black */
-  --color-surface:        #1F242E;   /* cards */
-  --color-elevated:       #272D38;   /* sidebar / topbar / table head */
-  --color-border:         #353C49;
-  --color-border-strong:  #454D5C;
-  --color-text-primary:   #E6EAF1;   /* soft off-white, not #FFF */
-  --color-text-secondary: #AEB8C6;
-  --color-text-tertiary:  #C3CBD7;
-  --color-text-muted:     #7E8896;
-  /* Lighter indigo — gentle, AA on the dark surface (#A5B4FC vs #171B22
-     ≈ 9.7:1 AAA; vs surface #1F242E ≈ 8.7:1 AAA). */
-  --color-accent:         #A5B4FC;
-  --color-accent-text:    #1E1B4B;   /* deep indigo ink on the lighter accent */
-  --color-accent-deep:    #818CF8;
-  --color-accent-soft:    rgba(129, 140, 248, 0.16);
-  --color-highlight-soft: rgba(129, 140, 248, 0.16);
-  --row-hover: rgba(129, 140, 248, 0.08);
-  --grain: rgba(255, 255, 255, 0.02);
-}
-
-/* ----------------------------------------------------------------------------
- * Tailwind v4 tokens — feeds utility generation (bg-canvas, etc.). Browsers
- * ignore @theme; the :root block above is what they read.
- * -------------------------------------------------------------------------- */
-
-@theme {
-  --color-gray-950: #0D1420;
-  --color-gray-900: #15202F;
-  --color-gray-800: #1E2B3D;
-  --color-gray-700: #2C3A4F;
-  --color-gray-600: #3D4D64;
-  --color-gray-500: #5E6E86;
-  --color-gray-400: #8A98AD;
-  --color-gray-300: #BAC5D4;
-  --color-gray-100: #E9EEF5;
-
-  --color-light-50:  #F2F5F9;
-  --color-light-100: #FFFFFF;
-  --color-light-200: #FAFBFD;
-  --color-light-300: #DCE3EC;
-  --color-light-400: #C2CCDA;
-  --color-light-500: #6E7B8F;
-  --color-light-600: #45526A;
-  --color-light-700: #28344A;
-  --color-light-900: #141D2B;
-
-  --color-accent:      #4F46E5;
+  /* Cobalt accent --------------------------------------------------------- */
+  --color-accent:      #2B54E0;
+  --color-accent-deep: #1E3FB8;
   --color-accent-text: #FFFFFF;
-  --color-accent-deep: #4338CA;
-  --color-accent-soft: #EEF0FF;
+  --color-accent-soft: #E7ECFD;
 
-  --color-canvas:        var(--color-light-50);
-  --color-surface:       var(--color-light-100);
-  --color-elevated:      var(--color-light-200);
-  --color-border:        var(--color-light-300);
-  --color-border-strong: var(--color-light-400);
-  --color-text-primary:   var(--color-light-900);
-  --color-text-secondary: var(--color-light-600);
-  --color-text-tertiary:  var(--color-light-700);
-  --color-text-muted:     var(--color-light-500);
-  --color-highlight-soft: var(--color-accent-soft);
+  /* Semantic chips -------------------------------------------------------- */
+  --ok-text:#0C6B49;  --ok-bg:#E2F4EB;  --ok-bd:#B2E0C8;  --ok-dot:#11936A;
+  --warn-text:#9A5B0B;--warn-bg:#FBF0DA;--warn-bd:#ECCF8E;--warn-dot:#CC8A1C;
+  --bad-text:#B0271A; --bad-bg:#FBEAE7; --bad-bd:#F0BDB4; --bad-dot:#D63B27;
 
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  /* Dark ink sidebar rail (signature — dark in both themes) -------------- */
+  --side-bg:        #12161F;
+  --side-bg-2:      #0E121A;
+  --side-text:      #C4CCDA;
+  --side-text-dim:  #788499;
+  --side-border:    rgba(255,255,255,.075);
+  --side-accent:    #7C97FF;
+  --side-active-bg: rgba(124,151,255,.15);
+  --side-active-text:#DDE5FF;
+
+  /* Atmosphere ------------------------------------------------------------ */
+  --grid:  rgba(21,32,52,.045);
+  --glow:  rgba(43,84,224,.10);
+
+  /* Elevation ------------------------------------------------------------- */
+  --shadow-sm: 0 1px 2px rgba(20,29,45,.06), 0 0 0 1px rgba(20,29,45,.015);
+  --shadow-md: 0 2px 6px -2px rgba(20,29,45,.10), 0 14px 32px -16px rgba(20,29,45,.22);
+  --shadow-pop:0 8px 18px -6px rgba(20,29,45,.16), 0 30px 60px -24px rgba(20,29,45,.34);
+
+  /* Legacy aliases some inline styles read ------------------------------- */
+  --rio-muted: var(--color-text-muted);
+  --accent: var(--color-accent);
+  --accent-deep: var(--color-accent-deep);
+  --bg-canvas: var(--color-canvas);
+  --bg-surface: var(--color-surface);
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --border-default: var(--color-border);
 }
 
-/* ----------------------------------------------------------------------------
- * Base layer — resets and global type.
- * -------------------------------------------------------------------------- */
+[data-theme="dark"] {
+  /* Developer-friendly dark — gray-leaning, clearly layered, never murky.
+     Elevation ladder by role (lightest → darkest):
+       elevated #353D47  ·  card/surface #2B313A  ·  canvas #21262D  ·  sidebar #1A1F26
+     Visible borders carry the separation between every layer. */
+  --color-canvas:        #21262D;
+  --color-surface:       #2B313A;
+  --color-elevated:      #353D47;
+  --color-border:        #414A55;
+  --color-border-strong: #545E6B;
+  --color-text-primary:  #D8DEE6;
+  --color-text-secondary:#9AA6B3;
+  --color-text-tertiary: #BFC8D2;
+  --color-text-muted:    #7E8995;
 
-@layer base {
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  html {
-    font-family: var(--font-sans);
-    background: var(--color-canvas);
-    color: var(--color-text-primary);
-    font-size: 17px;
-    line-height: 1.6;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    accent-color: var(--color-accent);
-  }
-  body {
-    background: var(--color-canvas);
-    color: var(--color-text-primary);
-    min-height: 100vh;
-    font-family: var(--font-sans);
-    font-size: var(--text-body);
-    font-weight: 500;
-    line-height: 1.7;
-  }
-  h1, h2, h3, h4 {
-    margin: 0;
-    font-family: var(--font-sans);
-    font-weight: 700;
-    color: var(--color-text-primary);
-    letter-spacing: -0.01em;
-  }
-  h1 { font-size: var(--text-hero); line-height: 1.18; letter-spacing: -0.01em; }
-  h2 { font-size: var(--text-h2);  line-height: 1.33; }
-  h3 { font-size: var(--text-h3);  line-height: 1.35; }
-  h4 { font-size: var(--text-h3);  line-height: 1.35; }
-  p  { margin: 0; font-size: var(--text-body); line-height: 1.7; font-weight: 500; color: var(--color-text-secondary); }
-  a  { color: var(--color-accent); text-decoration: none; font-weight: 600; transition: color .14s ease; }
-  a:hover { color: var(--color-accent-deep); }
-  strong { font-weight: 700; color: var(--color-text-primary); }
-  code {
-    font-family: var(--font-mono);
-    font-size: 0.86em;
-    font-weight: 600;
-    padding: 0.12em 0.4em;
-    border-radius: var(--radius-sm);
-    background: var(--color-highlight-soft);
-    color: var(--color-accent-deep);
-    border: 1px solid color-mix(in srgb, var(--color-accent) 18%, transparent);
-  }
-  [data-theme="dark"] code { color: var(--color-accent); }
-  ::selection { background: var(--color-accent); color: var(--color-accent-text); }
-  :focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-    border-radius: var(--radius-sm);
-  }
-  ::-webkit-scrollbar { width: 12px; height: 12px; }
-  ::-webkit-scrollbar-thumb {
-    background: var(--color-border-strong);
-    border: 3px solid var(--color-canvas);
-    border-radius: 999px;
-  }
-  ::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
+  --color-accent:      #7E9BFF;
+  --color-accent-deep: #99B0FF;
+  --color-accent-text: #10182B;
+  --color-accent-soft: rgba(126,155,255,.16);
+
+  --ok-text:#76E0B0;  --ok-bg:rgba(40,160,116,.18);  --ok-bd:rgba(70,180,132,.42);  --ok-dot:#49D29B;
+  --warn-text:#F1CB86; --warn-bg:rgba(200,146,46,.18); --warn-bd:rgba(214,166,78,.42); --warn-dot:#E7B259;
+  --bad-text:#F4ABA1;  --bad-bg:rgba(216,86,66,.18);   --bad-bd:rgba(222,116,100,.42); --bad-dot:#EA7E70;
+
+  /* Sidebar — the anchored darkest layer, but a slate gray, not black */
+  --side-bg:        #1A1F26;
+  --side-bg-2:      #171C22;
+  --side-text:      #BBC5D1;
+  --side-text-dim:  #7E8995;
+  --side-border:    rgba(255,255,255,.07);
+  --side-accent:    #7E9BFF;
+  --side-active-bg: rgba(126,155,255,.16);
+  --side-active-text:#DCE4FF;
+
+  --grid: rgba(255,255,255,.026);
+  --glow: rgba(126,155,255,.10);
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.26), 0 0 0 1px rgba(255,255,255,.022);
+  --shadow-md: 0 2px 8px -2px rgba(0,0,0,.34), 0 16px 34px -18px rgba(0,0,0,.48);
+  --shadow-pop:0 10px 28px -8px rgba(0,0,0,.42), 0 30px 60px -24px rgba(0,0,0,.56);
 }
+
+/* In dark, the sidebar sits just below the canvas — separate it with a soft
+   light seam instead of a hard black edge for a crisp, professional layer. */
+[data-theme="dark"] .rio-sidebar { border-right: 1px solid rgba(255,255,255,.06); }
+[data-theme="dark"] .rio-topbar--inset { border-bottom-color: var(--color-border); }
 
 /* ============================================================================
- * Components
- * ============================================================================ */
-
-@layer components {
-
-  /* --- Shell ------------------------------------------------------------- */
-  .rio-shell {
-    display: grid;
-    grid-template-columns: 268px minmax(0, 1fr);
-    min-height: 100vh;
-  }
-  .rio-main {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    padding: var(--space-6) var(--space-7) var(--space-7);
-    gap: var(--space-5);
-  }
-  .rio-main > .rio-page-header,
-  .rio-main > .rio-page-head { margin-top: var(--space-1); }
-
-  /* --- Sidebar ----------------------------------------------------------- */
-  .rio-sidebar {
-    position: sticky;
-    top: 0;
-    align-self: start;
-    height: 100vh;
-    overflow-y: auto;
-    background: var(--color-elevated);
-    border-right: 1px solid var(--color-border);
-    padding: var(--space-5) var(--space-4) var(--space-6);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-  }
-  .rio-sidebar__brand {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-1) var(--space-2) var(--space-4);
-    color: var(--color-text-primary);
-  }
-  .rio-sidebar__brand:hover { color: var(--color-text-primary); }
-  .rio-sidebar__mark {
-    display: grid;
-    place-items: center;
-    width: 36px; height: 36px;
-    flex: none;
-    background: var(--color-accent);
-    color: var(--color-accent-text);
-    border-radius: var(--radius-md);
-    font-family: var(--font-sans);
-    font-weight: 700;
-    font-size: 18px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.16), var(--shadow-sm);
-  }
-  .rio-sidebar__wordmark {
-    font-family: var(--font-sans);
-    font-weight: 700;
-    font-size: 18px;
-    letter-spacing: -0.015em;
-    color: var(--color-text-primary);
-  }
-  .rio-sidebar__group { display: flex; flex-direction: column; gap: 2px; }
-  .rio-sidebar__section {
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-    padding: 0 var(--space-3) var(--space-2);
-  }
-  .rio-sidebar__item {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    padding: 10px var(--space-3);
-    border-radius: var(--radius-md);
-    color: var(--color-text-secondary);
-    font-size: var(--text-meta);
-    font-weight: 600;
-    line-height: 1.3;
-    transition: background .14s ease, color .14s ease;
-  }
-  .rio-sidebar__item:hover {
-    background: var(--color-highlight-soft);
-    color: var(--color-text-primary);
-  }
-  .rio-sidebar__item.is-active,
-  .rio-sidebar__item.is-current {
-    background: var(--color-accent-soft);
-    color: var(--color-accent-deep);
-    font-weight: 700;
-    box-shadow: inset 3px 0 0 var(--color-accent);
-  }
-  [data-theme="dark"] .rio-sidebar__item.is-active,
-  [data-theme="dark"] .rio-sidebar__item.is-current { color: var(--color-accent); }
-  .rio-sidebar__count {
-    font-family: var(--font-mono);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-text-muted);
-    background: var(--color-canvas);
-    border: 1px solid var(--color-border);
-    border-radius: 999px;
-    padding: 1px 9px;
-    min-width: 24px;
-    text-align: center;
-  }
-  .rio-sidebar__item.is-active .rio-sidebar__count,
-  .rio-sidebar__item.is-current .rio-sidebar__count {
-    color: var(--color-accent-deep);
-    border-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
-    background: transparent;
-  }
-
-  /* --- Topbar ------------------------------------------------------------ */
-  .rio-topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    padding-bottom: var(--space-4);
-    margin-bottom: var(--space-2);
-    border-bottom: 1px solid var(--color-border);
-  }
-  .rio-topbar--inset { margin: calc(var(--space-6) * -1) calc(var(--space-7) * -1) 0; padding: var(--space-4) var(--space-7); margin-bottom: var(--space-2); border-bottom: 1px solid var(--color-border); }
-  .rio-topbar__status {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    font-size: var(--text-small);
-    font-weight: 600;
-    color: var(--color-text-secondary);
-  }
-  .rio-topbar__dot {
-    width: 9px; height: 9px;
-    border-radius: 999px;
-    background: var(--color-accent);
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent);
-    animation: rio-pulse 2.6s ease-in-out infinite;
-  }
-  .rio-topbar__brand { display: flex; align-items: center; gap: var(--space-2); }
-  .rio-topbar__mark {
-    display: grid; place-items: center;
-    width: 28px; height: 28px;
-    background: var(--color-accent); color: var(--color-accent-text);
-    border-radius: var(--radius-sm);
-    font-family: var(--font-sans); font-weight: 700; font-size: 15px;
-  }
-  .rio-topbar__wordmark { font-family: var(--font-sans); font-weight: 700; }
-  .rio-topbar__nav { display: flex; align-items: center; gap: var(--space-2); }
-  .rio-topbar__link {
-    font-size: var(--text-meta);
-    font-weight: 600;
-    color: var(--color-text-secondary);
-    padding: 7px var(--space-3);
-    border-radius: var(--radius-sm);
-  }
-  .rio-topbar__link:hover { color: var(--color-text-primary); background: var(--color-highlight-soft); }
-  .rio-topbar__logout-form { margin: 0; }
-
-  /* Environment chip */
-  .rio-env-chip {
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--color-text-secondary);
-    background: var(--color-canvas);
-    border: 1px solid var(--color-border-strong);
-    border-radius: 999px;
-    padding: 4px 12px;
-  }
-  .rio-env-chip.is-prod {
-    color: var(--color-accent-text);
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-  }
-
-  /* Theme toggle */
-  .rio-theme-toggle {
-    display: grid; place-items: center;
-    width: 38px; height: 38px;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text-secondary);
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    font-size: 17px;
-    line-height: 1;
-    transition: border-color .14s ease, color .14s ease, background .14s ease;
-  }
-  .rio-theme-toggle:hover {
-    border-color: var(--color-border-strong);
-    color: var(--color-accent);
-    background: var(--color-highlight-soft);
-  }
-
-  /* --- Statusbar (footer) ------------------------------------------------ */
-  .rio-statusbar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-top: auto;
-    padding-top: var(--space-5);
-    border-top: 1px solid var(--color-border);
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-  }
-  .rio-statusbar__sep { color: var(--color-border-strong); }
-  .rio-statusbar__spacer { flex: 1; }
-
-  /* --- Page header ------------------------------------------------------- */
-  .rio-page-header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-rows: auto auto;
-    align-items: center;
-    column-gap: var(--space-4);
-    row-gap: var(--space-2);
-  }
-  .rio-page-header h1 { grid-column: 1; grid-row: 2; }
-  .rio-page-header .rio-breadcrumb { grid-column: 1; grid-row: 1; }
-  .rio-page-header__actions {
-    grid-column: 2; grid-row: 1 / span 2;
-    display: flex; align-items: center; gap: var(--space-2);
-    justify-self: end;
-  }
-  .rio-page-head { display: flex; flex-direction: column; gap: var(--space-2); max-width: 68ch; }
-  .rio-page-head--with-action { flex-direction: row; align-items: center; justify-content: space-between; max-width: none; }
-  .rio-page-head p { color: var(--color-text-secondary); }
-  .rio-accent-word { color: var(--color-accent); }
-
-  .rio-breadcrumb {
-    display: flex; align-items: center; gap: var(--space-2);
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-  }
-  .rio-breadcrumb a { color: var(--color-text-muted); font-weight: 700; }
-  .rio-breadcrumb a:hover { color: var(--color-accent); }
-  .rio-breadcrumb__sep { color: var(--color-border-strong); }
-
-  /* --- Cards ------------------------------------------------------------- */
-  .rio-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-5) var(--space-5);
-    box-shadow: var(--shadow-sm);
-  }
-  .rio-card--featured { border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); }
-  .rio-card__title { font-size: var(--text-h3); font-weight: 700; margin: 0 0 var(--space-3); }
-  .rio-card__meta { font-family: var(--font-sans); font-size: var(--text-micro); font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--color-text-muted); }
-  .rio-card > table.rio-table { margin: 0; }
-  .rio-card > h2 { font-size: var(--text-h3); font-weight: 700; margin: 0 0 var(--space-3); }
-  .rio-card > h2:not(:first-child) { margin-top: var(--space-5); }
-  .rio-card ul, .rio-card ol { margin: 0; padding-left: 1.3rem; color: var(--color-text-secondary); }
-  .rio-card li { margin: var(--space-2) 0; line-height: 1.55; font-weight: 500; }
-  .rio-card li::marker { color: var(--color-accent); font-weight: 700; }
-
-  /* Cards that contain a full-bleed table lose their inner padding. */
-  .rio-card:has(> .rio-table) { padding: 0; overflow: hidden; }
-
-  /* --- Stat grid (dashboard) -------------------------------------------- */
-  .rio-stat-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
-    gap: var(--space-4);
-  }
-  .rio-stat {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-5);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    color: var(--color-text-primary);
-    box-shadow: var(--shadow-sm);
-    overflow: hidden;
-    transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
-  }
-  .rio-stat::after {
-    content: "";
-    position: absolute; inset: 0 0 auto 0;
-    height: 3px;
-    background: transparent;
-    transition: background .16s ease;
-  }
-  .rio-stat:hover {
-    transform: translateY(-2px);
-    border-color: var(--color-border-strong);
-    box-shadow: var(--shadow-md);
-    color: var(--color-text-primary);
-  }
-  .rio-stat:hover::after { background: var(--color-border-strong); }
-  .rio-stat__value {
-    font-size: var(--text-stat);
-    font-weight: 700;
-    line-height: 1;
-    letter-spacing: -0.025em;
-    font-variant-numeric: tabular-nums;
-  }
-  .rio-stat__label {
-    font-family: var(--font-sans);
-    font-size: var(--text-small);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-  }
-  .rio-stat--featured { border-color: color-mix(in srgb, var(--color-accent) 45%, var(--color-border)); }
-  .rio-stat--featured::after { background: var(--color-accent); }
-  .rio-stat--featured .rio-stat__value { color: var(--color-accent); }
-
-  /* --- Toolbar ----------------------------------------------------------- */
-  .rio-toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-  }
-  .rio-toolbar__count {
-    font-family: var(--font-sans);
-    font-size: var(--text-small);
-    font-weight: 700;
-    color: var(--color-text-muted);
-    margin-left: auto;
-  }
-
-  /* --- Inputs ------------------------------------------------------------ */
-  .rio-input, .rio-select, .rio-textarea,
-  .rio-form__input,
-  .rio-form input, .rio-form select, .rio-form textarea {
-    width: 100%;
-    font: inherit;
-    font-size: var(--text-meta);
-    font-weight: 500;
-    color: var(--color-text-primary);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    padding: 11px var(--space-4);
-    line-height: 1.4;
-    transition: border-color .14s ease, box-shadow .14s ease;
-  }
-  .rio-input::placeholder, .rio-form__input::placeholder,
-  .rio-form input::placeholder, .rio-form textarea::placeholder { color: var(--color-text-muted); font-weight: 500; }
-  .rio-input:focus, .rio-select:focus, .rio-textarea:focus,
-  .rio-form__input:focus,
-  .rio-form input:focus, .rio-form select:focus, .rio-form textarea:focus {
-    outline: none;
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
-  }
-  .rio-textarea, .rio-form__input--textarea,
-  .rio-form textarea { min-height: 120px; resize: vertical; line-height: 1.55; }
-  .rio-form__input--inline, .rio-select { width: auto; min-width: 180px; }
-  select.rio-form__input, .rio-select, .rio-form select { cursor: pointer; }
-
-  /* --- Forms ------------------------------------------------------------- */
-  .rio-form { display: flex; flex-direction: column; gap: var(--space-4); }
-  .rio-form__field, .rio-field { display: flex; flex-direction: column; gap: var(--space-2); }
-  .rio-form__label, .rio-label {
-    font-size: var(--text-small);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-  .rio-form__required { color: var(--color-accent); }
-  .rio-form__help { font-size: var(--text-small); font-weight: 500; color: var(--color-text-muted); line-height: 1.5; }
-  .rio-form__help--error { color: #C0392B; font-weight: 600; }
-  [data-theme="dark"] .rio-form__help--error { color: #F1998E; }
-  .rio-form__check { display: flex; align-items: center; gap: var(--space-2); }
-  .rio-form__check input { width: auto; }
-  .rio-form__actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--space-3);
-    margin-top: var(--space-2);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border);
-  }
-
-  /* --- Buttons ----------------------------------------------------------- */
-  .rio-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-2);
-    font-family: var(--font-sans);
-    font-size: var(--text-meta);
-    font-weight: 700;
-    line-height: 1;
-    color: var(--color-text-primary);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border-strong);
-    border-radius: var(--radius-md);
-    padding: 11px var(--space-5);
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background .14s ease, border-color .14s ease, color .14s ease, transform .06s ease;
-  }
-  .rio-btn:hover { border-color: var(--color-text-muted); color: var(--color-text-primary); background: var(--color-elevated); }
-  .rio-btn:active { transform: translateY(1px); }
-  .rio-btn:disabled { opacity: .5; cursor: not-allowed; }
-
-  .rio-btn--primary {
-    color: var(--color-accent-text);
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255,255,255,.12);
-  }
-  .rio-btn--primary:hover { background: var(--color-accent-deep); border-color: var(--color-accent-deep); color: var(--color-accent-text); }
-
-  .rio-btn--secondary { background: var(--color-elevated); }
-
-  .rio-btn--ghost {
-    background: transparent;
-    border-color: transparent;
-    color: var(--color-text-secondary);
-    padding-inline: var(--space-3);
-  }
-  .rio-btn--ghost:hover { background: var(--color-highlight-soft); border-color: transparent; color: var(--color-accent-deep); }
-  [data-theme="dark"] .rio-btn--ghost:hover { color: var(--color-accent); }
-
-  .rio-btn--block { width: 100%; }
-
-  /* --- Table ------------------------------------------------------------- */
-  .rio-table-wrap { overflow-x: auto; }
-  .rio-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--text-meta);
-  }
-  .rio-table thead th {
-    text-align: left;
-    padding: var(--space-3) var(--space-4);
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-    background: var(--color-elevated);
-    border-bottom: 2px solid var(--color-border-strong);
-    white-space: nowrap;
-  }
-  .rio-table tbody td {
-    padding: var(--space-4) var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-    font-weight: 500;
-    vertical-align: middle;
-  }
-  .rio-table tbody tr:last-child td { border-bottom: 0; }
-  .rio-table tbody tr { transition: background .12s ease; }
-  .rio-table tbody tr:hover { background: var(--row-hover); }
-  .rio-table tbody tr:hover td { color: var(--color-text-primary); }
-  .rio-table a { color: var(--color-accent); font-weight: 700; }
-  .rio-table a:hover { color: var(--color-accent-deep); text-decoration: underline; text-underline-offset: 2px; }
-  /* Trailing actions column sits to the right, quiet until row hover. */
-  .rio-table td:last-child { white-space: nowrap; text-align: right; }
-  .rio-table td:last-child .rio-btn { opacity: .72; }
-  .rio-table tr:hover td:last-child .rio-btn { opacity: 1; }
-
-  /* Selected row / item state */
-  .rio-table tbody tr.is-selected { background: var(--color-highlight-soft); }
-  .rio-table tbody tr.is-selected td { color: var(--color-text-primary); }
-  .is-selected { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent); }
-
-  /* Rust-rendered cell classes */
-  .rio-cell-primary { font-weight: 700; color: var(--color-text-primary); }
-  .rio-cell-id {
-    font-family: var(--font-mono);
-    font-size: var(--text-mono);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-text-muted);
-  }
-  .rio-num { font-variant-numeric: tabular-nums; }
-
-  /* --- Pills / status ---------------------------------------------------- */
-  .rio-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    line-height: 1;
-    padding: 5px 10px 5px 9px;
-    border-radius: 999px;
-    border: 1px solid var(--color-border-strong);
-    color: var(--color-text-secondary);
-    background: var(--color-surface);
-    white-space: nowrap;
-  }
-  .rio-pill::before {
-    content: "";
-    width: 7px; height: 7px;
-    border-radius: 999px;
-    background: var(--color-text-muted);
-    flex: none;
-  }
-  .rio-pill--lift { align-self: flex-start; margin-bottom: var(--space-4); }
-
-  .rio-pill-emerald { color: #0B6B45; background: #E4F6EC; border-color: #A6E0C2; }
-  .rio-pill-emerald::before { background: #138A5C; }
-  .rio-pill-amber   { color: #8A5008; background: #FBF0D9; border-color: #ECC988; }
-  .rio-pill-amber::before   { background: #CC8A1C; }
-  .rio-pill-slate   { color: var(--color-text-secondary); background: var(--color-elevated); border-color: var(--color-border-strong); }
-  .rio-pill-slate::before   { background: var(--color-text-muted); }
-  [data-theme="dark"] .rio-pill-emerald { color: #74E2AD; background: rgba(19,138,92,.16); border-color: rgba(19,138,92,.42); }
-  [data-theme="dark"] .rio-pill-amber   { color: #F3C173; background: rgba(204,138,28,.16); border-color: rgba(204,138,28,.42); }
-
-  .badge-status, [data-status] {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    padding: 5px 10px;
-    border-radius: 999px;
-    border: 1px solid var(--color-border-strong);
-    color: var(--color-text-secondary);
-    background: var(--color-surface);
-  }
-
-  /* --- Detail / meta lists ---------------------------------------------- */
-  .rio-detail-list, .rio-meta-list {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--space-3) var(--space-5);
-    margin: 0;
-  }
-  .rio-detail-list dt, .rio-meta-list dt {
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-    align-self: center;
-  }
-  .rio-detail-list dd, .rio-meta-list dd {
-    margin: 0;
-    font-weight: 600;
-    color: var(--color-text-primary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* --- Detail grid (edit form + side panel) ----------------------------- */
-  .rio-detail-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 296px;
-    gap: var(--space-5);
-    align-items: start;
-  }
-  .rio-detail-main { min-width: 0; }
-  .rio-detail-single { max-width: 760px; }
-  .rio-detail-side { position: sticky; top: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
-
-  /* --- Alerts ------------------------------------------------------------ */
-  .rio-alert {
-    padding: var(--space-4) var(--space-4);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--color-border);
-    border-left-width: 4px;
-    font-size: var(--text-meta);
-    font-weight: 600;
-    color: var(--color-text-primary);
-    background: var(--color-surface);
-  }
-  .rio-alert--danger {
-    color: #962119;
-    background: #FBEEEC;
-    border-color: #EEB6AF;
-    border-left-color: #C0392B;
-  }
-  [data-theme="dark"] .rio-alert--danger { color: #F4B3AC; background: rgba(192,57,43,.13); border-color: rgba(192,57,43,.42); border-left-color: #E5675C; }
-
-  /* --- Empty state ------------------------------------------------------- */
-  .rio-empty {
-    text-align: center;
-    padding: var(--space-8) var(--space-5);
-    border: 1px dashed var(--color-border-strong);
-    border-radius: var(--radius-lg);
-    background: color-mix(in srgb, var(--color-surface) 60%, transparent);
-  }
-  .rio-empty .rio-card__title { margin-bottom: var(--space-2); }
-  .rio-empty p { color: var(--color-text-muted); max-width: 44ch; margin: 0 auto; }
-
-  /* --- Pagination -------------------------------------------------------- */
-  .rio-pagination {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    flex-wrap: wrap;
-    font-family: var(--font-sans);
-    font-size: var(--text-small);
-    font-weight: 700;
-    color: var(--color-text-muted);
-  }
-  .rio-pagination__pages { display: flex; align-items: center; gap: 4px; }
-  .rio-pagination__pages a,
-  .rio-pagination__link {
-    display: grid; place-items: center;
-    min-width: 36px; height: 36px;
-    padding: 0 10px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    color: var(--color-text-secondary);
-    background: var(--color-surface);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    transition: border-color .12s ease, color .12s ease, background .12s ease;
-  }
-  .rio-pagination__pages a:hover,
-  .rio-pagination__link:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
-  .rio-pagination__pages a.is-active,
-  .rio-pagination__link--active {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
-    color: var(--color-accent-text);
-  }
-
-  /* --- Timeline (actions) ------------------------------------------------ */
-  .rio-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-4); }
-  .rio-timeline__dot {
-    width: 10px; height: 10px; border-radius: 999px;
-    background: var(--color-accent);
-    box-shadow: 0 0 0 4px var(--color-highlight-soft);
-  }
-
-  /* --- Meta text --------------------------------------------------------- */
-  .rio-meta {
-    font-family: var(--font-sans);
-    font-size: var(--text-micro);
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-  }
-
-  /* --- Auth pages -------------------------------------------------------- */
-  .rio-auth {
-    width: 100%;
-    max-width: 408px;
-    margin: 0 auto;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-pop);
-    padding: var(--space-7) var(--space-6) var(--space-6);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-  .rio-auth form { display: flex; flex-direction: column; gap: var(--space-4); margin: 0; }
-  .rio-auth__header { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-2); margin-bottom: var(--space-1); }
-  .rio-auth__mark {
-    display: grid; place-items: center;
-    width: 52px; height: 52px;
-    background: var(--color-accent); color: var(--color-accent-text);
-    border-radius: var(--radius-md);
-    font-family: var(--font-sans); font-weight: 700; font-size: 24px;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.16), var(--shadow-md);
-    margin-bottom: var(--space-2);
-  }
-  .rio-auth__title { font-size: var(--text-h2); }
-  .rio-auth__subtitle {
-    font-family: var(--font-sans);
-    font-size: var(--text-small);
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--color-text-muted);
-  }
+ * Base
+ * ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+html {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  accent-color: var(--color-accent);
 }
-
-/* ============================================================================
- * Atmosphere + motion — un-layered so they reliably win the cascade.
- * ============================================================================ */
-
-/* A faint dot grid + cool vignette gives the canvas depth without noise. */
-body.admin-shell {
-  background-color: var(--color-canvas);
-  background-image:
-    radial-gradient(var(--grain) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: -1px -1px;
-}
-
-body.admin-auth {
-  display: grid;
-  place-items: center;
+body {
+  margin: 0;
   min-height: 100vh;
-  padding: var(--space-5);
+  background: var(--color-canvas);
+  color: var(--color-text-primary);
+  font-size: var(--text-body);
+  font-weight: 450;
+  line-height: 1.6;
+}
+h1,h2,h3,h4 { margin: 0; font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.02em; line-height: 1.15; }
+h1 { font-size: var(--text-hero); }
+h2 { font-size: var(--text-h2); }
+h3 { font-size: var(--text-h3); letter-spacing: -0.01em; }
+p  { margin: 0; color: var(--color-text-secondary); line-height: 1.65; }
+a  { color: var(--color-accent); text-decoration: none; font-weight: 600; transition: color .14s ease; }
+a:hover { color: var(--color-accent-deep); }
+strong { font-weight: 700; color: var(--color-text-primary); }
+em { color: var(--color-text-secondary); }
+code {
+  font-family: var(--font-mono);
+  font-size: .85em;
+  font-weight: 600;
+  padding: .1em .42em;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-deep);
+}
+[data-theme="dark"] code { color: var(--color-accent); }
+::selection { background: var(--color-accent); color: var(--color-accent-text); }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-thumb { background: var(--color-border-strong); border: 3px solid var(--color-canvas); border-radius: 999px; }
+
+/* Utilities present in markup */
+noscript { display: none; }
+.bg-canvas { background: var(--color-canvas); }
+.text-primary { color: var(--color-text-primary); }
+.rio-visually-hidden {
+  position: absolute !important; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ============================================================================
+ * Atmosphere — blueprint grid + accent glow
+ * ========================================================================== */
+body.admin-shell, body.admin-auth {
   background-color: var(--color-canvas);
   background-image:
-    radial-gradient(120% 80% at 50% -10%, var(--color-highlight-soft) 0%, transparent 55%),
-    radial-gradient(var(--grain) 1px, transparent 1px);
-  background-size: auto, 26px 26px;
+    radial-gradient(120% 60% at 78% -8%, var(--glow) 0%, transparent 60%),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: auto, 30px 30px, 30px 30px;
+  background-position: 0 0, -1px -1px, -1px -1px;
 }
 
-/* Page-load reveal — one quiet staggered rise. */
-@keyframes rio-rise {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
+/* ============================================================================
+ * Shell + sidebar (signature dark rail)
+ * ========================================================================== */
+.rio-shell { display: grid; grid-template-columns: 264px minmax(0,1fr); min-height: 100vh; }
+
+.rio-sidebar {
+  position: sticky; top: 0; align-self: start;
+  height: 100vh; overflow-y: auto;
+  background:
+    linear-gradient(180deg, var(--side-bg) 0%, var(--side-bg-2) 100%);
+  border-right: 1px solid rgba(0,0,0,.4);
+  padding: var(--space-5) var(--space-4) var(--space-5);
+  display: flex; flex-direction: column; gap: var(--space-6);
 }
-@keyframes rio-pulse {
-  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent); }
-  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 4%, transparent); }
+.rio-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-color: transparent; }
+
+.rio-sidebar__brand {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-1) var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--side-border);
+  color: #fff;
+}
+.rio-sidebar__brand:hover { color: #fff; }
+.rio-sidebar__mark {
+  display: grid; place-items: center; width: 38px; height: 38px; flex: none;
+  background: var(--color-accent); color: #fff;
+  border-radius: 10px; font-weight: 800; font-size: 18px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 6px 16px -6px var(--color-accent);
+}
+.rio-sidebar__wordmark { font-weight: 800; font-size: 18px; letter-spacing: -.02em; color: #fff; }
+
+.rio-sidebar__group { display: flex; flex-direction: column; gap: 2px; }
+.rio-sidebar__section {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--side-text-dim);
+  padding: 0 var(--space-3) var(--space-3);
+}
+.rio-sidebar__item {
+  position: relative;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  padding: 9px var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--side-text); font-size: var(--text-meta); font-weight: 550; line-height: 1.3;
+  transition: background .14s ease, color .14s ease;
+}
+.rio-sidebar__item:hover { background: rgba(255,255,255,.05); color: #fff; }
+.rio-sidebar__item.is-active,
+.rio-sidebar__item.is-current {
+  background: var(--side-active-bg); color: var(--side-active-text); font-weight: 700;
+}
+.rio-sidebar__item.is-active::before,
+.rio-sidebar__item.is-current::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px;
+  width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--side-accent); box-shadow: 0 0 12px var(--side-accent);
+}
+.rio-sidebar__count {
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--side-text-dim); background: rgba(255,255,255,.06);
+  border: 1px solid var(--side-border); border-radius: 999px;
+  padding: 1px 8px; min-width: 22px; text-align: center;
+}
+.rio-sidebar__item.is-active .rio-sidebar__count { color: var(--side-active-text); border-color: rgba(124,151,255,.4); }
+.rio-sidebar__lang { margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--side-border); }
+
+/* Lang switcher (sidebar = dark context) */
+.rio-lang-switcher { margin: 0; }
+.rio-lang-switcher__label { display: inline-flex; align-items: center; gap: var(--space-2); width: 100%; }
+.rio-lang-switcher__icon { font-size: 14px; opacity: .85; }
+.rio-sidebar__lang .rio-lang-switcher__select {
+  width: 100%; background: rgba(255,255,255,.05); color: var(--side-text);
+  border: 1px solid var(--side-border); border-radius: var(--radius-md);
+  padding: 7px 10px; font-size: var(--text-small); font-weight: 600; cursor: pointer;
+}
+.rio-sidebar__lang .rio-lang-switcher__select option { color: #1a1f29; }
+
+/* ============================================================================
+ * Main + topbar
+ * ========================================================================== */
+.rio-main {
+  display: flex; flex-direction: column; min-width: 0;
+  padding: var(--space-5) var(--space-7) var(--space-7);
+  gap: var(--space-5);
 }
 
+.rio-topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
+  padding-bottom: var(--space-4); margin-bottom: var(--space-1);
+  border-bottom: 1px solid var(--color-border);
+}
+.rio-topbar--inset {
+  margin: calc(var(--space-5) * -1) calc(var(--space-7) * -1) 0;
+  padding: var(--space-4) var(--space-7);
+  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--color-border);
+}
+.rio-topbar__status {
+  display: flex; align-items: center; gap: var(--space-3);
+  font-family: var(--font-mono); font-size: var(--text-small); font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.rio-topbar__dot {
+  width: 8px; height: 8px; border-radius: 999px; background: var(--color-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  animation: rio-pulse 2.6s ease-in-out infinite;
+}
+.rio-topbar__logout-form { margin: 0; }
+
+.rio-env-chip {
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--color-accent-deep); background: var(--color-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+  border-radius: 999px; padding: 4px 11px;
+}
+[data-theme="dark"] .rio-env-chip { color: var(--color-accent); }
+
+.rio-theme-toggle {
+  display: grid; place-items: center; width: 36px; height: 36px;
+  border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-text-secondary); border-radius: var(--radius-md);
+  cursor: pointer; font-size: 16px; line-height: 1;
+  transition: border-color .14s, color .14s, background .14s;
+}
+.rio-theme-toggle:hover { border-color: var(--color-border-strong); color: var(--color-accent); background: var(--color-elevated); }
+
+/* topbar lang switcher (light context) */
+.rio-topbar .rio-lang-switcher__select {
+  width: auto; min-width: 120px; background: var(--color-surface);
+  color: var(--color-text-secondary); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); padding: 7px 10px; font-size: var(--text-small); font-weight: 600; cursor: pointer;
+}
+
+/* ============================================================================
+ * Page header / breadcrumb / eyebrow
+ * ========================================================================== */
+.rio-page-header {
+  display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto auto;
+  align-items: center; column-gap: var(--space-4); row-gap: var(--space-2);
+}
+.rio-page-header h1 { grid-column: 1; grid-row: 2; }
+.rio-page-header .rio-breadcrumb { grid-column: 1; grid-row: 1; }
+.rio-page-header__actions { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; gap: var(--space-2); justify-self: end; }
+
+.rio-page-head { display: flex; flex-direction: column; gap: var(--space-2); max-width: 70ch; }
+.rio-page-head h1 { font-size: 36px; letter-spacing: -.03em; }
+.rio-page-head p { color: var(--color-text-secondary); font-size: 15.5px; }
+.rio-accent-word { color: var(--color-accent); }
+.rio-stat-grid { margin-top: var(--space-1); }
+
+.rio-breadcrumb {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--color-text-muted);
+}
+.rio-breadcrumb a { color: var(--color-text-muted); font-weight: 700; }
+.rio-breadcrumb a:hover { color: var(--color-accent); }
+.rio-breadcrumb__sep { color: var(--color-border-strong); }
+
+/* Eyebrow pill (dashboard "Workspace overview") */
+.rio-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; line-height: 1;
+  padding: 6px 11px 6px 10px; border-radius: 999px;
+  border: 1px solid var(--color-border-strong); color: var(--color-text-secondary);
+  background: var(--color-surface); white-space: nowrap;
+}
+.rio-pill::before { content: ""; width: 7px; height: 7px; border-radius: 999px; background: var(--color-text-muted); flex: none; }
+.rio-pill--lift { align-self: flex-start; }
+
+/* Status chip variants */
+.rio-pill-emerald { color: var(--ok-text);   background: var(--ok-bg);   border-color: var(--ok-bd); }
+.rio-pill-emerald::before { background: var(--ok-dot); }
+.rio-pill-amber   { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); }
+.rio-pill-amber::before   { background: var(--warn-dot); }
+.rio-pill-rose    { color: var(--bad-text);  background: var(--bad-bg);  border-color: var(--bad-bd); }
+.rio-pill-rose::before    { background: var(--bad-dot); }
+.rio-pill-slate   { color: var(--color-text-secondary); background: var(--color-elevated); border-color: var(--color-border-strong); }
+.rio-pill-slate::before   { background: var(--color-text-muted); }
+.rio-pill-indigo  { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+.rio-pill-indigo::before  { background: var(--color-accent); }
+
+/* ============================================================================
+ * Buttons (compact, refined)
+ * ========================================================================== */
+.rio-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  font-family: var(--font-sans); font-size: var(--text-small); font-weight: 650;
+  line-height: 1; color: var(--color-text-primary);
+  background: var(--color-surface); border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md); padding: 9px 14px; cursor: pointer; white-space: nowrap;
+  transition: background .14s, border-color .14s, color .14s, transform .06s, box-shadow .14s;
+}
+.rio-btn:hover { border-color: var(--color-text-muted); background: var(--color-elevated); color: var(--color-text-primary); }
+.rio-btn:active { transform: translateY(1px); }
+.rio-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.rio-btn--primary {
+  color: var(--color-accent-text); background: var(--color-accent); border-color: var(--color-accent);
+  box-shadow: 0 6px 16px -8px var(--color-accent), inset 0 1px 0 rgba(255,255,255,.18);
+}
+.rio-btn--primary:hover { background: var(--color-accent-deep); border-color: var(--color-accent-deep); color: var(--color-accent-text); }
+.rio-btn--secondary { background: var(--color-elevated); }
+.rio-btn--ghost {
+  background: transparent; border-color: transparent; color: var(--color-text-secondary);
+  padding-inline: var(--space-3);
+}
+.rio-btn--ghost:hover { background: var(--color-accent-soft); border-color: transparent; color: var(--color-accent-deep); }
+[data-theme="dark"] .rio-btn--ghost:hover { color: var(--color-accent); }
+.rio-btn--block { width: 100%; }
+
+/* ============================================================================
+ * Cards
+ * ========================================================================== */
+.rio-card {
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); padding: var(--space-5);
+  box-shadow: var(--shadow-sm);
+}
+.rio-card > p:first-child { margin-top: 0; }
+.rio-card:has(> .rio-table) { padding: 0; overflow-x: auto; }
+.rio-card:has(> form > .rio-table) { padding: var(--space-5); }
+
+/* ============================================================================
+ * Stat grid (dashboard)
+ * ========================================================================== */
+.rio-stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(216px,1fr)); gap: var(--space-5); }
+.rio-stat {
+  --c: var(--color-accent);
+  position: relative; display: flex; flex-direction: column; gap: var(--space-3);
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  background:
+    radial-gradient(135% 90% at 100% 0%, color-mix(in srgb, var(--c) 10%, transparent), transparent 58%),
+    var(--color-surface);
+  border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+  color: var(--color-text-primary); box-shadow: var(--shadow-sm); overflow: hidden;
+  transition: transform .16s, border-color .16s, box-shadow .16s;
+}
+.rio-stat::after { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--c); opacity: .92; }
+.rio-stat:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--c) 42%, var(--color-border)); box-shadow: 0 16px 34px -18px var(--c), var(--shadow-sm); }
+.rio-stat__value { font-family: var(--font-mono); font-size: var(--text-stat); font-weight: 700; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--c); }
+.rio-stat__label { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--color-text-muted); }
+/* Per-card hue rotation — appropriate, harmonious colours for fast scanning */
+.rio-stat:nth-child(8n+1){ --c:#2B54E0; }
+.rio-stat:nth-child(8n+2){ --c:#0F766E; }
+.rio-stat:nth-child(8n+3){ --c:#6D28D9; }
+.rio-stat:nth-child(8n+4){ --c:#B45309; }
+.rio-stat:nth-child(8n+5){ --c:#0B6BB8; }
+.rio-stat:nth-child(8n+6){ --c:#BE2A52; }
+.rio-stat:nth-child(8n+7){ --c:#0E7C57; }
+.rio-stat:nth-child(8n+8){ --c:#4338CA; }
+.rio-stat--featured { background: color-mix(in srgb, var(--c) 9%, var(--color-surface)); border-color: color-mix(in srgb, var(--c) 38%, var(--color-border)); box-shadow: var(--shadow-md); }
+.rio-stat--featured::after { height: 4px; }
+[data-theme="dark"] .rio-stat__value { color: color-mix(in srgb, var(--c) 52%, #FFFFFF); }
+[data-theme="dark"] .rio-stat--featured { background: color-mix(in srgb, var(--c) 16%, var(--color-surface)); }
+
+/* ============================================================================
+ * Toolbar / filters / layout switch
+ * ========================================================================== */
+.rio-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.rio-toolbar__count { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; color: var(--color-text-muted); margin-left: auto; white-space: nowrap; }
+.rio-filters { color: var(--color-text-secondary); font-size: var(--text-small); font-weight: 600; }
+.rio-filter { color: var(--color-text-secondary); }
+
+/* segmented layout switch — override the page's inline .is-active rule */
+nav.rio-layout-switch { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; padding: 3px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+nav.rio-layout-switch .rio-btn { border-color: transparent; background: transparent; color: var(--color-text-muted); font-size: var(--text-small); padding: 6px 11px; }
+nav.rio-layout-switch a.is-active { background: var(--color-surface); color: var(--color-accent-deep); font-weight: 700; text-decoration: none; box-shadow: var(--shadow-sm); }
+[data-theme="dark"] nav.rio-layout-switch a.is-active { color: var(--color-accent); }
+
+/* Function colour-cues (subtle): the four view toggles stay neutral; the two
+   action controls are tinted by purpose and split off with a hairline.
+   Note: the inner <form> is dropped by the parser (forms can't nest), so the
+   "Set as default" control is a bare <button> child of the nav. */
+nav.rio-layout-switch > button.rio-btn {
+  margin-left: 4px; padding-left: 12px;
+  border-left: 1px solid var(--color-border-strong);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--ok-text); font-weight: 650;
+}
+nav.rio-layout-switch > button.rio-btn:hover { background: var(--ok-bg); color: var(--ok-text); }
+/* "Edit view" — configure / navigate → soft accent blue */
+nav.rio-layout-switch > a[title] { color: var(--color-accent-deep); font-weight: 650; }
+nav.rio-layout-switch > a[title]:hover { background: var(--color-accent-soft); color: var(--color-accent-deep); }
+[data-theme="dark"] nav.rio-layout-switch > a[title] { color: var(--color-accent); }
+
+/* ============================================================================
+ * Inputs / forms
+ * ========================================================================== */
+.rio-input, .rio-form__input,
+.rio-form input, .rio-form select, .rio-form textarea {
+  width: 100%; font: inherit; font-size: var(--text-meta); font-weight: 500;
+  color: var(--color-text-primary); background: var(--color-surface);
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+  padding: 10px var(--space-4); line-height: 1.4;
+  transition: border-color .14s, box-shadow .14s;
+}
+.rio-input::placeholder, .rio-form__input::placeholder { color: var(--color-text-muted); font-weight: 500; }
+.rio-input:focus, .rio-form__input:focus,
+.rio-form input:focus, .rio-form select:focus, .rio-form textarea:focus {
+  outline: none; border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+select.rio-input, select.rio-form__input { cursor: pointer; }
+.rio-form textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
+
+.rio-form { display: flex; flex-direction: column; gap: var(--space-4); }
+.rio-form__field, .rio-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.rio-form__label, .rio-label {
+  font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--color-text-muted);
+}
+.rio-form__required { color: var(--color-accent); margin-left: 2px; }
+.rio-form__help { font-size: var(--text-small); color: var(--color-text-muted); line-height: 1.5; }
+.rio-form__help--error { color: var(--bad-text); font-weight: 600; }
+.rio-form__actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3);
+  margin-top: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--color-border);
+}
+
+/* detail wrappers */
+.rio-detail-grid { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: var(--space-5); align-items: start; }
+.rio-detail-main { min-width: 0; }
+.rio-detail-single { max-width: 720px; }
+.rio-detail-side { position: sticky; top: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+
+.rio-detail-list, .rio-meta-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-3) var(--space-5); margin: 0; }
+.rio-detail-list dt, .rio-meta-list dt { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted); align-self: center; }
+.rio-detail-list dd, .rio-meta-list dd { margin: 0; min-width: 0; font-weight: 600; color: var(--color-text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* ============================================================================
+ * Table
+ * ========================================================================== */
+.rio-table-wrap { overflow-x: auto; }
+.rio-table { width: 100%; border-collapse: collapse; font-size: var(--text-meta); }
+.rio-table thead th {
+  text-align: left; padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted);
+  background: var(--color-elevated); border-bottom: 1px solid var(--color-border-strong);
+  white-space: nowrap;
+}
+.rio-table tbody td { padding: 13px var(--space-4); border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); font-weight: 500; vertical-align: middle; }
+.rio-table tbody tr:last-child td { border-bottom: 0; }
+.rio-table tbody tr { transition: background .12s; }
+.rio-table tbody tr:hover { background: color-mix(in srgb, var(--color-accent) 5%, transparent); }
+.rio-table tbody tr:hover td { color: var(--color-text-primary); }
+.rio-table a { color: var(--color-accent); font-weight: 650; }
+.rio-table a:hover { color: var(--color-accent-deep); text-decoration: underline; text-underline-offset: 2px; }
+.rio-table td:last-child { white-space: nowrap; text-align: right; }
+.rio-cell-primary { font-family: var(--font-mono); font-weight: 700; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+.rio-cell-id { font-family: var(--font-mono); font-size: var(--text-mono); font-weight: 600; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.rio-num { font-variant-numeric: tabular-nums; }
+
+/* ============================================================================
+ * Cards / list / compact layouts (list view alternatives)
+ * ========================================================================== */
+/* ---- Cards layout (layout=cards) — a polished, GENERIC record card --------
+   Robust for any model: the first field becomes the card's title block, the
+   remaining fields a tidy key/value ledger, and actions pin to a footer.
+   Scoped under .rio-cards / .rio-main so it overrides the page's inline
+   helper <style> (which has lower specificity). */
+.rio-main .rio-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-4); align-items: start; }
+
+.rio-cards .rio-card-item {
+  display: flex; flex-direction: column; gap: 0;
+  padding: 0 !important; overflow: hidden; position: relative;
+  border: 1px solid var(--color-border); border-radius: var(--radius-lg);
+  background: var(--color-surface); box-shadow: var(--shadow-sm);
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+}
+.rio-cards .rio-card-item::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--color-accent); opacity: .9; z-index: 1; }
+.rio-cards .rio-card-item:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); box-shadow: var(--shadow-md); }
+
+/* Title block = first field (label small over a large value) */
+.rio-cards .rio-card-field { display: flex; }
+.rio-cards .rio-card-field:first-child {
+  flex-direction: column; align-items: flex-start; gap: 4px;
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 5%, transparent), transparent);
+}
+.rio-cards .rio-card-field:first-child .rio-card-label { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--color-text-muted); }
+.rio-cards .rio-card-field:first-child .rio-card-value { font-size: 19px; font-weight: 700; line-height: 1.25; color: var(--color-text-primary); letter-spacing: -.01em; }
+.rio-cards .rio-card-field:first-child .rio-cell-primary { font-size: 18px; }
+
+/* Key / value rows */
+.rio-cards .rio-card-field:not(:first-child) {
+  justify-content: space-between; align-items: baseline; gap: var(--space-4);
+  padding: 9px var(--space-5); border-bottom: 1px solid var(--color-border);
+}
+.rio-cards .rio-card-field:not(:first-child) .rio-card-label {
+  flex: none; max-width: 45%;
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-muted);
+}
+.rio-cards .rio-card-field:not(:first-child) .rio-card-value {
+  flex: 1; min-width: 0; text-align: right;
+  color: var(--color-text-primary); font-weight: 550; font-size: var(--text-meta);
+  overflow-wrap: anywhere;
+}
+.rio-cards .rio-card-value:empty::after { content: "—"; color: var(--color-text-muted); font-weight: 500; }
+
+/* Footer actions */
+.rio-cards .rio-card-actions {
+  margin-top: auto; padding: var(--space-3) var(--space-4);
+  display: flex; align-items: center; gap: var(--space-2);
+  background: var(--color-elevated); border-top: 1px solid var(--color-border);
+}
+.rio-cards .rio-card-actions form { display: inline; margin: 0; }
+
+/* ---- List layout (layout=list) — clean horizontal label/value rows ---- */
+.rio-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.rio-list .rio-list-item { padding: var(--space-4) var(--space-5) !important; }
+.rio-list .rio-list-field { display: flex; gap: var(--space-4); padding: 5px 0; align-items: baseline; }
+.rio-list .rio-list-label { flex: none; min-width: 11rem; font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-muted); }
+.rio-list .rio-list-value { color: var(--color-text-primary); font-weight: 550; overflow-wrap: anywhere; }
+.rio-list .rio-list-actions { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); display: flex; gap: var(--space-2); }
+.rio-compact-row { display: flex; align-items: center; gap: var(--space-3); padding: 8px var(--space-2); border-bottom: 1px solid var(--color-border); }
+.rio-compact-row:last-child { border-bottom: 0; }
+.rio-compact-cell { white-space: nowrap; color: var(--color-text-secondary); }
+
+/* ============================================================================
+ * Auth (login)
+ * ========================================================================== */
+body.admin-auth { display: grid; place-items: center; min-height: 100vh; padding: var(--space-5); }
+.rio-auth {
+  width: 100%; max-width: 396px; margin: 0 auto;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-pop);
+  padding: var(--space-7) var(--space-6) var(--space-6);
+  display: flex; flex-direction: column; gap: var(--space-4);
+  position: relative; overflow: hidden;
+}
+.rio-auth::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--color-accent); }
+.rio-auth form { display: flex; flex-direction: column; gap: var(--space-4); margin: 0; }
+.rio-auth__header { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-2); margin-bottom: var(--space-1); }
+.rio-auth__mark {
+  display: grid; place-items: center; width: 54px; height: 54px; margin-bottom: var(--space-2);
+  background: var(--color-accent); color: #fff; border-radius: 14px;
+  font-weight: 800; font-size: 24px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 10px 24px -8px var(--color-accent);
+}
+.rio-auth__title { font-size: var(--text-h2); }
+.rio-auth__subtitle { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--color-text-muted); }
+
+/* ============================================================================
+ * Alerts / empty / pagination (defensive coverage)
+ * ========================================================================== */
+.rio-alert { padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-border); border-left-width: 3px; font-size: var(--text-meta); font-weight: 550; color: var(--color-text-primary); background: var(--color-surface); }
+.rio-alert--danger { color: var(--bad-text); background: var(--bad-bg); border-color: var(--bad-bd); border-left-color: var(--bad-dot); }
+.rio-empty { text-align: center; padding: var(--space-8) var(--space-5); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--color-surface) 60%, transparent); }
+.rio-empty p { color: var(--color-text-muted); max-width: 44ch; margin: var(--space-2) auto 0; }
+.rio-pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; color: var(--color-text-muted); }
+.rio-pagination__pages { display: flex; gap: 4px; }
+.rio-pagination__pages a { display: grid; place-items: center; min-width: 34px; height: 34px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary); background: var(--color-surface); font-weight: 700; }
+.rio-pagination__pages a:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
+.rio-pagination__pages a.is-active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-text); }
+
+/* ============================================================================
+ * Statusbar footer
+ * ========================================================================== */
+.rio-statusbar {
+  display: flex; align-items: center; gap: var(--space-2); margin-top: auto;
+  padding-top: var(--space-5); border-top: 1px solid var(--color-border);
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--color-text-muted);
+}
+.rio-statusbar__sep { color: var(--color-border-strong); }
+.rio-statusbar__spacer { flex: 1; }
+
+/* ============================================================================
+ * Composition (ViewSpec) editor
+ * ========================================================================== */
+/* ============================================================================
+ * Composition (ViewSpec) editor — clarity-first, live colour cues
+ * ========================================================================== */
+/* Intro turns into a calm info callout */
+.rio-card:has([data-view-editor]) > p:first-of-type {
+  margin: 0 0 var(--space-4); padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
+  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface));
+  border: 1px solid var(--color-border); border-left: 3px solid var(--color-accent);
+  border-radius: var(--radius-md); color: var(--color-text-secondary) !important;
+  font-size: var(--text-small); line-height: 1.65;
+}
+.rio-card:has([data-view-editor]) > p:first-of-type strong { color: var(--color-text-primary); }
+
+/* Editing-language strip */
+.rio-lang-bar { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4) !important; padding: 9px var(--space-4); background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-small); color: var(--color-text-secondary); }
+.rio-lang-bar label { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
+.rio-lang-bar .rio-input { width: auto; min-width: 76px; }
+
+/* Table shell */
+table[data-view-editor] { border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+table[data-view-editor] thead th { background: var(--color-elevated); border-bottom: 2px solid var(--color-border-strong); padding: var(--space-3); }
+table[data-view-editor] tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--color-text-muted) 5%, transparent); }
+table[data-view-editor] tbody tr:hover td { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+table[data-view-editor] td { padding: 10px var(--space-3); border-bottom: 1px solid var(--color-border); vertical-align: middle; }
+table[data-view-editor] tbody tr:last-child td { border-bottom: 0; }
+
+/* Field name + backend id chip */
+table[data-view-editor] td:nth-child(2) { font-weight: 650; color: var(--color-text-primary); white-space: nowrap; }
+table[data-view-editor] .rio-cell-id { display: inline-block; margin-left: 6px; padding: 1px 8px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: 999px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
+
+/* Order move buttons — compact paired control */
+table[data-view-editor] td:first-child { white-space: nowrap; }
+table[data-view-editor] [data-move] { padding: 4px 7px; font-size: 10px; line-height: 1; color: var(--color-text-muted); border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-sm); }
+table[data-view-editor] [data-move]:first-of-type { margin-right: 2px; }
+table[data-view-editor] [data-move]:hover { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
+
+/* Inputs / selects */
+table[data-view-editor] td .rio-input { padding: 7px 10px; font-size: var(--text-small); }
+table[data-view-editor] td:nth-child(4) { text-align: center; }
+[data-view-editor] input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--color-accent); cursor: pointer; }
+[data-view-editor] input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
+[data-view-editor] select:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Role colour cue — the select adopts the chosen role's colour, live */
+[data-view-editor] select[data-role] { font-weight: 700; }
+[data-view-editor] select[data-role]:has(option[value="title"]:checked)     { color:#2B54E0; background:#EDF1FE; border-color:#BCC8F6; }
+[data-view-editor] select[data-role]:has(option[value="subtitle"]:checked)  { color:#0F766E; background:#E2F4F1; border-color:#A9DED7; }
+[data-view-editor] select[data-role]:has(option[value="badge"]:checked)     { color:#6D28D9; background:#F1EBFB; border-color:#D6C6F5; }
+[data-view-editor] select[data-role]:has(option[value="timestamp"]:checked) { color:#B45309; background:#FBF1DF; border-color:#ECD09A; }
+[data-view-editor] select[data-role]:has(option[value="meta"]:checked)      { color:#475569; background:#EEF1F5; border-color:#D2DAE3; }
+[data-view-editor] select[data-role]:has(option[value="hidden"]:checked)    { color:#7E8995; background:transparent; border-color:var(--color-border); font-weight:600; }
+
+/* Hidden rows recede so the rendered fields stand out */
+[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(2) { color: var(--color-text-muted); font-weight: 500; }
+[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(4),
+[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(5),
+[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(6) { opacity: .45; }
+
+/* Dark — soften role tints onto the gray surfaces */
+[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="title"]:checked)     { color:#A9BBFF; background:rgba(126,155,255,.15); border-color:rgba(126,155,255,.42); }
+[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="subtitle"]:checked)  { color:#7FD8CD; background:rgba(15,118,110,.20); border-color:rgba(15,118,110,.45); }
+[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="badge"]:checked)     { color:#C4A9F5; background:rgba(109,40,217,.22); border-color:rgba(109,40,217,.48); }
+[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="timestamp"]:checked) { color:#E6BE84; background:rgba(180,83,9,.22); border-color:rgba(180,83,9,.48); }
+[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="meta"]:checked)      { color:#AEB9C6; background:rgba(120,131,148,.20); border-color:rgba(120,131,148,.42); }
+
+/* --- Value labels — per-value display-label editors (one card per field) ----
+   Fix: these blocks are .rio-card nested INSIDE the editor card, so the
+   generic ".rio-card:has(> .rio-table){padding:0}" rule was collapsing them.
+   These higher-specificity rules restore structure and give each field a
+   clean sub-card mapping its stored value (chip) → display label (input). */
+.rio-card:has([data-view-editor]) h2 {
+  margin: var(--space-7) 0 0 !important; padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-h3) !important; font-weight: 700; letter-spacing: -.01em;
+  color: var(--color-text-primary);
+}
+.rio-card:has([data-view-editor]) h2 + .rio-card { margin-top: var(--space-4) !important; }
+.rio-card:has([data-view-editor]) .rio-card {
+  margin-top: var(--space-4) !important;
+  padding: var(--space-4) var(--space-5) var(--space-5) !important;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: visible;
+}
+.rio-card:has([data-view-editor]) .rio-card > strong { font-size: var(--text-meta); font-weight: 700; color: var(--color-text-primary); }
+.rio-card:has([data-view-editor]) .rio-card > .rio-cell-id {
+  display: inline-block; margin-left: 6px; padding: 1px 8px;
+  background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: 999px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--color-text-muted);
+}
+.rio-card:has([data-view-editor]) .rio-card .rio-table {
+  margin-top: var(--space-3) !important; border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm); overflow: hidden;
+}
+.rio-card:has([data-view-editor]) .rio-card .rio-table thead th { padding: 8px var(--space-3); font-size: var(--text-micro); }
+.rio-card:has([data-view-editor]) .rio-card .rio-table td { padding: 8px var(--space-3); }
+.rio-card:has([data-view-editor]) .rio-card .rio-table td:first-child { width: 34%; vertical-align: middle; }
+.rio-card:has([data-view-editor]) .rio-card .rio-table td:first-child .rio-cell-id {
+  display: inline-block; padding: 3px 10px; white-space: normal;
+  background: color-mix(in srgb, var(--color-accent) 9%, var(--color-elevated));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--text-mono); font-weight: 600; color: var(--color-text-secondary);
+}
+.rio-card:has([data-view-editor]) .rio-card .rio-table td .rio-input { padding: 7px 10px; font-size: var(--text-small); }
+
+/* ============================================================================
+ * Avatar · role badge · profile · permission list  (reusable building blocks)
+ * ========================================================================== */
+.rio-avatar { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 700; font-size: 15px; color: #fff; background: var(--color-text-muted); flex: none; letter-spacing: .02em; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+.rio-avatar--sm { width: 30px; height: 30px; font-size: 12px; }
+.rio-avatar--lg { width: 56px; height: 56px; font-size: 20px; border-radius: 16px; }
+.rio-avatar--xl { width: 78px; height: 78px; font-size: 27px; border-radius: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), var(--shadow-md); }
+.rio-avatar--customer  { background: linear-gradient(135deg, #64748B, #475569); }
+.rio-avatar--admin     { background: linear-gradient(135deg, #3B6FE0, #1E3FB8); }
+.rio-avatar--developer { background: linear-gradient(135deg, #7C3AED, #5B21B6); }
+
+.rio-role-badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 5px 11px 5px 9px; border-radius: 999px; border: 1px solid var(--color-border-strong); color: var(--color-text-secondary); background: var(--color-surface); white-space: nowrap; }
+.rio-role-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-muted); flex: none; }
+.rio-role-badge--customer  { color: #475569; background: #EEF1F5; border-color: #D2DAE3; }
+.rio-role-badge--customer::before { background: #64748B; }
+.rio-role-badge--admin     { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+.rio-role-badge--admin::before { background: var(--color-accent); }
+.rio-role-badge--developer { color: #6D28D9; background: #F1EBFB; border-color: #D6C6F5; }
+.rio-role-badge--developer::before { background: #6D28D9; }
+[data-theme="dark"] .rio-role-badge--admin     { color: var(--color-accent); }
+[data-theme="dark"] .rio-role-badge--developer { color: #C4A9F5; background: rgba(109,40,217,.22); border-color: rgba(109,40,217,.45); }
+[data-theme="dark"] .rio-role-badge--customer  { color: #AEB9C6; background: rgba(120,131,148,.18); border-color: rgba(120,131,148,.4); }
+
+.rio-profile__id { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.rio-profile__name { font-size: var(--text-h2); font-weight: 700; margin: 0; letter-spacing: -.01em; }
+.rio-profile__email { font-family: var(--font-mono); font-size: var(--text-small); color: var(--color-text-muted); margin: 3px 0 0; }
+.rio-profile__tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+
+.rio-perm-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
+.rio-perm { display: flex; align-items: flex-start; gap: var(--space-3); padding: 12px 0; }
+.rio-perm + .rio-perm { border-top: 1px solid var(--color-border); }
+.rio-perm__icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: 800; flex: none; margin-top: 1px; }
+.rio-perm.is-allowed .rio-perm__icon { color: var(--ok-text); background: var(--ok-bg); border: 1px solid var(--ok-bd); }
+.rio-perm.is-denied  .rio-perm__icon { color: var(--bad-text); background: var(--bad-bg); border: 1px solid var(--bad-bd); }
+.rio-perm__body { display: flex; flex-direction: column; gap: 1px; }
+.rio-perm__body strong { font-size: var(--text-meta); font-weight: 650; color: var(--color-text-primary); }
+.rio-perm__body span { font-size: var(--text-small); color: var(--color-text-muted); }
+.rio-perm.is-denied .rio-perm__body strong { color: var(--color-text-secondary); }
+
+.rio-role-list { list-style: none; margin: var(--space-1) 0 0; padding: 0; }
+.rio-role-list > li { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; border-top: 1px solid var(--color-border); }
+.rio-role-list > li:first-child { border-top: 0; }
+.rio-role-list > li > div { display: block; min-width: 0; }
+.rio-role-list p { font-size: var(--text-small); color: var(--color-text-muted); margin: var(--space-2) 0 0; line-height: 1.55; }
+
+/* ============================================================================
+ * Production coverage — components other admin templates emit (audit/actions,
+ * empty states, alerts, checkbox fields, status badges, topbar brand) so EVERY
+ * backend page renders fully styled, not only the eight previewed here.
+ * ========================================================================== */
+.rio-card__title { font-size: var(--text-h3); font-weight: 700; margin: 0 0 var(--space-3); color: var(--color-text-primary); }
+.rio-card__subtitle { font-size: var(--text-small); color: var(--color-text-muted); margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+.rio-card__meta { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--color-text-muted); }
+.rio-card--featured { border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); }
+
+.rio-page-head--with-action { flex-direction: row; align-items: center; justify-content: space-between; max-width: none; }
+
+/* Form checkbox / radio rows */
+.rio-form__check { display: flex; align-items: center; gap: var(--space-2); }
+.rio-form__check input { width: auto; accent-color: var(--color-accent); }
+.rio-form__check label { font-size: var(--text-meta); color: var(--color-text-primary); font-weight: 500; }
+
+/* Standalone meta text */
+.rio-meta { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
+
+/* Status badge (generic) — neutral pill; semantic colour via [data-status] value */
+.badge-status, [data-status] {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; line-height: 1;
+  padding: 5px 10px; border-radius: 999px;
+  border: 1px solid var(--color-border-strong); color: var(--color-text-secondary); background: var(--color-surface); white-space: nowrap;
+}
+[data-status="active"], [data-status="success"], [data-status="done"], [data-status="completed"], [data-status="paid"] { color: var(--ok-text); background: var(--ok-bg); border-color: var(--ok-bd); }
+[data-status="pending"], [data-status="warning"], [data-status="new"], [data-status="draft"] { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); }
+[data-status="error"], [data-status="failed"], [data-status="cancelled"], [data-status="danger"] { color: var(--bad-text); background: var(--bad-bg); border-color: var(--bad-bd); }
+
+/* Timeline (recent actions / audit log) */
+.rio-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rio-timeline > li { display: grid; grid-template-columns: auto minmax(0,1fr); gap: var(--space-4); padding: var(--space-4) 0; border-bottom: 1px solid var(--color-border); }
+.rio-timeline > li:last-child { border-bottom: 0; }
+.rio-timeline__dot { width: 10px; height: 10px; margin-top: 5px; border-radius: 999px; background: var(--color-accent); box-shadow: 0 0 0 4px var(--color-accent-soft); flex: none; }
+.rio-timeline time, .rio-timeline__time { font-family: var(--font-mono); font-size: var(--text-small); color: var(--color-text-muted); }
+
+/* Alerts — extra variants */
+.rio-alert--warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); border-left-color: var(--warn-dot); }
+.rio-alert--info { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); border-left-color: var(--color-accent); }
+[data-theme="dark"] .rio-alert--info { color: var(--color-accent); }
+
+/* Topbar brand (shells that render an identity inside the topbar) */
+.rio-topbar__brand { display: flex; align-items: center; gap: var(--space-2); }
+.rio-topbar__mark { display: grid; place-items: center; width: 28px; height: 28px; background: var(--color-accent); color: var(--color-accent-text); border-radius: var(--radius-sm); font-weight: 700; font-size: 15px; }
+.rio-topbar__wordmark { font-weight: 700; color: var(--color-text-primary); }
+.rio-topbar__nav { display: flex; align-items: center; gap: var(--space-2); }
+.rio-topbar__link { font-size: var(--text-meta); font-weight: 600; color: var(--color-text-secondary); padding: 7px var(--space-3); border-radius: var(--radius-sm); }
+.rio-topbar__link:hover { color: var(--color-text-primary); background: var(--color-accent-soft); }
+
+/* ============================================================================
+ * Motion
+ * ========================================================================== */
+@keyframes rio-rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes rio-pulse { 0%,100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent); } 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 3%, transparent); } }
 .rio-main > * { animation: rio-rise .42s cubic-bezier(.22,.61,.36,1) both; }
-.rio-main > *:nth-child(2) { animation-delay: .04s; }
-.rio-main > *:nth-child(3) { animation-delay: .08s; }
-.rio-main > *:nth-child(4) { animation-delay: .12s; }
+.rio-main > *:nth-child(3) { animation-delay: .04s; }
+.rio-main > *:nth-child(4) { animation-delay: .08s; }
+.rio-main > *:nth-child(5) { animation-delay: .12s; }
 .rio-stat-grid .rio-stat { animation: rio-rise .44s cubic-bezier(.22,.61,.36,1) both; }
-.rio-stat-grid .rio-stat:nth-child(2) { animation-delay: .04s; }
-.rio-stat-grid .rio-stat:nth-child(3) { animation-delay: .08s; }
-.rio-stat-grid .rio-stat:nth-child(4) { animation-delay: .12s; }
-.rio-stat-grid .rio-stat:nth-child(5) { animation-delay: .16s; }
-.rio-stat-grid .rio-stat:nth-child(6) { animation-delay: .20s; }
+.rio-stat-grid .rio-stat:nth-child(2){animation-delay:.04s}
+.rio-stat-grid .rio-stat:nth-child(3){animation-delay:.08s}
+.rio-stat-grid .rio-stat:nth-child(4){animation-delay:.12s}
+.rio-stat-grid .rio-stat:nth-child(5){animation-delay:.16s}
+.rio-stat-grid .rio-stat:nth-child(6){animation-delay:.20s}
+.rio-stat-grid .rio-stat:nth-child(7){animation-delay:.24s}
+.rio-stat-grid .rio-stat:nth-child(8){animation-delay:.28s}
 .rio-auth { animation: rio-rise .5s cubic-bezier(.22,.61,.36,1) both; }
 
 /* ============================================================================
  * Responsive
- * ============================================================================ */
-
-@media (max-width: 960px) {
+ * ========================================================================== */
+@media (max-width: 980px) {
   .rio-shell { grid-template-columns: 1fr; }
-  .rio-sidebar {
-    position: static; height: auto;
-    flex-direction: row; flex-wrap: wrap; align-items: center;
-    gap: var(--space-3);
-    border-right: 0; border-bottom: 1px solid var(--color-border);
-    padding: var(--space-3) var(--space-4);
-  }
-  .rio-sidebar__brand { padding: 0; margin-right: var(--space-2); }
+  .rio-sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-3); border-right: 0; border-bottom: 1px solid rgba(0,0,0,.4); padding: var(--space-3) var(--space-4); }
+  .rio-sidebar__brand { padding: 0; margin-right: var(--space-2); border-bottom: 0; }
   .rio-sidebar__group { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
   .rio-sidebar__section { display: none; }
+  .rio-sidebar__lang { margin: 0; padding: 0; border-top: 0; }
   .rio-main { padding: var(--space-4) var(--space-4) var(--space-6); }
   .rio-topbar--inset { margin: calc(var(--space-4) * -1) calc(var(--space-4) * -1) 0; padding: var(--space-3) var(--space-4); }
   .rio-detail-grid { grid-template-columns: 1fr; }
-  .rio-detail-side { position: static; }
+  .rio-page-header { grid-template-columns: 1fr; }
+  .rio-page-header__actions { grid-column: 1; grid-row: 3; justify-self: start; }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .rio-main > *, .rio-stat-grid .rio-stat, .rio-auth { animation: none !important; }
   .rio-topbar__dot { animation: none !important; }
-  * { scroll-behavior: auto !important; }
 }
-/* preview-only: frame the demo, no effect on the real skin */
-.demo-divider{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-7) 0 var(--space-5);font-family:var(--font-sans);font-size:var(--text-micro);font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--color-text-muted);}
-.demo-divider::before,.demo-divider::after{content:"";height:1px;flex:1;background:var(--color-border);}
