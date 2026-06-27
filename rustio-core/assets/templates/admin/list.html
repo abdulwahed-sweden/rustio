@@ -8,14 +8,14 @@
      centred regardless of breadcrumb-vs-no-breadcrumb height. #}
   <div class="rio-page-header">
     <nav class="rio-breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">Home</a>
+      <a href="/admin">{{ t("Home") }}</a>
       <span class="rio-breadcrumb__sep">/</span>
       <span>{{ model.display_name }}</span>
     </nav>
     <h1>{{ model.display_name }}</h1>
     <div class="rio-page-header__actions">
       {% if permissions.create %}
-        <a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ Add {{ model.singular_name | lower }}</a>
+        <a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ {{ t("Add") }} {{ model.singular_name | lower }}</a>
       {% endif %}
     </div>
   </div>
@@ -40,7 +40,7 @@
     <input type="hidden" name="layout" value="{{ layout | default('table') }}">
     <input type="hidden" name="sort" value="{{ sort | default('') }}">
     <input type="hidden" name="dir" value="{{ dir | default('') }}">
-    <input class="rio-input" name="q" value="{{ query | default('') }}" placeholder="Search {{ model.display_name | lower }}…" style="max-width: 320px;">
+    <input class="rio-input" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…" style="max-width: 320px;">
 
     {# DW-1 — filter controls from the view's `filters`. Submitting the toolbar
        applies them via the query string; the server honours ViewSpec.filters.
@@ -65,17 +65,17 @@
           {% endif %}
         {% endfor %}
         {% if any_filter_active %}
-          <a href="{{ clear_filters_href }}" class="rio-btn rio-btn--ghost">Clear</a>
+          <a href="{{ clear_filters_href }}" class="rio-btn rio-btn--ghost">{{ t("Clear") }}</a>
         {% endif %}
-        <noscript><button type="submit" class="rio-btn rio-btn--ghost">Apply</button></noscript>
+        <noscript><button type="submit" class="rio-btn rio-btn--ghost">{{ t("Apply") }}</button></noscript>
       </span>
     {% endif %}
 
     <span class="rio-toolbar__count">
       {% if pagination is defined and pagination.total > 0 %}
-        Showing {{ pagination.from }}–{{ pagination.to }} of {{ pagination.total }}
+        {{ t("Showing") }} {{ pagination.from }}–{{ pagination.to }} {{ t("of") }} {{ pagination.total }}
       {% else %}
-        {{ total | default(0) }} record{% if total != 1 %}s{% endif %}
+        {{ total | default(0) }} {% if total != 1 %}{{ t("records") }}{% else %}{{ t("record") }}{% endif %}
       {% endif %}
     </span>
     {% if layout_options is defined %}
@@ -93,10 +93,10 @@
             {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
             <input type="hidden" name="layout" value="{{ layout | default('table') }}">
             <input type="hidden" name="_return" value="{{ return_to | default('') }}">
-            <button type="submit" class="rio-btn rio-btn--ghost" title="Save this layout as the default for everyone">Set as default</button>
+            <button type="submit" class="rio-btn rio-btn--ghost" title="Save this layout as the default for everyone">{{ t("Set as default") }}</button>
           </form>
           {# Phase 9a — open the composition editor (field-role editing). #}
-          <a href="/admin/{{ model.singular_name | lower }}s/view" class="rio-btn rio-btn--ghost" title="Edit which role each field plays in this view">Edit view</a>
+          <a href="/admin/{{ model.singular_name | lower }}s/view" class="rio-btn rio-btn--ghost" title="Edit which role each field plays in this view">{{ t("Edit view") }}</a>
         {% endif %}
       </nav>
     {% endif %}
@@ -107,7 +107,7 @@
       <h3 class="rio-card__title">No {{ model.display_name | lower }} yet</h3>
       <p>Get started by creating your first {{ model.singular_name | lower }}. It only takes a moment.</p>
       {% if permissions.create %}
-        <p style="margin-top: 18px;"><a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ Add {{ model.singular_name | lower }}</a></p>
+        <p style="margin-top: 18px;"><a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ {{ t("Add") }} {{ model.singular_name | lower }}</a></p>
       {% endif %}
     </div>
   {% else %}
@@ -126,8 +126,8 @@
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
               <div class="rio-list-actions">
-                {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
+                {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -142,8 +142,8 @@
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
               <div class="rio-card-actions">
-                {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">Delete</button></form>{% endif %}
+                {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -154,7 +154,7 @@
         {% for row in rows %}
           <div class="rio-compact-row">
             {% for cell in row.cells %}<span class="rio-compact-cell">{{ cell | safe }}</span>{% endfor %}
-            {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}" style="margin-left:auto;">Edit</a>{% endif %}
+            {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}" style="margin-left:auto;">{{ t("Edit") }}</a>{% endif %}
           </div>
         {% endfor %}
       </div>
@@ -180,12 +180,12 @@
               {% if permissions.edit or permissions.delete %}
                 <td>
                   {% if permissions.edit %}
-                    <a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">Edit</a>
+                    <a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>
                   {% endif %}
                   {% if permissions.delete %}
                     <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="Delete {{ model.singular_name | lower }}?">
                       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-                      <button type="submit" class="rio-btn rio-btn--ghost">Delete</button>
+                      <button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button>
                     </form>
                   {% endif %}
                 </td>
@@ -199,7 +199,7 @@
 
     {% if pagination is defined and pagination.pages > 1 %}
       <footer class="rio-pagination">
-        <span>Showing {{ pagination.from }}–{{ pagination.to }} of {{ pagination.total }}</span>
+        <span>{{ t("Showing") }} {{ pagination.from }}–{{ pagination.to }} {{ t("of") }} {{ pagination.total }}</span>
         <div class="rio-pagination__pages">
           {% for page in pagination.links %}
             <a href="{{ page.href }}"

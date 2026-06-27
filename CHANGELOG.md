@@ -17,6 +17,28 @@ sources, stored values, sorting, links, data are never translated); only the
 
 ### Added
 
+#### Admin shell i18n (UI translation)
+
+- **The admin's own UI strings now translate with the active language.** Until
+  now only data-derived labels (column headers, enum values from the ViewSpec)
+  followed the language switch; the framework's chrome — navigation, topbar,
+  list toolbar, buttons, forms, the account page, the composition editor — was
+  hardcoded English, so switching to another language left most of the screen
+  untranslated. A new `t("English source")` template function (registered on
+  the minijinja environment, reading the active language from
+  `current_user.active_language`) resolves every shell string for the active
+  language, falling back to the English source when a translation is missing —
+  never blank. (`rustio-core/src/admin/uilang.rs`.)
+- **`rustio.locale.json` — an editable translation file.** A new optional
+  project-root input (sibling to `rustio.design.json` / `rustio.context.json`):
+  `{ "sv": { "Add": "Lägg till" }, "de": { … } }`. Keys are the English source
+  string; entries override or extend the built-in catalog, and a language code
+  present here that isn't built-in becomes **selectable in the switcher and
+  settable** (the offered set is the built-in registry ∪ the locale file, with
+  best-effort endonyms). A stray `"_comment"` key (or any non-object section) is
+  ignored rather than rejecting the file. **Swedish ships built-in** as the
+  reference locale; data is never translated here (the iron rule holds).
+
 #### ViewSpec & list rendering
 
 - **`ViewSpec` — a per-model presentation document.** Saved as

@@ -5,14 +5,14 @@
 {% block admin_content %}
   <div class="rio-page-header">
     <nav class="rio-breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">Home</a>
+      <a href="/admin">{{ t("Home") }}</a>
       <span class="rio-breadcrumb__sep">/</span>
-      <span>Your account</span>
+      <span>{{ t("Your account") }}</span>
     </nav>
-    <h1>Your account</h1>
+    <h1>{{ t("Your account") }}</h1>
     <div class="rio-page-header__actions">
-      <a href="/admin/password_change" class="rio-btn rio-btn--ghost">Change password</a>
-      <a href="/admin/logout" class="rio-btn rio-btn--ghost">Sign out</a>
+      <a href="/admin/password_change" class="rio-btn rio-btn--ghost">{{ t("Change password") }}</a>
+      <a href="/admin/logout" class="rio-btn rio-btn--ghost">{{ t("Sign out") }}</a>
     </div>
   </div>
 
@@ -33,7 +33,7 @@
   <div class="rio-detail-grid">
     <div class="rio-detail-main">
       <section class="rio-card">
-        <h3 class="rio-card__title">Role &amp; permissions</h3>
+        <h3 class="rio-card__title">{{ t("Role & permissions") }}</h3>
         <p>You're signed in as <strong>{{ account.role_name }}</strong>. {{ account.role_blurb }}</p>
         <ul class="rio-perm-list">
           {% for p in account.perms %}
@@ -46,14 +46,14 @@
       </section>
 
       <section class="rio-card" style="margin-top:var(--space-4);">
-        <h3 class="rio-card__title">Roles in this workspace</h3>
+        <h3 class="rio-card__title">{{ t("Roles in this workspace") }}</h3>
         <ul class="rio-role-list">
           {% for r in account.roles %}
             <li>
               <span class="rio-avatar rio-avatar--{{ r.style }}">{{ r.initials }}</span>
               <div>
                 <span class="rio-role-badge rio-role-badge--{{ r.style }}">{{ r.name }}</span>
-                {% if r.is_you %}<span class="rio-pill rio-pill-emerald" style="margin-left:6px;">You</span>{% endif %}
+                {% if r.is_you %}<span class="rio-pill rio-pill-emerald" style="margin-left:6px;">{{ t("You") }}</span>{% endif %}
                 <p>{{ r.desc }}</p>
               </div>
             </li>
@@ -64,26 +64,26 @@
 
     <aside class="rio-detail-side">
       <section class="rio-card">
-        <h3 class="rio-card__title">Account details</h3>
+        <h3 class="rio-card__title">{{ t("Account details") }}</h3>
         <dl class="rio-meta-list" style="margin-top:var(--space-3);">
-          <dt>Email</dt><dd>{{ account.email }}</dd>
-          <dt>Role</dt><dd>{{ account.role_name }}</dd>
-          <dt>User ID</dt><dd>#{{ account.user_id }}</dd>
-          {% if account.member_since %}<dt>Member since</dt><dd>{{ account.member_since }}</dd>{% endif %}
-          <dt>Language</dt><dd>{{ account.language }}</dd>
+          <dt>{{ t("Email") }}</dt><dd>{{ account.email }}</dd>
+          <dt>{{ t("Role") }}</dt><dd>{{ account.role_name }}</dd>
+          <dt>{{ t("User ID") }}</dt><dd>#{{ account.user_id }}</dd>
+          {% if account.member_since %}<dt>{{ t("Member since") }}</dt><dd>{{ account.member_since }}</dd>{% endif %}
+          <dt>{{ t("Language") }}</dt><dd>{{ account.language }}</dd>
         </dl>
       </section>
       <section class="rio-card" style="margin-top:var(--space-4);">
-        <h3 class="rio-card__title">Security</h3>
+        <h3 class="rio-card__title">{{ t("Security") }}</h3>
         <dl class="rio-meta-list" style="margin-top:var(--space-3);">
-          <dt>Active sessions</dt><dd>{{ account.sessions }}</dd>
+          <dt>{{ t("Active sessions") }}</dt><dd>{{ account.sessions }}</dd>
         </dl>
         <div style="margin-top:var(--space-4);display:flex;flex-wrap:wrap;gap:var(--space-2);">
-          <a href="/admin/password_change" class="rio-btn rio-btn--primary">Change password</a>
+          <a href="/admin/password_change" class="rio-btn rio-btn--primary">{{ t("Change password") }}</a>
           {% if account.sessions > 1 %}
             <form method="post" action="/admin/sessions/clear" style="margin:0;" data-confirm="Sign out all your other sessions? You'll stay signed in here.">
               {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-              <button type="submit" class="rio-btn rio-btn--ghost">Sign out other sessions</button>
+              <button type="submit" class="rio-btn rio-btn--ghost">{{ t("Sign out other sessions") }}</button>
             </form>
           {% endif %}
         </div>

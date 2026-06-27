@@ -18,7 +18,7 @@
   <form method="post" action="/admin/login" novalidate>
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
     <div class="rio-form__field">
-      <label for="email" class="rio-form__label">Email</label>
+      <label for="email" class="rio-form__label">{{ t("Email") }}</label>
       <input type="email" class="rio-form__input" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
     </div>
     <div class="rio-form__field">

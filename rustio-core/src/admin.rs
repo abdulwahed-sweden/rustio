@@ -51,6 +51,7 @@ pub mod schema_introspect;
 pub mod suggestions;
 pub mod templating;
 pub mod ui;
+pub mod uilang;
 
 #[cfg(test)]
 mod admin_intelligence_tests;

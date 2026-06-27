@@ -5,11 +5,11 @@
 {% block admin_content %}
   <div class="rio-page-header">
     <nav class="rio-breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">Home</a>
+      <a href="/admin">{{ t("Home") }}</a>
       <span class="rio-breadcrumb__sep">/</span>
-      <span>Recent actions</span>
+      <span>{{ t("Recent actions") }}</span>
     </nav>
-    <h1>Recent actions</h1>
+    <h1>{{ t("Recent actions") }}</h1>
   </div>
 
   <form class="rio-toolbar" method="get" action="/admin/actions" aria-label="Filter actions">
@@ -24,7 +24,7 @@
         <option value="{{ a.value }}"{% if a.selected %} selected{% endif %}>{{ a.label }}</option>
       {% endfor %}
     </select>
-    <button type="submit" class="rio-btn">Apply</button>
+    <button type="submit" class="rio-btn">{{ t("Apply") }}</button>
     {% if filters_active %}
       <a class="rio-btn rio-btn--ghost" href="/admin/actions">Reset</a>
     {% endif %}

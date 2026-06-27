@@ -8,15 +8,15 @@
      URL is the form action minus the trailing /new or /<id>/edit. #}
   <div class="rio-page-header">
     <nav class="rio-breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">Home</a>
+      <a href="/admin">{{ t("Home") }}</a>
       <span class="rio-breadcrumb__sep">/</span>
-      <a href="{{ form.cancel_url }}">Back</a>
+      <a href="{{ form.cancel_url }}">{{ t("Back") }}</a>
       <span class="rio-breadcrumb__sep">/</span>
       <span>{{ form.title }}</span>
     </nav>
     <h1>{{ form.title }}</h1>
     <div class="rio-page-header__actions">
-      <a href="{{ form.cancel_url }}" class="rio-btn rio-btn--ghost">Cancel</a>
+      <a href="{{ form.cancel_url }}" class="rio-btn rio-btn--ghost">{{ t("Cancel") }}</a>
       <button type="submit" form="rio-detail-form" class="rio-btn rio-btn--primary">{{ form.submit_label | default('Save changes') }}</button>
     </div>
   </div>
@@ -48,7 +48,7 @@
           {% endfor %}
 
           <div class="rio-form__actions">
-            <a href="{{ form.cancel_url }}" class="rio-btn rio-btn--ghost">Cancel</a>
+            <a href="{{ form.cancel_url }}" class="rio-btn rio-btn--ghost">{{ t("Cancel") }}</a>
             <button type="submit" class="rio-btn rio-btn--primary">{{ form.submit_label | default('Save changes') }}</button>
           </div>
         </form>

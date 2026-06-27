@@ -14,7 +14,7 @@
 
   <form method="post" action="/admin/logout" style="margin:0;">
     {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-    <button type="submit" class="rio-btn rio-btn--block">Sign out</button>
+    <button type="submit" class="rio-btn rio-btn--block">{{ t("Sign out") }}</button>
   </form>
 </div>
 {% endblock %}

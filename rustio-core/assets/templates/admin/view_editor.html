@@ -5,18 +5,18 @@
 {% block admin_content %}
   <div class="rio-page-header">
     <nav class="rio-breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">Home</a>
+      <a href="/admin">{{ t("Home") }}</a>
       <span class="rio-breadcrumb__sep">/</span>
       <a href="{{ model.list_url }}">{{ model.display_name }}</a>
       <span class="rio-breadcrumb__sep">/</span>
-      <span>Edit view</span>
+      <span>{{ t("Edit view") }}</span>
     </nav>
-    <h1>Edit view — {{ model.display_name }}</h1>
+    <h1>{{ t("Edit view") }} — {{ model.display_name }}</h1>
   </div>
 
   {% if error %}
     <div class="rio-card" style="border-left:4px solid #b91c1c;color:#b91c1c;margin-bottom:14px;">
-      <strong>Not saved.</strong> {{ error }}
+      <strong>{{ t("Not saved.") }}</strong> {{ error }}
     </div>
   {% endif %}
 
@@ -34,14 +34,14 @@
     {# i18n L3 — editing-language switch. This is a GET reload (no save), so
        changing it can never clobber another language's label. #}
     <div class="rio-lang-bar" style="margin:6px 0 14px;display:flex;gap:10px;align-items:center;">
-      <label>Editing labels in:
+      <label>{{ t("Editing labels in:") }}
         <select class="rio-input" data-lang-switch aria-label="Editing language" style="width:auto;">
           {% for code in language_options %}
             <option value="{{ code }}"{% if code == editing_lang %} selected{% endif %}>{{ code }}</option>
           {% endfor %}
         </select>
       </label>
-      <span style="color:var(--rio-muted,#667);">View default: <code>{{ view_default_language }}</code></span>
+      <span style="color:var(--rio-muted,#667);">{{ t("View default:") }} <code>{{ view_default_language }}</code></span>
     </div>
 
     <form method="post" action="{{ save_action }}">
@@ -59,7 +59,7 @@
       <input type="hidden" name="editing_lang" value="{{ editing_lang }}">
       <table class="rio-table" data-view-editor>
         <thead>
-          <tr><th scope="col" style="width:1%;">Order</th><th scope="col">Field</th><th scope="col">Role</th><th scope="col" style="width:1%;">Filter</th><th scope="col">Merge into</th><th scope="col">Display label (<code>{{ editing_lang }}</code>)</th></tr>
+          <tr><th scope="col" style="width:1%;">{{ t("Order") }}</th><th scope="col">{{ t("Field") }}</th><th scope="col">{{ t("Role") }}</th><th scope="col" style="width:1%;">{{ t("Filter") }}</th><th scope="col">{{ t("Merge into") }}</th><th scope="col">{{ t("Display label") }} (<code>{{ editing_lang }}</code>)</th></tr>
         </thead>
         <tbody>
           {% for field in fields %}
@@ -88,9 +88,9 @@
                         {% if field.is_hidden %} disabled{% endif %}
                         aria-label="Merge {{ field.label }} into another field">
                   <option value="">—</option>
-                  {% for t in merge_targets %}
-                    {% if t.source != field.source %}
-                      <option value="{{ t.source }}"{% if t.source == field.merge_into %} selected{% endif %}>{{ t.label }}</option>
+                  {% for tgt in merge_targets %}
+                    {% if tgt.source != field.source %}
+                      <option value="{{ tgt.source }}"{% if tgt.source == field.merge_into %} selected{% endif %}>{{ tgt.label }}</option>
                     {% endif %}
                   {% endfor %}
                 </select>
@@ -122,7 +122,7 @@
          (read-only); only its shown label is editable. Auto-discovered for
          status-shaped fields; any already-labelled value also appears. #}
       {% if value_label_fields and value_label_fields | length > 0 %}
-        <h2 style="margin-top:22px;font-size:1.05rem;">Value labels <span style="color:var(--rio-muted,#667);font-weight:400;">(<code>{{ editing_lang }}</code>)</span></h2>
+        <h2 style="margin-top:22px;font-size:1.05rem;">{{ t("Value labels") }} <span style="color:var(--rio-muted,#667);font-weight:400;">(<code>{{ editing_lang }}</code>)</span></h2>
         {% for vf in value_label_fields %}
           <div class="rio-card" style="margin-top:10px;">
             <strong>{{ vf.label }}</strong> <span class="rio-cell-id">{{ vf.source }}</span>
@@ -130,7 +130,7 @@
                (source, value) pairs this submit covers. #}
             <input type="hidden" name="value_keys[{{ vf.source }}]" value="{{ vf.keys }}">
             <table class="rio-table" style="margin-top:8px;">
-              <thead><tr><th scope="col" style="width:30%;">Value</th><th scope="col">Display label</th></tr></thead>
+              <thead><tr><th scope="col" style="width:30%;">{{ t("Value") }}</th><th scope="col">{{ t("Display label") }}</th></tr></thead>
               <tbody>
                 {% for v in vf.values %}
                   <tr>
@@ -150,8 +150,8 @@
       {% endif %}
 
       <div style="margin-top:14px;display:flex;gap:8px;">
-        <button type="submit" class="rio-btn rio-btn--primary">Save view</button>
-        <a href="{{ model.list_url }}" class="rio-btn rio-btn--ghost">Back to list</a>
+        <button type="submit" class="rio-btn rio-btn--primary">{{ t("Save view") }}</button>
+        <a href="{{ model.list_url }}" class="rio-btn rio-btn--ghost">{{ t("Back to list") }}</a>
       </div>
     </form>
   </div>

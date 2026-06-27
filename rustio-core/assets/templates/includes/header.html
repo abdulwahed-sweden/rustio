@@ -4,7 +4,7 @@
 <header class="rio-topbar rio-topbar--inset">
   <div class="rio-topbar__status">
     <span class="rio-topbar__dot" aria-hidden="true"></span>
-    <span>Signed in as {{ current_user.email }}</span>
+    <span>{{ t("Signed in as") }} {{ current_user.email }}</span>
   </div>
   <div style="display:flex;align-items:center;gap:var(--space-3);">
     {# v8 §3.6 — environment chip. Defaults to the non-prod mint treatment;
@@ -17,7 +17,7 @@
     {% include "includes/lang_switcher.html" %}
     <form method="post" action="/admin/logout" class="rio-topbar__logout-form">
       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-      <button type="submit" class="rio-btn rio-btn--ghost">Log out</button>
+      <button type="submit" class="rio-btn rio-btn--ghost">{{ t("Log out") }}</button>
     </form>
   </div>
 </header>

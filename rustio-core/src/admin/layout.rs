@@ -420,6 +420,10 @@ struct UserView {
     /// every page threading a new context key. Endonyms (display) with ISO
     /// codes as values (stored); the user's saved preference is `selected`.
     language_options: Vec<LangOption>,
+    /// Shell i18n — the active UI language for THIS user (preference → `"en"`),
+    /// read by the templates' `t()` function. Carried on `current_user` so
+    /// every page can translate its chrome without threading a new key.
+    active_language: String,
 }
 
 /// One option in the language switcher (i18n L4b). `value` is the ISO code
@@ -477,17 +481,31 @@ async fn user_view(db: &Db, identity: Option<&crate::auth::Identity>) -> Option<
         label: "Default".to_string(),
         selected: pref.is_none(),
     }];
-    for (code, endonym) in languages() {
+    // Offered languages = built-in registry first (stable order + endonyms),
+    // then any extra language localised via `rustio.locale.json`. So editing
+    // the locale file to add a language makes it selectable here too.
+    let mut codes: Vec<String> = languages().iter().map(|(c, _)| c.to_string()).collect();
+    for code in crate::admin::uilang::catalog_languages() {
+        if !codes.contains(&code) {
+            codes.push(code);
+        }
+    }
+    for code in &codes {
         language_options.push(LangOption {
-            value: code.to_string(),
-            label: endonym.to_string(),
-            selected: pref.as_deref() == Some(*code),
+            value: code.clone(),
+            label: crate::admin::uilang::endonym(code),
+            selected: pref.as_deref() == Some(code.as_str()),
         });
     }
+    // Active shell language: the user's preference, else English. (Per-view
+    // header labels resolve their own active language including the view's
+    // default; the shell has no per-view default, so it's preference → "en".)
+    let active_language = pref.clone().unwrap_or_else(|| "en".to_string());
     Some(UserView {
         email: id.email.clone(),
         display_name: id.email.clone(),
         language_options,
+        active_language,
     })
 }
 
@@ -2265,8 +2283,13 @@ pub(crate) fn languages() -> &'static [(&'static str, &'static str)] {
 
 /// Whether `code` is a known language. Used to validate the set-language
 /// action; an empty code is handled separately (it clears the preference).
+/// Accepts the built-in registry plus any language localised via
+/// `rustio.locale.json`, so a project-added language is also settable.
 pub(crate) fn is_known_language(code: &str) -> bool {
     languages().iter().any(|(c, _)| *c == code)
+        || crate::admin::uilang::catalog_languages()
+            .iter()
+            .any(|c| c == code)
 }
 
 /// i18n L4 — resolve the ACTIVE render language for a request:

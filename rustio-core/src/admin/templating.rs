@@ -70,6 +70,19 @@ pub fn environment(config: &TemplatingConfig) -> Environment<'static> {
     // pages — valid (browsers decode it) but noisy, non-standard HTML.
     env.set_formatter(admin_html_formatter);
 
+    // Shell i18n — `t("English source")` translates a UI string for the active
+    // language, read from `current_user.active_language` in the render context
+    // (absent / `en` → the English source, never blank). See `admin::uilang`.
+    env.add_function("t", |state: &State, key: String| -> String {
+        let lang = state
+            .lookup("current_user")
+            .and_then(|cu| cu.get_attr("active_language").ok())
+            .map(|v| v.to_string())
+            .filter(|s| !s.is_empty() && s != "none")
+            .unwrap_or_default();
+        crate::admin::uilang::translate(&lang, &key)
+    });
+
     let overrides_root: Option<Arc<Path>> = config.overrides_root.clone().map(Into::into);
     let auto_reload = config.auto_reload;
 
@@ -318,6 +331,35 @@ mod tests {
             env.get_template(name)
                 .unwrap_or_else(|e| panic!("embedded template {name} failed to parse: {e}"));
         }
+    }
+
+    #[test]
+    fn t_function_translates_from_active_language() {
+        let env = environment(&TemplatingConfig {
+            overrides_root: None,
+            auto_reload: false,
+        });
+        // Active language read from current_user.active_language.
+        let sv = env
+            .render_str(
+                r#"{{ t("Add") }}"#,
+                minijinja::context! { current_user => minijinja::context!{ active_language => "sv" } },
+            )
+            .unwrap();
+        assert_eq!(sv, "Lägg till");
+        // No signed-in user → English source, never blank.
+        let anon = env
+            .render_str(r#"{{ t("Add") }}"#, minijinja::context! {})
+            .unwrap();
+        assert_eq!(anon, "Add");
+        // English preference → English source.
+        let en = env
+            .render_str(
+                r#"{{ t("Save") }}"#,
+                minijinja::context! { current_user => minijinja::context!{ active_language => "en" } },
+            )
+            .unwrap();
+        assert_eq!(en, "Save");
     }
 
     #[test]

@@ -1,0 +1,19 @@
+{
+  "_comment": "Admin UI translations. Keys are the English source string shown in the admin; the value is its translation for that language code. Built-in Swedish (sv) ships in the binary — entries here OVERRIDE or EXTEND it, and you can add any language code (de, ar, fr, …). Missing strings fall back to English. Data (record contents) is never translated here; field/value labels live in the view editor.",
+  "sv": {
+    "Recent actions": "Senaste händelser",
+    "Your account": "Mitt konto"
+  },
+  "de": {
+    "Add": "Hinzufügen",
+    "Edit": "Bearbeiten",
+    "Delete": "Löschen",
+    "Search": "Suchen",
+    "Save": "Speichern",
+    "Log out": "Abmelden",
+    "Workspace": "Arbeitsbereich",
+    "System": "System",
+    "Recent actions": "Letzte Aktionen",
+    "Your account": "Ihr Konto"
+  }
+}
