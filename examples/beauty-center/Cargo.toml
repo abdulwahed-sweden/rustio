@@ -1,0 +1,19 @@
+# Excluded from the workspace so it builds standalone against the
+# adjacent rustio-core source tree (matches how an end-user project
+# would consume the framework via crates.io).
+[workspace]
+
+[package]
+name = "beauty-center"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "beauty-center"
+path = "main.rs"
+
+[dependencies]
+rustio-core = { path = "../../rustio-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+# `chrono` is used for `DateTime<Utc>` fields (joined_at / scheduled_at / ordered_at).
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }

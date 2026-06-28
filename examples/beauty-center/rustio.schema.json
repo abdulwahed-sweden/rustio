@@ -1,0 +1,312 @@
+{
+  "version": 2,
+  "rustio_version": "2.0.5",
+  "models": [
+    {
+      "name": "Appointment",
+      "table": "appointments",
+      "admin_name": "appointments",
+      "display_name": "Appointments",
+      "singular_name": "Appointment",
+      "fields": [
+        {
+          "name": "client_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Client",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "name"
+          }
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "scheduled_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "service_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Service",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "name"
+          }
+        },
+        {
+          "name": "staff_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Staff",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "name"
+          }
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Client",
+      "table": "clients",
+      "admin_name": "clients",
+      "display_name": "Clients",
+      "singular_name": "Client",
+      "fields": [
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "joined_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "notes",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Order",
+      "table": "orders",
+      "admin_name": "orders",
+      "display_name": "Orders",
+      "singular_name": "Order",
+      "fields": [
+        {
+          "name": "client_id",
+          "type": "i64",
+          "nullable": false,
+          "editable": true,
+          "relation": {
+            "model": "Client",
+            "field": "id",
+            "kind": "belongs_to",
+            "display_field": "name"
+          }
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "item_name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "ordered_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "price_cents",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "quantity",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "status",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Service",
+      "table": "services",
+      "admin_name": "services",
+      "display_name": "Services",
+      "singular_name": "Service",
+      "fields": [
+        {
+          "name": "category",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "duration_minutes",
+          "type": "i32",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "price_cents",
+          "type": "i64",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "Staff",
+      "table": "staff",
+      "admin_name": "staffs",
+      "display_name": "Staffs",
+      "singular_name": "Staff",
+      "fields": [
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "phone",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "specialty",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": false
+    },
+    {
+      "name": "User",
+      "table": "rustio_users",
+      "admin_name": "users",
+      "display_name": "Users",
+      "singular_name": "User",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "DateTime",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "id",
+          "type": "i64",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "is_active",
+          "type": "bool",
+          "nullable": false,
+          "editable": true
+        },
+        {
+          "name": "password_hash",
+          "type": "String",
+          "nullable": false,
+          "editable": false
+        },
+        {
+          "name": "role",
+          "type": "String",
+          "nullable": false,
+          "editable": true
+        }
+      ],
+      "relations": [],
+      "core": true
+    }
+  ]
+}

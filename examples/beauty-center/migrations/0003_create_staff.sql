@@ -1,0 +1,7 @@
+CREATE TABLE staff (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    specialty TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 1
+);

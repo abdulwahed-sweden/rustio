@@ -1,0 +1,7 @@
+{
+  "_comment": "Admin UI translations. Keys are the exact English text shown in the admin; values are the Swedish translation. Built-in Swedish (sv) ships in the framework — entries here override or extend it. Add any language code; RTL languages mirror automatically. Record DATA is never translated here.",
+  "sv": {
+    "Recent actions": "Senaste händelser",
+    "Your account": "Mitt konto"
+  }
+}
