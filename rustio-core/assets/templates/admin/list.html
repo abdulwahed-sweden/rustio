@@ -22,18 +22,8 @@
 
   {# Toolbar — search input + summary count. Filter chips and bulk
      actions land when the Rust side surfaces them; until then the
-     toolbar is the single search field plus a record-count caption. #}
-  <style>
-    .rio-layout-switch { display: inline-flex; gap: 4px; margin-left: auto; }
-    .rio-layout-switch .is-active { font-weight: 600; text-decoration: underline; }
-    .rio-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
-    .rio-card-item, .rio-list-item { padding: 12px 14px; }
-    .rio-list-field, .rio-card-field { display: flex; gap: 8px; padding: 2px 0; }
-    .rio-list-label, .rio-card-label { min-width: 9rem; color: var(--rio-muted, #667); font-weight: 600; }
-    .rio-compact-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid #0001; }
-    .rio-compact-cell { white-space: nowrap; }
-    .rio-list-actions, .rio-card-actions { margin-top: 8px; }
-  </style>
+     toolbar is the single search field plus a record-count caption.
+     Layout styling (table / list / cards / compact) lives in admin.css. #}
 
   <form class="rio-toolbar" method="get" action="/admin/{{ model.singular_name | lower }}s" role="search">
     {# Keep the active layout + sort across a search/filter submit. #}
@@ -150,13 +140,36 @@
         {% endfor %}
       </div>
     {% elif layout == 'compact' %}
+      {# Compact = a dense, scannable table. Same headed columns as the table
+         layout, tighter rows. #}
       <div class="rio-card">
-        {% for row in rows %}
-          <div class="rio-compact-row">
-            {% for cell in row.cells %}<span class="rio-compact-cell">{{ cell | safe }}</span>{% endfor %}
-            {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}" style="margin-inline-start:auto;">{{ t("Edit") }}</a>{% endif %}
-          </div>
-        {% endfor %}
+        <table class="rio-table rio-table--compact">
+          <thead>
+            <tr>
+              {% for col in columns %}
+                <th scope="col">{{ col.label }}</th>
+              {% endfor %}
+              {% if permissions.edit or permissions.delete %}
+                <th scope="col" style="width: 1%;">&nbsp;</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                {% for cell in row.cells %}
+                  <td>{{ cell | safe }}</td>
+                {% endfor %}
+                {% if permissions.edit or permissions.delete %}
+                  <td class="rio-row-actions">
+                    {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
+                    {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     {% else %}
     <div class="rio-card">

@@ -5602,7 +5602,15 @@ mod tests {
             !html.contains("MY-META-NOTE"),
             "meta (notes) should not appear in compact"
         );
-        assert!(html.contains("rio-compact-row"), "compact markup missing");
+        assert!(
+            html.contains("rio-table--compact"),
+            "compact markup missing"
+        );
+        // The dense compact layout now renders real column headers.
+        assert!(
+            html.contains("<thead>"),
+            "compact should have column headers"
+        );
     }
 
     #[tokio::test]

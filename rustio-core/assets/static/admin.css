@@ -628,9 +628,17 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
 .rio-list .rio-list-label { flex: none; min-width: 11rem; font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-muted); }
 .rio-list .rio-list-value { color: var(--color-text-primary); font-weight: 550; overflow-wrap: anywhere; }
 .rio-list .rio-list-actions { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); display: flex; gap: var(--space-2); }
-.rio-compact-row { display: flex; align-items: center; gap: var(--space-3); padding: 8px var(--space-2); border-bottom: 1px solid var(--color-border); }
-.rio-compact-row:last-child { border-bottom: 0; }
-.rio-compact-cell { white-space: nowrap; color: var(--color-text-secondary); }
+/* Compact layout — the table at a tighter density (0.10.x: headed + aligned). */
+.rio-table--compact { font-size: var(--text-small); }
+.rio-table--compact thead th { padding: 7px var(--space-3); }
+.rio-table--compact tbody td { padding: 7px var(--space-3); font-size: var(--text-small); }
+.rio-row-actions { white-space: nowrap; text-align: end; }
+.rio-row-actions .rio-btn { padding: 4px 10px; }
+
+/* List layout — promote the first field to the record's title. */
+.rio-list .rio-list-item .rio-list-field:first-child { align-items: center; margin-bottom: 2px; }
+.rio-list .rio-list-item .rio-list-field:first-child .rio-list-value { font-size: 17px; font-weight: 700; color: var(--color-text-primary); letter-spacing: -.01em; }
+.rio-list .rio-list-value:empty::after { content: "—"; color: var(--color-text-muted); font-weight: 500; }
 
 /* ============================================================================
  * Auth (login)
