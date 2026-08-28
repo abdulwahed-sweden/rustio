@@ -11,6 +11,9 @@
   <img alt="beta" src="https://img.shields.io/badge/status-beta-blueviolet?style=for-the-badge">
   <img alt="rust version: 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-dea584?style=for-the-badge">
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge">
+  <a href="https://github.com/sponsors/abdulwahed-sweden">
+    <img alt="Sponsor RustIO" src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white">
+  </a>
 </p>
 
 # RustIO
@@ -20,6 +23,8 @@
 You write the data — fields, types, relationships — as plain Rust structs. RustIO gives you back a working admin UI, a database, an auth system, and an HTTP server. Same idea as Django for Python, but built around a strict typed core — so changes to your schema, by hand or via the guided setup, stay safe-by-construction.
 
 If you've never touched Rust before, you should still finish this page in 5 minutes with a running website.
+
+> ❤️ **Using RustIO or want to see it keep growing?** [Sponsor continued open-source development](https://github.com/sponsors/abdulwahed-sweden).
 
 ![Admin list page — FK column renders project names as clickable links](docs/screenshots/admin-tasks-list-light.png)
 
@@ -71,8 +76,8 @@ Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for ev
 
 <p align="center">
   <img src="docs/screenshots/admin-login-light.png" alt="Sign-in page" width="32%">
-  <img src="docs/screenshots/admin-dashboard-light.png" alt="Dashboard with one card per registered model" width="32%">
-  <img src="docs/screenshots/admin-task-edit-light.png" alt="Edit form with every input type — text, integer, foreign-key select, datetime" width="32%">
+  <img src="docs/screenshots/admin-dashboard-light.png" alt="Dashboard you land on after sign-in" width="32%">
+  <img src="docs/screenshots/admin-task-edit-light.png" alt="Edit form generated from a Rust model" width="32%">
 </p>
 
 <sub>The three screens you touch most. <b>Left:</b> sign-in. <b>Middle:</b> the dashboard you land on after sign-in — one card per model, live row counts. <b>Right:</b> the edit form RustIO generates from your struct — every field type maps to the right input (foreign keys become <code>&lt;select&gt;</code>s populated from the target table, <code>DateTime</code> becomes a date-time picker, <code>Option&lt;T&gt;</code> fields become nullable).</sub>
@@ -233,5 +238,9 @@ The two are different in scope — `rustio-admin` targets Postgres-only admin pa
 ## Help
 
 Stuck? Open an [issue on GitHub](https://github.com/abdulwahed-sweden/rustio/issues). There are no bad questions — the project is early-alpha and rough edges are real.
+
+## ❤️ Support
+
+RustIO is open-source infrastructure. If it saves you time or you want to fund continued work on the framework, documentation, examples, and releases, you can [sponsor the project on GitHub](https://github.com/sponsors/abdulwahed-sweden).
 
 License: [MIT](LICENSE).
