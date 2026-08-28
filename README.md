@@ -139,7 +139,7 @@ rustio ai apply <plan>
 
 The repository includes **[`examples/bookflow/`](examples/bookflow/)**, a multi-model booking system showing relationships, generated admin views, migrations, and seed data.
 
-For deeper material, start with:
+For deeper material, start with the [documentation site](https://rustio.vercel.app) or:
 
 - [`docs/glossary.md`](docs/glossary.md)
 - [`docs/advanced/`](docs/advanced/)
@@ -151,7 +151,7 @@ For deeper material, start with:
 
 ## Performance goals
 
-The project README previously published the following project targets for a simple endpoint/release build:
+Project targets for a simple endpoint in a release build:
 
 - ≥ 50,000 req/s
 - 10–30 MB resident memory
