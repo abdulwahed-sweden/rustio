@@ -1,246 +1,194 @@
 <p align="center">
-  <a href="https://crates.io/crates/rustio-cli">
-    <img alt="rustio-cli on crates.io" src="https://img.shields.io/crates/v/rustio-cli?style=for-the-badge&color=orange&label=rustio-cli">
-  </a>
-  <a href="https://docs.rs/rustio-core">
-    <img alt="rustio-core on docs.rs" src="https://img.shields.io/docsrs/rustio-core?style=for-the-badge&color=blue&label=docs.rs">
-  </a>
-  <a href="https://github.com/abdulwahed-sweden/rustio/actions/workflows/ci.yml">
-    <img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/abdulwahed-sweden/rustio/ci.yml?style=for-the-badge&label=ci">
-  </a>
-  <img alt="beta" src="https://img.shields.io/badge/status-beta-blueviolet?style=for-the-badge">
-  <img alt="rust version: 1.75+" src="https://img.shields.io/badge/rust-1.75%2B-dea584?style=for-the-badge">
-  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-black?style=for-the-badge">
-  <a href="https://github.com/sponsors/abdulwahed-sweden">
-    <img alt="Sponsor RustIO" src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white">
-  </a>
+  <strong>RustIO</strong><br>
+  Build real web/admin systems in Rust without rebuilding the boring foundation every time.
 </p>
 
-# RustIO
-
-**Build real web systems in Rust without writing the boring parts.**
-
-You write the data — fields, types, relationships — as plain Rust structs. RustIO gives you back a working admin UI, a database, an auth system, and an HTTP server. Same idea as Django for Python, but built around a strict typed core — so changes to your schema, by hand or via the guided setup, stay safe-by-construction.
-
-If you've never touched Rust before, you should still finish this page in 5 minutes with a running website.
-
-> ❤️ **Using RustIO or want to see it keep growing?** [Sponsor continued open-source development](https://github.com/sponsors/abdulwahed-sweden).
-
-![Admin list page — FK column renders project names as clickable links](docs/screenshots/admin-tasks-list-light.png)
-
-<sub>↑ A RustIO admin list page. A foreign-key column displays the related record's name (a clickable link), not a raw integer — that's what `#[rustio(belongs_to, display)]` buys you. <a href="examples/bookflow/">→ See the bookflow example</a></sub>
+<p align="center">
+  <a href="https://crates.io/crates/rustio-cli"><img alt="rustio-cli on crates.io" src="https://img.shields.io/crates/v/rustio-cli?label=rustio-cli&color=orange"></a>
+  <a href="https://docs.rs/rustio-core"><img alt="rustio-core docs" src="https://img.shields.io/docsrs/rustio-core?label=docs.rs&color=blue"></a>
+  <a href="https://github.com/abdulwahed-sweden/rustio/actions/workflows/ci.yml"><img alt="CI status" src="https://img.shields.io/github/actions/workflow/status/abdulwahed-sweden/rustio/ci.yml?label=ci"></a>
+  <img alt="beta" src="https://img.shields.io/badge/status-beta-blueviolet">
+  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-black">
+  <a href="https://github.com/sponsors/abdulwahed-sweden?metadata_source=rustio&metadata_campaign=readme_top"><img alt="Sponsor RustIO" src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white"></a>
+</p>
 
 ---
 
-## Your first project (5 minutes)
+## What RustIO gives you
 
-You need [Rust](https://rustup.rs/) installed. Nothing else.
+Define your data as Rust structs. RustIO gives you the foundation around it:
+
+- admin UI
+- database schema and migrations
+- authentication and sessions
+- HTTP server
+- generated model views
+- typed schema export
+- guided schema evolution
+
+The goal is simple: **you write the domain; RustIO handles the repetitive system plumbing.**
+
+<p align="center">
+  <a href="https://github.com/sponsors/abdulwahed-sweden?metadata_source=rustio&metadata_campaign=value_cta"><strong>❤️ Sponsor continued RustIO development</strong></a>
+</p>
+
+---
+
+## Five-minute start
 
 ```bash
-# 1. Install the CLI
 cargo install rustio-cli
-
-# 2. Start a project — this opens the setup menu
 rustio init mysite
 cd mysite
 ```
 
-When `init` finishes, RustIO opens a small menu:
-
-<p align="center">
-  <img src="docs/screenshots/cli-start-menu.png" alt="rustio start — entry-point menu with Guided / Manual / Import" width="80%">
-</p>
-
-Pick **Guided**, describe what you're building in one sentence (*"a small clinic with patients and appointments"*), and walk each proposed model with a single keystroke. Before any file is written you see a plain-English summary of what's about to happen:
-
-<p align="center">
-  <img src="docs/screenshots/cli-start-blueprint.png" alt="System-blueprint summary — connected models, relationships, admin screens, migrations" width="80%">
-</p>
-
-The technical details (typed plan operations, risk classification, warnings, migration paths) live one keystroke deeper, behind **Show technical details**. You decide what lands. Prefer to do everything by hand? Pick **Manual** and add models one at a time with `rustio new app <name>`.
-
-Finish the loop:
+Use the guided setup or define models manually, then:
 
 ```bash
-# 3. Apply the migrations the wizard wrote
 rustio migrate apply
-
-# 4. Make a login for yourself
 rustio user create --email you@example.com --password secret --role admin
-
-# 5. Start the server
 rustio run
 ```
 
-Open <http://127.0.0.1:8000/admin>, sign in, and you have a working admin for every model you accepted. Click **+ Add …** to create one. Click the row to edit. That's the entire loop.
+Open:
 
-<p align="center">
-  <img src="docs/screenshots/admin-login-light.png" alt="Sign-in page" width="32%">
-  <img src="docs/screenshots/admin-dashboard-light.png" alt="Dashboard you land on after sign-in" width="32%">
-  <img src="docs/screenshots/admin-task-edit-light.png" alt="Edit form generated from a Rust model" width="32%">
-</p>
+```text
+http://127.0.0.1:8000/admin
+```
 
-<sub>The three screens you touch most. <b>Left:</b> sign-in. <b>Middle:</b> the dashboard you land on after sign-in — one card per model, live row counts. <b>Right:</b> the edit form RustIO generates from your struct — every field type maps to the right input (foreign keys become <code>&lt;select&gt;</code>s populated from the target table, <code>DateTime</code> becomes a date-time picker, <code>Option&lt;T&gt;</code> fields become nullable).</sub>
+You now have a working admin system generated from your Rust model definitions.
 
-> **Stuck?** Run `rustio doctor` from inside the project — it checks every common "why isn't this working" cause and tells you what to fix.
-
----
-
-## What you just did
-
-| Step | What actually happened |
-|---|---|
-| `rustio init mysite` | Scaffolded a Rust project with the framework wired up, then opened the setup menu. The Guided path mapped your one-line description to a typed starting shape, walked each model with you, and — for every model you accepted — wrote `apps/<table>/models.rs` plus a `CREATE TABLE` migration. Nothing was guessed: the underlying vocabulary is closed, so requests it can't express are refused rather than approximated. |
-| `rustio migrate apply` | Ran the SQL migrations against `app.db` (SQLite, created on first run) and regenerated `rustio.schema.json`. |
-| `rustio user create …` | Inserted a row into the `rustio_users` table with an argon2-hashed password and gave it the `admin` role. |
-| `rustio run` | Built and ran your binary. The HTTP server listens on `:8000`; `/admin/*` is gated by the auth middleware. |
-
-If any of those words sound unfamiliar, see **[`docs/glossary.md`](docs/glossary.md)** — plain-English definitions of every framework term.
+![Admin list page](docs/screenshots/admin-tasks-list-light.png)
 
 ---
 
 ## A small mental model
 
-A RustIO project has three places you'll touch most:
+A RustIO project revolves around three things:
 
-- **`apps/<thing>/models.rs`** — the Rust struct that describes one "thing" (a `Note`, a `Customer`, a `Order`). The struct is the source of truth. The admin UI, the database schema, and the JSON schema export are all derived from it.
-- **`migrations/*.sql`** — plain SQL files that change the database. Filenames are numbered (`0001_…`, `0002_…`); RustIO applies them in order and remembers which ones it already applied.
-- **`main.rs`** — your server entry point. Mostly boilerplate at the start; you'll only edit this when you want to add your own routes outside the admin.
+1. **Rust models** — the source of truth for your domain.
+2. **Migrations** — explicit SQL changes to the database.
+3. **`rustio.schema.json`** — the stable machine-readable contract used by tooling.
 
-Everything else (the admin UI, the login flow, the session handling, the JSON schema export) is the framework doing work on your behalf.
-
----
-
-## Want a fuller example?
-
-The repo ships with **[`examples/bookflow/`](examples/bookflow/)** — a real seven-model general-purpose booking system (customers, resources, bookings, locations, schedules, assignments, invoices) with foreign-key relationships and seed data. It's domain-agnostic on purpose: the same schema fits container logistics, equipment rental, or appointments — reshaped purely by editing the ViewSpec. Run it like this:
-
-```bash
-cd examples/bookflow
-RUSTIO_CORE_PATH="$(pwd)/../../rustio-core" \
-  cargo run --manifest-path ../../Cargo.toml -p rustio-cli -- migrate apply
-RUSTIO_CORE_PATH="$(pwd)/../../rustio-core" \
-  cargo run --manifest-path ../../Cargo.toml -p rustio-cli -- \
-  user create --email admin@bookflow.local --password demo1234 --role admin
-cargo run
-# Open http://127.0.0.1:8000/admin
-# Sign in: admin@bookflow.local / demo1234
-```
-
-You can also render any model's default view straight from the schema, no web layer needed:
-
-```bash
-cargo run --quiet -- --dump-schema     # emit rustio.schema.json
-RUSTIO_CORE_PATH="$(pwd)/../../rustio-core" \
-  cargo run --manifest-path ../../Cargo.toml -p rustio-cli -- view Booking --layout list
-```
-
-The bookflow README walks through the models, the type mapping, and the `rustio view` reshaping idea.
+Everything else — admin screens, login flow, schema export, and guided setup — exists to reduce repeated work around those three pieces.
 
 ---
 
-## Evolving the schema later
+## Evolve the system safely
 
-Once your project is running, describe the change in plain English:
+Describe a change:
 
 ```bash
 rustio evolve "add date_of_birth as DateTime to notes"
 ```
 
-RustIO proposes the diff as a small blueprint, shows you the risk, and lets you choose `Apply` / `Show technical details` / `Cancel`. On Apply, it writes the model edit + a migration; you then run `rustio migrate apply` to bring the DB up to date.
+RustIO proposes a typed change plan, shows the risk, and lets you review it before anything lands.
 
-Behind the scenes there's a typed plan/review/apply pipeline. It expresses changes inside a fixed vocabulary (add field, rename field, add relation, change type, …); if your request doesn't fit, the planner **refuses** rather than guessing. The review step runs deterministic risk classification before anything touches your tree. The apply step is atomic — either every file write lands or none of them do.
+The change pipeline is deliberately constrained:
 
-The whole pipeline reads one file: **`rustio.schema.json`** (generated by `rustio schema`). That's the only contract external tools are allowed to use; nothing else.
+```text
+request → typed plan → review → apply
+```
 
-The same three steps are exposed as separate commands for CI gates and scripting — see `rustio help advanced`.
+If a requested change cannot be represented safely in the supported vocabulary, RustIO should refuse rather than invent an approximation.
 
 ---
 
-## CLI cheat sheet
+## What makes it different
 
-If you forget what something does, type `rustio` with no arguments — the CLI looks at where you are and suggests the most useful next command. Or pass `--why` to any command to get a short explanation without running it.
+RustIO is intentionally opinionated:
+
+- Rust-first, typed core
+- async with Tokio
+- generated admin instead of a separate frontend app
+- explicit migrations
+- schema-driven tooling
+- human-reviewed change plans
+- single-binary style deployment
+
+It is **not** trying to replace Axum, Actix, or Rocket as a general web framework. It sits at a higher level for people who want to build operational systems faster.
+
+---
+
+## Useful commands
 
 ```bash
-rustio                          # context-aware "what should I do next"
-rustio help                     # the full command list, grouped by purpose
-rustio doctor                   # health check for the current project
-rustio explain <topic>          # short docs on `model`, `migration`, `admin`, `ai`, …
+rustio                    # context-aware next step
+rustio doctor             # diagnose common project problems
+rustio explain <topic>    # short built-in explanations
+rustio start              # setup menu
+rustio new app <name>     # add a model/app
+rustio migrate apply      # apply migrations
+rustio migrate status     # inspect migration state
+rustio schema             # regenerate rustio.schema.json
+rustio run                # build and serve
+rustio user create        # create a user
+```
 
-rustio init <name>              # new project + opens the setup menu
-rustio start                    # open the setup menu inside an existing project
-rustio new app <name>           # new model + admin entry + migration stub
-rustio migrate apply            # apply pending migrations
-rustio migrate status           # what's applied, what's pending
-rustio schema                   # regenerate rustio.schema.json
-rustio run                      # build + serve on :8000
-rustio user create [...]        # add a user (interactive when args missing)
+Advanced schema-change workflow:
 
-# Advanced — evolve an existing schema through the typed plan pipeline.
-rustio ai plan "<change>" [--save PATH]
+```bash
+rustio ai plan "<change>"
 rustio ai review <plan>
-rustio ai apply  <plan> [--yes] [--dry-run] [--force]
+rustio ai apply <plan>
 ```
 
 ---
 
-## How fast is it?
+## Example project
 
-Honest numbers, not aspirational:
+The repository includes **[`examples/bookflow/`](examples/bookflow/)**, a multi-model booking system showing relationships, generated admin views, migrations, and seed data.
 
-- **≥ 50,000 req/s** on a simple endpoint
-- **10–30 MB** resident memory
-- **< 50 ms** cold start
-- **~15 MB** stripped release binary
+For deeper material, start with:
 
-If any release regresses any of these, it doesn't ship.
-
----
-
-## What RustIO is *not*
-
-- **Not a Django clone.** Different language, different concurrency model, different opinions.
-- **Not a generic framework.** Axum, Actix, and Rocket cover that space; RustIO is a higher level.
-- **Not a frontend framework.** Server-rendered admin + JSON for everything else.
-- **Not a sync framework.** Tokio only.
-- **Not an AI gadget.** `rustio evolve` and the underlying typed change pipeline work because the core is strict and the vocabulary is closed — not the other way around. The friendliness is a UX surface; the substance is the type system.
+- [`docs/glossary.md`](docs/glossary.md)
+- [`docs/advanced/`](docs/advanced/)
+- [`ROADMAP.md`](ROADMAP.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ---
 
-## Going further
+## Performance goals
 
-- **[`docs/glossary.md`](docs/glossary.md)** — every framework term in plain English.
-- **[`docs/advanced/composition-editor-and-i18n.md`](docs/advanced/composition-editor-and-i18n.md)** — reshape a model's admin list (roles, order, filters, merge) and add per-language display labels for fields and values, all without touching data.
-- **[`docs/advanced/`](docs/advanced/)** — deeper walkthroughs (long-form quickstart, the hospital example, the healthcare stress test). Read these once you're comfortable with the basics.
-- **[`docs/design-system.md`](docs/design-system.md)** — what's shipping in the admin today vs the v7 spec in `rustio-core/assets/admin.css`, and the migration path between them.
-- **[`ROADMAP.md`](ROADMAP.md)** — the three phases (Foundation / Intelligence / Systems) and where each release fits.
-- **[`CHANGELOG.md`](CHANGELOG.md)** — every visible change, version by version.
-- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to land a PR.
+The project README previously published the following project targets for a simple endpoint/release build:
 
----
+- ≥ 50,000 req/s
+- 10–30 MB resident memory
+- < 50 ms cold start
+- ~15 MB stripped release binary
 
-## CLI
-
-See [`docs/cli.md`](docs/cli.md) for the full command reference.
+Treat these as project benchmark targets, not universal application guarantees. Real performance depends on workload, database access, hardware, and application logic.
 
 ---
 
-## Naming — what about `rustio-admin`?
+## RustIO vs RustIO Admin
 
-There's a separate, unrelated project called **[`rustio-admin`](https://github.com/abdulwahed-sweden/rustio-admin)** — a Postgres-first administrative framework. Through its v0.21.x line it shipped a CLI binary also called `rustio`, which meant `cargo install rustio-cli` and `cargo install rustio-admin-cli` silently overwrote each other in `~/.cargo/bin`.
+There is a separate project, **[`rustio-admin`](https://github.com/abdulwahed-sweden/rustio-admin)**.
 
-As of [`rustio-admin` v0.22.0](https://github.com/abdulwahed-sweden/rustio-admin/releases/tag/v0.22.0) its binary is named **`rustio-admin`**, so the two no longer collide. You can install both on the same machine and `rustio` always means this project.
+- **RustIO** focuses on structs → schema → DB/admin/server plus guided evolution.
+- **RustIO Admin** is a Postgres-first administrative framework with a different scope and runtime model.
 
-The two are different in scope — `rustio-admin` targets Postgres-only admin panels; this project layers an admin UI, an ORM, and a guided schema-evolution wizard (`rustio evolve`) over a strict typed core with SQLite. Same name prefix, different goals.
+The CLI binary for RustIO is `rustio`; RustIO Admin uses `rustio-admin`.
 
 ---
 
-## Help
+## Why sponsor?
 
-Stuck? Open an [issue on GitHub](https://github.com/abdulwahed-sweden/rustio/issues). There are no bad questions — the project is early-alpha and rough edges are real.
+Framework maintenance is continuous work: compatibility, migrations, documentation, examples, bug fixes, release engineering, and keeping the safe-change workflow predictable.
 
-## ❤️ Support
+Sponsorship helps fund exactly that work.
 
-RustIO is open-source infrastructure. If it saves you time or you want to fund continued work on the framework, documentation, examples, and releases, you can [sponsor the project on GitHub](https://github.com/sponsors/abdulwahed-sweden).
+If your team uses RustIO, experiments with it for internal tooling, or simply wants this kind of Rust infrastructure to keep improving, support is directly useful.
+
+<p align="center">
+  <a href="https://github.com/sponsors/abdulwahed-sweden?metadata_source=rustio&metadata_campaign=readme_bottom">
+    <img src="https://img.shields.io/badge/Support_RustIO_on_GitHub_Sponsors-%E2%9D%A4-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Support RustIO on GitHub Sponsors">
+  </a>
+</p>
+
+---
+
+Stuck? Open an [issue](https://github.com/abdulwahed-sweden/rustio/issues).
 
 License: [MIT](LICENSE).
