@@ -4436,17 +4436,21 @@ A [RustIO](https://github.com/abdulwahed-sweden/rustio) project.
 
 ## Run it
 
-    rustio migrate apply      # apply schema changes
-    rustio run                # build and start the server on :8000
+```bash
+rustio migrate apply      # apply schema changes
+rustio run                # build and start the server on :8000
+```
 
 ## Commands
 
-    rustio add model <name>       # scaffold a model inside this project
-    rustio migrate generate <n>   # create an empty migration file
-    rustio migrate apply [-v]     # apply pending migrations
-    rustio migrate status         # show applied + pending
-    rustio run                    # build and run the server
-    rustio --version              # print CLI version
+```bash
+rustio add model <name>       # scaffold a model inside this project
+rustio migrate generate <n>   # create an empty migration file
+rustio migrate apply [-v]     # apply pending migrations
+rustio migrate status         # show applied + pending
+rustio run                    # build and run the server
+rustio --version              # print CLI version
+```
 
 ## Layout
 
@@ -4500,9 +4504,11 @@ knowledge required.
 
 ## Run it
 
-    rustio migrate apply                 # apply schema changes to the database
-    rustio user create --email you@example.com --password secret --role admin
-    rustio run                           # build + serve on http://127.0.0.1:8000
+```bash
+rustio migrate apply                 # apply schema changes to the database
+rustio user create --email you@example.com --password secret --role admin
+rustio run                           # build + serve on http://127.0.0.1:8000
+```
 
 Then open <http://127.0.0.1:8000> for the landing page, and
 <http://127.0.0.1:8000/admin> to sign in.
@@ -4519,24 +4525,30 @@ Then open <http://127.0.0.1:8000> for the landing page, and
 
 ## Add a model
 
-    rustio add model customers           # scaffolds models/customers/ + a migration
-    # edit models/customers/models.rs to add fields, then:
-    rustio migrate apply
+```bash
+rustio add model customers           # scaffolds models/customers/ + a migration
+# edit models/customers/models.rs to add fields, then:
+rustio migrate apply
+```
 
 Or describe the change in plain English and let RustIO write the diff:
 
-    rustio change "add email and date_of_birth to customers"
+```bash
+rustio change "add email and date_of_birth to customers"
+```
 
 ## Branding — `rustio.design.json`
 
 Change how the admin and landing page look without touching any code:
 
-    {
-      "project_name": "{{NAME}}",   // shown in the sidebar, title, and landing page
-      "logo_initial": "{{NAME}}"[0],// the single letter in the square logo
-      "primary_color": "#2B54E0",   // primary button + logo background
-      "accent_color":  "#2B54E0"    // focus rings + links
-    }
+```json
+{
+  "project_name": "{{NAME}}",   // shown in the sidebar, title, and landing page
+  "logo_initial": "{{NAME}}"[0],// the single letter in the square logo
+  "primary_color": "#2B54E0",   // primary button + logo background
+  "accent_color":  "#2B54E0"    // focus rings + links
+}
+```
 
 ## Languages — `rustio.locale.json`
 
@@ -4544,7 +4556,9 @@ The admin UI translates itself. **Swedish ships built-in.** To add or change a
 translation, edit `rustio.locale.json`: the key is the exact English text, the
 value is your translation. Add any language by adding its code:
 
-    { "de": { "Add": "Hinzufügen", "Save": "Speichern" } }
+```json
+{ "de": { "Add": "Hinzufügen", "Save": "Speichern" } }
+```
 
 - A language you add becomes selectable from the switcher in the admin top bar.
 - Right-to-left languages (`ar`, `fa`, `ur`, …) mirror the whole layout
