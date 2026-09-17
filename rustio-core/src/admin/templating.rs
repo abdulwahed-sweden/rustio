@@ -334,6 +334,31 @@ mod tests {
     }
 
     #[test]
+    fn base_html_renders_for_pre_auth_pages_without_current_user() {
+        // Regression: the login / 403 / 404 pages extend base.html but pass no
+        // `current_user`. base.html must not error reading current_user.* — or
+        // the page falls back to unstyled HTML (no stylesheet link).
+        let env = environment(&TemplatingConfig {
+            overrides_root: None,
+            auto_reload: false,
+        });
+        let html = env
+            .get_template("auth/login.html")
+            .unwrap()
+            .render(minijinja::context! {
+                design => minijinja::context! { project_name => "X", logo_initial => "X" },
+                email => "",
+                error => None::<&str>,
+            })
+            .expect("login must render with no current_user");
+        assert!(
+            html.contains("/admin/static/admin.css"),
+            "pre-auth page must link the admin stylesheet"
+        );
+        assert!(html.contains("dir=\"ltr\""), "should default to ltr pre-auth");
+    }
+
+    #[test]
     fn t_function_translates_from_active_language() {
         let env = environment(&TemplatingConfig {
             overrides_root: None,
