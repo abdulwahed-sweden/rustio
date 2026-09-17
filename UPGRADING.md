@@ -19,7 +19,7 @@ A per-release migration guide. Items here only cover externally-observable chang
 Running the old spelling prints one line and then does exactly what `change`
 does:
 
-```
+```text
 note: `evolve` is now `change` — same command.
 ```
 
@@ -102,7 +102,7 @@ A project scaffolded before that block existed ignores the variable and binds
 listening on, `rustio run --port 8001` on such a project **exits 1 and starts
 nothing**:
 
-```
+```text
 error: --port needs the RUSTIO_PORT block in main.rs — see UPGRADING.md
 ```
 

@@ -445,7 +445,7 @@ Click the chevron (▸) in the first column of any row. A panel opens inline sho
 
 Copy the URL while filters are active:
 
-```
+```text
 /admin/appointments?q=&patient_id=3&status=scheduled&sort=newest
 ```
 
@@ -473,4 +473,4 @@ Share it, bookmark it, paste it into a runbook. The page reloads the exact same 
 
 The bookflow example in `examples/bookflow/` extends this same pattern across several folders — customers, bookings, resources, schedules, invoices, and more — each adding its own models. The shape is identical — one Rust struct, one `Model` impl, one migration, one `admin.model::<T>()` line. You've already seen everything the admin layer does; adding models is additive.
 
-When you're ready to evolve the schema without hand-editing: `rustio ai plan "..." --save p.json && rustio ai review p.json && rustio ai apply p.json --yes`. See `demo-walkthrough.md` for why the planner/executor split exists and what it refuses to do.
+When you're ready to change the schema without hand-editing: `rustio ai plan "..." --save p.json && rustio ai review p.json && rustio ai apply p.json --yes`. See `demo-walkthrough.md` for why the planner/executor split exists and what it refuses to do.

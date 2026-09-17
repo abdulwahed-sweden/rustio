@@ -6,7 +6,7 @@ Provides the HTTP server, router, middleware chain, request context, error handl
 
 Normally used indirectly via the `rustio-cli` binary, which scaffolds projects that depend on this crate.
 
-```
+```bash
 cargo install rustio-cli
 rustio init mysite
 ```

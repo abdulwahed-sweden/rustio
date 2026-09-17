@@ -84,7 +84,7 @@ and `Option<T>`. That vocabulary is the first place the test bites (see §7).
 
 ### 3.1 Entity relationships
 
-```
+```text
 Department (8) ──< Doctor (10) ──< Appointment (120) >── Patient (40)
                                           │                   │
                                           ├──< Prescription (60)
@@ -146,7 +146,7 @@ files for readers opening the schema in other tools.
 
 **Proof that runtime enforcement is live:**
 
-```
+```text
 $ sqlite3 app.db "SELECT COUNT(*) FROM doctors WHERE department_id = 1;"
 2
 
@@ -184,7 +184,7 @@ so the data ages consistently regardless of when you seed.
 
 Run once against a freshly-migrated DB:
 
-```
+```bash
 sqlite3 app.db < seed.sql
 ```
 
@@ -192,7 +192,7 @@ sqlite3 app.db < seed.sql
 twice hits unique-constraint failures on department codes, doctor emails / licenses,
 patient national IDs, and invoice numbers. Rebuild the DB first:
 
-```
+```bash
 rm app.db app.db-shm app.db-wal
 rustio migrate apply
 sqlite3 app.db < seed.sql

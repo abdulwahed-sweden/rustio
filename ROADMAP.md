@@ -2,7 +2,7 @@
 
 ## Positioning
 
-**RustIO is the fastest way to build real systems — and evolve them safely with AI.**
+**RustIO is the fastest way to build real systems — and change them safely with AI.**
 
 It is a system builder with a strict, typed core. The shape of every model, field, relationship, and admin behavior is captured in a deterministic, machine-readable schema. That determinism is the foundation on which everything else — the admin layer, the CLI, the upcoming AI-assisted extension layer — becomes reliable.
 

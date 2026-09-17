@@ -48,7 +48,7 @@ rustio init booklend
 
 When `init` finishes, RustIO asks one question:
 
-```
+```text
 ✔ Created project "booklend"
 
   How do you want to start?
@@ -84,7 +84,7 @@ rustio run
 `rustio change` shows the change, asks before writing, then offers to apply
 the migration in the same breath:
 
-```
+```text
   Ready to make this change:
 
     · add Book.author  (String, required)
@@ -98,7 +98,7 @@ the migration in the same breath:
 
 `rustio run` tells you where it is and who to sign in as:
 
-```
+```text
   booklend is running → http://127.0.0.1:8000/admin
   sign in as you@example.com
   Ctrl+C to stop
