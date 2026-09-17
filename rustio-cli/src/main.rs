@@ -1003,12 +1003,10 @@ async fn run(port: Option<u16>) -> Result<(), String> {
     // RUSTIO_PORT we would print a URL for a port the server is not
     // going to bind. Say so and start nothing.
     if port.is_some() {
-        let main_rs = fs::read_to_string("main.rs")
-            .map_err(|e| format!("could not read main.rs: {e}"))?;
+        let main_rs =
+            fs::read_to_string("main.rs").map_err(|e| format!("could not read main.rs: {e}"))?;
         if !declares_port_support(&main_rs) {
-            return Err(
-                "--port needs the RUSTIO_PORT block in main.rs — see UPGRADING.md".into(),
-            );
+            return Err("--port needs the RUSTIO_PORT block in main.rs — see UPGRADING.md".into());
         }
     }
 
@@ -1140,7 +1138,9 @@ async fn migrate_apply(verbose: bool) -> Result<(), String> {
     out::success(&format!("Applied {n}"), &format!("{noun}{tail}"));
     if let Err(msg) = dump {
         println!();
-        out::hint("rustio schema          # regenerate rustio.schema.json once the project compiles");
+        out::hint(
+            "rustio schema          # regenerate rustio.schema.json once the project compiles",
+        );
         if verbose {
             eprintln!("  reason: {msg}");
         }

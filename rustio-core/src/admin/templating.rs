@@ -355,7 +355,10 @@ mod tests {
             html.contains("/admin/static/admin.css"),
             "pre-auth page must link the admin stylesheet"
         );
-        assert!(html.contains("dir=\"ltr\""), "should default to ltr pre-auth");
+        assert!(
+            html.contains("dir=\"ltr\""),
+            "should default to ltr pre-auth"
+        );
     }
 
     #[test]
