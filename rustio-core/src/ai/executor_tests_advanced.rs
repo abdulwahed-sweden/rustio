@@ -160,6 +160,10 @@ fn project_with_post(root: &str) -> ProjectView {
         },
     );
     ProjectView {
+        // These fixtures simulate a project on the legacy `apps/`
+        // layout; `models/` projects are covered by the on-disk
+        // integration tests.
+        models_dir: "apps",
         root: PathBuf::from(root),
         models_files,
         existing_migrations: vec!["0001_create_posts.sql".into()],
@@ -730,6 +734,7 @@ fn large_schema_simulation_holds_determinism() {
         },
     );
     let project = ProjectView {
+        models_dir: "apps",
         root: PathBuf::from("/p"),
         models_files,
         existing_migrations: vec!["0001_create_wides.sql".into()],

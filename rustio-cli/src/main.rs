@@ -32,7 +32,7 @@ If you're new:
 
     rustio init <name>          create the project, pick Empty or a template
     cd <name>
-    rustio new app <name>       one model at a time
+    rustio add model <name>     one model at a time
     rustio migrate apply        create the tables
     rustio run                  http://127.0.0.1:8000/admin
 
@@ -42,10 +42,11 @@ the whole loop.
 SCAFFOLD
     init [name]                 Wizard (no name) or non-interactive scaffold
                                   (with name). Options:
-                                  --preset <basic|blog|api>, --app <name>.
+                                  --preset <basic|blog|api>, --model <name>.
     start                       Reopen the setup menu — Empty, or one of the
                                   templates (clinic, blog, shop, crm, tasks).
-    new app <name>              Add a new model to the current project.
+    add model <name>            Add a model to the current project — struct,
+                                  admin entry, and migration.
 
 RUN
     run [--port <n>]            Build and start the server (:8000 by default).
@@ -204,12 +205,16 @@ async fn main() -> ExitCode {
                 explain_command(&topic)
             }
         }
-        Ok(Command::Init { name, preset, app }) => {
+        Ok(Command::Init {
+            name,
+            preset,
+            model,
+        }) => {
             if why_mode {
                 why_for("init");
                 Ok(())
             } else {
-                init_command(name, preset, app)
+                init_command(name, preset, model)
             }
         }
         Ok(Command::NewProject(name)) => {
@@ -220,12 +225,16 @@ async fn main() -> ExitCode {
                 new_project(&name).map(|()| print_next_steps(Some(&name), true))
             }
         }
-        Ok(Command::NewApp(name)) => {
+        Ok(Command::AddModel { name, via_alias }) => {
             if why_mode {
-                why_for("new-app");
+                why_for("add-model");
                 Ok(())
             } else {
-                new_app(&name)
+                if via_alias {
+                    out::info("note: `new app` is now `add model` — same command.");
+                    println!();
+                }
+                add_model(&name)
             }
         }
         Ok(Command::Run { port }) => {
@@ -373,13 +382,22 @@ enum Command {
     Init {
         name: Option<String>,
         preset: Option<wizard::Preset>,
-        app: Option<String>,
+        model: Option<String>,
     },
     NewProject(String),
-    NewApp(String),
+    /// `rustio add model <name>` — scaffold one model (struct + admin
+    /// entry + migration) inside the current project. `via_alias` is
+    /// set when the user typed the retired `new app` spelling, which
+    /// prints a one-line note and then does exactly the same thing.
+    AddModel {
+        name: String,
+        via_alias: bool,
+    },
     /// `rustio start` — the recommended entry point for new projects.
-    /// Opens the two-choice setup menu (Empty / Template) and
-    /// dispatches. Same menu `rustio init` ends on.
+    /// Opens a small menu (Guided / Manual / Import) and dispatches.
+    /// The Guided path is the conversational wizard introduced in
+    /// 0.10.x; the underlying machinery is the same module used by
+    /// the post-`init` offer.
     Start,
     /// `rustio run [--port <n>]`. The port is forwarded to the project
     /// binary through `RUSTIO_PORT`; `None` means "let it use 8000".
@@ -431,7 +449,7 @@ enum Command {
     Doctor,
     /// `rustio explain <topic>` — inline mini-docs. Prints a short,
     /// jargon-free explanation of a framework concept + a runnable
-    /// example. Topics: model, migration, schema, app, admin, route,
+    /// example. Topics: model, migration, schema, layout, admin, route,
     /// ai, context, rbac.
     Explain(String),
     /// `rustio evolve "<request>"` — friendly interactive verb for
@@ -552,16 +570,36 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             Ok(Command::Start)
         }
         Some("init") => parse_init_args(&args[2..]),
+        Some("add") => {
+            let kind = args.get(2).ok_or("usage: rustio add model <name>")?;
+            match kind.as_str() {
+                "model" => {
+                    let name = args.get(3).ok_or("usage: rustio add model <name>")?;
+                    Ok(Command::AddModel {
+                        name: name.clone(),
+                        via_alias: false,
+                    })
+                }
+                other => Err(format!(
+                    "unknown subcommand `add {other}` — did you mean `rustio add model {other}`?"
+                )),
+            }
+        }
         Some("new") => {
             let kind = args
                 .get(2)
-                .ok_or("usage: rustio new <project|app> <name>")?;
+                .ok_or("usage: rustio new project <name>  (to add a model: rustio add model <name>)")?;
             let name = args
                 .get(3)
-                .ok_or("usage: rustio new <project|app> <name>")?;
+                .ok_or("usage: rustio new project <name>  (to add a model: rustio add model <name>)")?;
             match kind.as_str() {
                 "project" => Ok(Command::NewProject(name.clone())),
-                "app" => Ok(Command::NewApp(name.clone())),
+                // Retired spellings, kept working for one release. Both
+                // land on `add model` and say so once.
+                "app" | "model" => Ok(Command::AddModel {
+                    name: name.clone(),
+                    via_alias: true,
+                }),
                 other => Err(format!("unknown subcommand `new {other}`")),
             }
         }
@@ -710,14 +748,14 @@ fn parse_layout(s: &str) -> Result<rustio_core::viewspec::ViewLayout, String> {
 /// and the flags:
 ///
 /// - `--preset <basic|blog|api>` — starter preset.
-/// - `--app <name>` — override the first app's name (overrides the
-///   preset default). Ignored under `--preset basic`.
+/// - `--model <name>` — override the preset's model name. Ignored
+///   under `--preset basic`. `--app` is accepted as a retired spelling.
 /// - `--db <kind>` — reserved for future drivers; today only SQLite is
 ///   supported and the value is ignored.
 fn parse_init_args(rest: &[String]) -> Result<Command, String> {
     let mut name: Option<String> = None;
     let mut preset: Option<wizard::Preset> = None;
-    let mut app: Option<String> = None;
+    let mut model: Option<String> = None;
     let mut i = 0;
     while i < rest.len() {
         match rest[i].as_str() {
@@ -728,11 +766,13 @@ fn parse_init_args(rest: &[String]) -> Result<Command, String> {
                 preset = Some(v.parse::<wizard::Preset>()?);
                 i += 2;
             }
-            "--app" => {
+            // `--app` is the retired spelling of `--model`, kept
+            // working for one release alongside `new app`.
+            "--model" | "--app" => {
                 let v = rest
                     .get(i + 1)
-                    .ok_or("missing value for --app (expected a name like `books`)")?;
-                app = Some(v.clone());
+                    .ok_or("missing value for --model (expected a name like `books`)")?;
+                model = Some(v.clone());
                 i += 2;
             }
             "--db" => {
@@ -750,13 +790,17 @@ fn parse_init_args(rest: &[String]) -> Result<Command, String> {
             other => return Err(format!("unexpected argument `{other}`")),
         }
     }
-    Ok(Command::Init { name, preset, app })
+    Ok(Command::Init {
+        name,
+        preset,
+        model,
+    })
 }
 
 fn init_command(
     name: Option<String>,
     preset: Option<wizard::Preset>,
-    app: Option<String>,
+    model: Option<String>,
 ) -> Result<(), String> {
     // If a name is provided, we're in non-interactive mode. Otherwise launch
     // the wizard. The wizard will fail fast with a clear message when stdin
@@ -766,15 +810,15 @@ fn init_command(
         Some(n) => wizard::Plan {
             project_name: n,
             preset: preset.unwrap_or(wizard::Preset::Basic),
-            app_name: app,
+            model_name: model,
         },
-        None => wizard::run(preset, app)?,
+        None => wizard::run(preset, model)?,
     };
     wizard::execute(&plan)?;
 
     // After the project is scaffolded, offer the AI-assisted wizard.
     // `wizard::execute` only `chdir`s into the new project when it
-    // scaffolded an app — otherwise we're still in the parent dir.
+    // scaffolded a model — otherwise we're still in the parent dir.
     // Always step into the project here so the post-init prompts see
     // the right tree.
     //
@@ -783,10 +827,10 @@ fn init_command(
     use std::io::IsTerminal;
     if std::io::stdin().is_terminal() {
         if Path::new(&plan.project_name).exists() {
-            // The wizard already chdir'd if it ran a per-app scaffold;
+            // The wizard already chdir'd if it scaffolded a model;
             // a second chdir into the same path then fails. Guard by
-            // checking whether `apps/mod.rs` is already visible from cwd.
-            if !Path::new("apps/mod.rs").exists() {
+            // checking whether `models/mod.rs` is already visible from cwd.
+            if !models_mod_path().exists() {
                 std::env::set_current_dir(&plan.project_name)
                     .map_err(|e| format!("failed to enter `{}`: {e}", plan.project_name))?;
             }
@@ -794,9 +838,9 @@ fn init_command(
         offer_start_menu_after_init(&plan.project_name)?;
     } else {
         // Off a terminal there is no menu to end on, so print the
-        // closing screen directly. A preset that scaffolded an app
-        // needs `migrate apply` next, not `new app`.
-        print_next_steps(Some(&plan.project_name), plan.apps().is_empty());
+        // closing screen directly. A preset that scaffolded a model
+        // needs `migrate apply` next, not `add model`.
+        print_next_steps(Some(&plan.project_name), plan.models().is_empty());
     }
     Ok(())
 }
@@ -833,14 +877,14 @@ pub(crate) fn new_project(name: &str) -> Result<(), String> {
         return Err(format!("directory `{name}` already exists"));
     }
 
-    fs::create_dir_all(root.join("apps")).map_err(err_str)?;
+    fs::create_dir_all(root.join("models")).map_err(err_str)?;
     fs::create_dir_all(root.join("migrations")).map_err(err_str)?;
     fs::create_dir_all(root.join("static")).map_err(err_str)?;
     fs::create_dir_all(root.join("templates")).map_err(err_str)?;
 
     fs::write(root.join("Cargo.toml"), cargo_toml_tmpl(name)).map_err(err_str)?;
     fs::write(root.join("main.rs"), MAIN_RS).map_err(err_str)?;
-    fs::write(root.join("apps/mod.rs"), APPS_MOD_RS).map_err(err_str)?;
+    fs::write(root.join("models/mod.rs"), MODELS_MOD_RS).map_err(err_str)?;
     fs::write(root.join(".gitignore"), GITIGNORE).map_err(err_str)?;
     fs::write(root.join("README.md"), render(README_MD, &[("NAME", name)])).map_err(err_str)?;
 
@@ -870,41 +914,66 @@ pub(crate) fn new_project(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn new_app(name: &str) -> Result<(), String> {
-    validate_name(name)?;
-    if !Path::new("apps/mod.rs").exists() {
-        return Err(
-            "not inside a RustIO project — expected apps/mod.rs in the current directory".into(),
-        );
-    }
+/// The directory this project keeps its models in: `models/` for
+/// projects scaffolded from 0.11 on, `apps/` for older ones. Read off
+/// disk by the core so the CLI and the AI executor can never disagree
+/// about where a model lives. Nothing is ever moved between them.
+fn models_dir() -> &'static str {
+    rustio_core::ai::executor::models_dir_name(Path::new("."))
+}
 
-    let app_dir = Path::new("apps").join(name);
-    if app_dir.exists() {
-        return Err(format!("app `{name}` already exists"));
+/// `<models-dir>/mod.rs` — the file whose presence means "you are
+/// standing in a RustIO project".
+fn models_mod_path() -> std::path::PathBuf {
+    Path::new(models_dir()).join("mod.rs")
+}
+
+/// The guard every command that writes into the project runs first.
+fn require_project_root() -> Result<(), String> {
+    if models_mod_path().exists() {
+        return Ok(());
+    }
+    Err(format!(
+        "not inside a RustIO project — expected {}/mod.rs in the current directory",
+        models_dir()
+    ))
+}
+
+pub(crate) fn add_model(name: &str) -> Result<(), String> {
+    validate_name(name)?;
+    require_project_root()?;
+
+    let dir = Path::new(models_dir()).join(name);
+    if dir.exists() {
+        return Err(format!(
+            "model `{}` already exists at {}",
+            singular_capitalize(name),
+            dir.display()
+        ));
     }
 
     let struct_name = singular_capitalize(name);
     let table_name = pluralize(name);
 
-    fs::create_dir_all(&app_dir).map_err(err_str)?;
-    fs::write(app_dir.join("mod.rs"), APP_MOD_RS).map_err(err_str)?;
+    fs::create_dir_all(&dir).map_err(err_str)?;
+    fs::write(dir.join("mod.rs"), MODEL_MOD_RS).map_err(err_str)?;
     fs::write(
-        app_dir.join("models.rs"),
+        dir.join("models.rs"),
         render(
-            APP_MODELS_RS,
+            MODEL_MODELS_RS,
             &[("STRUCT", &struct_name), ("TABLE", &table_name)],
         ),
     )
     .map_err(err_str)?;
     fs::write(
-        app_dir.join("admin.rs"),
-        render(APP_ADMIN_RS, &[("STRUCT", &struct_name)]),
+        dir.join("admin.rs"),
+        render(MODEL_ADMIN_RS, &[("STRUCT", &struct_name)]),
     )
     .map_err(err_str)?;
     fs::write(
-        app_dir.join("views.rs"),
+        dir.join("views.rs"),
         render(
-            APP_VIEWS_RS,
+            MODEL_VIEWS_RS,
             &[
                 ("NAME", name),
                 ("STRUCT", &struct_name),
@@ -914,7 +983,7 @@ pub(crate) fn new_app(name: &str) -> Result<(), String> {
     )
     .map_err(err_str)?;
 
-    register_app_in_mod(name)?;
+    register_model_in_mod(name)?;
 
     let migrations_dir = Path::new("migrations");
     let create_sql = format!(
@@ -940,7 +1009,11 @@ pub(crate) fn new_app(name: &str) -> Result<(), String> {
     // capitalised model name) before it's needed.
     out::success("Created model", &struct_name);
     println!();
-    out::plain(&format!("{:<10} apps/{name}/models.rs", out::dim("file")));
+    out::plain(&format!(
+        "{:<10} {}/{name}/models.rs",
+        out::dim("file"),
+        models_dir()
+    ));
     out::plain(&format!(
         "{:<10} {}",
         out::dim("migration"),
@@ -982,13 +1055,7 @@ fn parse_run_args(rest: &[String]) -> Result<Command, String> {
     Ok(Command::Run { port })
 }
 
-/// Whether this project's `main.rs` reads `RUSTIO_PORT` — the block
-/// `rustio init` has written since 0.11. A project scaffolded before
-/// that ignores the variable and binds 8000 whatever we pass, so
-/// `--port` is refused rather than honoured in appearance only.
-fn declares_port_support(main_rs_source: &str) -> bool {
-    main_rs_source.contains("RUSTIO_PORT")
-}
+const DEFAULT_PORT: u16 = 8000;
 
 async fn run(port: Option<u16>) -> Result<(), String> {
     if !Path::new("Cargo.toml").exists() {
@@ -997,17 +1064,6 @@ async fn run(port: Option<u16>) -> Result<(), String> {
              project. Start one with `rustio init <name>` or `cd` into an existing project."
                 .into(),
         );
-    }
-
-    // Refuse, never guess: on a project whose `main.rs` can't read
-    // RUSTIO_PORT we would print a URL for a port the server is not
-    // going to bind. Say so and start nothing.
-    if port.is_some() {
-        let main_rs =
-            fs::read_to_string("main.rs").map_err(|e| format!("could not read main.rs: {e}"))?;
-        if !declares_port_support(&main_rs) {
-            return Err("--port needs the RUSTIO_PORT block in main.rs — see UPGRADING.md".into());
-        }
     }
 
     let port = port.unwrap_or(DEFAULT_PORT);
@@ -1083,6 +1139,16 @@ async fn print_run_banner(port: u16) {
     println!();
 }
 
+/// The project's name for banners: the current directory name. Cheap,
+/// always right for a scaffolded project, and never wrong in a way
+/// that matters (it's a label, not an identifier).
+fn project_name() -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .unwrap_or_else(|| "this project".into())
+}
+
 /// Best-effort admin lookup for the run banner. Any failure (no DB
 /// file yet, unreadable DB, no admin) collapses to `None`.
 async fn first_admin_email() -> Option<String> {
@@ -1091,6 +1157,13 @@ async fn first_admin_email() -> Option<String> {
     }
     let db = rustio_core::Db::connect(&database_url()).await.ok()?;
     rustio_core::auth::user::first_admin_email(&db).await.ok()?
+}
+
+/// True when nothing is listening on `127.0.0.1:<port>`. Implemented
+/// by trying to bind it ourselves: a successful bind is released
+/// immediately, so the child process can take it a moment later.
+fn port_is_free(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 fn migrate_generate(name: &str) -> Result<(), String> {
@@ -1876,7 +1949,7 @@ fn ai_apply_command(
 /// `rustio init` — it's what makes the closing block print `cd <name>`
 /// for a project the user isn't standing in yet.
 fn start_command(project_dir: Option<&str>) -> Result<(), String> {
-    if !Path::new("apps/mod.rs").exists() {
+    if !models_mod_path().exists() {
         return Err(
             "not inside a RustIO project — run `rustio init <name>` first, or `cd` into an existing project.".into(),
         );
@@ -1886,7 +1959,7 @@ fn start_command(project_dir: Option<&str>) -> Result<(), String> {
     println!("  How do you want to start?");
     println!();
 
-    const EMPTY: &str = "Empty      — add your own models with `rustio new app`";
+    const EMPTY: &str = "Empty      — add your own models with `rustio add model`";
     const TEMPLATE: &str = "Template   — clinic, blog, shop, crm, tasks";
 
     let choice = inquire::Select::new("Pick one", vec![EMPTY, TEMPLATE])
@@ -1902,7 +1975,7 @@ fn start_command(project_dir: Option<&str>) -> Result<(), String> {
         // "Empty project ready" is only true of an empty project. Run
         // from a project that already has models, the menu just shows
         // the way back to the loop.
-        if !ProjectState::detect().has_apps {
+        if !ProjectState::detect().has_models {
             println!("{} Empty project ready.", out::check());
         }
         print_next_steps(project_dir, true);
@@ -1911,18 +1984,18 @@ fn start_command(project_dir: Option<&str>) -> Result<(), String> {
 }
 
 /// The closing screen shared by every path out of the setup menu: the
-/// commands to run next, in the order to run them. `include_new_app`
+/// commands to run next, in the order to run them. `include_add_model`
 /// is false once models already exist — telling someone to create a
 /// model they just created is noise.
-fn print_next_steps(project_dir: Option<&str>, include_new_app: bool) {
+fn print_next_steps(project_dir: Option<&str>, include_add_model: bool) {
     println!();
     println!("  Next:");
     if let Some(dir) = project_dir {
         println!("    cd {dir}");
     }
-    if include_new_app {
+    if include_add_model {
         println!(
-            "    rustio new app <name>     {}",
+            "    rustio add model <name>   {}",
             out::dim("# one model at a time")
         );
         println!(
@@ -2208,15 +2281,15 @@ fn finalise_wizard(
             })
             .collect();
 
-        let migration = scaffold_app_with_fields(
+        let migration = scaffold_model(
             model.table,
             model.struct_name,
             model.table,
             &fields,
             &belongs_to,
         )?;
-        out::success("created", &format!("app `{}`", model.table));
-        wrote_paths.push(format!("apps/{}/models.rs", model.table));
+        out::success("created", &format!("model `{}`", model.struct_name));
+        wrote_paths.push(format!("{}/{}/models.rs", models_dir(), model.table));
         wrote_paths.push(migration.display().to_string());
         applied += 1;
     }
@@ -3111,8 +3184,8 @@ fn error_kind(e: &rustio_core::ai::PlanError) -> &'static str {
     }
 }
 
-/// Scaffold an app with an explicit field set, used by the
-/// `rustio ai start` wizard. Same layout as [`new_app`] (mod.rs +
+/// Scaffold a model with an explicit field set, used by the setup
+/// menu's Template path. Same layout as [`add_model`] (mod.rs +
 /// models.rs + admin.rs + views.rs + a CREATE TABLE migration) but
 /// every Rust file is rendered from the sketch's fields rather than
 /// the default `title / is_active / priority` template.
@@ -3125,42 +3198,41 @@ fn error_kind(e: &rustio_core::ai::PlanError) -> &'static str {
 /// emit a SQL `FOREIGN KEY` clause on a *fresh* table — referential
 /// integrity is otherwise blocked until 0.9.0 `migrate add-fks`,
 /// but a brand-new table has no pre-existing rows to break.
-pub(crate) fn scaffold_app_with_fields(
-    app_name: &str,
+pub(crate) fn scaffold_model(
+    dir_name: &str,
     struct_name: &str,
     table: &str,
     fields: &[rustio_core::ai::FieldSpec],
     belongs_to: &[(String, String)],
 ) -> Result<std::path::PathBuf, String> {
-    validate_name(app_name)?;
-    if !Path::new("apps/mod.rs").exists() {
-        return Err(
-            "not inside a RustIO project — expected apps/mod.rs in the current directory".into(),
-        );
-    }
-    let app_dir = Path::new("apps").join(app_name);
-    if app_dir.exists() {
-        return Err(format!("app `{app_name}` already exists"));
+    validate_name(dir_name)?;
+    require_project_root()?;
+    let dir = Path::new(models_dir()).join(dir_name);
+    if dir.exists() {
+        return Err(format!(
+            "model `{struct_name}` already exists at {}",
+            dir.display()
+        ));
     }
 
-    fs::create_dir_all(&app_dir).map_err(err_str)?;
-    fs::write(app_dir.join("mod.rs"), APP_MOD_RS).map_err(err_str)?;
+    fs::create_dir_all(&dir).map_err(err_str)?;
+    fs::write(dir.join("mod.rs"), MODEL_MOD_RS).map_err(err_str)?;
     fs::write(
-        app_dir.join("models.rs"),
+        dir.join("models.rs"),
         render_models_rs_with_fields(struct_name, table, fields),
     )
     .map_err(err_str)?;
     fs::write(
-        app_dir.join("admin.rs"),
-        render(APP_ADMIN_RS, &[("STRUCT", struct_name)]),
+        dir.join("admin.rs"),
+        render(MODEL_ADMIN_RS, &[("STRUCT", struct_name)]),
     )
     .map_err(err_str)?;
     fs::write(
-        app_dir.join("views.rs"),
+        dir.join("views.rs"),
         render(
-            APP_VIEWS_RS,
+            MODEL_VIEWS_RS,
             &[
-                ("NAME", app_name),
+                ("NAME", dir_name),
                 ("STRUCT", struct_name),
                 ("TABLE", table),
             ],
@@ -3168,7 +3240,7 @@ pub(crate) fn scaffold_app_with_fields(
     )
     .map_err(err_str)?;
 
-    register_app_in_mod(app_name)?;
+    register_model_in_mod(dir_name)?;
 
     let create_sql = render_create_table_sql(table, fields, belongs_to);
     let migration_path = rustio_core::migrations::generate(
@@ -3181,8 +3253,8 @@ pub(crate) fn scaffold_app_with_fields(
     Ok(migration_path)
 }
 
-/// Render an `apps/<x>/models.rs` from a custom field list. Mirrors
-/// the shape of [`APP_MODELS_RS`] but every column comes from the
+/// Render a `models/<x>/models.rs` from a custom field list. Mirrors
+/// the shape of [`MODEL_MODELS_RS`] but every column comes from the
 /// supplied `FieldSpec`s.
 fn render_models_rs_with_fields(
     struct_name: &str,
@@ -3350,9 +3422,9 @@ fn render_create_table_sql(
     format!("CREATE TABLE {table} (\n{}\n);\n", lines.join("\n"))
 }
 
-fn register_app_in_mod(name: &str) -> Result<(), String> {
-    let path = Path::new("apps/mod.rs");
-    let current = fs::read_to_string(path).map_err(err_str)?;
+fn register_model_in_mod(name: &str) -> Result<(), String> {
+    let path = models_mod_path();
+    let current = fs::read_to_string(&path).map_err(err_str)?;
 
     let module_line = format!("pub mod {name};\n");
     let admin_install = format!("    admin = {name}::admin::install(admin);\n");
@@ -3376,13 +3448,13 @@ fn register_app_in_mod(name: &str) -> Result<(), String> {
         );
 
     if updated == current {
-        return Err(
-            "apps/mod.rs is missing the expected marker comments — restore them or recreate the file from `rustio new project`"
-                .into(),
-        );
+        return Err(format!(
+            "{} is missing the expected marker comments — restore them or recreate the file from `rustio new project`",
+            path.display()
+        ));
     }
 
-    fs::write(path, updated).map_err(err_str)?;
+    fs::write(&path, updated).map_err(err_str)?;
     Ok(())
 }
 
@@ -3527,7 +3599,7 @@ fn strip_why_flag(mut args: Vec<String>) -> (Vec<String>, bool) {
 /// Snapshot of what the CLI can see about the current directory.
 struct ProjectState {
     in_project: bool,
-    has_apps: bool,
+    has_models: bool,
     has_migrations_dir: bool,
     has_db: bool,
     has_schema: bool,
@@ -3535,11 +3607,13 @@ struct ProjectState {
 
 impl ProjectState {
     fn detect() -> Self {
-        let in_project = Path::new("Cargo.toml").exists()
-            && Path::new("main.rs").exists()
-            && Path::new("apps").is_dir();
-        let has_apps = Path::new("apps").is_dir()
-            && Path::new("apps")
+        // `models/` for projects scaffolded from 0.11 on, `apps/` for
+        // older ones — whichever this project actually has.
+        let dir = Path::new(models_dir());
+        let in_project =
+            Path::new("Cargo.toml").exists() && Path::new("main.rs").exists() && dir.is_dir();
+        let has_models = dir.is_dir()
+            && dir
                 .read_dir()
                 .map(|d| {
                     d.flatten().any(|e| {
@@ -3553,32 +3627,13 @@ impl ProjectState {
         let has_schema = Path::new("rustio.schema.json").exists();
         Self {
             in_project,
-            has_apps,
+            has_models,
             has_migrations_dir,
             has_db,
             has_schema,
         }
     }
 }
-
-/// The project's name for banners and the status line: the current
-/// directory name. Cheap, always right for a scaffolded project, and
-/// never wrong in a way that matters (it's a label, not an identifier).
-fn project_name() -> String {
-    std::env::current_dir()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| "this project".into())
-}
-
-/// True when nothing is listening on `127.0.0.1:<port>`. Implemented
-/// by trying to bind it ourselves: a successful bind is released
-/// immediately, so a server can take it a moment later.
-fn port_is_free(port: u16) -> bool {
-    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
-}
-
-const DEFAULT_PORT: u16 = 8000;
 
 /// `rustio` (no args) — one status line and the three commands most
 /// likely to be next. Not a help dump: a person who types the bare
@@ -3643,18 +3698,18 @@ async fn default_action() -> Result<(), String> {
     println!();
 
     println!("  You probably want:");
-    if !s.has_apps {
-        println!("    rustio new app <name>");
+    if !s.has_models {
+        println!("    rustio add model <name>");
         println!("    rustio start");
         println!("    rustio explain model");
     } else if !s.has_db {
         println!("    rustio migrate apply");
-        println!("    rustio new app <name>");
+        println!("    rustio add model <name>");
         println!("    rustio doctor");
     } else {
         println!("    rustio run");
         println!("    rustio evolve \"<change>\"");
-        println!("    rustio new app <name>");
+        println!("    rustio add model <name>");
     }
     Ok(())
 }
@@ -3703,11 +3758,14 @@ async fn doctor_command() -> Result<(), String> {
     // Are we in a project?
     let s = ProjectState::detect();
     if s.in_project {
-        doctor_pass("Project structure", "Cargo.toml + main.rs + apps/ present");
+        doctor_pass(
+            "Project structure",
+            &format!("Cargo.toml + main.rs + {}/ present", models_dir()),
+        );
     } else {
         doctor_fail(
             "Project structure",
-            "no Cargo.toml / main.rs / apps/ here",
+            "no Cargo.toml / main.rs / models/ here",
             "run `rustio init <name>` to scaffold, or `cd` into an existing project",
         );
         // Without a project the rest of the checks are moot.
@@ -3717,13 +3775,16 @@ async fn doctor_command() -> Result<(), String> {
     }
 
     // Apps registered
-    if s.has_apps {
-        doctor_pass("Apps registered", "at least one app exists under apps/");
+    if s.has_models {
+        doctor_pass(
+            "Models registered",
+            &format!("at least one model exists under {}/", models_dir()),
+        );
     } else {
         doctor_warn(
-            "Apps registered",
-            "no apps yet",
-            "run `rustio new app <name>` to create your first model",
+            "Models registered",
+            "no models yet",
+            "run `rustio add model <name>` to create your first one",
         );
         warnings += 1;
     }
@@ -3735,7 +3796,7 @@ async fn doctor_command() -> Result<(), String> {
         doctor_warn(
             "Migrations directory",
             "no migrations/",
-            "run `rustio new app <name>` (creates the directory) or add an empty one",
+            "run `rustio add model <name>` (creates the directory) or add an empty one",
         );
         warnings += 1;
     }
@@ -3966,7 +4027,7 @@ const EXPLAIN_TOPICS: &[(&str, &str)] = &[
          Customer, an Order. The struct is the source of truth: RustIO derives the admin UI,\n\
          the database schema, and the JSON schema export from it.\n\
          \n\
-         Example (apps/notes/models.rs):\n\
+         Example (models/notes/models.rs):\n\
          \n\
          \x20\x20#[derive(RustioAdmin)]\n\
          \x20\x20pub struct Note {\n\
@@ -3976,8 +4037,8 @@ const EXPLAIN_TOPICS: &[(&str, &str)] = &[
          \x20\x20    pub created_at: DateTime<Utc>,\n\
          \x20\x20}\n\
          \n\
-         Run `rustio new app <name>` to scaffold the struct + the matching migration in one\n\
-         step. Then edit the struct to add the fields you actually want.",
+         Run `rustio add model <name>` to scaffold the struct + the matching migration in\n\
+         one step. Then shape the fields with `rustio evolve` — see `rustio explain ai`.",
     ),
     (
         "migration",
@@ -4004,17 +4065,20 @@ const EXPLAIN_TOPICS: &[(&str, &str)] = &[
          tool keeps working across upgrades.",
     ),
     (
-        "app",
-        "An app is one folder inside `apps/` — usually one model + one matching admin\n\
-         registration + one migration + a (probably empty) views file for public routes.\n\
+        "layout",
+        "Each model lives in one folder under `models/`: `models.rs` (the struct — the\n\
+         source of truth), `admin.rs` (registers it in the admin), `views.rs` (your\n\
+         public routes for it, empty to start), and `mod.rs`.\n\
          \n\
          You create one with:\n\
          \n\
-         \x20\x20rustio new app notes\n\
+         \x20\x20rustio add model notes\n\
          \n\
-         That writes apps/notes/models.rs, apps/notes/admin.rs, apps/notes/views.rs, and\n\
-         migrations/000N_create_notes.sql. The app is registered in apps/mod.rs\n\
-         automatically.",
+         That writes models/notes/models.rs, models/notes/admin.rs, models/notes/views.rs,\n\
+         and migrations/000N_create_notes.sql, and registers it in models/mod.rs.\n\
+         \n\
+         Projects scaffolded before 0.11 keep their folder named `apps/`. Nothing is\n\
+         moved; both layouts work, and every command reads which one your project uses.",
     ),
     (
         "admin",
@@ -4034,7 +4098,7 @@ const EXPLAIN_TOPICS: &[(&str, &str)] = &[
         "route",
         "A route is one URL path + HTTP method + handler function. RustIO registers admin\n\
          routes automatically (GET /admin, GET /admin/:model, etc.). You add your own\n\
-         public routes inside `apps/<app>/views.rs`:\n\
+         public routes inside `models/<name>/views.rs`:\n\
          \n\
          \x20\x20pub fn register(router: Router) -> Router {\n\
          \x20\x20    router.get(\"/notes\", |_req, _params| async move {\n\
@@ -4096,7 +4160,7 @@ fn why_for(name: &str) {
         }
         "doctor" => {
             "`rustio doctor` runs a health check on the current project: toolchain, project\n\
-             structure, apps, database, pending migrations, whether the schema matches the\n\
+             structure, models, database, pending migrations, whether the schema matches\n\
              database, whether an admin user exists, and whether port 8000 is free. Each\n\
              check prints pass / warn / fail + a fix hint.\n\
              \n\
@@ -4104,15 +4168,15 @@ fn why_for(name: &str) {
         }
         "explain" => {
             "`rustio explain <topic>` prints a short inline explanation of a framework\n\
-             concept + a runnable example. Topics: model, migration, schema, app, admin,\n\
-             route, ai, context, rbac.\n\
+             concept + a runnable example. Topics: model, migration, schema, layout,\n\
+             admin, route, ai, context, rbac.\n\
              \n\
              Run it without --why to actually read an explainer."
         }
         "init" => {
             "`rustio init <name>` scaffolds a new RustIO project: Cargo.toml, main.rs,\n\
-             apps/mod.rs, migrations/, the standard auth tables. With no name it starts an\n\
-             interactive wizard.\n\
+             models/mod.rs, migrations/, the standard auth tables. With no name it starts\n\
+             an interactive wizard.\n\
              \n\
              Run it without --why to actually create the project."
         }
@@ -4122,21 +4186,18 @@ fn why_for(name: &str) {
              \n\
              Run it without --why to create the project."
         }
-        "new-app" => {
-            "`rustio new app <name>` adds a new app inside the current project: a model\n\
-             stub, an admin registration, an empty views file, and a matching migration.\n\
-             Updates apps/mod.rs to register it. Each app is usually one model.\n\
+        "add-model" => {
+            "`rustio add model <name>` adds one model to the current project: the struct,\n\
+             an admin registration, an empty views file, and a matching migration. It\n\
+             registers the model in models/mod.rs for you.\n\
              \n\
-             Run it without --why to create the app."
+             Run it without --why to create the model."
         }
         "run" => {
             "`rustio run` builds your project and starts the server on :8000 (`--port <n>`\n\
              to pick another). It checks the port is free first, and prints where to open\n\
              it and which admin to sign in as. First run takes ~1 minute; later runs are\n\
              instant.\n\
-             \n\
-             `--port` needs the RUSTIO_PORT block a 0.11+ `main.rs` has; on an older\n\
-             project it is refused rather than silently ignored.\n\
              \n\
              Run it without --why to start the server."
         }
@@ -4242,9 +4303,9 @@ fn why_topic_for(args: &[String]) -> Option<&'static str> {
     let first = args.get(1).map(String::as_str)?;
     let second = args.get(2).map(String::as_str);
     Some(match (first, second) {
-        ("new", Some("app")) => "new-app",
+        ("add", _) => "add-model",
         ("new", Some("project")) => "new-project",
-        ("new", _) => "new-app",
+        ("new", _) => "add-model",
         ("migrate", Some("generate")) => "migrate-generate",
         ("migrate", Some("apply")) => "migrate-apply",
         ("migrate", Some("status")) => "migrate-status",
@@ -4348,7 +4409,7 @@ A [RustIO](https://github.com/abdulwahed-sweden/rustio) project.
 
 ## Commands
 
-    rustio new app <name>         # scaffold an app inside this project
+    rustio add model <name>       # scaffold a model inside this project
     rustio migrate generate <n>   # create an empty migration file
     rustio migrate apply [-v]     # apply pending migrations
     rustio migrate status         # show applied + pending
@@ -4358,7 +4419,7 @@ A [RustIO](https://github.com/abdulwahed-sweden/rustio) project.
 ## Layout
 
 - `main.rs` — entry point (RustIO uses a top-level `main.rs` by convention)
-- `apps/` — one directory per app (models, views, admin)
+- `models/` — one directory per model (struct, views, admin)
 - `migrations/` — SQL migrations, applied in filename order
 - `static/`, `templates/` — asset directories
 - `app.db` — default SQLite database (gitignored)
@@ -4417,7 +4478,7 @@ Then open <http://127.0.0.1:8000> for the landing page, and
 ## Project layout
 
 - `main.rs` — entry point (mostly boilerplate; add your own routes here)
-- `apps/<name>/` — one folder per model: `models.rs` (the struct = source of
+- `models/<name>/` — one folder per model: `models.rs` (the struct = source of
   truth), `admin.rs`, `views.rs`
 - `migrations/` — SQL files, applied in filename order
 - `templates/`, `static/` — your public assets (RustIO stays out of these)
@@ -4426,8 +4487,8 @@ Then open <http://127.0.0.1:8000> for the landing page, and
 
 ## Add a model
 
-    rustio new app customers             # scaffolds apps/customers/ + a migration
-    # edit apps/customers/models.rs to add fields, then:
+    rustio add model customers           # scaffolds models/customers/ + a migration
+    # edit models/customers/models.rs to add fields, then:
     rustio migrate apply
 
 Or describe the change in plain English and let RustIO write the diff:
@@ -4487,7 +4548,7 @@ const MAIN_RS: &str = r#"use rustio_core::auth::authenticate;
 use rustio_core::defaults::with_defaults;
 use rustio_core::{Db, Router, Schema, Server};
 
-mod apps;
+mod models;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -4495,7 +4556,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // rustio.schema.json from the in-memory admin registry and exit
     // before doing any I/O — no DB connect, no bound port.
     if std::env::args().any(|a| a == "--dump-schema") {
-        let admin = apps::build_admin();
+        let admin = models::build_admin();
         let schema = Schema::from_admin(&admin);
         schema.write_to(std::path::Path::new("rustio.schema.json"))?;
         // The `rustio` CLI sets RUSTIO_QUIET when it drives the dump
@@ -4518,7 +4579,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db = Db::connect(&url).await?;
 
     // Route registration order: the router picks the FIRST match, so
-    // register app routes first so they win over framework defaults
+    // register model routes first so they win over framework defaults
     // sharing the same path (e.g. you can override `/` below by adding
     // a handler inside `register_all`).
     //
@@ -4526,7 +4587,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // cookie on every request, validates it against `rustio_sessions`,
     // and attaches `Identity` to the context when valid.
     let router = Router::new();
-    let router = apps::register_all(router, &db);
+    let router = models::register_all(router, &db);
     let router = with_defaults(router).wrap(authenticate(db.clone()));
 
     // Port comes from RUSTIO_PORT when set (that's how `rustio run
@@ -4545,7 +4606,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 "#;
 
-const APPS_MOD_RS: &str = r#"use rustio_core::admin::Admin;
+const MODELS_MOD_RS: &str = r#"use rustio_core::admin::Admin;
 use rustio_core::{Db, Router};
 
 // -- modules --
@@ -4573,12 +4634,12 @@ pub fn register_all(mut router: Router, db: &Db) -> Router {
 }
 "#;
 
-const APP_MOD_RS: &str = r#"pub mod admin;
+const MODEL_MOD_RS: &str = r#"pub mod admin;
 pub mod models;
 pub mod views;
 "#;
 
-const APP_MODELS_RS: &str = r#"use rustio_core::{Error, Model, Row, RustioAdmin, Value};
+const MODEL_MODELS_RS: &str = r#"use rustio_core::{Error, Model, Row, RustioAdmin, Value};
 
 /// The {{STRUCT}} model.
 ///
@@ -4634,7 +4695,7 @@ impl Model for {{STRUCT}} {
 }
 "#;
 
-const APP_ADMIN_RS: &str = r#"use rustio_core::admin::Admin;
+const MODEL_ADMIN_RS: &str = r#"use rustio_core::admin::Admin;
 
 use super::models::{{STRUCT}};
 
@@ -4644,7 +4705,7 @@ pub fn install(admin: Admin) -> Admin {
 }
 "#;
 
-const APP_VIEWS_RS: &str = r###"use rustio_core::{html, Error, Response, Router};
+const MODEL_VIEWS_RS: &str = r###"use rustio_core::{html, Error, Response, Router};
 
 /// Tutorial page for the `{{STRUCT}}` app.
 ///
@@ -4685,7 +4746,7 @@ const WELCOME_HTML: &str = r##"<!doctype html>
   <h1>It works.</h1>
   <p class="tag">{{STRUCT}} app · RustIO</p>
   <p>Your <code>{{STRUCT}}</code> app is wired up and serving this page at <code>/{{NAME}}</code>.</p>
-  <p>To build a real view, edit <code>apps/{{NAME}}/views.rs</code>. The CRUD admin for this model is already generated and ready to use.</p>
+  <p>To build a real view, edit <code>models/{{NAME}}/views.rs</code>. The CRUD admin for this model is already generated and ready to use.</p>
   <div class="actions">
     <a class="btn primary" href="/admin/{{TABLE}}">Open admin</a>
     <a class="btn secondary" href="/">Home</a>
@@ -4796,7 +4857,8 @@ mod tests {
         // change request it is being asked to explain.
         assert_eq!(why_topic_for(&args(&["evolve"])), Some("evolve"));
         assert_eq!(why_topic_for(&args(&["explain"])), Some("explain"));
-        assert_eq!(why_topic_for(&args(&["new", "app"])), Some("new-app"));
+        assert_eq!(why_topic_for(&args(&["add", "model"])), Some("add-model"));
+        assert_eq!(why_topic_for(&args(&["new", "app"])), Some("add-model"));
         assert_eq!(
             why_topic_for(&args(&["migrate", "generate"])),
             Some("migrate-generate")
@@ -5050,24 +5112,6 @@ mod tests {
         assert!(parse_command(&args(&["run", "--port", "nope"])).is_err());
     }
 
-    /// `--port` only works when the project's `main.rs` can act on it.
-    /// A project scaffolded before that block existed binds 8000 no
-    /// matter what we pass, so the flag is refused — printing a URL
-    /// for a port the server will not bind is worse than saying no.
-    #[test]
-    fn port_flag_is_refused_when_main_rs_cannot_honour_it() {
-        // What `rustio init` scaffolds today.
-        assert!(declares_port_support(MAIN_RS));
-
-        // The pre-0.11 shape: a hardcoded bind, no RUSTIO_PORT.
-        const LEGACY_MAIN_RS: &str = r#"
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8000));
-    eprintln!("serving on http://{addr}");
-    Server::bind(addr).serve_router(router).await?;
-"#;
-        assert!(!declares_port_support(LEGACY_MAIN_RS));
-    }
-
     #[test]
     fn parse_new_project() {
         assert_eq!(
@@ -5077,11 +5121,43 @@ mod tests {
     }
 
     #[test]
-    fn parse_new_app() {
+    fn parse_add_model() {
         assert_eq!(
-            parse_command(&args(&["new", "app", "blog"])).unwrap(),
-            Command::NewApp(String::from("blog"))
+            parse_command(&args(&["add", "model", "blog"])).unwrap(),
+            Command::AddModel {
+                name: String::from("blog"),
+                via_alias: false,
+            }
         );
+    }
+
+    #[test]
+    fn parse_add_model_requires_a_name() {
+        assert!(parse_command(&args(&["add"])).is_err());
+        assert!(parse_command(&args(&["add", "model"])).is_err());
+    }
+
+    #[test]
+    fn parse_add_unknown_kind_suggests_add_model() {
+        let err = parse_command(&args(&["add", "book"])).unwrap_err();
+        assert!(err.contains("rustio add model book"), "{err}");
+    }
+
+    #[test]
+    fn retired_spellings_still_scaffold_a_model() {
+        // `new app` / `new model` keep working for one release. They
+        // resolve to exactly the same command and flag themselves so
+        // the handler can print the one-line note.
+        for spelling in [["new", "app", "blog"], ["new", "model", "blog"]] {
+            assert_eq!(
+                parse_command(&args(&spelling)).unwrap(),
+                Command::AddModel {
+                    name: String::from("blog"),
+                    via_alias: true,
+                },
+                "{spelling:?}"
+            );
+        }
     }
 
     #[test]
@@ -5164,7 +5240,7 @@ mod tests {
             Command::Init {
                 name: None,
                 preset: None,
-                app: None,
+                model: None,
             },
         );
     }
@@ -5176,7 +5252,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: None,
-                app: None,
+                model: None,
             },
         );
     }
@@ -5188,7 +5264,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: Some(wizard::Preset::Blog),
-                app: None,
+                model: None,
             },
         );
     }
@@ -5200,7 +5276,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: Some(wizard::Preset::Api),
-                app: None,
+                model: None,
             },
         );
     }
@@ -5220,7 +5296,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: None,
-                app: None,
+                model: None,
             },
         );
     }
@@ -5240,7 +5316,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: Some(wizard::Preset::Blog),
-                app: Some(String::from("books")),
+                model: Some(String::from("books")),
             },
         );
     }
@@ -5255,7 +5331,7 @@ mod tests {
             Command::Init {
                 name: Some(String::from("mysite")),
                 preset: None,
-                app: Some(String::from("books")),
+                model: Some(String::from("books")),
             },
         );
     }

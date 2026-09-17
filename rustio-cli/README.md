@@ -74,7 +74,7 @@ For a small day-one surface, run `rustio help`. The everyday loop:
 | -------------------------------- | -------------------------------------------------------------------- |
 | `rustio init [name]`             | Scaffold a project + open the setup menu                             |
 | `rustio start`                   | Re-open the setup menu inside an existing project                    |
-| `rustio new app <name>`          | Add a new model to the current project                               |
+| `rustio add model <name>`        | Add one model to the current project                                 |
 | `rustio run`                     | Build (cargo build) + start the server on `:8000`                    |
 | `rustio evolve "<request>"`      | Describe a change in plain English — RustIO proposes the diff        |
 | `rustio migrate apply [-v]`      | Apply pending migrations                                             |
@@ -99,7 +99,7 @@ rustio help advanced
 ## Notes
 
 - The interactive setup menu needs a real terminal. In CI or when stdin is piped, pass a name + preset explicitly: `rustio init mysite --preset basic`.
-- Presets are coarse starting points, not lock-in. You can always add more with `rustio new app <name>` or change the shape with `rustio evolve "<request>"`.
+- Presets are coarse starting points, not lock-in. You can always add more with `rustio add model <name>` or change the shape with `rustio evolve "<request>"`.
 
 See the [main repository](https://github.com/abdulwahed-sweden/rustio) for the full guide.
 

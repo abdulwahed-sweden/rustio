@@ -142,6 +142,10 @@ fn applicant_project(root: &str) -> ProjectView {
         },
     );
     ProjectView {
+        // These fixtures simulate a project on the legacy `apps/`
+        // layout; `models/` projects are covered by the on-disk
+        // integration tests.
+        models_dir: "apps",
         root: PathBuf::from(root),
         models_files,
         existing_migrations: vec!["0001_create_applicants.sql".into()],

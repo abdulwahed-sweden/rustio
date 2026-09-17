@@ -8,14 +8,6 @@ Plain-English definitions for every framework term you'll meet in this repo. Kee
 
 The auto-generated web UI at `/admin`. Lists every model you registered, with create / edit / delete pages, search, filters, and pagination. You don't write the HTML — RustIO generates it from your structs.
 
-### App
-
-One folder inside `apps/`. Each app owns one "thing" your project knows about — a `notes` app, an `orders` app, an `accounts` app. An app contains a model (the data shape), a migration (the SQL to create the table), an admin file (one line that registers the model with the admin), and a views file (where you'd write public-facing routes if any).
-
-### `apps/mod.rs`
-
-The file that lists every app the project has. RustIO updates it automatically when you run `rustio new app <name>`. You can edit it by hand to add custom routes, but you usually don't need to.
-
 ### AI layer
 
 A three-step pipeline: **plan → review → apply**. You describe a schema change in plain English (`rustio ai plan "add email to users"`). The planner produces a typed change. The review step rates the risk. The apply step writes the file changes atomically. If your request doesn't fit the vocabulary, the planner refuses — it never guesses.
@@ -60,6 +52,16 @@ A `.sql` file that changes the database schema. Filenames are numbered (`0001_cr
 
 A Rust struct that describes one "thing" — usually one table in the database. Annotated with `#[derive(RustioAdmin)]` so the framework knows how to render it in the admin and emit it in the JSON schema. Example: `Project`, `Task`, `Order`.
 
+### Model folder
+
+One folder inside `models/`. Each one owns a single "thing" your project knows about — `notes`, `orders`, `accounts`. It holds the model (the data shape), an admin file (one line that registers the model with the admin), and a views file (where you'd write public-facing routes for it, if any); the matching migration lands in `migrations/`.
+
+Projects scaffolded before 0.11 keep this folder named `apps/`. Nothing is moved, both layouts work, and every command reads which one your project uses.
+
+### `models/mod.rs`
+
+The file that lists every model the project has. RustIO updates it automatically when you run `rustio add model <name>`. You can edit it by hand to add custom routes, but you usually don't need to.
+
 ### Plan (`PlanDocument`)
 
 The output of `rustio ai plan`. A JSON file containing the parsed primitives, an explanation, and metadata. You can `review` it, `validate` it (terse CI gate), and `apply` it. Saved plans round-trip — they're a stable contract.
@@ -82,7 +84,7 @@ A name a user has — `SuperAdmin`, `Admin`, `Editor`, or `Viewer`. Stored on th
 
 ### Route
 
-A path on your server + an HTTP method + a handler function. `GET /admin/projects` is a route. RustIO registers admin routes for you; you register your own public routes in `apps/<app>/views.rs`.
+A path on your server + an HTTP method + a handler function. `GET /admin/projects` is a route. RustIO registers admin routes for you; you register your own public routes in `models/<name>/views.rs`.
 
 ### Schema (`rustio.schema.json`)
 

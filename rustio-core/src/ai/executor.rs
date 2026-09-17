@@ -27,7 +27,7 @@
 //! ## What 0.5.2 supports
 //!
 //! - [`Primitive::AddField`] — adds a column via `ALTER TABLE … ADD
-//!   COLUMN …` and patches the generated `apps/<app>/models.rs`
+//!   COLUMN …` and patches the generated `models/<name>/models.rs`
 //!   (`struct`, `COLUMNS`, `INSERT_COLUMNS`, `from_row`, `insert_values`).
 //!   Adds `use chrono::{DateTime, Utc};` if the new field needs it and
 //!   the file doesn't already import it.
@@ -41,7 +41,7 @@
 //! "best effort" writes:
 //!
 //! - `add_model`, `remove_model`, `rename_model` — require cross-file
-//!   scaffolding (apps tree, migrations, admin + views updates).
+//!   scaffolding (models tree, migrations, admin + views updates).
 //! - `remove_field`, `remove_relation` — destructive; gated on a
 //!   `--force` style flag that doesn't ship in 0.5.2.
 //! - `change_field_type`, `change_field_nullability` — require SQLite
@@ -135,7 +135,13 @@ pub struct ExecuteOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectView {
     pub root: PathBuf,
-    /// Parsed `apps/<app>/models.rs` files, keyed by app directory name.
+    /// The directory this project keeps its models in: `"models"` for
+    /// projects scaffolded from 0.11 on, `"apps"` for older ones.
+    /// [`ProjectView::from_dir`] reads it off disk — the executor never
+    /// assumes a layout and never moves files between them.
+    pub models_dir: &'static str,
+    /// Parsed `<models_dir>/<name>/models.rs` files, keyed by directory
+    /// name.
     pub models_files: BTreeMap<String, ParsedModelsFile>,
     /// Filenames (not full paths) of files in `migrations/`.
     pub existing_migrations: Vec<String>,
@@ -187,7 +193,7 @@ pub enum ExecutionError {
     /// A destructive primitive was requested without `allow_destructive`.
     /// Reserved for 0.5.3+; 0.5.2 refuses destructive ops regardless.
     DestructiveWithoutConfirmation { op: &'static str },
-    /// Expected project scaffolding isn't present (`apps/<x>/models.rs`
+    /// Expected project scaffolding isn't present (`models/<x>/models.rs`
     /// missing for a model, `migrations/` directory missing, …).
     ProjectStructure(String),
     /// Filesystem error during read or write. Carries the OS message
@@ -366,14 +372,14 @@ fn simulate_step(
         Primitive::AddModel(_) => Err(ExecutionError::UnsupportedPrimitive {
             op: "add_model",
             reason:
-                "model scaffolding lives with `rustio new app`; use that then let the AI add fields",
+                "model scaffolding lives with `rustio add model`; use that then let the AI add fields",
         }),
         // 0.9.1 destructive gate: `remove_model` stays refused as
         // unsupported until 0.9.2; `remove_field` and `remove_relation`
         // honour `opts.allow_destructive` (the CLI's `--force` flag).
         Primitive::RemoveModel(_) => Err(ExecutionError::UnsupportedPrimitive {
             op: "remove_model",
-            reason: "dropping a model + its admin registration + downstream FKs is scheduled for 0.9.2; use `rustio new app` / manual removal for now",
+            reason: "dropping a model + its admin registration + downstream FKs is scheduled for 0.9.2; use `rustio add model` / manual removal for now",
         }),
         Primitive::RemoveField(r) => {
             if !opts.allow_destructive {
@@ -439,14 +445,14 @@ fn apply_add_field(
     // Idempotency: refuse if the field already exists in the struct.
     let struct_bounds = find_struct_block(&current, &a.model).ok_or_else(|| {
         ExecutionError::ProjectStructure(format!(
-            "apps/{app}/models.rs does not declare `pub struct {}`",
-            a.model
+            "{}/{app}/models.rs does not declare `pub struct {}`",
+            project.models_dir, a.model
         ))
     })?;
     let inside_struct = &current[struct_bounds.0..=struct_bounds.1];
     if struct_declares_field(inside_struct, &a.field.name) {
         return Err(ExecutionError::FileConflict {
-            path: format!("apps/{app}/models.rs"),
+            path: format!("{}/{app}/models.rs", project.models_dir),
             reason: format!(
                 "struct {} already declares field `{}`; the plan appears to have been applied already",
                 a.model, a.field.name,
@@ -457,7 +463,7 @@ fn apply_add_field(
     // Patch the file.
     let patched = patch_models_for_add_field(&current, &a.model, &a.field).map_err(|msg| {
         ExecutionError::FileConflict {
-            path: format!("apps/{app}/models.rs"),
+            path: format!("{}/{app}/models.rs", project.models_dir),
             reason: msg,
         }
     })?;
@@ -477,7 +483,11 @@ fn apply_add_field(
     let (mig_path, mig_filename) = new_migration_path(project, *migration_counter, &mig_name);
     *migration_counter += 1;
 
-    let file_path = project.root.join("apps").join(&app).join("models.rs");
+    let file_path = project
+        .root
+        .join(project.models_dir)
+        .join(&app)
+        .join("models.rs");
     Ok((
         vec![
             PlannedFileChange {
@@ -606,7 +616,7 @@ fn apply_add_relation(
     // Parent may live in a different app, or — for plans targeting a
     // model that isn't scaffolded locally — be absent entirely. In the
     // missing-parent case, use the snake-plural fallback (matches what
-    // `rustio new app` produces) rather than refusing the migration.
+    // `rustio add model` produces) rather than refusing the migration.
     let parent_table = match locate_model_file(project, &r.to) {
         Ok((parent_app, parent_source)) => {
             let parent_src = shadow.get(&parent_app).cloned().unwrap_or(parent_source);
@@ -740,7 +750,7 @@ fn apply_remove_field(
     let patched =
         patch_models_for_remove_field(&current, &r.model, &r.field, &field.ty, field.nullable)
             .map_err(|msg| ExecutionError::FileConflict {
-                path: format!("apps/{app}/models.rs"),
+                path: format!("{}/{app}/models.rs", project.models_dir),
                 reason: msg,
             })?;
     shadow.insert(app.clone(), patched.clone());
@@ -771,7 +781,11 @@ fn apply_remove_field(
     let (mig_path, mig_filename) = new_migration_path(project, *migration_counter, &mig_name);
     *migration_counter += 1;
 
-    let file_path = project.root.join("apps").join(&app).join("models.rs");
+    let file_path = project
+        .root
+        .join(project.models_dir)
+        .join(&app)
+        .join("models.rs");
     let warn_line = format!(
         "    ⚠ This rewrites `{table}`. Data in `{}` is lost.",
         r.field
@@ -899,14 +913,14 @@ fn apply_rename_field(
 
     let struct_bounds = find_struct_block(&current, &r.model).ok_or_else(|| {
         ExecutionError::ProjectStructure(format!(
-            "apps/{app}/models.rs does not declare `pub struct {}`",
-            r.model
+            "{}/{app}/models.rs does not declare `pub struct {}`",
+            project.models_dir, r.model
         ))
     })?;
     let inside_struct = &current[struct_bounds.0..=struct_bounds.1];
     if !struct_declares_field(inside_struct, &r.from) {
         return Err(ExecutionError::FileConflict {
-            path: format!("apps/{app}/models.rs"),
+            path: format!("{}/{app}/models.rs", project.models_dir),
             reason: format!(
                 "struct {} does not declare `pub {}: …`; rename cannot proceed",
                 r.model, r.from,
@@ -915,7 +929,7 @@ fn apply_rename_field(
     }
     if struct_declares_field(inside_struct, &r.to) {
         return Err(ExecutionError::FileConflict {
-            path: format!("apps/{app}/models.rs"),
+            path: format!("{}/{app}/models.rs", project.models_dir),
             reason: format!(
                 "struct {} already has a field called `{}`; rename target is taken",
                 r.model, r.to,
@@ -926,7 +940,7 @@ fn apply_rename_field(
     let patched =
         patch_models_for_rename_field(&current, &r.model, &r.from, &r.to).map_err(|msg| {
             ExecutionError::FileConflict {
-                path: format!("apps/{app}/models.rs"),
+                path: format!("{}/{app}/models.rs", project.models_dir),
                 reason: msg,
             }
         })?;
@@ -950,7 +964,11 @@ fn apply_rename_field(
     let (mig_path, mig_filename) = new_migration_path(project, *migration_counter, &mig_name);
     *migration_counter += 1;
 
-    let file_path = project.root.join("apps").join(&app).join("models.rs");
+    let file_path = project
+        .root
+        .join(project.models_dir)
+        .join(&app)
+        .join("models.rs");
     Ok((
         vec![
             PlannedFileChange {
@@ -1002,7 +1020,7 @@ fn apply_change_field_type(
     // Idempotency: field already has target type.
     if field.ty == c.new_type {
         return Err(ExecutionError::FileConflict {
-            path: format!("apps/?/{}.rs", c.model.to_lowercase()),
+            path: format!("{}/?/{}.rs", project.models_dir, c.model.to_lowercase()),
             reason: format!(
                 "field `{}.{}` already has type `{}`; change appears applied",
                 c.model, c.field, c.new_type,
@@ -1049,7 +1067,7 @@ fn apply_change_field_type(
         field.nullable,
     )
     .map_err(|msg| ExecutionError::FileConflict {
-        path: format!("apps/{app}/models.rs"),
+        path: format!("{}/{app}/models.rs", project.models_dir),
         reason: msg,
     })?;
     shadow.insert(app.clone(), patched.clone());
@@ -1078,7 +1096,11 @@ fn apply_change_field_type(
     let (mig_path, mig_filename) = new_migration_path(project, *migration_counter, &mig_name);
     *migration_counter += 1;
 
-    let file_path = project.root.join("apps").join(&app).join("models.rs");
+    let file_path = project
+        .root
+        .join(project.models_dir)
+        .join(&app)
+        .join("models.rs");
     let warn_line =
         format!("    ⚠ This rewrites the entire `{table}` table. Large tables may cause downtime.");
     Ok((
@@ -1159,7 +1181,7 @@ fn apply_change_field_nullability(
 
     if field.nullable == c.nullable {
         return Err(ExecutionError::FileConflict {
-            path: format!("apps/?/{}.rs", c.model.to_lowercase()),
+            path: format!("{}/?/{}.rs", project.models_dir, c.model.to_lowercase()),
             reason: format!(
                 "field `{}.{}` is already {}; change appears applied",
                 c.model,
@@ -1199,7 +1221,7 @@ fn apply_change_field_nullability(
         c.nullable,
     )
     .map_err(|msg| ExecutionError::FileConflict {
-        path: format!("apps/{app}/models.rs"),
+        path: format!("{}/{app}/models.rs", project.models_dir),
         reason: msg,
     })?;
     shadow.insert(app.clone(), patched.clone());
@@ -1249,7 +1271,11 @@ fn apply_change_field_nullability(
         format!("    ⚠ This rewrites the entire `{table}` table. Large tables may cause downtime.")
     };
 
-    let file_path = project.root.join("apps").join(&app).join("models.rs");
+    let file_path = project
+        .root
+        .join(project.models_dir)
+        .join(&app)
+        .join("models.rs");
     Ok((
         vec![
             PlannedFileChange {
@@ -1292,7 +1318,7 @@ fn apply_rename_model(
     let struct_names = parse_struct_names(&current);
     if struct_names.iter().any(|n| n == &r.to) {
         return Err(ExecutionError::FileConflict {
-            path: format!("apps/{app}/models.rs"),
+            path: format!("{}/{app}/models.rs", project.models_dir),
             reason: format!(
                 "struct `{}` already exists in this file; rename appears applied",
                 r.to
@@ -1301,7 +1327,7 @@ fn apply_rename_model(
     }
     if !struct_names.iter().any(|n| n == &r.from) {
         return Err(ExecutionError::FileConflict {
-            path: format!("apps/{app}/models.rs"),
+            path: format!("{}/{app}/models.rs", project.models_dir),
             reason: format!("struct `{}` not found — nothing to rename", r.from),
         });
     }
@@ -1329,13 +1355,17 @@ fn apply_rename_model(
         &current, &r.from, &r.to, &old_table, &new_table,
     )
     .map_err(|msg| ExecutionError::FileConflict {
-        path: format!("apps/{app}/models.rs"),
+        path: format!("{}/{app}/models.rs", project.models_dir),
         reason: msg,
     })?;
     shadow.insert(app.clone(), patched_models.clone());
 
     // Patch admin.rs (required — the app must re-register the model).
-    let admin_path = project.root.join("apps").join(&app).join("admin.rs");
+    let admin_path = project
+        .root
+        .join(project.models_dir)
+        .join(&app)
+        .join("admin.rs");
     let admin_source =
         std::fs::read_to_string(&admin_path).map_err(|e| ExecutionError::IoError {
             path: admin_path.display().to_string(),
@@ -1352,7 +1382,11 @@ fn apply_rename_model(
     // Patch views.rs best-effort (identifier boundaries only). Only
     // emit a change if the file exists and actually contains the old
     // name as a standalone identifier.
-    let views_path = project.root.join("apps").join(&app).join("views.rs");
+    let views_path = project
+        .root
+        .join(project.models_dir)
+        .join(&app)
+        .join("views.rs");
     let views_change: Option<PlannedFileChange> = if views_path.is_file() {
         let views_source =
             std::fs::read_to_string(&views_path).map_err(|e| ExecutionError::IoError {
@@ -1384,7 +1418,11 @@ fn apply_rename_model(
 
     let mut changes: Vec<PlannedFileChange> = vec![
         PlannedFileChange {
-            path: project.root.join("apps").join(&app).join("models.rs"),
+            path: project
+                .root
+                .join(project.models_dir)
+                .join(&app)
+                .join("models.rs"),
             kind: FileChangeKind::Update,
             new_contents: patched_models,
             expected_current_contents: Some(initial_source),
@@ -1410,7 +1448,8 @@ fn apply_rename_model(
         changes,
         format!(
             "~ Rename model \"{from}\" to \"{to}\" (migration {mig})\n\
-             \x20   ⚠ Table renamed from `{old_table}` to `{new_table}`. User code using `{from}` outside apps/{app}/ must be updated manually.",
+             \x20   ⚠ Table renamed from `{old_table}` to `{new_table}`. User code using `{from}` outside {dir}/{app}/ must be updated manually.",
+            dir = project.models_dir,
             from = r.from,
             to = r.to,
             mig = mig_filename,
@@ -2649,7 +2688,8 @@ fn locate_model_file(
         .collect();
     match matches.len() {
         0 => Err(ExecutionError::ProjectStructure(format!(
-            "no apps/<app>/models.rs declares `pub struct {struct_name}`"
+            "no {}/<name>/models.rs declares `pub struct {struct_name}`",
+            project.models_dir
         ))),
         1 => {
             let app = matches.remove(0).to_string();
@@ -2657,7 +2697,7 @@ fn locate_model_file(
             Ok((app, source))
         }
         _ => Err(ExecutionError::ProjectStructure(format!(
-            "multiple apps declare `pub struct {struct_name}`: {}",
+            "multiple models files declare `pub struct {struct_name}`: {}",
             matches.join(", ")
         ))),
     }
@@ -2706,7 +2746,7 @@ fn fallback_table_name(struct_name: &str) -> Option<String> {
             out.push(ch);
         }
     }
-    // Pluralise naively — matches what `rustio new app` does.
+    // Pluralise naively — matches what `rustio add model` does.
     if !out.ends_with('s') {
         out.push('s');
     }
@@ -2778,16 +2818,17 @@ fn safe_default_literal(ty: &str) -> &'static str {
 
 impl ProjectView {
     /// Build a [`ProjectView`] by reading the project at `root`. Reads
-    /// every `apps/*/models.rs` and lists `migrations/*`. Returns a
+    /// every `<models-dir>/*/models.rs` and lists `migrations/*`. Returns a
     /// [`ExecutionError::ProjectStructure`] if the scaffold isn't
     /// recognisable — the executor will not apply to a non-rustio
     /// directory.
     pub fn from_dir(root: &Path) -> Result<Self, ExecutionError> {
-        let apps_dir = root.join("apps");
+        let dir_name = models_dir_name(root);
+        let models_root = root.join(dir_name);
         let migrations_dir = root.join("migrations");
-        if !apps_dir.is_dir() {
+        if !models_root.is_dir() {
             return Err(ExecutionError::ProjectStructure(format!(
-                "expected directory `apps/` at {}",
+                "expected directory `models/` at {}",
                 root.display()
             )));
         }
@@ -2799,13 +2840,13 @@ impl ProjectView {
         }
 
         let mut models_files = BTreeMap::new();
-        let entries = std::fs::read_dir(&apps_dir).map_err(|e| ExecutionError::IoError {
-            path: apps_dir.display().to_string(),
+        let entries = std::fs::read_dir(&models_root).map_err(|e| ExecutionError::IoError {
+            path: models_root.display().to_string(),
             message: e.to_string(),
         })?;
         for entry in entries {
             let entry = entry.map_err(|e| ExecutionError::IoError {
-                path: apps_dir.display().to_string(),
+                path: models_root.display().to_string(),
                 message: e.to_string(),
             })?;
             let ty = entry.file_type().map_err(|e| ExecutionError::IoError {
@@ -2815,8 +2856,8 @@ impl ProjectView {
             if !ty.is_dir() {
                 continue;
             }
-            let app_dir = entry.path();
-            let app_name = app_dir
+            let model_dir = entry.path();
+            let app_name = model_dir
                 .file_name()
                 .and_then(|n| n.to_str())
                 .map(String::from)
@@ -2824,7 +2865,7 @@ impl ProjectView {
             if app_name.is_empty() {
                 continue;
             }
-            let models_path = app_dir.join("models.rs");
+            let models_path = model_dir.join("models.rs");
             if !models_path.is_file() {
                 continue;
             }
@@ -2872,10 +2913,36 @@ impl ProjectView {
 
         Ok(ProjectView {
             root: root.to_path_buf(),
+            models_dir: dir_name,
             models_files,
             existing_migrations,
             migration_sources,
         })
+    }
+}
+
+/// Which directory a project keeps its models in.
+///
+/// Projects scaffolded from 0.11 on use `models/`; every project
+/// scaffolded before that uses `apps/`. Both stay supported and
+/// nothing is ever moved — the layout is read off disk, never
+/// assumed. A project with neither directory reports `models`, so the
+/// error message names the layout a new project would have.
+pub fn models_dir_name(root: &Path) -> &'static str {
+    // `mod.rs` first: it's what a scaffolded project always has, and
+    // it settles a tree that somehow holds both directories. Bare
+    // directories are the fallback, so a partially-built tree still
+    // resolves to the layout it's clearly using.
+    if root.join("models").join("mod.rs").is_file() {
+        "models"
+    } else if root.join("apps").join("mod.rs").is_file() {
+        "apps"
+    } else if root.join("models").is_dir() {
+        "models"
+    } else if root.join("apps").is_dir() {
+        "apps"
+    } else {
+        "models"
     }
 }
 

@@ -10,6 +10,12 @@ past a single flat table.
 
 The full worked example lives at `examples/bookflow/`. This document is its lab notebook.
 
+> **Addendum — 0.11 command rename.** This notebook records a session run
+> against an older CLI, so it shows `rustio new app <name>` and an `apps/`
+> folder. That command is now **`rustio add model <name>`**, and new projects
+> scaffold into `models/`. `new app` still works as an alias for one release,
+> and existing projects keep `apps/`. The transcript is left as it was run.
+
 > **Addendum — 0.9.0 Relation Intelligence Layer.** Four of the "Critical"
 > findings from §7.1 (raw-id FK columns, no inverse views, opaque delete 500,
 > no facet filtering) have been addressed by the 0.9.0 release. §7.1 entries

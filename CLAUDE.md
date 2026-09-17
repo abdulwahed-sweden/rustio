@@ -48,7 +48,7 @@ When publishing from a machine with `~/.cargo/config.toml` pinned to `protocol =
 
 ## How user projects are generated
 
-`rustio init` / `rustio new app` writes files from `const`-string templates in `rustio-cli/src/main.rs`. New apps are **mechanically edited into** `apps/mod.rs` via marker comments:
+`rustio init` / `rustio add model` writes files from `const`-string templates in `rustio-cli/src/main.rs`. New models are **mechanically edited into** `models/mod.rs` via marker comments:
 
 ```
 // -- modules --
@@ -57,7 +57,9 @@ When publishing from a machine with `~/.cargo/config.toml` pinned to `protocol =
     // -- end view registrations --
 ```
 
-`register_app_in_mod` searches for these markers and inserts before them. If you change the shape of the generated `apps/mod.rs`, the markers **must stay in the same form** or every existing project's `rustio new app` breaks. The template split into `build_admin()` + `register_all()` exists specifically so `main.rs --dump-schema` can introspect the admin without touching the DB or binding a port.
+`register_model_in_mod` searches for these markers and inserts before them. If you change the shape of the generated `models/mod.rs`, the markers **must stay in the same form** or every existing project's `rustio add model` breaks. The template split into `build_admin()` + `register_all()` exists specifically so `main.rs --dump-schema` can introspect the admin without touching the DB or binding a port.
+
+**Two layouts, one rule.** Projects scaffolded from 0.11 on keep their models in `models/`; every project before that uses `apps/`. Nothing is ever moved between them. `rustio_core::ai::executor::models_dir_name(root)` is the single detector — the CLI and the AI executor both call it, so they can never disagree about where a model lives. Never hardcode either directory name in a path or a message.
 
 ## Admin rendering (0.10+: templated)
 
@@ -91,7 +93,7 @@ The admin submodules under `rustio-core/src/admin/` carry most of the Phase 2 ad
 
 ## Versioning + backward compatibility
 
-Pre-1.0 — breaking changes are allowed in minor releases and documented in `CHANGELOG.md`. But: do not casually break scaffolded projects. If the `main.rs` / `apps/mod.rs` template shape changes, older projects need a migration note (see the 0.4.0 note in `CHANGELOG.md` for the pattern). Marker comments in `apps/mod.rs` are part of the stable surface between CLI releases.
+Pre-1.0 — breaking changes are allowed in minor releases and documented in `CHANGELOG.md`. But: do not casually break scaffolded projects. If the `main.rs` / `models/mod.rs` template shape changes, older projects need a migration note (see the 0.4.0 note in `CHANGELOG.md` for the pattern). Marker comments in `models/mod.rs` (and in the `apps/mod.rs` of older projects) are part of the stable surface between CLI releases.
 
 ## AI layer boundary (important)
 

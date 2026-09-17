@@ -128,6 +128,10 @@ fn project_with_task(root: &str) -> ProjectView {
         },
     );
     ProjectView {
+        // These fixtures simulate a project on the legacy `apps/`
+        // layout; `models/` projects are covered by the on-disk
+        // integration tests.
+        models_dir: "apps",
         root: PathBuf::from(root),
         models_files,
         existing_migrations: vec!["0001_create_tasks.sql".into()],
@@ -851,6 +855,10 @@ fn project_with_housing(root: &str) -> ProjectView {
         },
     );
     ProjectView {
+        // These fixtures simulate a project on the legacy `apps/`
+        // layout; `models/` projects are covered by the on-disk
+        // integration tests.
+        models_dir: "apps",
         root: PathBuf::from(root),
         models_files,
         existing_migrations: vec!["0001_create_applications.sql".into()],
@@ -1271,6 +1279,58 @@ mod integration {
             let name = entry.unwrap().file_name().into_string().unwrap();
             assert!(!name.contains("rustio_tmp"), "leaked tmp file: {name}");
         }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// Same scratch tree, but on the `models/` layout a project
+    /// scaffolded from 0.11 on has. Nothing in the plan changes — the
+    /// executor is expected to find and patch the file wherever the
+    /// project actually keeps it.
+    fn scratch_dir_models_layout(tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("rustio-exec-{}-{}", tag, std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("models").join("tasks")).unwrap();
+        fs::create_dir_all(root.join("migrations")).unwrap();
+        fs::write(root.join("models").join("mod.rs"), "pub mod tasks;\n").unwrap();
+        fs::write(
+            root.join("models").join("tasks").join("models.rs"),
+            TASK_MODELS_SRC,
+        )
+        .unwrap();
+        fs::write(
+            root.join("migrations").join("0001_create_tasks.sql"),
+            "CREATE TABLE tasks(id INTEGER PRIMARY KEY);\n",
+        )
+        .unwrap();
+        let schema_json = task_schema().to_pretty_json().unwrap();
+        fs::write(root.join("rustio.schema.json"), schema_json).unwrap();
+        root
+    }
+
+    #[test]
+    fn execute_writes_into_models_layout_when_that_is_what_the_project_has() {
+        let root = scratch_dir_models_layout("models-layout");
+        let schema = task_schema();
+        let plan = add_field_plan("Task", "priority", "i32", false);
+        let doc = doc_for(&schema, "add priority", plan);
+
+        let result = execute_plan_document(&root, &doc, &ExecuteOptions::default(), None).unwrap();
+        assert_eq!(result.applied_steps, 1);
+
+        let patched = fs::read_to_string(root.join("models/tasks/models.rs")).unwrap();
+        assert!(patched.contains("pub priority: i32,"));
+        assert!(
+            result
+                .generated_files
+                .iter()
+                .any(|f| f.contains("models/tasks/models.rs")),
+            "reported paths must name the real directory: {:?}",
+            result.generated_files
+        );
+        assert!(
+            !root.join("apps").exists(),
+            "an `apps/` directory must never be created"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

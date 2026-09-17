@@ -4,6 +4,50 @@ A per-release migration guide. Items here only cover externally-observable chang
 
 ---
 
+## Unreleased — `new app` is now `add model`
+
+**No action required.** The old spelling still works, and no file moves.
+
+### The command
+
+```bash
+rustio add model book      # was: rustio new app book
+```
+
+`rustio new app <name>` (and `rustio new model <name>`) still scaffold a
+model; they print one line saying the command has been renamed, then do it.
+The alias is kept for one release. `rustio init --app <name>` is likewise
+accepted as the retired spelling of `--model <name>`.
+
+### The directory
+
+Projects scaffolded from this release on keep their models in `models/<name>/`
+and their `main.rs` declares `mod models;`.
+
+**Existing projects keep `apps/`.** Nothing is moved and nothing needs to be:
+the CLI and the AI executor both resolve the layout from disk, so `add model`,
+`evolve`, `doctor` and the bare `rustio` status line all read whichever
+directory your project has. Mixed fleets are fine.
+
+If you *want* to move an existing project onto the new layout, it is three
+steps and entirely optional:
+
+```bash
+git mv apps models
+sed -i '' 's/^mod apps;/mod models;/; s/\bapps::/models::/g' main.rs
+cargo build
+```
+
+Anything in your own code that says `crate::apps::…` needs the same rename.
+There is no deadline; the `apps/` layout stays supported.
+
+### `rustio explain app` → `rustio explain layout`
+
+The explainer was about where a model's files live, so it is now named for
+that. `rustio explain model` is unchanged.
+
+---
+
 ## Unreleased — CLI first-run journey, `--port`, real Users page
 
 Three externally-visible changes. None require action; the second and third

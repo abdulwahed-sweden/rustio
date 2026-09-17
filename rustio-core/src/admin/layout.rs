@@ -76,7 +76,7 @@ async fn collect_dashboard_entries(
 /// appear on the `/admin` dashboard, not just in the sidebar. Without
 /// this walk, the cards listed only what the new `AdminUiModel`
 /// registry knew about — projects scaffolded via the standard
-/// `rustio new app` path were invisible on the overview.
+/// `rustio add model` path were invisible on the overview.
 async fn collect_legacy_dashboard_entries(
     db: &Db,
     legacy_entries: &[crate::admin::AdminEntry],
@@ -1483,7 +1483,7 @@ pub async fn dashboard_render(
     // Same dedup rule as `sidebar_merged` keeps a model registered
     // through both paths from appearing twice. Before this dual-source
     // build, the dashboard cards only reflected source 1 — every
-    // `rustio new app`-scaffolded model was invisible at /admin.
+    // `rustio add model`-scaffolded model was invisible at /admin.
     let new_entries = collect_dashboard_entries(db, registry).await;
     let known: std::collections::HashSet<&str> = new_entries.iter().map(|e| e.slug).collect();
     let legacy_dash = collect_legacy_dashboard_entries(db, legacy_entries, &known).await;

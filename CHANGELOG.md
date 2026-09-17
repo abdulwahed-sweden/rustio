@@ -154,12 +154,33 @@ sources, stored values, sorting, links, data are never translated); only the
   merged cell. Without that context, nothing is masked — masking is an explicit
   posture, not a silent default. Hidden fields are always omitted.
 
+#### `new app` is now `add model`
+
+- **`rustio add model <name>` replaces `rustio new app <name>`.** What the
+  command creates is a model — a struct, a table, an admin page — and the
+  command now says so. `add` also matches the verb `evolve` already uses
+  (`add author as String to Book`), so one vocabulary covers both: `add model`
+  adds a model, `add <field>` adds a field.
+- **`new app` (and `new model`) keep working for one release.** They print
+  `note: \`new app\` is now \`add model\` — same command.` and then do exactly
+  that. `rustio init --app <name>` is likewise accepted as the retired
+  spelling of `--model <name>`.
+- **New projects scaffold into `models/<name>/`** instead of `apps/<name>/`,
+  and `main.rs` declares `mod models;`. **Existing projects keep `apps/` and
+  nothing is moved.** Both layouts are fully supported: the CLI and the AI
+  executor share one detector
+  (`rustio_core::ai::executor::models_dir_name`), so every command — scaffold,
+  evolve, doctor, the bare status line — reads the layout the project actually
+  has. `ProjectView` carries the answer as `models_dir`.
+- `rustio explain app` is now `rustio explain layout`, and the admin
+  dashboard's empty state points at `rustio add model <name>`.
+
 #### The first-run journey (CLI)
 
 - **`rustio init <name>` ends on one question, not five.** The interactive
   wizard now asks only for the project name; what goes *inside* the project is
   the setup menu's job. That menu is two choices — **Empty** (add your own
-  models with `rustio new app`) or **Template** (clinic, blog, shop, crm,
+  models with `rustio add model`) or **Template** (clinic, blog, shop, crm,
   tasks, walked one model at a time) — and every path out of it ends on the
   same closing screen: the next commands, in the order to run them. The menu
   no longer compiles the project before it can be shown; only the Template
@@ -181,7 +202,7 @@ sources, stored values, sorting, links, data are never translated); only the
   request prints the **whole** grammar, so one refusal teaches the shape of
   every accepted request. Typed plan operations, risk and warnings stay
   available on the scripting surface (`rustio ai plan` / `ai review`).
-- **`rustio new app <name>` states what the model starts with.** Output names
+- **`rustio add model <name>` states what the model starts with.** Output names
   the model, its three files, and its default fields (`title`, `priority`,
   `is_active`) — so `title already exists` is never a surprise — plus the
   `evolve` line to add more, with the correctly-capitalised model name.

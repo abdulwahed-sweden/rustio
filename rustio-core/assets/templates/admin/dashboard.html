@@ -15,7 +15,7 @@
     <h1>{{ t("Your") }} <span class="rio-accent-word">{{ t("workspace") }}</span></h1>
     <p>
       {% if dashboard_cards | length == 0 %}
-        {{ t("No models registered yet. Add one with") }} <code>rustio new app &lt;name&gt;</code>.
+        {{ t("No models registered yet. Add one with") }} <code>rustio add model &lt;name&gt;</code>.
       {% else %}
         {{ dashboard_cards | length }} {% if dashboard_cards | length != 1 %}{{ t("models") }}{% else %}{{ t("model") }}{% endif %} {{ t("registered,") }}
         {{ total.records }} {% if total.records != 1 %}{{ t("records") }}{% else %}{{ t("record") }}{% endif %} {{ t("across all of them.") }}

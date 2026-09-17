@@ -15,7 +15,7 @@ cargo install rustio-cli
 | `init [name]`                    | Scaffold a project (wizard with no name, non-interactive with one) |
 | `start`                          | Reopen the setup menu (Empty / Template) in a project   |
 | `new project <name>`             | Create a new project at `./<name>`                      |
-| `new app <name>`                 | Create a new app inside the current project             |
+| `add model <name>`               | Create one model inside the current project             |
 | `evolve "<change>"`              | Change the schema from plain English, then offer to migrate |
 | `run [--port <n>]`               | Build the project and serve on `http://127.0.0.1:8000`  |
 | `migrate generate <name>`        | Create an empty migration file under `migrations/`      |
@@ -36,7 +36,7 @@ cargo install rustio-cli
 # The whole loop, start to finish
 rustio init booklend           # pick Empty
 cd booklend
-rustio new app book            # repeat for member, loan
+rustio add model book          # repeat for member, loan
 rustio migrate apply
 rustio evolve "add author as String to Book"
 rustio user create --email you@example.com --password secret --role admin

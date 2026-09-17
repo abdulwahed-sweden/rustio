@@ -34,29 +34,29 @@ rustio init clinic --preset basic
 cd clinic
 ```
 
-`--preset basic` gives you an empty project (`apps/mod.rs` with markers, no apps yet). You'll scaffold the apps one at a time.
+`--preset basic` gives you an empty project (`models/mod.rs` with markers, no models yet). You'll scaffold the models one at a time.
 
-## 2. Scaffold two apps
+## 2. Scaffold two model folders
 
 We'll group the models by concern:
 
 ```bash
-rustio new app people     # will hold Department, Doctor, Patient
-rustio new app care       # will hold Appointment
+rustio add model people   # will hold Department, Doctor, Patient
+rustio add model care     # will hold Appointment
 ```
 
-Each command creates `apps/<name>/{mod.rs, models.rs, admin.rs, views.rs}`, registers the module via the markers in `apps/mod.rs`, and drops a template migration at `migrations/000N_create_<plural>.sql`. The scaffolded model and migration are placeholders — we'll replace them.
+Each command creates `models/<name>/{mod.rs, models.rs, admin.rs, views.rs}`, registers the module via the markers in `models/mod.rs`, and drops a template migration at `migrations/000N_create_<plural>.sql`. The scaffolded model and migration are placeholders — we'll replace them.
 
 ⚠️ **Common issues**
 
 - *"not inside a RustIO project"* — run from the project root, not a subdirectory.
-- *"app already exists"* — you ran `new app` twice with the same name. Remove `apps/<name>/` and re-run, or pick a different name.
+- *"model already exists"* — you ran `add model` twice with the same name. Remove `models/<name>/` and re-run, or pick a different name.
 
 ## 3. Write the models
 
-Open `apps/people/models.rs` and replace everything with the three `people` models. The framework has a **strict contract between `#[derive(RustioAdmin)]` and `impl Model`** — the lists of columns must match the struct fields exactly, or you'll get a compile or runtime error.
+Open `models/people/models.rs` and replace everything with the three `people` models. The framework has a **strict contract between `#[derive(RustioAdmin)]` and `impl Model`** — the lists of columns must match the struct fields exactly, or you'll get a compile or runtime error.
 
-### `apps/people/models.rs`
+### `models/people/models.rs`
 
 ```rust
 use chrono::{DateTime, Utc};
@@ -216,7 +216,7 @@ impl Model for Patient {
 }
 ```
 
-Update `apps/people/admin.rs` to install all three:
+Update `models/people/admin.rs` to install all three:
 
 ```rust
 use rustio_core::admin::Admin;
@@ -230,7 +230,7 @@ pub fn install(admin: Admin) -> Admin {
 }
 ```
 
-### `apps/care/models.rs` — the hero model
+### `models/care/models.rs` — the hero model
 
 The `#[rustio(belongs_to)]` targets must be in scope at the derive site, so bring them up from the `people` app:
 
@@ -238,7 +238,7 @@ The `#[rustio(belongs_to)]` targets must be in scope at the derive site, so brin
 use chrono::{DateTime, Utc};
 use rustio_core::{Error, Model, Row, RustioAdmin, Value};
 
-use crate::apps::people::models::{Doctor, Patient};
+use crate::models::people::models::{Doctor, Patient};
 
 #[derive(Debug, RustioAdmin)]
 pub struct Appointment {
@@ -305,7 +305,7 @@ impl Model for Appointment {
 }
 ```
 
-And `apps/care/admin.rs`:
+And `models/care/admin.rs`:
 
 ```rust
 use rustio_core::admin::Admin;
@@ -322,13 +322,13 @@ pub fn install(admin: Admin) -> Admin {
 
 ⚠️ **Common issues**
 
-- *`cannot find type 'Patient' in this scope`* — missing `use crate::apps::people::models::{Doctor, Patient};` at the top of `apps/care/models.rs`.
+- *`cannot find type 'Patient' in this scope`* — missing `use crate::models::people::models::{Doctor, Patient};` at the top of `models/care/models.rs`.
 - *`the trait bound 'Doctor: Model' is not satisfied`* — you derived `RustioAdmin` but didn't write `impl Model for Doctor`. Both are required. The derive handles the UI; the `Model` impl handles the DB round-trip.
 - *Column list out of sync* — `COLUMNS` must list every struct field; `INSERT_COLUMNS` lists every field except `id`. A mismatch is the most common source of runtime SELECT/INSERT errors.
 
 ## 4. Write the migrations
 
-`rustio new app <name>` already created placeholder migrations. Replace their contents — **file names stay**. Column names and types must match what `from_row` expects.
+`rustio add model <name>` already created placeholder migrations. Replace their contents — **file names stay**. Column names and types must match what `from_row` expects.
 
 ### `migrations/0001_create_people.sql`
 
@@ -413,7 +413,7 @@ rustio run
 
 - *`no such table: appointments`* — `rustio migrate apply` didn't run, or it ran before you updated the migration SQL. If you edited a migration *after* applying it, the run is already recorded. Delete `app.db`, then re-run `migrate apply`.
 - *`FOREIGN KEY constraint failed`* — you inserted an appointment with a `patient_id` or `doctor_id` that doesn't exist. Create patients and doctors first.
-- *Server prints `serving on http://127.0.0.1:8000` but `/admin` 404s* — `apps/mod.rs` lost its marker comments or its `admin.model::<T>()` calls. The markers (`// -- modules --`, `// -- end modules --`, etc.) must stay exactly as the CLI wrote them; the `register_app_in_mod` rewriter looks for them literally.
+- *Server prints `serving on http://127.0.0.1:8000` but `/admin` 404s* — `models/mod.rs` lost its marker comments or its `admin.model::<T>()` calls. The markers (`// -- modules --`, `// -- end modules --`, etc.) must stay exactly as the CLI wrote them; the `register_model_in_mod` rewriter looks for them literally.
 
 ## 6. Open the admin
 
@@ -455,7 +455,7 @@ Share it, bookmark it, paste it into a runbook. The page reloads the exact same 
 
 ## What you wrote vs what RustIO generated
 
-**You wrote:** ~220 lines across `apps/people/models.rs` and `apps/care/models.rs`, plus two SQL migrations (~55 lines each), plus four lines of `admin.model::<T>()`.
+**You wrote:** ~220 lines across `models/people/models.rs` and `models/care/models.rs`, plus two SQL migrations (~55 lines each), plus four lines of `admin.model::<T>()`.
 
 **RustIO generated:**
 
@@ -471,6 +471,6 @@ Share it, bookmark it, paste it into a runbook. The page reloads the exact same 
 
 ## What's next
 
-The bookflow example in `examples/bookflow/` extends this same pattern across several apps — customers, bookings, resources, schedules, invoices, and more — each adding its own models. The shape is identical — one Rust struct, one `Model` impl, one migration, one `admin.model::<T>()` line. You've already seen everything the admin layer does; adding models is additive.
+The bookflow example in `examples/bookflow/` extends this same pattern across several folders — customers, bookings, resources, schedules, invoices, and more — each adding its own models. The shape is identical — one Rust struct, one `Model` impl, one migration, one `admin.model::<T>()` line. You've already seen everything the admin layer does; adding models is additive.
 
 When you're ready to evolve the schema without hand-editing: `rustio ai plan "..." --save p.json && rustio ai review p.json && rustio ai apply p.json --yes`. See `demo-walkthrough.md` for why the planner/executor split exists and what it refuses to do.

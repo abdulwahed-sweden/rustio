@@ -39,57 +39,58 @@ use crate::out;
 /// A fully-resolved project scaffold plan produced by either the wizard
 /// or the non-interactive argument parser.
 ///
-/// `app_name` controls the single app scaffolded under the chosen preset.
-/// When `None` the preset's default app is used (see [`Preset::apps`]).
-/// `Preset::Basic` ignores `app_name` entirely (no apps are scaffolded).
+/// `model_name` controls the single model scaffolded under the chosen
+/// preset. When `None` the preset's default is used (see
+/// [`Preset::models`]). `Preset::Basic` ignores it entirely (it
+/// scaffolds no models).
 #[derive(Debug, Clone)]
 pub struct Plan {
     pub project_name: String,
     pub preset: Preset,
-    pub app_name: Option<String>,
+    pub model_name: Option<String>,
 }
 
 impl Plan {
-    /// The apps that should be scaffolded for this plan. Honors
-    /// `app_name` if set, otherwise falls back to the preset defaults.
-    pub fn apps(&self) -> Vec<String> {
-        match (&self.app_name, self.preset) {
+    /// The models that should be scaffolded for this plan. Honors
+    /// `model_name` if set, otherwise falls back to the preset defaults.
+    pub fn models(&self) -> Vec<String> {
+        match (&self.model_name, self.preset) {
             (_, Preset::Basic) => Vec::new(),
             (Some(custom), _) => vec![custom.clone()],
-            (None, preset) => preset.apps().iter().map(|s| s.to_string()).collect(),
+            (None, preset) => preset.models().iter().map(|s| s.to_string()).collect(),
         }
     }
 }
 
-/// Starter templates. Each preset maps to zero or more apps to scaffold.
+/// Starter templates. Each preset maps to zero or more models to scaffold.
 ///
 /// Keeping presets coarse — three choices, one line each. More presets
 /// become a catalogue; fewer presets become a non-decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preset {
-    /// Empty project. Add apps later with `rustio new app <name>`.
+    /// Empty project. Add models later with `rustio add model <name>`.
     Basic,
-    /// Project + a `posts` app: admin CRUD and a placeholder view.
+    /// Project + a `posts` model: admin CRUD and a placeholder view.
     Blog,
-    /// Project + an `items` app: admin CRUD and a placeholder view.
+    /// Project + an `items` model: admin CRUD and a placeholder view.
     Api,
 }
 
 impl Preset {
     /// Short, human-facing label for the preset. Used by the tests
-    /// that pin each preset to the apps it scaffolds; kept as the one
+    /// that pin each preset to the models it scaffolds; kept as the one
     /// place a preset describes itself in prose.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn label(self) -> &'static str {
         match self {
-            Preset::Basic => "Basic — empty project, add apps later",
-            Preset::Blog => "Blog — scaffolds a posts app with admin + views",
-            Preset::Api => "API — scaffolds an items app with admin + views",
+            Preset::Basic => "Basic — empty project, add models later",
+            Preset::Blog => "Blog — scaffolds a posts model with admin + views",
+            Preset::Api => "API — scaffolds an items model with admin + views",
         }
     }
 
-    /// Apps that should be scaffolded for this preset.
-    pub fn apps(self) -> &'static [&'static str] {
+    /// Models that should be scaffolded for this preset.
+    pub fn models(self) -> &'static [&'static str] {
         match self {
             Preset::Basic => &[],
             Preset::Blog => &["posts"],
@@ -117,12 +118,12 @@ impl FromStr for Preset {
 /// Run the interactive wizard and return the chosen plan.
 ///
 /// `default_preset` seeds the preset picker's highlight and
-/// `default_app_name` names the model a non-Basic preset scaffolds.
+/// `default_model_name` names the model a non-Basic preset scaffolds.
 /// Both come from flags; the wizard itself asks only for the project
 /// name.
 pub fn run(
     default_preset: Option<Preset>,
-    default_app_name: Option<String>,
+    default_model_name: Option<String>,
 ) -> Result<Plan, String> {
     // Prompt libraries need a real terminal to draw on. In CI or when
     // stdin is piped from another program, the wizard cannot function —
@@ -130,7 +131,7 @@ pub fn run(
     if !std::io::stdin().is_terminal() {
         return Err(
             "`rustio init` without a name needs an interactive terminal.\n \
-             Try: rustio init <name> [--preset basic|blog|api] [--app <name>]"
+             Try: rustio init <name> [--preset basic|blog|api] [--model <name>]"
                 .into(),
         );
     }
@@ -142,15 +143,15 @@ pub fn run(
     // and asking "which preset?" here would ask the same thing twice in
     // two vocabularies.
     //
-    // `--preset` / `--app` still work alongside a nameless `init`: a
+    // `--preset` / `--model` still work alongside a nameless `init`: a
     // flag is an explicit answer, so we take it and skip the menu's
     // version of the question.
     let project_name = prompt_name()?;
     let preset = default_preset.unwrap_or(Preset::Basic);
-    let app_name = if preset == Preset::Basic {
+    let model_name = if preset == Preset::Basic {
         None
     } else {
-        default_app_name
+        default_model_name
     };
 
     println!();
@@ -158,30 +159,31 @@ pub fn run(
     Ok(Plan {
         project_name,
         preset,
-        app_name,
+        model_name,
     })
 }
 
-/// Execute a plan: create the project, `cd` into it, scaffold any apps
+/// Execute a plan: create the project, `cd` into it, scaffold any models
 /// the preset requested, and print a single consolidated next-steps hint.
 ///
-/// Reuses [`crate::new_project`] and [`crate::new_app`] verbatim so the
+/// Reuses [`crate::new_project`] and [`crate::add_model`] verbatim so the
 /// wizard and non-interactive paths produce byte-identical output on disk.
 pub fn execute(plan: &Plan) -> Result<(), String> {
     // Step 1: create the project directory and its files.
     crate::new_project(&plan.project_name)?;
 
-    // Step 2: scaffold the chosen app(s) inside the new project.
+    // Step 2: scaffold the preset's model(s) inside the new project.
     //
-    // `new_app` looks at the current working directory (specifically for
-    // `apps/mod.rs`), so we have to chdir into the generated project. This
-    // only affects the running CLI process — the user's shell is unchanged.
-    let apps = plan.apps();
-    if !apps.is_empty() {
+    // `add_model` looks at the current working directory (specifically
+    // for `models/mod.rs`), so we have to chdir into the generated
+    // project. This only affects the running CLI process — the user's
+    // shell is unchanged.
+    let models = plan.models();
+    if !models.is_empty() {
         std::env::set_current_dir(&plan.project_name)
             .map_err(|e| format!("failed to enter `{}`: {e}", plan.project_name))?;
-        for app in &apps {
-            crate::new_app(app)?;
+        for model in &models {
+            crate::add_model(model)?;
         }
     }
 
@@ -256,10 +258,10 @@ mod tests {
     }
 
     #[test]
-    fn preset_apps_match_labels() {
-        assert!(Preset::Basic.apps().is_empty());
-        assert_eq!(Preset::Blog.apps(), &["posts"]);
-        assert_eq!(Preset::Api.apps(), &["items"]);
+    fn preset_models_match_labels() {
+        assert!(Preset::Basic.models().is_empty());
+        assert_eq!(Preset::Blog.models(), &["posts"]);
+        assert_eq!(Preset::Api.models(), &["items"]);
     }
 
     #[test]
@@ -278,41 +280,41 @@ mod tests {
     }
 
     #[test]
-    fn plan_apps_uses_override_when_present() {
+    fn plan_models_uses_override_when_present() {
         let plan = Plan {
             project_name: "x".into(),
             preset: Preset::Blog,
-            app_name: Some("books".into()),
+            model_name: Some("books".into()),
         };
-        assert_eq!(plan.apps(), vec!["books".to_string()]);
+        assert_eq!(plan.models(), vec!["books".to_string()]);
     }
 
     #[test]
-    fn plan_apps_falls_back_to_preset_default() {
+    fn plan_models_falls_back_to_preset_default() {
         let plan = Plan {
             project_name: "x".into(),
             preset: Preset::Blog,
-            app_name: None,
+            model_name: None,
         };
-        assert_eq!(plan.apps(), vec!["posts".to_string()]);
+        assert_eq!(plan.models(), vec!["posts".to_string()]);
 
         let plan = Plan {
             project_name: "x".into(),
             preset: Preset::Api,
-            app_name: None,
+            model_name: None,
         };
-        assert_eq!(plan.apps(), vec!["items".to_string()]);
+        assert_eq!(plan.models(), vec!["items".to_string()]);
     }
 
     #[test]
-    fn plan_apps_basic_is_empty_even_with_app_override() {
-        // Basic explicitly means "no app" — even if the caller sets an
-        // app_name, we honor the preset's intent.
+    fn plan_models_basic_is_empty_even_with_override() {
+        // Basic explicitly means "no models" — even if the caller sets an
+        // model_name, we honor the preset's intent.
         let plan = Plan {
             project_name: "x".into(),
             preset: Preset::Basic,
-            app_name: Some("ignored".into()),
+            model_name: Some("ignored".into()),
         };
-        assert!(plan.apps().is_empty());
+        assert!(plan.models().is_empty());
     }
 }
