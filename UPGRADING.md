@@ -4,6 +4,67 @@ A per-release migration guide. Items here only cover externally-observable chang
 
 ---
 
+## Unreleased — CLI first-run journey, `--port`, real Users page
+
+Three externally-visible changes. None require action; the second and third
+are worth knowing about.
+
+### `rustio run --port <n>` is refused on a pre-0.11 `main.rs`
+
+The flag reaches the project binary through `RUSTIO_PORT`, which is read by
+the bind block a freshly scaffolded `main.rs` carries:
+
+```rust
+let port: u16 = std::env::var("RUSTIO_PORT")
+    .ok()
+    .and_then(|p| p.parse().ok())
+    .unwrap_or(8000);
+let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+if std::env::var_os("RUSTIO_QUIET").is_none() {
+    eprintln!("serving on http://{addr}");
+}
+Server::bind(addr).serve_router(router).await?;
+```
+
+A project scaffolded before that block existed ignores the variable and binds
+8000 whatever is passed. Rather than print a banner for a port nothing is
+listening on, `rustio run --port 8001` on such a project **exits 1 and starts
+nothing**:
+
+```
+error: --port needs the RUSTIO_PORT block in main.rs — see UPGRADING.md
+```
+
+Paste the block above into your `main.rs` to adopt the flag. Plain
+`rustio run` is unaffected: it serves 8000 as before, and its banner is
+correct. (The same `RUSTIO_QUIET` guard applies to the `--dump-schema`
+branch's "wrote rustio.schema.json" line.)
+
+### The `/admin/users` page now shows your real users
+
+It was backed by a demo table (`admin_new_demo_users`) with invented `Doctor`
+and `Salary` columns. It is now backed by `rustio_users` and shows Email, Role,
+Active — the same rows `rustio user create` and the login form use. The demo
+table is no longer created or read; if one exists in your database it is simply
+orphaned, and you can drop it at your convenience:
+
+```sql
+DROP TABLE IF EXISTS admin_new_demo_users;
+```
+
+Creating a user from the admin is now refused (hidden "+ Add", 403 on the
+create routes): a user row without a hashed password can't sign in, so users
+are created with `rustio user create` and edited from the admin.
+
+### `rustio evolve` applies its own migration
+
+`evolve` now asks "Apply the migration now?" after writing one. Answering no
+prints `rustio migrate apply` and changes nothing else — scripts that ran
+`evolve` followed by `migrate apply` keep working (the second call finds
+nothing pending).
+
+---
+
 ## Unreleased — i18n L4a (per-user language preference)
 
 Adds a per-user UI language preference. **Action required for existing projects.**

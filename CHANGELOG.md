@@ -154,6 +154,59 @@ sources, stored values, sorting, links, data are never translated); only the
   merged cell. Without that context, nothing is masked — masking is an explicit
   posture, not a silent default. Hidden fields are always omitted.
 
+#### The first-run journey (CLI)
+
+- **`rustio init <name>` ends on one question, not five.** The interactive
+  wizard now asks only for the project name; what goes *inside* the project is
+  the setup menu's job. That menu is two choices — **Empty** (add your own
+  models with `rustio new app`) or **Template** (clinic, blog, shop, crm,
+  tasks, walked one model at a time) — and every path out of it ends on the
+  same closing screen: the next commands, in the order to run them. The menu
+  no longer compiles the project before it can be shown; only the Template
+  path needs a schema, and it generates one when picked.
+- **`rustio run [--port <n>]`.** The port is forwarded to the project binary
+  through `RUSTIO_PORT`. `run` checks the port is free *before* the build (a
+  bind error a minute later reads like a crash), builds, then prints where the
+  server is, which admin to sign in as, and how to stop it. On a project
+  scaffolded before `main.rs` read `RUSTIO_PORT`, `--port` is **refused** with
+  a pointer to `UPGRADING.md` — the server would bind 8000 regardless, and a
+  banner naming a port nothing is listening on is worse than a refusal. Plain
+  `rustio run` is unaffected there.
+- **`rustio evolve` applies the migration it just wrote.** The flow is now
+  three yes/no questions at most — correct the model name, apply the change,
+  apply the migration — instead of leaving a written-but-unapplied migration
+  behind a second command the user has to remember. A misspelt model name is
+  offered as a correction (`Did you mean \`Book\`?`); a field that already
+  exists says so (and names the default fields as defaults); an unparseable
+  request prints the **whole** grammar, so one refusal teaches the shape of
+  every accepted request. Typed plan operations, risk and warnings stay
+  available on the scripting surface (`rustio ai plan` / `ai review`).
+- **`rustio new app <name>` states what the model starts with.** Output names
+  the model, its three files, and its default fields (`title`, `priority`,
+  `is_active`) — so `title already exists` is never a surprise — plus the
+  `evolve` line to add more, with the correctly-capitalised model name.
+- **`rustio migrate apply` reports the schema on the same line** —
+  `Applied 3 migrations · schema updated (3 models + User)` — and points at the
+  two commands that follow.
+- **`rustio` with no arguments prints a status line**: project, model count,
+  pending migrations, and whether the server is up, then the likely next
+  commands. It reads the project and never changes it (it no longer creates
+  `app.db` as a side effect of looking).
+- **`rustio doctor` checks the things that actually break a first run**: all
+  migrations applied, schema matches the database, at least one admin user,
+  and port 8000 free — each with the command that fixes it.
+
+#### Admin
+
+- **The Users page is the real users table.** `/admin/users` is now backed by
+  `rustio_users` — the same rows `rustio user create` and the login form use —
+  and shows Email, Role, Active. The demo table (`admin_new_demo_users`) and
+  its invented `Doctor` / `Salary` columns are gone.
+- **`AdminUiModel::allows_create`** (defaults to `true`): a model can decline
+  row creation from the admin. `User` declines — a user without a hashed
+  password is not a user — so "+ Add" is hidden *and* the create routes return
+  403, rather than offering a form that ends in a constraint error.
+
 ### Changed
 
 - **Examples replaced with `bookflow`.** The `medflow` and `taskhub` example
@@ -172,6 +225,12 @@ sources, stored values, sorting, links, data are never translated); only the
 
 ### Upgrading
 
+- **`rustio run --port <n>` needs a 0.11+ `main.rs`.** The flag reaches the
+  project through the `RUSTIO_PORT` block a freshly scaffolded `main.rs`
+  carries; on an older project the flag is refused (exit 1, nothing started)
+  rather than silently ignored. Plain `rustio run` keeps serving 8000 there.
+  Copy the port/quiet block from a new `main.rs` to adopt it. See
+  `UPGRADING.md`.
 - **A `preferred_language` column is added to `rustio_users`** (per-user i18n).
   Existing projects must run **`rustio migrate apply`** to back-port it — the
   column is added by `ensure_core_tables`, which the migration driver calls; the

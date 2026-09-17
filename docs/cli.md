@@ -13,10 +13,11 @@ cargo install rustio-cli
 | Command                          | What it does                                            |
 |----------------------------------|---------------------------------------------------------|
 | `init [name]`                    | Scaffold a project (wizard with no name, non-interactive with one) |
-| `start`                          | Open the setup menu inside an existing project          |
+| `start`                          | Reopen the setup menu (Empty / Template) in a project   |
 | `new project <name>`             | Create a new project at `./<name>`                      |
 | `new app <name>`                 | Create a new app inside the current project             |
-| `run`                            | Build the project and serve on `http://127.0.0.1:8000`  |
+| `evolve "<change>"`              | Change the schema from plain English, then offer to migrate |
+| `run [--port <n>]`               | Build the project and serve on `http://127.0.0.1:8000`  |
 | `migrate generate <name>`        | Create an empty migration file under `migrations/`      |
 | `migrate apply`                  | Apply all pending migrations                            |
 | `migrate status`                 | List applied and pending migrations                     |
@@ -32,10 +33,13 @@ cargo install rustio-cli
 ## Examples
 
 ```bash
-# Scaffold a new project and run it
-rustio init mysite --preset blog
-cd mysite
+# The whole loop, start to finish
+rustio init booklend           # pick Empty
+cd booklend
+rustio new app book            # repeat for member, loan
 rustio migrate apply
+rustio evolve "add author as String to Book"
+rustio user create --email you@example.com --password secret --role admin
 rustio run
 ```
 
@@ -56,5 +60,7 @@ rustio migrate apply
 ## Environment
 
 - `RUSTIO_DATABASE_URL`   Database URL (default: `sqlite://app.db?mode=rwc`)
+- `RUSTIO_PORT`           Port the generated `main.rs` binds (default: `8000`; set by `rustio run --port`)
+- `RUSTIO_QUIET`          Suppress the project binary's own startup lines (set by `rustio run`)
 - `RUSTIO_CORE_PATH`      Override the `rustio-core` path dep in generated `Cargo.toml`
 - `NO_COLOR`              Disable coloured CLI output
