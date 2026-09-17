@@ -311,7 +311,7 @@ async fn main() -> ExitCode {
                 why_for("evolve");
                 Ok(())
             } else {
-                evolve_command(prompt)
+                evolve_command(prompt).await
             }
         }
         Ok(Command::Context(sub)) => {
@@ -335,6 +335,17 @@ async fn main() -> ExitCode {
             }
         }
         Err(msg) => {
+            // `--why` asks what a command does — it shouldn't require
+            // the arguments the command itself needs. `rustio evolve
+            // --why` is the whole point of the flag, and demanding a
+            // change request before explaining what a change request
+            // is would be backwards.
+            if why_mode {
+                if let Some(topic) = why_topic_for(&args) {
+                    why_for(topic);
+                    return ExitCode::SUCCESS;
+                }
+            }
             out::error_line(&msg);
             eprintln!();
             eprint!("{USAGE}");
@@ -2234,71 +2245,97 @@ fn show_technical_details(
 /// way choice (Apply / Show technical details / Cancel) is the same
 /// progressive-disclosure pattern the setup wizard uses — the user
 /// only sees primitive-level vocabulary when they ask for it.
-fn evolve_command(prompt: String) -> Result<(), String> {
+async fn evolve_command(prompt: String) -> Result<(), String> {
     use rustio_core::ai::executor::{execute_plan_document, ExecuteOptions};
     use rustio_core::ai::review::{build_plan_document, review_plan};
-    use rustio_core::ai::{generate_plan, PlanRequest};
+    use rustio_core::ai::{generate_plan, PlanError, PlanRequest};
 
     let schema = load_project_schema()?;
     let context = load_project_context()?;
 
-    println!();
-    println!("  Working on it…");
-    println!();
-
-    // Step 1 — plan. The planner is closed-vocabulary, so an
-    // unparseable request returns an error rather than a guess. We
-    // surface that to the user as a friendly refusal: better to admit
-    // a limit than fake a result.
-    let result = match generate_plan(&schema, context.as_ref(), PlanRequest::new(&prompt)) {
-        Ok(r) => r,
-        Err(e) => {
-            println!("  I can't make that change cleanly.");
-            println!("    {e}");
-            println!();
-            println!("  Try a more specific phrasing. RustIO works inside a fixed set of");
-            println!("  changes (add field, rename field, add relation, change type, …);");
-            println!("  if a request can't fit, it's better to be told than guessed at.");
-            return Ok(());
+    // Step 1 — plan. The planner is closed-vocabulary: an unparseable
+    // request is refused, never guessed at. Two refusals are worth
+    // catching before they reach the user as raw errors, because both
+    // have an obvious next move:
+    //
+    //   · a misspelt / plural model name → offer the right one;
+    //   · a field that already exists    → say so and stop.
+    let mut prompt = prompt;
+    let result = loop {
+        match generate_plan(&schema, context.as_ref(), PlanRequest::new(&prompt)) {
+            Ok(r) => break r,
+            Err(PlanError::UnknownModel { hint }) => {
+                let Some(suggestion) = nearest_model_name(&schema, &hint) else {
+                    println!();
+                    println!("  Unknown model `{hint}`.");
+                    println!();
+                    println!("  This project has:");
+                    for m in schema.models.iter().filter(|m| !m.core) {
+                        println!("    {}", m.name);
+                    }
+                    return Ok(());
+                };
+                println!();
+                let accept = inquire::Confirm::new(&format!(
+                    "Unknown model `{hint}`. Did you mean `{suggestion}`?"
+                ))
+                .with_default(true)
+                .prompt()
+                .map_err(|e| format!("{e}"))?;
+                if !accept {
+                    println!();
+                    println!("  Nothing to do.");
+                    return Ok(());
+                }
+                prompt = replace_word(&prompt, &hint, &suggestion);
+                continue;
+            }
+            Err(PlanError::FieldAlreadyExists { model, field }) => {
+                println!();
+                if is_default_scaffold_field(&field) {
+                    println!("  {model}.{field} already exists (it is a default field).");
+                } else {
+                    println!("  {model}.{field} already exists.");
+                }
+                println!("  Nothing to do.");
+                println!();
+                println!(
+                    "  Want to rename it?  rustio evolve \"rename {field} to <new> in {model}\""
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                print_evolve_refusal(&e);
+                return Ok(());
+            }
         }
     };
 
     // Step 2 — review. Risk classification + warnings come from the
-    // same review path `rustio ai review` would print, but we only
-    // surface them in the technical-details view.
+    // same review path `rustio ai review` prints. Warnings are shown
+    // inline: they're the part a user has to see before saying yes.
     let review = review_plan(&schema, &result.plan, context.as_ref())
         .map_err(|e| format!("could not review the change: {e}"))?;
 
     show_evolve_blueprint(&result.plan);
-
-    // Step 3 — three-way interactive choice. Loop so the user can
-    // peek at technical details and then come back to apply.
-    loop {
-        let choice = inquire::Select::new(
-            "Ready?",
-            vec![
-                "Apply — write the files",
-                "Show technical details — plan, risk, warnings",
-                "Cancel — don't change anything",
-            ],
-        )
-        .with_starting_cursor(0)
-        .prompt()
-        .map_err(|e| format!("{e}"))?;
-
-        if choice.starts_with("Apply") {
-            break;
-        } else if choice.starts_with("Show") {
-            show_evolve_technical_details(&result.plan, &review);
-            continue;
-        } else {
-            println!();
-            println!("  No changes written.");
-            return Ok(());
+    if !review.warnings.is_empty() {
+        for w in &review.warnings {
+            println!("    {} {w}", out::dot());
         }
+        println!();
     }
 
-    // Step 4 — apply. Wrap the plan in a `PlanDocument` (same shape
+    let apply = inquire::Confirm::new("Apply?")
+        .with_default(true)
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+    if !apply {
+        println!();
+        println!("  No changes written.");
+        return Ok(());
+    }
+
+    // Step 3 — apply. Wrap the plan in a `PlanDocument` (same shape
     // the executor accepts from `rustio ai apply`) and hand it to the
     // atomic file-write path. Destructive primitives stay refused
     // here; users who really need them go through the lower-level
@@ -2311,22 +2348,136 @@ fn evolve_command(prompt: String) -> Result<(), String> {
     let exec = execute_plan_document(Path::new("."), &doc, &opts, context.as_ref())
         .map_err(|e| format!("{e}"))?;
 
-    println!();
-    out::success(
-        "applied",
-        &format!(
-            "{} step{}",
-            exec.applied_steps,
-            if exec.applied_steps == 1 { "" } else { "s" }
-        ),
-    );
     for f in &exec.generated_files {
         out::success("wrote", f);
     }
+
+    // Step 4 — the migration. Writing a migration file and leaving it
+    // unapplied is a trap: the schema on disk and the schema in the DB
+    // disagree until the user remembers a second command. Offer it
+    // right here, in the same breath.
+    let wrote_migration = exec
+        .generated_files
+        .iter()
+        .any(|f| f.starts_with("migrations/"));
+    if !wrote_migration {
+        return Ok(());
+    }
+
     println!();
-    out::hint("rustio migrate apply   # apply the new migration to your DB");
-    out::hint("rustio run             # if the server isn't already up");
-    Ok(())
+    let now = inquire::Confirm::new("Apply the migration now?")
+        .with_default(true)
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+    if !now {
+        println!();
+        out::hint("rustio migrate apply");
+        return Ok(());
+    }
+    migrate_apply(false).await
+}
+
+/// The refusal screen. Every branch that can't be turned into a plan
+/// ends here, and it always prints the full grammar — a user who is
+/// told "no" once should learn the whole shape of what "yes" looks
+/// like, not be sent away to guess again.
+fn print_evolve_refusal(e: &rustio_core::ai::PlanError) {
+    use rustio_core::ai::PlanError;
+    println!();
+    println!("  I can't express that as a schema change.");
+    // `InvalidIntent` carries the planner's own copy of the grammar;
+    // printing it here would show the same list twice. Every other
+    // refusal says something the list doesn't (an unknown type, a
+    // protected model), so it earns a line.
+    if !matches!(e, PlanError::InvalidIntent(_)) {
+        println!("    {}", out::dim(&e.to_string()));
+    }
+    println!();
+    println!("  I understand these shapes:");
+    println!("    add <field> as <Type> to <Model>");
+    println!("    rename <old> to <new> in <Model>");
+    println!("    change <field> to <Type> in <Model>");
+    println!("    add relation from <Model> to <Model>");
+    println!("    remove <field> from <Model>");
+    println!();
+    println!("  Types: String, Integer, Bool, DateTime, Text");
+}
+
+/// The fields every scaffolded model starts with. Used only to add
+/// "(it is a default field)" to the already-exists message — the
+/// difference between a user thinking they made a mistake and knowing
+/// the framework got there first.
+fn is_default_scaffold_field(field: &str) -> bool {
+    matches!(field, "title" | "priority" | "is_active" | "id")
+}
+
+/// Closest model name to `hint`, or `None` when nothing is close
+/// enough to be worth offering. Case, plural and a single edit are
+/// all forgiven; anything further apart is a different word, and
+/// guessing at it would be worse than asking.
+fn nearest_model_name(schema: &rustio_core::Schema, hint: &str) -> Option<String> {
+    let h = hint.trim().to_lowercase();
+    if h.is_empty() {
+        return None;
+    }
+    let mut best: Option<(usize, &str)> = None;
+    for m in schema.models.iter().filter(|m| !m.core) {
+        // Every user-visible spelling of the model is a candidate, but
+        // the name we offer back is always the struct name.
+        let forms = [
+            m.name.to_lowercase(),
+            m.table.to_lowercase(),
+            m.admin_name.to_lowercase(),
+            m.singular_name.to_lowercase(),
+        ];
+        let Some(distance) = forms.iter().map(|f| edit_distance(&h, f)).min() else {
+            continue;
+        };
+        if best.is_none() || best.is_some_and(|(d, _)| distance < d) {
+            best = Some((distance, &m.name));
+        }
+    }
+    // Allow one edit for short names, two for longer ones — enough for
+    // a plural or a typo, not enough to turn `book` into `loan`.
+    let budget = if h.len() <= 4 { 1 } else { 2 };
+    best.filter(|(d, _)| *d <= budget)
+        .map(|(_, name)| name.to_string())
+}
+
+/// Plain Levenshtein distance over `char`s. Small inputs (model
+/// names), so the simple two-row implementation is the right one.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut cur = vec![0usize; b.len() + 1];
+    for (i, ca) in a.iter().enumerate() {
+        cur[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev[b.len()]
+}
+
+/// Replace whole-word occurrences of `from` with `to`, ignoring case.
+/// Used to rewrite the prompt after the user accepts a model-name
+/// correction, so the re-plan sees exactly what they meant.
+fn replace_word(prompt: &str, from: &str, to: &str) -> String {
+    let from_lower = from.to_lowercase();
+    prompt
+        .split_whitespace()
+        .map(|w| {
+            if w.to_lowercase() == from_lower {
+                to.to_string()
+            } else {
+                w.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Render the change set as a small system-blueprint block — one
@@ -2337,7 +2488,7 @@ fn show_evolve_blueprint(plan: &rustio_core::ai::Plan) {
     use rustio_core::ai::Primitive;
 
     println!();
-    println!("  RustIO is ready to make this change:");
+    println!("  Ready to make this change:");
     println!();
 
     // `evolve` plans are usually 1–3 steps. We render them as
@@ -2388,35 +2539,6 @@ fn show_evolve_blueprint(plan: &rustio_core::ai::Plan) {
             other => format!("    · {other:?}"),
         };
         println!("{line}");
-    }
-    println!();
-}
-
-/// Behind the "Show technical details" choice. Plan operations,
-/// risk classification, warnings — the same fields `rustio ai review`
-/// prints, just labelled in plain English. Available to anyone who
-/// asks; never the first impression.
-fn show_evolve_technical_details(
-    plan: &rustio_core::ai::Plan,
-    review: &rustio_core::ai::PlanReview,
-) {
-    println!();
-    println!("  Technical details");
-    println!("  ─────────────────");
-    println!();
-    println!("  Operations ({}):", plan.steps.len());
-    for (i, step) in plan.steps.iter().enumerate() {
-        println!("    {}. {:?}", i + 1, step);
-    }
-    println!();
-    println!("  Risk classification : {:?}", review.risk);
-    if review.warnings.is_empty() {
-        println!("  Warnings            : none");
-    } else {
-        println!("  Warnings            :");
-        for w in &review.warnings {
-            println!("    - {w}");
-        }
     }
     println!();
 }
@@ -3793,11 +3915,11 @@ fn why_for(name: &str) {
              Run a subcommand without --why for actual usage."
         }
         "evolve" => {
-            "`rustio evolve \"<request>\"` is the friendly verb for changing your\n\
-             schema after the project is up. Describe the change in plain English;\n\
-             RustIO proposes the diff, shows you the risk, and applies only what\n\
-             you accept. Same three-way choice the setup wizard uses:\n\
-             Apply / Show technical details / Cancel.\n\
+            "`rustio evolve \"<request>\"` changes your schema from a plain-English\n\
+             sentence: it shows the change, asks before writing, and offers to apply the\n\
+             migration straight after. It works inside a fixed grammar (add / rename /\n\
+             change / remove a field, add a relation) and refuses anything outside it\n\
+             rather than guessing.\n\
              \n\
              Run it without --why to actually start a change."
         }
@@ -3822,6 +3944,36 @@ fn why_for(name: &str) {
         _ => "No explanation available for this command.",
     };
     println!("{body}");
+}
+
+/// Map argv to a `why_for` topic without parsing it as a command.
+/// Used only when parsing failed under `--why` — the command word is
+/// there, the arguments it needs are not, and the explanation doesn't
+/// need them.
+fn why_topic_for(args: &[String]) -> Option<&'static str> {
+    let first = args.get(1).map(String::as_str)?;
+    let second = args.get(2).map(String::as_str);
+    Some(match (first, second) {
+        ("new", Some("app")) => "new-app",
+        ("new", Some("project")) => "new-project",
+        ("new", _) => "new-app",
+        ("migrate", Some("generate")) => "migrate-generate",
+        ("migrate", Some("apply")) => "migrate-apply",
+        ("migrate", Some("status")) => "migrate-status",
+        ("migrate", Some("add-fks")) => "migrate-add-fks",
+        ("user", _) => "user-create",
+        ("evolve", _) => "evolve",
+        ("explain", _) => "explain",
+        ("view", _) => "view",
+        ("context", _) => "context",
+        ("ai", _) => "ai",
+        ("init", _) => "init",
+        ("start", _) => "start",
+        ("run", _) => "run",
+        ("doctor", _) => "doctor",
+        ("schema", _) => "schema",
+        _ => return None,
+    })
 }
 
 fn why_for_help() {
@@ -4263,6 +4415,97 @@ mod tests {
         // helper, NOT the full --help dump. Explicit `help` still maps
         // to Command::Help (covered by `parse_help_flag`).
         assert_eq!(parse_command(&args(&[])).unwrap(), Command::Default);
+    }
+
+    // -- `rustio evolve` helpers -------------------------------------------
+
+    fn two_model_schema() -> rustio_core::Schema {
+        use rustio_core::schema::{SchemaField, SchemaModel};
+        let model = |name: &str, table: &str| SchemaModel {
+            name: name.to_string(),
+            table: table.to_string(),
+            admin_name: table.to_string(),
+            display_name: table.to_string(),
+            singular_name: name.to_lowercase(),
+            fields: vec![SchemaField {
+                name: "title".into(),
+                ty: "String".into(),
+                nullable: false,
+                editable: true,
+                relation: None,
+            }],
+            relations: vec![],
+            core: false,
+        };
+        rustio_core::Schema {
+            version: 1,
+            rustio_version: env!("CARGO_PKG_VERSION").to_string(),
+            models: vec![model("Book", "books"), model("Loan", "loans")],
+        }
+    }
+
+    #[test]
+    fn nearest_model_name_forgives_plural_and_typo() {
+        let schema = two_model_schema();
+        // The exact plural the user is most likely to type.
+        assert_eq!(
+            nearest_model_name(&schema, "books").as_deref(),
+            Some("Book")
+        );
+        // A one-character slip.
+        assert_eq!(nearest_model_name(&schema, "Bok").as_deref(), Some("Book"));
+    }
+
+    #[test]
+    fn nearest_model_name_refuses_a_different_word() {
+        // `member` is not a near-miss of `Book` or `Loan`; offering
+        // one would be a guess, and the CLI lists the models instead.
+        let schema = two_model_schema();
+        assert_eq!(nearest_model_name(&schema, "member"), None);
+    }
+
+    #[test]
+    fn replace_word_rewrites_only_whole_words() {
+        assert_eq!(
+            replace_word("add author as String to books", "books", "Book"),
+            "add author as String to Book"
+        );
+        // `bookshelf` contains `books` but is not the word `books`.
+        assert_eq!(
+            replace_word("add bookshelf to books", "books", "Book"),
+            "add bookshelf to Book"
+        );
+    }
+
+    #[test]
+    fn edit_distance_basics() {
+        assert_eq!(edit_distance("book", "book"), 0);
+        assert_eq!(edit_distance("book", "books"), 1);
+        // b→l, o=o, o→a, k→n
+        assert_eq!(edit_distance("book", "loan"), 3);
+    }
+
+    #[test]
+    fn default_scaffold_fields_are_named() {
+        assert!(is_default_scaffold_field("title"));
+        assert!(is_default_scaffold_field("priority"));
+        assert!(is_default_scaffold_field("is_active"));
+        assert!(!is_default_scaffold_field("author"));
+    }
+
+    #[test]
+    fn why_topic_resolves_commands_that_need_arguments() {
+        // `rustio evolve --why` must explain `evolve`, not demand the
+        // change request it is being asked to explain.
+        assert_eq!(why_topic_for(&args(&["evolve"])), Some("evolve"));
+        assert_eq!(why_topic_for(&args(&["explain"])), Some("explain"));
+        assert_eq!(why_topic_for(&args(&["new", "app"])), Some("new-app"));
+        assert_eq!(
+            why_topic_for(&args(&["migrate", "generate"])),
+            Some("migrate-generate")
+        );
+        assert_eq!(why_topic_for(&args(&["banana"])), None);
+        assert_eq!(why_topic_for(&args(&[])), None);
     }
 
     #[test]

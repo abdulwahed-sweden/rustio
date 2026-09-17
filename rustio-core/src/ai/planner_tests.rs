@@ -546,6 +546,29 @@ fn change_field_type_accepts_synonyms() {
 }
 
 #[test]
+fn change_field_type_accepts_either_word_order() {
+    // "change <field> to <type> in <model>" reads as naturally as
+    // "change <field> in <model> to <type>", and the CLI advertises
+    // the first shape — both must parse to the same primitive.
+    let schema = task_schema();
+    for prompt in [
+        "change title in tasks to datetime",
+        "change title to DateTime in Task",
+    ] {
+        let res = generate_plan(&schema, None, PlanRequest::new(prompt))
+            .unwrap_or_else(|e| panic!("prompt `{prompt}` failed: {e}"));
+        match &res.plan.steps[0] {
+            Primitive::ChangeFieldType(c) => {
+                assert_eq!(c.model, "Task", "prompt `{prompt}`");
+                assert_eq!(c.field, "title", "prompt `{prompt}`");
+                assert_eq!(c.new_type, "DateTime", "prompt `{prompt}`");
+            }
+            other => panic!("wrong primitive for `{prompt}`: {other:?}"),
+        }
+    }
+}
+
+#[test]
 fn change_field_type_unknown_type_is_rejected() {
     let schema = task_schema();
     let err = generate_plan(

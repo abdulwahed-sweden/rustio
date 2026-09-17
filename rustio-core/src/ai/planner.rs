@@ -667,12 +667,25 @@ fn try_change_type(
         return Ok(None);
     };
     let after = slice_original(raw, "change ").unwrap_or(rest);
-    // "change <field> in <model> to <type>"
-    let Some((lhs, new_type_hint)) = split_on_keyword(after, &[" to "]) else {
+    // Two orders, one meaning:
+    //   "change <field> in <model> to <type>"
+    //   "change <field> to <type> in <model>"
+    // Both read naturally in English, so both parse. The split on
+    // " to " happens first either way; what follows it tells us which
+    // shape we're in.
+    let Some((lhs, rhs)) = split_on_keyword(after, &[" to "]) else {
         return Ok(None);
     };
-    let Some((field_phrase, model_hint)) = split_on_keyword(lhs, &[" in ", " on "]) else {
-        return Ok(None);
+    let (field_phrase, model_hint, new_type_hint) = match split_on_keyword(lhs, &[" in ", " on "]) {
+        Some((field_phrase, model_hint)) => (field_phrase, model_hint, rhs),
+        None => {
+            // No model on the left, so it must be on the right:
+            // "<field> to <type> in <model>".
+            let Some((type_hint, model_hint)) = split_on_keyword(rhs, &[" in ", " on "]) else {
+                return Ok(None);
+            };
+            (lhs, model_hint, type_hint)
+        }
     };
     let model = resolve_model(schema, model_hint)?;
     if model.core {
@@ -1227,7 +1240,8 @@ fn supported_forms_message(raw: &str) -> String {
          - rename <field> to <new> in <model>\n  \
          - rename model <from> to <to>\n  \
          - remove <field> from <model>\n  \
-         - change <field> in <model> to <type>\n  \
+         - add relation from <model> to <model>\n  \
+         - change <field> to <type> in <model>\n  \
          - make <field> in <model> optional|required"
     )
 }
