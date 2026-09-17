@@ -106,8 +106,6 @@ the migration in the same breath:
 
 Open it, sign in, and you have a working admin for every model you defined.
 
-![Admin list page](docs/screenshots/admin-tasks-list-light.png)
-
 > **Stuck?** Run `rustio doctor` from inside the project — it checks the
 > common "why isn't this working" causes and names the command that fixes
 > each one.
