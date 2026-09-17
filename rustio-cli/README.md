@@ -50,7 +50,7 @@ Open <http://127.0.0.1:8000/admin> and sign in. That's the whole loop.
 Once your project is running, describe the change in plain English:
 
 ```bash
-rustio evolve "add a status field to tasks"
+rustio change "add a status field to tasks"
 ```
 
 RustIO proposes the diff as a small blueprint, shows you the risk, and lets you pick **Apply** / **Show technical details** / **Cancel**. On Apply, it writes the model edit + a migration; you then run `rustio migrate apply` to bring the DB up to date.
@@ -76,7 +76,7 @@ For a small day-one surface, run `rustio help`. The everyday loop:
 | `rustio start`                   | Re-open the setup menu inside an existing project                    |
 | `rustio add model <name>`        | Add one model to the current project                                 |
 | `rustio run`                     | Build (cargo build) + start the server on `:8000`                    |
-| `rustio evolve "<request>"`      | Describe a change in plain English — RustIO proposes the diff        |
+| `rustio change "<request>"`      | Describe a change in plain English — RustIO proposes the diff        |
 | `rustio migrate apply [-v]`      | Apply pending migrations                                             |
 | `rustio migrate status`          | Show applied and pending migrations                                  |
 | `rustio user create [opts]`      | Create a user in the auth tables (interactive when flags omitted)    |
@@ -99,7 +99,7 @@ rustio help advanced
 ## Notes
 
 - The interactive setup menu needs a real terminal. In CI or when stdin is piped, pass a name + preset explicitly: `rustio init mysite --preset basic`.
-- Presets are coarse starting points, not lock-in. You can always add more with `rustio add model <name>` or change the shape with `rustio evolve "<request>"`.
+- Presets are coarse starting points, not lock-in. You can always add more with `rustio add model <name>` or change the shape with `rustio change "<request>"`.
 
 See the [main repository](https://github.com/abdulwahed-sweden/rustio) for the full guide.
 

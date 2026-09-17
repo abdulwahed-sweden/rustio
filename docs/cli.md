@@ -16,7 +16,8 @@ cargo install rustio-cli
 | `start`                          | Reopen the setup menu (Empty / Template) in a project   |
 | `new project <name>`             | Create a new project at `./<name>`                      |
 | `add model <name>`               | Create one model inside the current project             |
-| `evolve "<change>"`              | Change the schema from plain English, then offer to migrate |
+| `change "<change>"`              | Change the schema from plain English, then offer to migrate |
+| `evolve "<change>"`              | Retired spelling of `change`; prints a note, then runs it    |
 | `run [--port <n>]`               | Build the project and serve on `http://127.0.0.1:8000`  |
 | `migrate generate <name>`        | Create an empty migration file under `migrations/`      |
 | `migrate apply`                  | Apply all pending migrations                            |
@@ -38,13 +39,13 @@ rustio init booklend           # pick Empty
 cd booklend
 rustio add model book          # repeat for member, loan
 rustio migrate apply
-rustio evolve "add author as String to Book"
+rustio change "add author as String to Book"
 rustio user create --email you@example.com --password secret --role admin
 rustio run
 ```
 
 ```bash
-# Evolve an existing schema through the typed AI pipeline
+# Change an existing schema through the typed AI pipeline
 rustio ai plan "add date_of_birth as DateTime to posts" --save plan.json
 rustio ai review plan.json
 rustio ai apply plan.json --yes

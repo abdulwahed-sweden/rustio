@@ -36,7 +36,7 @@ If you're new:
     rustio migrate apply        create the tables
     rustio run                  http://127.0.0.1:8000/admin
 
-To change something later: `rustio evolve "<what you want>"`. That's
+To change something later: `rustio change "<what you want>"`. That's
 the whole loop.
 
 SCAFFOLD
@@ -52,7 +52,7 @@ RUN
     run [--port <n>]            Build and start the server (:8000 by default).
 
 CHANGE
-    evolve "<request>"          Describe a change in plain English. RustIO
+    change "<request>"          Describe a change in plain English. RustIO
                                   proposes the diff, shows you the risk, and
                                   applies only what you accept.
     migrate apply [-v]          Apply all pending migrations (verbose with -v).
@@ -86,11 +86,11 @@ For day-to-day work, see `rustio help`. The commands below cover
 scripting and CI gates, low-level project operations, and a legacy
 retrofit. Most users never need them.
 
-SCRIPTING                                       (composes evolve by hand)
+SCRIPTING                                        (composes change by hand)
     ai plan "<request>" [--save <path>]
                                 Parse a request into a typed plan document
                                   (no execution). The interactive wrapper
-                                  is `rustio evolve`.
+                                  is `rustio change`.
     ai review <path>            Risk / impact / warnings for a saved plan.
     ai validate <path>          Terse validate-only gate for CI. Exit 0/1.
     ai apply <path> [--yes] [--dry-run] [--force]
@@ -315,12 +315,15 @@ async fn main() -> ExitCode {
                 ai_command(sub)
             }
         }
-        Ok(Command::Evolve { prompt }) => {
+        Ok(Command::Change { prompt, via_alias }) => {
+            if via_alias {
+                print_evolve_alias_note();
+            }
             if why_mode {
-                why_for("evolve");
+                why_for("change");
                 Ok(())
             } else {
-                evolve_command(prompt).await
+                change_command(prompt).await
             }
         }
         Ok(Command::Context(sub)) => {
@@ -345,12 +348,17 @@ async fn main() -> ExitCode {
         }
         Err(msg) => {
             // `--why` asks what a command does — it shouldn't require
-            // the arguments the command itself needs. `rustio evolve
+            // the arguments the command itself needs. `rustio change
             // --why` is the whole point of the flag, and demanding a
             // change request before explaining what a change request
             // is would be backwards.
             if why_mode {
                 if let Some(topic) = why_topic_for(&args) {
+                    // `rustio evolve --why` explains `change`, and says
+                    // so first — the same note the command itself prints.
+                    if args.get(1).map(String::as_str) == Some("evolve") {
+                        print_evolve_alias_note();
+                    }
                     why_for(topic);
                     return ExitCode::SUCCESS;
                 }
@@ -452,21 +460,14 @@ enum Command {
     /// example. Topics: model, migration, schema, layout, admin, route,
     /// ai, context, rbac.
     Explain(String),
-    /// `rustio evolve "<request>"` — friendly interactive verb for
-    /// changing the schema after the project is up.
-    ///
-    /// Internally wires together the same `generate_plan` →
-    /// `review_plan` → `execute_plan_document` calls the lower-level
-    /// `ai plan/review/apply` commands compose, but presents them as
-    /// one continuous flow with a blueprint summary and a three-way
-    /// choice (Apply / Show technical details / Cancel) — the same
-    /// progressive-disclosure UX the setup wizard uses.
-    ///
-    /// This is what new users see; `ai plan/review/apply` survive as
-    /// a scriptable surface for CI gates (documented under
-    /// `rustio help advanced`, never named "AI" in user-facing copy).
-    Evolve {
+    /// `rustio change "<request>"` — the interactive verb for changing
+    /// the schema after the project is up: plan, show, confirm, write,
+    /// then offer the migration. `via_alias` is set when the user typed
+    /// the retired `evolve` spelling, which prints one note and then
+    /// does exactly the same thing.
+    Change {
         prompt: String,
+        via_alias: bool,
     },
     Version,
     Help,
@@ -610,7 +611,9 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             Ok(Command::Schema)
         }
         Some("view") => parse_view_args(&args[2..]),
-        Some("evolve") => parse_evolve_args(&args[2..]),
+        Some("change") => parse_change_args(&args[2..], false),
+        // Retired spelling, kept working for one release.
+        Some("evolve") => parse_change_args(&args[2..], true),
         Some("ai") => parse_ai_command(&args[2..]),
         Some("context") => match args.get(2).map(String::as_str) {
             Some("show") => {
@@ -1005,7 +1008,7 @@ pub(crate) fn add_model(name: &str) -> Result<(), String> {
     // One screen, four facts: what was created, where it lives, what
     // it starts with, and the single next command. The default-fields
     // line exists so the user never discovers `title` by colliding
-    // with it; the `evolve` line teaches the grammar (and the correct
+    // with it; the `change` line teaches the grammar (and the correct
     // capitalised model name) before it's needed.
     out::success("Created model", &struct_name);
     println!();
@@ -1026,7 +1029,7 @@ pub(crate) fn add_model(name: &str) -> Result<(), String> {
         out::dim("title (String), priority (i32), is_active (bool)")
     ));
     out::plain(&format!(
-        "Add more with:  rustio evolve \"add <field> as <Type> to {struct_name}\""
+        "Add more with:  rustio change \"add <field> as <Type> to {struct_name}\""
     ));
     println!();
     out::hint("rustio migrate apply");
@@ -1222,7 +1225,7 @@ async fn migrate_apply(verbose: bool) -> Result<(), String> {
 
     println!();
     out::hint("rustio run");
-    out::hint("rustio evolve \"<change>\"");
+    out::hint("rustio change \"<change>\"");
     Ok(())
 }
 
@@ -1401,7 +1404,7 @@ fn schema_command() -> Result<(), String> {
     out::info("");
     out::info("Next:");
     out::hint("review rustio.schema.json — every external tool reads from this file");
-    out::hint("`rustio start` — onboard a new project, or `rustio evolve \"<change>\"` to change this one");
+    out::hint("`rustio start` — onboard a new project, or `rustio change \"<change>\"` to change this one");
     Ok(())
 }
 
@@ -1504,20 +1507,31 @@ async fn user_create_command(
     Ok(())
 }
 
-/// Parse `rustio evolve "<request>"`. The prompt can be supplied as
+/// Parse `rustio change "<request>"`. The prompt can be supplied as
 /// a single quoted token or as a sequence of bare words — we join
 /// `rest` with a single space, which handles both shapes.
 ///
 /// An empty prompt is a usage error. We deliberately do not accept a
-/// `--save` flag here (the way `rustio ai plan` does): `evolve` is
+/// `--save` flag here (the way `rustio ai plan` does): `change` is
 /// the interactive surface that applies changes immediately, so
 /// there's nothing to save.
-fn parse_evolve_args(rest: &[String]) -> Result<Command, String> {
+///
+/// `via_alias` records that the user typed `evolve`; the handler
+/// prints one note and then runs the same code.
+fn parse_change_args(rest: &[String], via_alias: bool) -> Result<Command, String> {
     let prompt = rest.join(" ").trim().to_string();
     if prompt.is_empty() {
-        return Err("usage: rustio evolve \"<change request>\"".into());
+        return Err("usage: rustio change \"<change request>\"".into());
     }
-    Ok(Command::Evolve { prompt })
+    Ok(Command::Change { prompt, via_alias })
+}
+
+/// The one line the retired `evolve` spelling prints before doing
+/// exactly what `change` does.
+pub(crate) const EVOLVE_ALIAS_NOTE: &str = "note: `evolve` is now `change` — same command.";
+
+fn print_evolve_alias_note() {
+    out::info(EVOLVE_ALIAS_NOTE);
 }
 
 /// Parse the args after `rustio ai` into an [`AiCommand`]. Keeps
@@ -2391,7 +2405,7 @@ fn show_technical_details(
 }
 
 // ─────────────────────────────────────────────────────────────────
-// `rustio evolve "<request>"` — friendly interactive verb over the
+// `rustio change "<request>"` — the interactive verb over the
 // typed plan/review/apply pipeline.
 //
 // The composition is intentionally thin: each step calls the same
@@ -2399,7 +2413,7 @@ fn show_technical_details(
 // call. Everything user-facing happens in *this* function — the
 // pipeline stays headless and reusable. From the user's perspective:
 //
-//   $ rustio evolve "add a status field to tasks"
+//   $ rustio change "add a status field to tasks"
 //
 //   RustIO is ready to make this change:
 //     · add task.status (String)
@@ -2413,7 +2427,7 @@ fn show_technical_details(
 // internal implementation labels the user never reads.
 // ─────────────────────────────────────────────────────────────────
 
-/// Top-level handler for `rustio evolve "<request>"`.
+/// Top-level handler for `rustio change "<request>"`.
 ///
 /// Reads the project schema + (optional) context, asks the planner to
 /// parse the request into a typed `Plan`, reviews it for risk and
@@ -2422,7 +2436,7 @@ fn show_technical_details(
 /// way choice (Apply / Show technical details / Cancel) is the same
 /// progressive-disclosure pattern the setup wizard uses — the user
 /// only sees primitive-level vocabulary when they ask for it.
-async fn evolve_command(prompt: String) -> Result<(), String> {
+async fn change_command(prompt: String) -> Result<(), String> {
     use rustio_core::ai::executor::{execute_plan_document, ExecuteOptions};
     use rustio_core::ai::review::{build_plan_document, review_plan};
     use rustio_core::ai::{generate_plan, PlanError, PlanRequest};
@@ -2477,12 +2491,12 @@ async fn evolve_command(prompt: String) -> Result<(), String> {
                 println!("  Nothing to do.");
                 println!();
                 println!(
-                    "  Want to rename it?  rustio evolve \"rename {field} to <new> in {model}\""
+                    "  Want to rename it?  rustio change \"rename {field} to <new> in {model}\""
                 );
                 return Ok(());
             }
             Err(e) => {
-                print_evolve_refusal(&e);
+                print_change_refusal(&e);
                 return Ok(());
             }
         }
@@ -2494,7 +2508,7 @@ async fn evolve_command(prompt: String) -> Result<(), String> {
     let review = review_plan(&schema, &result.plan, context.as_ref())
         .map_err(|e| format!("could not review the change: {e}"))?;
 
-    show_evolve_blueprint(&result.plan);
+    show_change_blueprint(&result.plan);
     if !review.warnings.is_empty() {
         for w in &review.warnings {
             println!("    {} {w}", out::dot());
@@ -2558,27 +2572,44 @@ async fn evolve_command(prompt: String) -> Result<(), String> {
 /// ends here, and it always prints the full grammar — a user who is
 /// told "no" once should learn the whole shape of what "yes" looks
 /// like, not be sent away to guess again.
-fn print_evolve_refusal(e: &rustio_core::ai::PlanError) {
+fn print_change_refusal(e: &rustio_core::ai::PlanError) {
+    print!("{}", change_refusal_message(e));
+}
+
+/// The refusal text itself, built rather than printed, so a test can
+/// assert that every supported shape is listed.
+fn change_refusal_message(e: &rustio_core::ai::PlanError) -> String {
     use rustio_core::ai::PlanError;
-    println!();
-    println!("  I can't express that as a schema change.");
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let _ = writeln!(out);
+    let _ = writeln!(out, "  I can't express that as a schema change.");
     // `InvalidIntent` carries the planner's own copy of the grammar;
     // printing it here would show the same list twice. Every other
     // refusal says something the list doesn't (an unknown type, a
     // protected model), so it earns a line.
     if !matches!(e, PlanError::InvalidIntent(_)) {
-        println!("    {}", out::dim(&e.to_string()));
+        let _ = writeln!(out, "    {}", out::dim(&e.to_string()));
     }
-    println!();
-    println!("  I understand these shapes:");
-    println!("    add <field> as <Type> to <Model>");
-    println!("    rename <old> to <new> in <Model>");
-    println!("    change <field> to <Type> in <Model>");
-    println!("    add relation from <Model> to <Model>");
-    println!("    remove <field> from <Model>");
-    println!();
-    println!("  Types: String, Integer, Bool, DateTime, Text");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "  I understand these shapes:");
+    for shape in SUPPORTED_SHAPES {
+        let _ = writeln!(out, "    {shape}");
+    }
+    let _ = writeln!(out);
+    let _ = writeln!(out, "  Types: String, Integer, Bool, DateTime, Text");
+    out
 }
+
+/// The five shapes the planner accepts, in the order the refusal lists
+/// them. One list, so the screen and the grammar cannot drift apart.
+pub(crate) const SUPPORTED_SHAPES: &[&str] = &[
+    "add <field> as <Type> to <Model>",
+    "rename <old> to <new> in <Model>",
+    "change <field> to <Type> in <Model>",
+    "add relation from <Model> to <Model>",
+    "remove <field> from <Model>",
+];
 
 /// The fields every scaffolded model starts with. Used only to add
 /// "(it is a default field)" to the already-exists message — the
@@ -2661,14 +2692,14 @@ fn replace_word(prompt: &str, from: &str, to: &str) -> String {
 /// line per change, plain English, no primitive vocabulary. The
 /// goal is for the user to read the screen once and know what
 /// `Apply` will do without a manual.
-fn show_evolve_blueprint(plan: &rustio_core::ai::Plan) {
+fn show_change_blueprint(plan: &rustio_core::ai::Plan) {
     use rustio_core::ai::Primitive;
 
     println!();
     println!("  Ready to make this change:");
     println!();
 
-    // `evolve` plans are usually 1–3 steps. We render them as
+    // `change` plans are usually 1–3 steps. We render them as
     // bullets in the order the executor will apply them.
     for step in &plan.steps {
         let line = match step {
@@ -3708,7 +3739,7 @@ async fn default_action() -> Result<(), String> {
         println!("    rustio doctor");
     } else {
         println!("    rustio run");
-        println!("    rustio evolve \"<change>\"");
+        println!("    rustio change \"<change>\"");
         println!("    rustio add model <name>");
     }
     Ok(())
@@ -4038,7 +4069,7 @@ const EXPLAIN_TOPICS: &[(&str, &str)] = &[
          \x20\x20}\n\
          \n\
          Run `rustio add model <name>` to scaffold the struct + the matching migration in\n\
-         one step. Then shape the fields with `rustio evolve` — see `rustio explain ai`.",
+         one step. Then shape the fields with `rustio change` — see `rustio explain ai`.",
     ),
     (
         "migration",
@@ -4260,11 +4291,11 @@ fn why_for(name: &str) {
              \x20\x202. review — risk / impact / warnings, no execution.\n\
              \x20\x203. apply — atomic file writes; never runs migrations itself.\n\
              \n\
-             For an interactive flow, `rustio evolve \"<request>\"` is friendlier.\n\
+             For an interactive flow, `rustio change \"<request>\"` is friendlier.\n\
              Run a subcommand without --why for actual usage."
         }
-        "evolve" => {
-            "`rustio evolve \"<request>\"` changes your schema from a plain-English\n\
+        "change" => {
+            "`rustio change \"<request>\"` changes your schema from a plain-English\n\
              sentence: it shows the change, asks before writing, and offers to apply the\n\
              migration straight after. It works inside a fixed grammar (add / rename /\n\
              change / remove a field, add a relation) and refuses anything outside it\n\
@@ -4311,7 +4342,8 @@ fn why_topic_for(args: &[String]) -> Option<&'static str> {
         ("migrate", Some("status")) => "migrate-status",
         ("migrate", Some("add-fks")) => "migrate-add-fks",
         ("user", _) => "user-create",
-        ("evolve", _) => "evolve",
+        ("change", _) => "change",
+        ("evolve", _) => "change",
         ("explain", _) => "explain",
         ("view", _) => "view",
         ("context", _) => "context",
@@ -4493,7 +4525,7 @@ Then open <http://127.0.0.1:8000> for the landing page, and
 
 Or describe the change in plain English and let RustIO write the diff:
 
-    rustio evolve "add email and date_of_birth to customers"
+    rustio change "add email and date_of_birth to customers"
 
 ## Branding — `rustio.design.json`
 
@@ -4775,7 +4807,7 @@ mod tests {
         assert_eq!(parse_command(&args(&[])).unwrap(), Command::Default);
     }
 
-    // -- `rustio evolve` helpers -------------------------------------------
+    // -- `rustio change` helpers -------------------------------------------
 
     fn two_model_schema() -> rustio_core::Schema {
         use rustio_core::schema::{SchemaField, SchemaModel};
@@ -4853,9 +4885,9 @@ mod tests {
 
     #[test]
     fn why_topic_resolves_commands_that_need_arguments() {
-        // `rustio evolve --why` must explain `evolve`, not demand the
+        // `rustio change --why` must explain `change`, not demand the
         // change request it is being asked to explain.
-        assert_eq!(why_topic_for(&args(&["evolve"])), Some("evolve"));
+        assert_eq!(why_topic_for(&args(&["change"])), Some("change"));
         assert_eq!(why_topic_for(&args(&["explain"])), Some("explain"));
         assert_eq!(why_topic_for(&args(&["add", "model"])), Some("add-model"));
         assert_eq!(why_topic_for(&args(&["new", "app"])), Some("add-model"));
@@ -4865,6 +4897,126 @@ mod tests {
         );
         assert_eq!(why_topic_for(&args(&["banana"])), None);
         assert_eq!(why_topic_for(&args(&[])), None);
+    }
+
+    // -- `rustio change` and its retired `evolve` spelling ------------------
+
+    #[test]
+    fn parse_change_command() {
+        assert_eq!(
+            parse_command(&args(&["change", "add author as String to Book"])).unwrap(),
+            Command::Change {
+                prompt: "add author as String to Book".into(),
+                via_alias: false,
+            }
+        );
+        // Bare words join the same way a quoted argument does.
+        assert_eq!(
+            parse_command(&args(&["change", "add", "author", "to", "Book"])).unwrap(),
+            Command::Change {
+                prompt: "add author to Book".into(),
+                via_alias: false,
+            }
+        );
+        assert!(parse_command(&args(&["change"])).is_err());
+    }
+
+    #[test]
+    fn evolve_reaches_the_same_command_flagged_as_an_alias() {
+        // Same prompt, same variant — one implementation, not two.
+        let via_new = parse_command(&args(&["change", "add author as String to Book"])).unwrap();
+        let via_old = parse_command(&args(&["evolve", "add author as String to Book"])).unwrap();
+        match (&via_new, &via_old) {
+            (
+                Command::Change {
+                    prompt: a,
+                    via_alias: false,
+                },
+                Command::Change {
+                    prompt: b,
+                    via_alias: true,
+                },
+            ) => assert_eq!(a, b, "the alias must carry the prompt through unchanged"),
+            other => panic!("expected both to parse as Change: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn evolve_alias_note_is_exact() {
+        assert_eq!(
+            EVOLVE_ALIAS_NOTE,
+            "note: `evolve` is now `change` — same command."
+        );
+    }
+
+    #[test]
+    fn why_resolves_for_change_and_for_the_alias() {
+        // `rustio change --why` and `rustio evolve --why` both explain
+        // `change`, without being given a change request first.
+        assert_eq!(why_topic_for(&args(&["change"])), Some("change"));
+        assert_eq!(why_topic_for(&args(&["evolve"])), Some("change"));
+    }
+
+    #[test]
+    fn refusal_lists_every_supported_shape() {
+        use rustio_core::ai::PlanError;
+        let msg = change_refusal_message(&PlanError::InvalidIntent("nope".into()));
+        for shape in SUPPORTED_SHAPES {
+            assert!(msg.contains(shape), "refusal must list `{shape}`:\n{msg}");
+        }
+        assert!(
+            msg.contains("Types: String, Integer, Bool, DateTime, Text"),
+            "{msg}"
+        );
+        // InvalidIntent already carries the planner's own copy of the
+        // grammar; the screen must not print the list twice.
+        assert!(!msg.contains("nope"), "{msg}");
+    }
+
+    #[test]
+    fn generated_docs_teach_change_not_evolve() {
+        // Everything `rustio init` / `add model` writes into a user's
+        // project, plus the scaffold's own closing instructions.
+        for (name, body) in [
+            ("DEVELOPMENT.md", DEVELOPMENT_MD),
+            ("README.md", README_MD),
+            ("generated views + welcome page", MODEL_VIEWS_RS),
+            ("usage", USAGE),
+        ] {
+            assert!(
+                !body.contains("rustio evolve"),
+                "{name} still teaches `rustio evolve`"
+            );
+        }
+        assert!(
+            DEVELOPMENT_MD.contains("rustio change"),
+            "DEVELOPMENT.md should teach `rustio change`"
+        );
+        assert!(
+            USAGE.contains("change \"<request>\""),
+            "help should list `change`"
+        );
+    }
+
+    #[test]
+    fn readme_has_no_primary_evolve_instruction() {
+        // The repository README is a user-facing surface: it must not
+        // instruct anyone to run the retired spelling.
+        let readme = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("workspace root")
+                .join("README.md"),
+        )
+        .expect("README.md is readable");
+        assert!(
+            !readme.contains("rustio evolve"),
+            "README.md still instructs `rustio evolve`"
+        );
+        assert!(
+            readme.contains("rustio change"),
+            "README.md should teach `rustio change`"
+        );
     }
 
     #[test]

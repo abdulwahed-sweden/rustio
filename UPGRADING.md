@@ -4,6 +4,33 @@ A per-release migration guide. Items here only cover externally-observable chang
 
 ---
 
+## Unreleased — `evolve` is now `change`
+
+**No action required.** The old spelling still works for one release.
+
+| Before | Now |
+|---|---|
+| `rustio evolve "add author as String to Book"` | `rustio change "add author as String to Book"` |
+| `rustio evolve "rename title to name in Member"` | `rustio change "rename title to name in Member"` |
+| `rustio evolve "change priority to Integer in Book"` | `rustio change "change priority to Integer in Book"` |
+| `rustio evolve "add relation from Loan to Book"` | `rustio change "add relation from Loan to Book"` |
+| `rustio evolve --why` | `rustio change --why` |
+
+Running the old spelling prints one line and then does exactly what `change`
+does:
+
+```
+note: `evolve` is now `change` — same command.
+```
+
+Scripts keep working unchanged; exit codes and both confirmation prompts are
+the same. Nothing else about the command moved — the five accepted shapes, the
+planner, the typo-correction prompt, the refusal screen and the migration it
+writes are all as they were. `rustio ai plan` / `ai review` / `ai apply` are
+untouched.
+
+---
+
 ## Unreleased — `new app` is now `add model`
 
 **No action required.** The old spelling still works, and no file moves.
@@ -26,7 +53,7 @@ and their `main.rs` declares `mod models;`.
 
 **Existing projects keep `apps/`.** Nothing is moved and nothing needs to be:
 the CLI and the AI executor both resolve the layout from disk, so `add model`,
-`evolve`, `doctor` and the bare `rustio` status line all read whichever
+`change`, `doctor` and the bare `rustio` status line all read whichever
 directory your project has. Mixed fleets are fine.
 
 If you *want* to move an existing project onto the new layout, it is three
@@ -100,11 +127,11 @@ Creating a user from the admin is now refused (hidden "+ Add", 403 on the
 create routes): a user row without a hashed password can't sign in, so users
 are created with `rustio user create` and edited from the admin.
 
-### `rustio evolve` applies its own migration
+### `rustio change` applies its own migration
 
-`evolve` now asks "Apply the migration now?" after writing one. Answering no
+`change` now asks "Apply the migration now?" after writing one. Answering no
 prints `rustio migrate apply` and changes nothing else — scripts that ran
-`evolve` followed by `migrate apply` keep working (the second call finds
+`change` followed by `migrate apply` keep working (the second call finds
 nothing pending).
 
 ---

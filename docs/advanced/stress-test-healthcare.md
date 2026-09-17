@@ -14,7 +14,9 @@ The full worked example lives at `examples/bookflow/`. This document is its lab 
 > against an older CLI, so it shows `rustio new app <name>` and an `apps/`
 > folder. That command is now **`rustio add model <name>`**, and new projects
 > scaffold into `models/`. `new app` still works as an alias for one release,
-> and existing projects keep `apps/`. The transcript is left as it was run.
+> and existing projects keep `apps/`. The schema-change command shown in later
+> RustIO material as `rustio evolve` is likewise now **`rustio change`**, with
+> `evolve` kept as an alias for one release. The transcript is left as it was run.
 
 > **Addendum — 0.9.0 Relation Intelligence Layer.** Four of the "Critical"
 > findings from §7.1 (raw-id FK columns, no inverse views, opaque delete 500,

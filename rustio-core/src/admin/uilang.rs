@@ -139,7 +139,7 @@ fn builtin() -> HashMap<&'static str, &'static [(&'static str, &'static str)]> {
             "Edit ViewSpec roles, filters, and labels",
             "Redigera ViewSpec-roller, filter och etiketter",
         ),
-        ("Evolve schema", "Utveckla schemat"),
+        ("Change schema", "Ändra schemat"),
         (
             "Add or change fields — a developer / CLI tool",
             "Lägg till eller ändra fält – ett utvecklar-/CLI-verktyg",

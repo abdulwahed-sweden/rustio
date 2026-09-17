@@ -3219,7 +3219,7 @@ async fn build_account_view(db: &Db, user: &crate::auth::User) -> AccountView {
             app.edit,
         ),
         perm(
-            "Evolve schema",
+            "Change schema",
             "Add or change fields — a developer / CLI tool",
             false,
         ),
@@ -5208,7 +5208,7 @@ mod tests {
         assert!(av
             .perms
             .iter()
-            .any(|p| p.label == "Evolve schema" && !p.allowed));
+            .any(|p| p.label == "Change schema" && !p.allowed));
         assert!(av
             .roles
             .iter()

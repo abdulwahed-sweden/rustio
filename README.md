@@ -71,8 +71,8 @@ rustio add model book         # repeat for member, loan
 rustio migrate apply
 
 # 4. Shape the fields in plain English
-rustio evolve "add author as String to Book"
-rustio evolve "add relation from Loan to Book"
+rustio change "add author as String to Book"
+rustio change "add relation from Loan to Book"
 
 # 5. Make a login for yourself
 rustio user create --email you@example.com --password secret --role admin
@@ -81,7 +81,7 @@ rustio user create --email you@example.com --password secret --role admin
 rustio run
 ```
 
-`rustio evolve` shows the change, asks before writing, then offers to apply
+`rustio change` shows the change, asks before writing, then offers to apply
 the migration in the same breath:
 
 ```
@@ -119,7 +119,7 @@ Open it, sign in, and you have a working admin for every model you defined.
 | `rustio init booklend` | Scaffolded a Rust project with the framework wired up, then asked Empty or Template. The Template path walks a ready-made shape with you and writes a model plus a `CREATE TABLE` migration for every model you accept. |
 | `rustio add model book` | Wrote `models/book/models.rs` (the struct — your source of truth), its admin registration, an empty views file, and a migration. Every model starts with `title`, `priority`, `is_active`; the CLI says so, so you never discover them by colliding with one. |
 | `rustio migrate apply` | Ran the pending SQL migrations against `app.db` (SQLite, created on first run) and regenerated `rustio.schema.json`. |
-| `rustio evolve "…"` | Parsed the sentence into typed schema operations, showed them, and — on your yes — edited the struct, wrote a migration, and offered to apply it. |
+| `rustio change "…"` | Parsed the sentence into typed schema operations, showed them, and — on your yes — edited the struct, wrote a migration, and offered to apply it. |
 | `rustio user create …` | Inserted a row into `rustio_users` with an argon2-hashed password and the `admin` role. |
 | `rustio run` | Checked the port was free, built, and served on `:8000` (`--port <n>` for another). `/admin/*` is gated by the auth middleware. |
 
@@ -143,12 +143,12 @@ whichever layout your project has.)
 
 ---
 
-## Evolve the system safely
+## Change the system safely
 
 Describe a change:
 
 ```bash
-rustio evolve "add date_of_birth as DateTime to notes"
+rustio change "add date_of_birth as DateTime to notes"
 ```
 
 RustIO proposes a typed change plan, shows the risk, and lets you review it before anything lands.
@@ -159,7 +159,7 @@ The change pipeline is deliberately constrained:
 request → typed plan → review → apply
 ```
 
-`evolve` shows the change and asks before writing anything, then offers to
+`change` shows the change and asks before writing anything, then offers to
 apply the migration it just wrote — so the schema on disk and the schema in
 the database never drift apart while you remember a second command.
 
@@ -212,7 +212,7 @@ rustio explain <topic>          # short docs on `model`, `migration`, `admin`, `
 rustio init <name>              # new project, then Empty or a template
 rustio start                    # reopen that menu inside an existing project
 rustio add model <name>         # new model + admin entry + migration stub
-rustio evolve "<change>"        # change the schema from plain English
+rustio change "<change>"        # change the schema from plain English
 rustio migrate apply            # apply pending migrations (regenerates the schema)
 rustio migrate status           # what's applied, what's pending
 rustio schema                   # regenerate rustio.schema.json

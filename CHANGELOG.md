@@ -154,11 +154,27 @@ sources, stored values, sorting, links, data are never translated); only the
   merged cell. Without that context, nothing is masked — masking is an explicit
   posture, not a silent default. Hidden fields are always omitted.
 
+#### `evolve` is now `change`
+
+- **`rustio change "<what you want>"` replaces `rustio evolve`.** The command
+  changes your schema; `change` says so in the word a user already reaches for,
+  and it matches the grammar's own verbs (`add`, `rename`, `change`, `remove`).
+- **`rustio evolve` keeps working for one release** as a hidden alias. It prints
+  `note: `evolve` is now `change` — same command.` and then runs the same
+  implementation — there is no second code path. `rustio evolve --why` prints
+  the same note and explains `change`.
+- Nothing else moves: the five accepted shapes, the planner's semantics and
+  plural resolution, the typo-correction prompt, both confirmations, the
+  refusal screen, migration generation, and `rustio ai plan` / `review` /
+  `apply` are all unchanged.
+- The admin's permission matrix now reads **Change schema** rather than
+  "Evolve schema", so the UI and the CLI name the same activity.
+
 #### `new app` is now `add model`
 
 - **`rustio add model <name>` replaces `rustio new app <name>`.** What the
   command creates is a model — a struct, a table, an admin page — and the
-  command now says so. `add` also matches the verb `evolve` already uses
+  command now says so. `add` also matches the verb `change` already uses
   (`add author as String to Book`), so one vocabulary covers both: `add model`
   adds a model, `add <field>` adds a field.
 - **`new app` (and `new model`) keep working for one release.** They print
@@ -170,7 +186,7 @@ sources, stored values, sorting, links, data are never translated); only the
   nothing is moved.** Both layouts are fully supported: the CLI and the AI
   executor share one detector
   (`rustio_core::ai::executor::models_dir_name`), so every command — scaffold,
-  evolve, doctor, the bare status line — reads the layout the project actually
+  change, doctor, the bare status line — reads the layout the project actually
   has. `ProjectView` carries the answer as `models_dir`.
 - `rustio explain app` is now `rustio explain layout`, and the admin
   dashboard's empty state points at `rustio add model <name>`.
@@ -193,7 +209,7 @@ sources, stored values, sorting, links, data are never translated); only the
   a pointer to `UPGRADING.md` — the server would bind 8000 regardless, and a
   banner naming a port nothing is listening on is worse than a refusal. Plain
   `rustio run` is unaffected there.
-- **`rustio evolve` applies the migration it just wrote.** The flow is now
+- **`rustio change` applies the migration it just wrote.** The flow is now
   three yes/no questions at most — correct the model name, apply the change,
   apply the migration — instead of leaving a written-but-unapplied migration
   behind a second command the user has to remember. A misspelt model name is
@@ -205,7 +221,7 @@ sources, stored values, sorting, links, data are never translated); only the
 - **`rustio add model <name>` states what the model starts with.** Output names
   the model, its three files, and its default fields (`title`, `priority`,
   `is_active`) — so `title already exists` is never a surprise — plus the
-  `evolve` line to add more, with the correctly-capitalised model name.
+  `change` line to add more, with the correctly-capitalised model name.
 - **`rustio migrate apply` reports the schema on the same line** —
   `Applied 3 migrations · schema updated (3 models + User)` — and points at the
   two commands that follow.
