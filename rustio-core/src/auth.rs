@@ -488,6 +488,17 @@ pub mod user {
         Ok(row.try_get(0)?)
     }
 
+    /// How many users carry `role = 'admin'`. `rustio doctor` reports
+    /// this: a project with zero admins has a working server nobody
+    /// can sign into, which is worth flagging before the user finds
+    /// out at the login form.
+    pub async fn count_admins(db: &Db) -> Result<i64, Error> {
+        let row = sqlx::query("SELECT COUNT(*) FROM rustio_users WHERE role = 'admin'")
+            .fetch_one(db.pool())
+            .await?;
+        Ok(row.try_get(0)?)
+    }
+
     /// i18n L4 — the user's saved UI language preference (an ISO 639-1 code),
     /// or `None` when unset (empty string in storage). Storage only: this is
     /// the user's choice, not a view setting. The *admin* combines it with the

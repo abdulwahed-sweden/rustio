@@ -61,7 +61,7 @@ USERS
     user create [opts]          Create a user (interactive when flags omitted).
 
 HELP
-    (no args)                   Context-aware "what should I do next".
+    (no args)                   One status line + the likely next commands.
     doctor                      Health-check the current project. Prints
                                   pass/warn/fail with a fix hint per check.
     explain <topic>             Short inline docs on a concept.
@@ -185,7 +185,7 @@ async fn main() -> ExitCode {
                 why_for("default");
                 Ok(())
             } else {
-                default_action()
+                default_action().await
             }
         }
         Ok(Command::Doctor) => {
@@ -193,7 +193,7 @@ async fn main() -> ExitCode {
                 why_for("doctor");
                 Ok(())
             } else {
-                doctor_command()
+                doctor_command().await
             }
         }
         Ok(Command::Explain(topic)) => {
@@ -3457,76 +3457,122 @@ impl ProjectState {
     }
 }
 
-/// `rustio` (no args) — print a one-screen, context-aware "what should
-/// I do next" instead of dumping the full help. Always shows
-/// `rustio help` as a fallback at the bottom.
-fn default_action() -> Result<(), String> {
-    let s = ProjectState::detect();
-    let cwd = std::env::current_dir()
+/// The project's name for banners and the status line: the current
+/// directory name. Cheap, always right for a scaffolded project, and
+/// never wrong in a way that matters (it's a label, not an identifier).
+fn project_name() -> String {
+    std::env::current_dir()
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| ".".into());
+        .unwrap_or_else(|| "this project".into())
+}
 
-    println!("rustio {}", env!("CARGO_PKG_VERSION"));
+/// True when nothing is listening on `127.0.0.1:<port>`. Implemented
+/// by trying to bind it ourselves: a successful bind is released
+/// immediately, so a server can take it a moment later.
+fn port_is_free(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+const DEFAULT_PORT: u16 = 8000;
+
+/// `rustio` (no args) — one status line and the three commands most
+/// likely to be next. Not a help dump: a person who types the bare
+/// binary is asking "where am I and what now?", and the answer fits
+/// on four lines.
+async fn default_action() -> Result<(), String> {
+    let s = ProjectState::detect();
 
     if !s.in_project {
+        println!("rustio {}", env!("CARGO_PKG_VERSION"));
         println!();
         println!("You're not inside a RustIO project right now.");
         println!();
-        println!("To start a new project:");
-        out::hint("rustio init <name>          (e.g. `rustio init mysite`)");
-        out::hint("rustio init                 (interactive wizard)");
+        println!("You probably want:");
+        println!("    rustio init <name>");
         println!();
-        out::info("Or run `rustio help` to see every command.");
+        out::info("Run `rustio help` to see every command.");
         return Ok(());
     }
 
-    println!();
-    println!("You're in a RustIO project: {cwd}");
-
-    // Detect the most useful next thing in priority order.
-    if !s.has_apps {
-        println!();
-        println!("This project has no apps yet. An app = one model (e.g. `notes`).");
-        out::hint("rustio new app <name>       create your first model");
-        out::hint("rustio explain app          if you're not sure what an app is");
-        return Ok(());
+    // The status line: name · models · pending migrations · server.
+    // Every part is measured, never assumed — a wrong count here is
+    // worse than no count.
+    let name = project_name();
+    let mut parts: Vec<String> = vec![name];
+    match schema_counts() {
+        Some(c) => parts.push(format!(
+            "{} {}",
+            c.user_models,
+            if c.user_models == 1 {
+                "model"
+            } else {
+                "models"
+            }
+        )),
+        None => parts.push("schema not generated".into()),
     }
-
-    if !s.has_db || !s.has_migrations_dir {
-        println!();
-        println!("Your database hasn't been set up yet.");
-        out::hint("rustio migrate apply        create tables + run pending migrations");
-        out::hint("rustio explain migration    what a migration is");
-        return Ok(());
+    // Only ask the database when there is one. Connecting with the
+    // default URL would create `app.db` as a side effect, and the bare
+    // `rustio` command must never change the project.
+    match if s.has_db {
+        pending_migrations().await
+    } else {
+        Err(String::new())
+    } {
+        Ok(n) => parts.push(format!(
+            "{n} pending migration{}",
+            if n == 1 { "" } else { "s" }
+        )),
+        Err(_) => parts.push("database not set up".into()),
     }
-
-    if !s.has_schema {
-        println!();
-        println!("`rustio.schema.json` is missing. The AI layer + external tools read it.");
-        out::hint("rustio schema               regenerate it from your models");
-        return Ok(());
-    }
-
-    // All set — suggest the daily-driver commands.
-    println!();
-    println!("Looks set up. Common next moves:");
-    out::hint("rustio run                  start the server on :8000");
-    out::hint("rustio migrate status       see what's applied / pending");
-    out::hint("rustio doctor               full health check");
-    out::hint("rustio new app <name>       add another model");
-    println!();
-    out::info(
-        "Run `rustio help` to see every command, or `rustio explain <topic>` for inline docs.",
+    parts.push(
+        if port_is_free(DEFAULT_PORT) {
+            "server not running"
+        } else {
+            "server running"
+        }
+        .to_string(),
     );
+    println!();
+    println!("  {}", parts.join(" · "));
+    println!();
+
+    println!("  You probably want:");
+    if !s.has_apps {
+        println!("    rustio new app <name>");
+        println!("    rustio start");
+        println!("    rustio explain model");
+    } else if !s.has_db {
+        println!("    rustio migrate apply");
+        println!("    rustio new app <name>");
+        println!("    rustio doctor");
+    } else {
+        println!("    rustio run");
+        println!("    rustio evolve \"<change>\"");
+        println!("    rustio new app <name>");
+    }
     Ok(())
+}
+
+/// Number of migration files on disk that the database hasn't applied
+/// yet. Errors (no DB, unreadable DB) propagate: the caller renders
+/// them as "database not set up" rather than a misleading `0`.
+async fn pending_migrations() -> Result<usize, String> {
+    let db = rustio_core::Db::connect(&database_url())
+        .await
+        .map_err(err_str)?;
+    let status = rustio_core::migrations::status(&db, Path::new("migrations"))
+        .await
+        .map_err(err_str)?;
+    Ok(status.pending.len())
 }
 
 /// `rustio doctor` — health check. Walks a fixed list of "is the
 /// project set up correctly?" questions and prints pass / warn / fail
 /// with a fix hint per item. Never fails (exit 0) even when checks
 /// warn — the goal is to surface fixes, not gate.
-fn doctor_command() -> Result<(), String> {
+async fn doctor_command() -> Result<(), String> {
     println!("{} Checking your RustIO setup …", out::dot());
     println!();
 
@@ -3614,11 +3660,114 @@ fn doctor_command() -> Result<(), String> {
         warnings += 1;
     }
 
+    // Everything below needs the database. Skipping is honest: an
+    // unset-up project already got told to run `migrate apply`, and
+    // inventing a verdict for checks we couldn't run would be worse.
+    if s.has_db {
+        match rustio_core::Db::connect(&database_url()).await {
+            Ok(db) => {
+                // Migrations applied
+                match rustio_core::migrations::status(&db, Path::new("migrations")).await {
+                    Ok(status) if status.pending.is_empty() => {
+                        doctor_pass("Migrations", "all migrations applied");
+                    }
+                    Ok(status) => {
+                        let n = status.pending.len();
+                        doctor_warn(
+                            "Migrations",
+                            &format!("{n} pending"),
+                            "run `rustio migrate apply`",
+                        );
+                        warnings += 1;
+                    }
+                    Err(e) => {
+                        doctor_warn(
+                            "Migrations",
+                            &format!("could not read: {e}"),
+                            "run `rustio migrate status`",
+                        );
+                        warnings += 1;
+                    }
+                }
+
+                // Schema ↔ database agreement
+                match schema_matches_database(&db).await {
+                    Ok(None) => doctor_pass("Schema", "schema matches models"),
+                    Ok(Some(mismatch)) => {
+                        doctor_warn("Schema", &mismatch, "run `rustio migrate apply`");
+                        warnings += 1;
+                    }
+                    Err(e) => {
+                        doctor_warn(
+                            "Schema",
+                            &format!("could not compare: {e}"),
+                            "run `rustio schema`",
+                        );
+                        warnings += 1;
+                    }
+                }
+
+                // Someone to sign in as
+                match rustio_core::auth::user::count_admins(&db).await {
+                    Ok(0) => {
+                        doctor_warn(
+                            "Admin user",
+                            "no admin users",
+                            "run `rustio user create --email you@example.com --role admin`",
+                        );
+                        warnings += 1;
+                    }
+                    Ok(n) => doctor_pass(
+                        "Admin user",
+                        &format!("{n} admin user{}", if n == 1 { "" } else { "s" }),
+                    ),
+                    // The auth tables don't exist until the first
+                    // `migrate apply` / `user create`. That's the same
+                    // finding as "no admin users", phrased for where
+                    // the project actually is.
+                    Err(_) => {
+                        doctor_warn(
+                            "Admin user",
+                            "auth tables not created yet",
+                            "run `rustio migrate apply`, then `rustio user create`",
+                        );
+                        warnings += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                doctor_fail(
+                    "Database",
+                    &format!("could not open: {e}"),
+                    "check RUSTIO_DATABASE_URL, or delete app.db and re-run `rustio migrate apply`",
+                );
+                failures += 1;
+            }
+        }
+    }
+
+    // Port. Not a property of the project — a property of the machine
+    // right now — but it's the single most common reason `rustio run`
+    // fails, so it belongs here.
+    if port_is_free(DEFAULT_PORT) {
+        doctor_pass("Port", &format!("{DEFAULT_PORT} is free"));
+    } else {
+        doctor_fail(
+            "Port",
+            &format!("{DEFAULT_PORT} already in use"),
+            &format!(
+                "stop the other process, or: rustio run --port {}",
+                DEFAULT_PORT + 1
+            ),
+        );
+        failures += 1;
+    }
+
     // Summary
     println!();
     if failures == 0 && warnings == 0 {
-        out::success("All checks pass", "you're good to go.");
-        out::hint("rustio run                  start the server on :8000");
+        out::success("All checks pass", "— nothing to fix.");
+        out::hint("rustio run");
     } else if failures == 0 {
         out::info(&format!(
             "{} warning{} — your project still works, but the items above can be tightened up.",
@@ -3649,6 +3798,38 @@ fn doctor_warn(name: &str, detail: &str, fix: &str) {
 fn doctor_fail(name: &str, detail: &str, fix: &str) {
     println!("  {} {name}  {}", out::cross(), out::dim(detail));
     println!("      {} {fix}", out::dim("→"));
+}
+
+/// Compare `rustio.schema.json` against the live database: every
+/// non-core model must have its table, and every field must have its
+/// column. Returns `Ok(None)` when they agree, `Ok(Some(reason))` for
+/// the first disagreement found.
+///
+/// One direction only, on purpose. Extra columns in the database are
+/// not a defect (a hand-written migration may add one the models don't
+/// expose yet); a missing one always is — it's the shape that breaks
+/// at runtime.
+async fn schema_matches_database(db: &rustio_core::Db) -> Result<Option<String>, String> {
+    use rustio_core::admin::schema_introspect::get_table_columns;
+
+    let Ok(schema) = load_project_schema() else {
+        return Err("rustio.schema.json not readable".into());
+    };
+    for model in schema.models.iter().filter(|m| !m.core) {
+        let columns = get_table_columns(db, &model.table).await.map_err(err_str)?;
+        if columns.is_empty() {
+            return Ok(Some(format!("table `{}` is missing", model.table)));
+        }
+        for field in &model.fields {
+            if !columns.iter().any(|c| c.name == field.name) {
+                return Ok(Some(format!(
+                    "`{}.{}` has no column in `{}`",
+                    model.name, field.name, model.table
+                )));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// `rustio explain <topic>` — short inline mini-docs. Saves the new
@@ -3803,18 +3984,17 @@ const EXPLAIN_TOPICS: &[(&str, &str)] = &[
 fn why_for(name: &str) {
     let body = match name {
         "default" => {
-            "`rustio` with no args prints a context-aware suggestion for what to do next in\n\
-             the current directory. It detects whether you're in a project, whether the DB\n\
-             is set up, and whether models are registered, then prints the most useful\n\
-             single next command.\n\
+            "`rustio` with no args prints one status line — project, model count, pending\n\
+             migrations, whether the server is up — and the commands most likely to be\n\
+             next. It reads the project; it never changes it.\n\
              \n\
-             Run it without --why to actually see the suggestion."
+             Run it without --why to actually see the status."
         }
         "doctor" => {
-            "`rustio doctor` runs a health check on the current project: Rust toolchain,\n\
-             project structure, registered apps, migrations directory, database file, and\n\
-             schema export. Each check prints pass / warn / fail + a fix hint. Never fails\n\
-             the process even when checks warn — the goal is to surface fixes.\n\
+            "`rustio doctor` runs a health check on the current project: toolchain, project\n\
+             structure, apps, database, pending migrations, whether the schema matches the\n\
+             database, whether an admin user exists, and whether port 8000 is free. Each\n\
+             check prints pass / warn / fail + a fix hint.\n\
              \n\
              Run it without --why to actually run the checks."
         }
