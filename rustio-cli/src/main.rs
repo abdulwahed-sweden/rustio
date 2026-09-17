@@ -923,19 +923,30 @@ pub(crate) fn new_app(name: &str) -> Result<(), String> {
     )
     .map_err(err_str)?;
 
-    out::success("Created app", &format!("\"{name}\""));
+    // One screen, four facts: what was created, where it lives, what
+    // it starts with, and the single next command. The default-fields
+    // line exists so the user never discovers `title` by colliding
+    // with it; the `evolve` line teaches the grammar (and the correct
+    // capitalised model name) before it's needed.
+    out::success("Created model", &struct_name);
     println!();
-    out::plain(&format!("{:<12} apps/{name}/models.rs", out::dim("model")));
+    out::plain(&format!("{:<10} apps/{name}/models.rs", out::dim("file")));
     out::plain(&format!(
-        "{:<12} {}",
+        "{:<10} {}",
         out::dim("migration"),
         migration_path.display()
     ));
-    out::plain(&format!("{:<12} /admin/{table_name}", out::dim("admin")));
-    out::plain(&format!("{:<12} /{name}", out::dim("view")));
+    out::plain(&format!("{:<10} /admin/{table_name}", out::dim("admin")));
+    println!();
+    out::plain(&format!(
+        "Default fields: {}",
+        out::dim("title (String), priority (i32), is_active (bool)")
+    ));
+    out::plain(&format!(
+        "Add more with:  rustio evolve \"add <field> as <Type> to {struct_name}\""
+    ));
     println!();
     out::hint("rustio migrate apply");
-    out::hint("rustio run");
     Ok(())
 }
 
@@ -996,23 +1007,72 @@ async fn migrate_apply(verbose: bool) -> Result<(), String> {
     }
     let n = applied.len();
     let noun = if n == 1 { "migration" } else { "migrations" };
-    println!();
-    out::success(&format!("Applied {n}"), noun);
 
     // Auto-dump the schema so rustio.schema.json stays in sync with the
     // persisted shape. Best-effort: if the project doesn't compile (or
     // doesn't have a --dump-schema handler — true for 0.3.x-era layouts),
-    // we print a hint and let the user regenerate explicitly. Migration
-    // success is not gated on this.
+    // we say so on the summary line and let the user regenerate
+    // explicitly. Migration success is not gated on this.
+    let dump = try_dump_schema();
+    let tail = match &dump {
+        Ok(()) => match schema_counts() {
+            Some(counts) => format!(" · schema updated ({})", counts.describe()),
+            None => " · schema updated".to_string(),
+        },
+        Err(_) => " · schema not regenerated".to_string(),
+    };
     println!();
-    out::plain("Regenerating rustio.schema.json …");
-    if let Err(msg) = try_dump_schema() {
-        out::info("  skipped (run `rustio schema` once your project compiles)");
+    out::success(&format!("Applied {n}"), &format!("{noun}{tail}"));
+    if let Err(msg) = dump {
+        println!();
+        out::hint("rustio schema          # regenerate rustio.schema.json once the project compiles");
         if verbose {
             eprintln!("  reason: {msg}");
         }
+        return Ok(());
     }
+
+    println!();
+    out::hint("rustio run");
+    out::hint("rustio evolve \"<change>\"");
     Ok(())
+}
+
+/// Model counts read back out of `rustio.schema.json` — used for the
+/// one-line summaries (`3 models + User`). Core models (today: just
+/// `User`) are counted separately: they're always present and are not
+/// something the user created, so lumping them in would inflate the
+/// number the user recognises as "mine".
+struct SchemaCounts {
+    user_models: usize,
+    core_models: usize,
+}
+
+impl SchemaCounts {
+    fn describe(&self) -> String {
+        let noun = if self.user_models == 1 {
+            "model"
+        } else {
+            "models"
+        };
+        if self.core_models == 0 {
+            format!("{} {noun}", self.user_models)
+        } else {
+            format!("{} {noun} + User", self.user_models)
+        }
+    }
+}
+
+/// Read `rustio.schema.json` and count user vs core models. Returns
+/// `None` when the file is missing or unreadable — every caller treats
+/// that as "say less", never as an error.
+fn schema_counts() -> Option<SchemaCounts> {
+    let raw = fs::read_to_string("rustio.schema.json").ok()?;
+    let schema = rustio_core::Schema::parse(&raw).ok()?;
+    Some(SchemaCounts {
+        user_models: schema.models.iter().filter(|m| !m.core).count(),
+        core_models: schema.models.iter().filter(|m| m.core).count(),
+    })
 }
 
 /// Shell out to `cargo run -- --dump-schema`. Returns an error if the
@@ -1022,6 +1082,12 @@ async fn migrate_apply(verbose: bool) -> Result<(), String> {
 fn try_dump_schema() -> Result<(), String> {
     let status = ProcessCommand::new("cargo")
         .args(["run", "--quiet", "--", "--dump-schema"])
+        // The scaffolded `main.rs` prints a "wrote rustio.schema.json"
+        // line of its own. When the CLI drives the dump it already
+        // reports the result on its own summary line, so ask the child
+        // to stay quiet. Projects scaffolded before this flag existed
+        // simply print the extra line — harmless.
+        .env("RUSTIO_QUIET", "1")
         .status()
         .map_err(|e| format!("failed to spawn cargo: {e}"))?;
     if !status.success() {
@@ -1244,13 +1310,9 @@ async fn user_create_command(
         .await
         .map_err(err_str)?;
 
-    out::success(
-        "Created user",
-        &format!("{} (role={}, id={})", user.email, user.role, user.id),
-    );
-    out::info("");
-    out::info("Next:");
-    out::hint("`rustio run` — then sign in at http://127.0.0.1:8000/admin");
+    out::success("Created user", &format!("{} ({})", user.email, user.role));
+    println!();
+    out::hint("rustio run");
     Ok(())
 }
 
@@ -3996,11 +4058,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let admin = apps::build_admin();
         let schema = Schema::from_admin(&admin);
         schema.write_to(std::path::Path::new("rustio.schema.json"))?;
-        eprintln!(
-            "wrote rustio.schema.json ({} model{})",
-            schema.models.len(),
-            if schema.models.len() == 1 { "" } else { "s" },
-        );
+        // The `rustio` CLI sets RUSTIO_QUIET when it drives the dump
+        // itself — it reports the result on its own summary line.
+        if std::env::var_os("RUSTIO_QUIET").is_none() {
+            eprintln!(
+                "wrote rustio.schema.json ({} model{})",
+                schema.models.len(),
+                if schema.models.len() == 1 { "" } else { "s" },
+            );
+        }
         return Ok(());
     }
 
