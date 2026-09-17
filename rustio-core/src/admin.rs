@@ -4810,6 +4810,21 @@ async fn admin_model_form_get(
         return Err(Error::NotFound);
     };
 
+    // A model that refuses creation refuses it by URL too — hiding the
+    // button is presentation, this is the gate.
+    if editing_id.is_none() {
+        let allows_create = match &resolved {
+            ResolvedModel::New(model) => model.allows_create(),
+            ResolvedModel::Legacy(model) => {
+                crate::admin::admin_form_bridge::AdminUiModel::allows_create(model)
+            }
+        };
+        if !allows_create {
+            let csrf = ctx_csrf(req.ctx()).map(str::to_string);
+            return Ok(forbidden_page(csrf.as_deref()));
+        }
+    }
+
     let identity = crate::auth::identity(req.ctx()).cloned();
     let csrf = ctx_csrf(req.ctx()).map(str::to_string);
     let html = match &resolved {
@@ -4935,6 +4950,11 @@ async fn admin_model_create_post(
     let (_, body, ctx) = req.into_parts();
     let form = read_form_from_parts(body).await?;
     require_csrf(&ctx, &form)?;
+
+    if !resolved.as_ui_model().allows_create() {
+        let csrf = ctx_csrf(&ctx).map(str::to_string);
+        return Ok(forbidden_page(csrf.as_deref()));
+    }
 
     let data = build_mutation_data(resolved.as_ui_model(), &form);
     match crate::admin::persistence::insert_record(db, resolved.as_ui_model().table_name(), &data)

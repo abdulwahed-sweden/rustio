@@ -274,12 +274,20 @@ fn classify_filters(
 }
 
 // ---------------------------------------------------------------
-// Built-in demo model: User
+// Built-in model: User
 // ---------------------------------------------------------------
 
-/// Demo `AdminUiModel` registered as `"users"`. Backs the
-/// `/admin-new/users` route. The struct is unit; all metadata lives
-/// in the trait impl.
+/// The `User` admin page, registered as `"users"` and backed by the
+/// real `rustio_users` table — the same rows `rustio user create` and
+/// the login form use. There is no demo table and no demo columns:
+/// the page shows what a user actually has (email, role, active), so
+/// what the admin displays and what the framework stores can't drift
+/// apart.
+///
+/// `password_hash` is deliberately absent from `fields()`: the admin
+/// neither shows nor writes it. Passwords are set by
+/// `rustio user create` and changed through `auth::user::set_password`,
+/// which also invalidates live sessions.
 pub struct UserAdmin;
 
 /// Factory used by the registry to produce a fresh boxed model per
@@ -296,45 +304,31 @@ impl AdminUiModel for UserAdmin {
         "User"
     }
     fn table_name(&self) -> &'static str {
-        "admin_new_demo_users"
+        "rustio_users"
     }
     fn primary_key(&self) -> &'static str {
         "id"
     }
     fn searchable_fields(&self) -> Vec<&'static str> {
-        vec!["username", "email", "doctor_id"]
+        vec!["email", "role"]
     }
     fn primary_status_field(&self) -> Option<&'static str> {
         Some("is_active")
     }
+    /// `None` — `auth::ensure_core_tables` owns this table's shape.
+    /// Two places creating one table is how they end up disagreeing.
     fn ensure_table_sql(&self) -> Option<&'static str> {
-        Some(
-            "CREATE TABLE IF NOT EXISTS admin_new_demo_users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL,
-                email TEXT NOT NULL,
-                is_active TEXT NOT NULL DEFAULT 'false',
-                doctor_id TEXT,
-                salary_amount TEXT
-            )",
-        )
+        None
+    }
+    /// Creating a user means hashing a password. That belongs to
+    /// `auth::user::create` (and `rustio user create`), not to a
+    /// generic form that would write a row nobody can sign in as.
+    fn allows_create(&self) -> bool {
+        false
     }
 
     fn fields(&self) -> Vec<AdminUiField> {
         vec![
-            AdminUiField {
-                name: "username",
-                label: "Username",
-                data_type: AdminDataType::String,
-                required: true,
-                readonly: false,
-                is_relation: false,
-                options: vec![],
-                filterable: true,
-                advanced_filter: false,
-                sortable: true,
-                visible_in_table: true,
-            },
             AdminUiField {
                 name: "email",
                 label: "Email",
@@ -349,6 +343,24 @@ impl AdminUiModel for UserAdmin {
                 visible_in_table: true,
             },
             AdminUiField {
+                name: "role",
+                label: "Role",
+                data_type: AdminDataType::String,
+                required: true,
+                readonly: false,
+                is_relation: false,
+                // A closed set, so it renders as a select rather than
+                // a free-text box that can invent a role nothing grants.
+                options: vec![
+                    ("admin".into(), "admin".into()),
+                    ("user".into(), "user".into()),
+                ],
+                filterable: true,
+                advanced_filter: false,
+                sortable: true,
+                visible_in_table: true,
+            },
+            AdminUiField {
                 name: "is_active",
                 label: "Active",
                 data_type: AdminDataType::Boolean,
@@ -358,35 +370,6 @@ impl AdminUiModel for UserAdmin {
                 options: vec![],
                 filterable: true,
                 advanced_filter: false,
-                sortable: true,
-                visible_in_table: true,
-            },
-            AdminUiField {
-                name: "doctor_id",
-                label: "Doctor",
-                data_type: AdminDataType::Integer,
-                required: true,
-                readonly: false,
-                is_relation: true,
-                options: vec![
-                    ("1".into(), "Dr. Erik".into()),
-                    ("2".into(), "Dr. Sara".into()),
-                ],
-                filterable: true,
-                advanced_filter: false,
-                sortable: true,
-                visible_in_table: true,
-            },
-            AdminUiField {
-                name: "salary_amount",
-                label: "Salary",
-                data_type: AdminDataType::Float,
-                required: false,
-                readonly: false,
-                is_relation: false,
-                options: vec![],
-                filterable: false,
-                advanced_filter: true,
                 sortable: true,
                 visible_in_table: true,
             },
@@ -2912,7 +2895,9 @@ pub async fn list_render(
         };
         ListPermissionsView {
             view: perms.view,
-            create: perms.create,
+            // A model can opt out of creation entirely (see
+            // `AdminUiModel::allows_create`); no role overrides that.
+            create: perms.create && model.allows_create(),
             edit: perms.edit,
             delete: perms.delete,
         }

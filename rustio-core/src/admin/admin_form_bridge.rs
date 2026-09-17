@@ -225,6 +225,19 @@ pub trait AdminUiModel: Send + Sync + 'static {
     /// every request. Returning `None` skips auto-creation (caller
     /// is responsible for migrations). Idempotent SQL is required.
     fn ensure_table_sql(&self) -> Option<&'static str>;
+
+    /// Whether rows of this model may be created from the admin.
+    /// Defaults to `true`.
+    ///
+    /// `false` for models whose rows need more than the generic form
+    /// can supply — `User` is the built-in case: a row without a
+    /// hashed password is not a user, and hashing is
+    /// `auth::user::create`'s job. Returning `false` hides "+ Add"
+    /// and makes the create routes 403, so the admin never shows a
+    /// button that leads to a constraint error.
+    fn allows_create(&self) -> bool {
+        true
+    }
 }
 
 // ---------------------------------------------------------------
