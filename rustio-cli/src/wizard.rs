@@ -10,10 +10,11 @@
 //!
 //! ## Design principles
 //!
-//! 1. **Three prompts, no more.** Name, preset, confirm. Every extra prompt
-//!    is friction.
+//! 1. **One prompt.** The project name, and nothing else. What goes
+//!    *inside* the project is the setup menu's question (Empty or a
+//!    template), asked once, right after the scaffold lands.
 //! 2. **Smart defaults.** Enter always accepts. The default project name
-//!    is `mysite`; the default preset is `Basic`.
+//!    is `mysite`; the default preset is `Basic` (empty).
 //! 3. **No fake choices.** We only ask about things that actually exist.
 //!    RustIO only supports SQLite today, so there is no database prompt.
 //!    There is no "enable auth" prompt either — auth is always included;
@@ -31,7 +32,7 @@ use std::io::IsTerminal;
 use std::str::FromStr;
 
 use inquire::validator::Validation;
-use inquire::{Confirm, InquireError, Select, Text};
+use inquire::{InquireError, Text};
 
 use crate::out;
 
@@ -75,7 +76,10 @@ pub enum Preset {
 }
 
 impl Preset {
-    /// Short, human-facing label shown in the picker.
+    /// Short, human-facing label for the preset. Used by the tests
+    /// that pin each preset to the apps it scaffolds; kept as the one
+    /// place a preset describes itself in prose.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn label(self) -> &'static str {
         match self {
             Preset::Basic => "Basic — empty project, add apps later",
@@ -113,8 +117,9 @@ impl FromStr for Preset {
 /// Run the interactive wizard and return the chosen plan.
 ///
 /// `default_preset` seeds the preset picker's highlight and
-/// `default_app_name` seeds the app-name prompt. Both are otherwise only
-/// used if the user chooses Enter-to-accept.
+/// `default_app_name` names the model a non-Basic preset scaffolds.
+/// Both come from flags; the wizard itself asks only for the project
+/// name.
 pub fn run(
     default_preset: Option<Preset>,
     default_app_name: Option<String>,
@@ -132,32 +137,29 @@ pub fn run(
 
     banner();
 
+    // One question: the name. What to put *in* the project is the next
+    // screen's job — `init` ends on the setup menu (Empty / Template),
+    // and asking "which preset?" here would ask the same thing twice in
+    // two vocabularies.
+    //
+    // `--preset` / `--app` still work alongside a nameless `init`: a
+    // flag is an explicit answer, so we take it and skip the menu's
+    // version of the question.
     let project_name = prompt_name()?;
-    let preset = prompt_preset(default_preset)?;
-
-    // Only ask for an app name when the preset actually scaffolds one.
-    // Basic has no app, so an app-name prompt would be a dead question.
+    let preset = default_preset.unwrap_or(Preset::Basic);
     let app_name = if preset == Preset::Basic {
         None
     } else {
-        Some(prompt_app_name(preset, default_app_name)?)
+        default_app_name
     };
 
-    let plan = Plan {
+    println!();
+
+    Ok(Plan {
         project_name,
         preset,
         app_name,
-    };
-    print_summary(&plan);
-
-    if !confirm_proceed()? {
-        return Err("cancelled".into());
-    }
-    // Blank line between the confirm prompt and the scaffolding output
-    // so the sections read as distinct.
-    println!();
-
-    Ok(plan)
+    })
 }
 
 /// Execute a plan: create the project, `cd` into it, scaffold any apps
@@ -183,18 +185,10 @@ pub fn execute(plan: &Plan) -> Result<(), String> {
         }
     }
 
-    // Step 3: consolidated next-steps.
-    println!();
-    println!("{}", out::bold("Next:"));
-    if apps.is_empty() {
-        out::hint(&format!("cd {}", plan.project_name));
-        out::hint("rustio new app <name>");
-        out::hint("rustio run");
-    } else {
-        out::hint(&format!("cd {}", plan.project_name));
-        out::hint("rustio migrate apply");
-        out::hint("rustio run");
-    }
+    // No "Next:" block here. `init_command` owns the closing screen —
+    // either the setup menu (which ends on one) or, off a terminal,
+    // the same block printed directly. Printing it here too would
+    // show it twice, with different advice each time.
     Ok(())
 }
 
@@ -212,70 +206,6 @@ fn prompt_name() -> Result<String, String> {
         .with_default("mysite")
         .with_help_message("lowercase letters, digits, and underscores")
         .with_validator(name_validator)
-        .prompt()
-        .map_err(translate_prompt_error)
-}
-
-fn prompt_app_name(preset: Preset, default: Option<String>) -> Result<String, String> {
-    // Seed the prompt with a preset-appropriate default so Enter always
-    // yields a sensible value. The user can type their own to customize
-    // the struct name, table, and `/admin/<table>` URL in one shot.
-    let fallback = match preset {
-        Preset::Blog => "posts",
-        Preset::Api => "items",
-        Preset::Basic => "posts", // unreachable in practice — caller skips
-    };
-    let seed = default.unwrap_or_else(|| fallback.to_string());
-    Text::new("What should your first model track?")
-        .with_default(&seed)
-        .with_help_message("used as the struct / table / admin URL — e.g. books, tasks, links")
-        .with_validator(name_validator)
-        .prompt()
-        .map_err(translate_prompt_error)
-}
-
-fn prompt_preset(default: Option<Preset>) -> Result<Preset, String> {
-    // Three options, one line each. Order Basic → Blog → API so the
-    // safest default sits at the top of the list.
-    let options = [Preset::Basic, Preset::Blog, Preset::Api];
-    let labels: Vec<&'static str> = options.iter().map(|p| p.label()).collect();
-
-    let starting = default
-        .and_then(|d| options.iter().position(|p| *p == d))
-        .unwrap_or(0);
-
-    let picked = Select::new("Choose a starting preset:", labels)
-        .with_starting_cursor(starting)
-        .with_help_message("↑/↓ to move, Enter to select")
-        .prompt()
-        .map_err(translate_prompt_error)?;
-
-    // Map the label back to a Preset. We look up by identity on the
-    // `&'static str` returned by `label()` rather than string-matching a
-    // copy, which also makes the mapping total.
-    options
-        .iter()
-        .copied()
-        .find(|p| p.label() == picked)
-        .ok_or_else(|| "internal: unrecognised preset label".to_string())
-}
-
-fn print_summary(plan: &Plan) {
-    // A quiet summary instead of a full box-drawing preview — easy to
-    // skim at any terminal width, and keeps focus on the confirm prompt.
-    println!();
-    println!("  {}", out::bold("Ready to generate:"));
-    println!("    {:<9} {}", out::dim("name"), plan.project_name);
-    println!("    {:<9} {}", out::dim("preset"), plan.preset.label());
-    for app in plan.apps() {
-        println!("    {:<9} {app}", out::dim("app"));
-    }
-    println!();
-}
-
-fn confirm_proceed() -> Result<bool, String> {
-    Confirm::new("Proceed?")
-        .with_default(true)
         .prompt()
         .map_err(translate_prompt_error)
 }

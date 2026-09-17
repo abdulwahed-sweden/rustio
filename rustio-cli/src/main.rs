@@ -28,18 +28,23 @@ const USAGE: &str = r#"rustio — the RustIO framework CLI
 USAGE:
     rustio <command> [args...]
 
-If you're new: `rustio init <name>` creates a project and opens the
-setup menu — a guided walkthrough that proposes a starting shape.
-Run `rustio migrate apply` then `rustio run` to bring it up. To
-change something later: `rustio evolve "<what you want>"`. That's
+If you're new:
+
+    rustio init <name>          create the project, pick Empty or a template
+    cd <name>
+    rustio new app <name>       one model at a time
+    rustio migrate apply        create the tables
+    rustio run                  http://127.0.0.1:8000/admin
+
+To change something later: `rustio evolve "<what you want>"`. That's
 the whole loop.
 
 SCAFFOLD
     init [name]                 Wizard (no name) or non-interactive scaffold
                                   (with name). Options:
                                   --preset <basic|blog|api>, --app <name>.
-    start                       Open the setup menu in an existing project —
-                                  guided wizard, manual mode, or (soon) import.
+    start                       Reopen the setup menu — Empty, or one of the
+                                  templates (clinic, blog, shop, crm, tasks).
     new app <name>              Add a new model to the current project.
 
 RUN
@@ -212,7 +217,7 @@ async fn main() -> ExitCode {
                 why_for("new-project");
                 Ok(())
             } else {
-                new_project(&name)
+                new_project(&name).map(|()| print_next_steps(Some(&name), true))
             }
         }
         Ok(Command::NewApp(name)) => {
@@ -236,7 +241,7 @@ async fn main() -> ExitCode {
                 why_for("start");
                 Ok(())
             } else {
-                start_command()
+                start_command(None)
             }
         }
         Ok(Command::MigrateGenerate(name)) => {
@@ -362,10 +367,8 @@ enum Command {
     NewProject(String),
     NewApp(String),
     /// `rustio start` — the recommended entry point for new projects.
-    /// Opens a small menu (Guided / Manual / Import) and dispatches.
-    /// The Guided path is the conversational wizard introduced in
-    /// 0.10.x; the underlying machinery is the same module used by
-    /// the post-`init` offer.
+    /// Opens the two-choice setup menu (Empty / Template) and
+    /// dispatches. Same menu `rustio init` ends on.
     Start,
     Run,
     MigrateGenerate(String),
@@ -778,7 +781,12 @@ fn init_command(
                     .map_err(|e| format!("failed to enter `{}`: {e}", plan.project_name))?;
             }
         }
-        offer_start_menu_after_init()?;
+        offer_start_menu_after_init(&plan.project_name)?;
+    } else {
+        // Off a terminal there is no menu to end on, so print the
+        // closing screen directly. A preset that scaffolded an app
+        // needs `migrate apply` next, not `new app`.
+        print_next_steps(Some(&plan.project_name), plan.apps().is_empty());
     }
     Ok(())
 }
@@ -790,23 +798,12 @@ fn init_command(
 /// Forgiving: anything short of stdin EOF is downgraded to a printed
 /// hint, so a partially set-up project never blocks the user from
 /// getting to the regular `rustio run` path.
-fn offer_start_menu_after_init() -> Result<(), String> {
-    // The guided path reads `rustio.schema.json`; on a brand-new project
-    // it isn't there yet. Generate it up front so both Guided and Manual
-    // paths see a consistent project state. First build can be slow on
-    // a clean machine — say so plainly.
-    if !Path::new("rustio.schema.json").exists() {
-        println!();
-        out::info("Generating rustio.schema.json (first build can take ~30s) …");
-        if let Err(e) = try_dump_schema() {
-            println!();
-            out::info(&format!("could not generate the schema: {e}"));
-            out::hint("rustio schema && rustio start   # try again after the first compile");
-            return Ok(());
-        }
-    }
-
-    match start_command() {
+fn offer_start_menu_after_init(project_dir: &str) -> Result<(), String> {
+    // No schema dump here: the Empty path doesn't need one, and making
+    // every new project wait ~30s for a compile before showing two
+    // menu items is the wrong first impression. The Template path
+    // generates it when (and only when) it's picked.
+    match start_command(Some(project_dir)) {
         Ok(()) => Ok(()),
         Err(e) => {
             // Cancellations / interrupts inside the menu shouldn't fail
@@ -860,9 +857,6 @@ pub(crate) fn new_project(name: &str) -> Result<(), String> {
     .map_err(err_str)?;
 
     out::success("Created project", &format!("\"{name}\""));
-    println!();
-    out::hint(&format!("cd {name}"));
-    out::hint("rustio run");
     Ok(())
 }
 
@@ -1694,20 +1688,17 @@ fn ai_apply_command(
     Ok(())
 }
 
-/// `rustio start` — onboarding entry point.
+/// `rustio start` — the setup menu.
 ///
-/// Shows a small three-way menu (Guided / Manual / Import) and
-/// dispatches. The guided path is the conversational wizard; the
-/// manual path drops out with a one-line hint pointing at
-/// `rustio new app <name>`; the import path is reserved for a future
-/// release that reads a `rustio.schema.json` from disk and rebuilds
-/// matching `apps/<x>/models.rs` files.
+/// Two choices, because there are only two: bring your own models, or
+/// start from one of the shipped templates. Both end on the same
+/// screen — the next three commands, in order. The menu never refuses
+/// and never dead-ends.
 ///
-/// This is the **canonical first command** for a new project — the
-/// rest of the AI vocabulary (`ai plan` / `review` / `apply`) is an
-/// advanced surface for evolving an existing schema, not a first
-/// impression.
-fn start_command() -> Result<(), String> {
+/// `project_dir` is `Some(name)` only when the menu was chained onto
+/// `rustio init` — it's what makes the closing block print `cd <name>`
+/// for a project the user isn't standing in yet.
+fn start_command(project_dir: Option<&str>) -> Result<(), String> {
     if !Path::new("apps/mod.rs").exists() {
         return Err(
             "not inside a RustIO project — run `rustio init <name>` first, or `cd` into an existing project.".into(),
@@ -1715,102 +1706,123 @@ fn start_command() -> Result<(), String> {
     }
 
     println!();
-    println!("Welcome.");
-    println!();
-    println!("  How would you like to begin?");
+    println!("  How do you want to start?");
     println!();
 
-    let choice = inquire::Select::new(
-        "Pick one",
-        vec![
-            "Guided — I'll propose a starting shape and walk it with you",
-            "Manual — I'll get out of the way; you add models one at a time",
-            "Import — read an existing rustio.schema.json (coming soon)",
-        ],
-    )
-    .with_starting_cursor(0)
-    .prompt()
-    .map_err(|e| format!("{e}"))?;
+    const EMPTY: &str = "Empty      — add your own models with `rustio new app`";
+    const TEMPLATE: &str = "Template   — clinic, blog, shop, crm, tasks";
 
-    if choice.starts_with("Guided") {
-        guided_wizard_command()
-    } else if choice.starts_with("Manual") {
-        println!();
-        println!("  Got it. Build at your own pace:");
-        println!();
-        out::hint("rustio new app <name>   # one model + admin entry + migration stub");
-        out::hint("rustio migrate apply    # apply the migration to the DB");
-        out::hint("rustio run              # start the server on :8000");
-        println!();
-        out::hint("rustio start            # come back to this menu any time");
-        Ok(())
+    let choice = inquire::Select::new("Pick one", vec![EMPTY, TEMPLATE])
+        .with_starting_cursor(0)
+        .with_help_message("You can always run `rustio start` later to change this.")
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+
+    if choice == TEMPLATE {
+        template_command(project_dir)
     } else {
         println!();
-        println!("  Importing from an existing schema isn't wired up yet — it's");
-        println!("  the next thing on this front. For now, `rustio start` →");
-        println!("  Guided will walk you through a fresh shape.");
+        // "Empty project ready" is only true of an empty project. Run
+        // from a project that already has models, the menu just shows
+        // the way back to the loop.
+        if !ProjectState::detect().has_apps {
+            println!("{} Empty project ready.", out::check());
+        }
+        print_next_steps(project_dir, true);
         Ok(())
     }
 }
 
-/// The conversational wizard itself — formerly `rustio ai start`.
-///
-/// Reads a single-sentence project description, maps it deterministically
-/// to a starter shape via the `intake` module, walks each proposed model
-/// with the user one at a time, then runs the resulting plan through the
-/// standard review path before materialising files.
-///
-/// Constraints enforced top-to-bottom:
-///   - intake refuses on ambiguous input (no fuzzy guessing).
-///   - the wizard prompts per model — accept / skip — so the developer
-///     is always the final decider.
-///   - the resulting Plan flows through `review_plan` so the user sees
-///     the same risk/impact gate every `rustio ai apply` would show.
-fn guided_wizard_command() -> Result<(), String> {
+/// The closing screen shared by every path out of the setup menu: the
+/// commands to run next, in the order to run them. `include_new_app`
+/// is false once models already exist — telling someone to create a
+/// model they just created is noise.
+fn print_next_steps(project_dir: Option<&str>, include_new_app: bool) {
+    println!();
+    println!("  Next:");
+    if let Some(dir) = project_dir {
+        println!("    cd {dir}");
+    }
+    if include_new_app {
+        println!(
+            "    rustio new app <name>     {}",
+            out::dim("# one model at a time")
+        );
+        println!(
+            "    rustio migrate apply      {}",
+            out::dim("# then apply it")
+        );
+    } else {
+        println!(
+            "    rustio migrate apply      {}",
+            out::dim("# create the tables")
+        );
+    }
+    println!(
+        "    rustio run                {}",
+        out::dim("# then see it at http://127.0.0.1:8000/admin")
+    );
+}
+
+/// The five shipped templates, in menu order. Each label is the
+/// domain keyword `intake::sketch` matches on plus the models it
+/// proposes — the same list the intake layer actually knows, so the
+/// menu can't advertise a template that doesn't exist.
+const TEMPLATES: &[(&str, &str)] = &[
+    ("clinic", "patients, doctors, appointments"),
+    ("blog", "authors, posts"),
+    ("shop", "products, orders"),
+    ("crm", "companies, contacts, deals"),
+    ("tasks", "projects, tasks"),
+];
+
+/// Template path out of the setup menu: pick a template, then walk its
+/// models one at a time. Nothing is written until the walk finishes
+/// and the user confirms.
+fn template_command(project_dir: Option<&str>) -> Result<(), String> {
     use rustio_core::ai::intake;
+
+    println!();
+    println!("  Pick a template:");
+    println!();
+
+    let labels: Vec<String> = TEMPLATES
+        .iter()
+        .map(|(name, models)| format!("{name:<7} — {models}"))
+        .collect();
+    let choice = inquire::Select::new("Template", labels.clone())
+        .with_starting_cursor(0)
+        .prompt()
+        .map_err(|e| format!("{e}"))?;
+    let picked = TEMPLATES[labels.iter().position(|l| *l == choice).unwrap_or(0)].0;
+
+    // Both the planner and the review layer read `rustio.schema.json`.
+    // A brand-new project doesn't have one yet, and producing it means
+    // compiling the project once.
+    if !Path::new("rustio.schema.json").exists() {
+        println!();
+        out::info("Preparing the project (first build can take ~30s) …");
+        if let Err(e) = try_dump_schema() {
+            println!();
+            out::info(&format!("could not read the project's shape: {e}"));
+            out::hint("rustio start           # try again after the first compile");
+            return Ok(());
+        }
+    }
 
     let schema = load_project_schema()?;
     let context = load_project_context()?;
 
-    println!();
-    println!("Let's shape your project together.");
-    println!();
-    println!("  Tell me what you're building. One sentence is enough — I'll");
-    println!("  propose a starting shape and walk it with you, one model at");
-    println!("  a time. You decide what lands.");
-    println!();
-
-    let description = inquire::Text::new("What are you building?")
-        .with_help_message("e.g. \"a small clinic with patients and appointments\"")
-        .prompt()
-        .map_err(|e| format!("{e}"))?;
-
-    let description = description.trim().to_string();
-    if description.is_empty() {
-        return Err("no description given — re-run when you're ready.".into());
-    }
-
-    let Some(sketch) = intake::sketch(&description) else {
-        println!();
-        println!("  I don't recognise a clear domain in that description.");
-        println!("  I can start from these shapes today:");
-        println!();
-        println!("    · clinic   — patients, doctors, appointments");
-        println!("    · blog     — authors, posts");
-        println!("    · shop     — products, orders");
-        println!("    · crm      — companies, contacts, deals");
-        println!("    · tasks    — projects, tasks");
-        println!();
-        println!("  Try again with one of those words in your sentence, or");
-        println!("  add models one at a time with `rustio new app <name>`.");
-        return Ok(());
+    let Some(sketch) = intake::sketch(picked) else {
+        // Unreachable in practice: every entry in TEMPLATES is a
+        // keyword `intake` matches. Refuse rather than guess.
+        return Err(format!("template `{picked}` is not available"));
     };
 
     println!();
-    println!("  I read this as a `{}` project.", sketch.domain);
     println!("  {}", sketch.headline);
     println!();
-    println!("  Here's what I'd suggest:");
+    println!("  Models in this template:");
     println!();
     for (i, m) in sketch.models.iter().enumerate() {
         let field_summary: Vec<String> = m.fields.iter().map(|f| f.name.to_string()).collect();
@@ -1823,22 +1835,34 @@ fn guided_wizard_command() -> Result<(), String> {
     }
     println!();
 
-    let go = inquire::Confirm::new("Walk through these with me?")
+    let go = inquire::Confirm::new("Walk through these one at a time?")
         .with_default(true)
-        .with_help_message("I'll ask you about each one in turn. You can skip any of them.")
+        .with_help_message("Accept or skip each model. Nothing is written until the end.")
         .prompt()
         .map_err(|e| format!("{e}"))?;
     if !go {
         println!();
-        println!("  No problem. Run `rustio start` again whenever you're ready.");
+        println!("  Nothing written.");
+        print_next_steps(project_dir, true);
         return Ok(());
     }
 
-    // Walk each model. Accepted ones are accumulated; skipped ones are
-    // dropped (and their downstream references would be a `belongs_to`
-    // dangle — we refuse to proceed past that to keep the plan valid).
+    walk_template(&schema, context.as_ref(), &sketch, project_dir)
+}
+
+/// Walk each model in a template: accept or skip. Accepted models are
+/// accumulated; skipping a model another model points at would leave a
+/// dangling relation, so that stops the walk and finalises what was
+/// accepted so far rather than writing something invalid.
+fn walk_template(
+    schema: &rustio_core::Schema,
+    context: Option<&rustio_core::ai::ContextConfig>,
+    sketch: &rustio_core::ai::intake::ProjectSketch,
+    project_dir: Option<&str>,
+) -> Result<(), String> {
+    use rustio_core::ai::intake;
+
     let mut accepted: Vec<intake::ModelSketch> = Vec::new();
-    let mut accepted_names: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
     for (i, model) in sketch.models.iter().enumerate() {
         println!();
@@ -1871,27 +1895,16 @@ fn guided_wizard_command() -> Result<(), String> {
         .map_err(|e| format!("{e}"))?;
 
         if choice.starts_with("skip") {
-            // A skipped parent breaks any downstream `belongs_to`. Rather
-            // than silently dropping fields, refuse to continue and explain.
             for later in &sketch.models[i + 1..] {
                 for f in &later.fields {
-                    if let Some(target) = f.belongs_to {
-                        if target == model.struct_name {
-                            println!();
-                            println!(
-                                "  Skipping `{}` would leave `{}.{}` pointing nowhere.",
-                                model.struct_name, later.struct_name, f.name
-                            );
-                            println!("  Stopping here — apply what you've already accepted with `rustio ai apply`,");
-                            println!("  or re-run `rustio start` to walk the whole shape again.");
-                            // Fall through to the "build a plan from what we have so far" path.
-                            return finalise_wizard(
-                                &schema,
-                                context.as_ref(),
-                                &accepted,
-                                &description,
-                            );
-                        }
+                    if f.belongs_to == Some(model.struct_name) {
+                        println!();
+                        println!(
+                            "  Skipping `{}` would leave `{}.{}` pointing nowhere.",
+                            model.struct_name, later.struct_name, f.name
+                        );
+                        println!("  Stopping here and keeping what you already accepted.");
+                        return finalise_wizard(schema, context, &accepted, project_dir);
                     }
                 }
             }
@@ -1900,11 +1913,10 @@ fn guided_wizard_command() -> Result<(), String> {
         }
 
         accepted.push(model.clone());
-        accepted_names.insert(model.struct_name);
         println!("    queued.");
     }
 
-    finalise_wizard(&schema, context.as_ref(), &accepted, &description)
+    finalise_wizard(schema, context, &accepted, project_dir)
 }
 
 /// Build a `Plan` from the accepted sketches, review it, and apply it.
@@ -1914,15 +1926,15 @@ fn finalise_wizard(
     schema: &rustio_core::Schema,
     context: Option<&rustio_core::ai::ContextConfig>,
     accepted: &[rustio_core::ai::ModelSketch],
-    description: &str,
+    project_dir: Option<&str>,
 ) -> Result<(), String> {
     use rustio_core::ai::intake;
     use rustio_core::ai::review::review_plan;
-    let _ = description; // recorded into the run banner above; keep for symmetry
 
     if accepted.is_empty() {
         println!();
-        println!("  Nothing queued — exiting without changes.");
+        println!("  Nothing queued — no files written.");
+        print_next_steps(project_dir, true);
         return Ok(());
     }
 
@@ -1975,6 +1987,7 @@ fn finalise_wizard(
         } else {
             println!();
             println!("  No changes written.");
+            print_next_steps(project_dir, true);
             return Ok(());
         }
     }
@@ -2039,12 +2052,7 @@ fn finalise_wizard(
     for p in &wrote_paths {
         out::success("wrote", p);
     }
-    println!();
-    println!("  Next:");
-    out::hint("rustio migrate apply   # actually create the tables in the DB");
-    out::hint("rustio schema          # regenerate rustio.schema.json");
-    out::hint("rustio run             # start the server on :8000");
-    out::hint("                       # then open http://127.0.0.1:8000/admin");
+    print_next_steps(project_dir, false);
     Ok(())
 }
 
@@ -3661,10 +3669,9 @@ fn why_for(name: &str) {
              Run it without --why to start the server."
         }
         "start" => {
-            "`rustio start` opens the setup menu — guided wizard (recommended), manual\n\
-             mode, or (soon) import an existing schema. It's the recommended first\n\
-             command on a fresh project. The guided path asks one question, proposes\n\
-             a starting shape, and walks each model with you; you decide what lands.\n\
+            "`rustio start` reopens the setup menu: Empty (you add models yourself) or\n\
+             Template (clinic, blog, shop, crm, tasks — walked one model at a time, you\n\
+             decide what lands). It's the same menu `rustio init` ends on.\n\
              \n\
              Run it without --why to open the menu."
         }
