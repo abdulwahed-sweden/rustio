@@ -488,6 +488,21 @@ pub mod user {
         Ok(row.try_get(0)?)
     }
 
+    /// Email of the first active admin (lowest id), or `None` when the
+    /// project has no admin yet. `rustio run` prints it under the
+    /// banner so the developer doesn't have to remember which address
+    /// they used.
+    pub async fn first_admin_email(db: &Db) -> Result<Option<String>, Error> {
+        let email: Option<String> = sqlx::query_scalar(
+            "SELECT email FROM rustio_users
+             WHERE role = 'admin' AND is_active = 1
+             ORDER BY id LIMIT 1",
+        )
+        .fetch_optional(db.pool())
+        .await?;
+        Ok(email)
+    }
+
     /// How many users carry `role = 'admin'`. `rustio doctor` reports
     /// this: a project with zero admins has a working server nobody
     /// can sign into, which is worth flagging before the user finds

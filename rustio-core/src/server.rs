@@ -31,7 +31,12 @@ impl Server {
         Fut: Future<Output = Response> + Send + 'static,
     {
         let listener = TcpListener::bind(self.addr).await?;
-        eprintln!("rustio-core: listening on http://{}", self.addr);
+        // `rustio run` prints its own banner (address, who to sign in
+        // as, how to stop) and sets RUSTIO_QUIET so this line doesn't
+        // repeat it. Anyone running the binary directly still gets it.
+        if std::env::var_os("RUSTIO_QUIET").is_none() {
+            eprintln!("rustio-core: listening on http://{}", self.addr);
+        }
 
         loop {
             let (stream, peer) = listener.accept().await?;

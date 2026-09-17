@@ -48,7 +48,7 @@ SCAFFOLD
     new app <name>              Add a new model to the current project.
 
 RUN
-    run                         Build (cargo build) and start the server on :8000.
+    run [--port <n>]            Build and start the server (:8000 by default).
 
 CHANGE
     evolve "<request>"          Describe a change in plain English. RustIO
@@ -228,12 +228,12 @@ async fn main() -> ExitCode {
                 new_app(&name)
             }
         }
-        Ok(Command::Run) => {
+        Ok(Command::Run { port }) => {
             if why_mode {
                 why_for("run");
                 Ok(())
             } else {
-                run()
+                run(port).await
             }
         }
         Ok(Command::Start) => {
@@ -381,7 +381,11 @@ enum Command {
     /// Opens the two-choice setup menu (Empty / Template) and
     /// dispatches. Same menu `rustio init` ends on.
     Start,
-    Run,
+    /// `rustio run [--port <n>]`. The port is forwarded to the project
+    /// binary through `RUSTIO_PORT`; `None` means "let it use 8000".
+    Run {
+        port: Option<u16>,
+    },
     MigrateGenerate(String),
     MigrateApply {
         verbose: bool,
@@ -540,12 +544,7 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
                     .into(),
             ),
         },
-        Some("run") => {
-            if args.len() > 2 {
-                return Err(format!("unexpected argument `{}`", args[2]));
-            }
-            Ok(Command::Run)
-        }
+        Some("run") => parse_run_args(&args[2..]),
         Some("start") => {
             if args.len() > 2 {
                 return Err(format!("unexpected argument `{}`", args[2]));
@@ -961,13 +960,67 @@ pub(crate) fn new_app(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn run() -> Result<(), String> {
+/// Parse `rustio run [--port <n>]`.
+fn parse_run_args(rest: &[String]) -> Result<Command, String> {
+    let mut port: Option<u16> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        match rest[i].as_str() {
+            "--port" | "-p" => {
+                let v = rest
+                    .get(i + 1)
+                    .ok_or("missing value for --port (expected a number like 8001)")?;
+                port = Some(
+                    v.parse::<u16>()
+                        .map_err(|_| format!("`{v}` is not a valid port number"))?,
+                );
+                i += 2;
+            }
+            other => return Err(format!("unexpected argument `{other}`")),
+        }
+    }
+    Ok(Command::Run { port })
+}
+
+/// Whether this project's `main.rs` reads `RUSTIO_PORT` — the block
+/// `rustio init` has written since 0.11. A project scaffolded before
+/// that ignores the variable and binds 8000 whatever we pass, so
+/// `--port` is refused rather than honoured in appearance only.
+fn declares_port_support(main_rs_source: &str) -> bool {
+    main_rs_source.contains("RUSTIO_PORT")
+}
+
+async fn run(port: Option<u16>) -> Result<(), String> {
     if !Path::new("Cargo.toml").exists() {
         return Err(
             "no Cargo.toml in current directory — this command runs from inside a RustIO \
              project. Start one with `rustio init <name>` or `cd` into an existing project."
                 .into(),
         );
+    }
+
+    // Refuse, never guess: on a project whose `main.rs` can't read
+    // RUSTIO_PORT we would print a URL for a port the server is not
+    // going to bind. Say so and start nothing.
+    if port.is_some() {
+        let main_rs = fs::read_to_string("main.rs")
+            .map_err(|e| format!("could not read main.rs: {e}"))?;
+        if !declares_port_support(&main_rs) {
+            return Err(
+                "--port needs the RUSTIO_PORT block in main.rs — see UPGRADING.md".into(),
+            );
+        }
+    }
+
+    let port = port.unwrap_or(DEFAULT_PORT);
+
+    // Fail before the build rather than after it: a bind error from
+    // the child process arrives a minute later and reads like a crash.
+    if !port_is_free(port) {
+        return Err(format!(
+            "port {port} is already in use — stop the other process, or: rustio run --port {}",
+            port + 1
+        ));
     }
 
     // First compile pulls in sqlx + hyper + tokio from scratch and takes
@@ -978,8 +1031,27 @@ fn run() -> Result<(), String> {
         eprintln!("rustio: first run compiles dependencies (~1 min). Subsequent runs are instant.");
     }
 
+    // Build first, then print the banner, then run. Doing it in one
+    // `cargo run` would bury the banner under compiler output.
+    let build = ProcessCommand::new("cargo")
+        .args(["build", "--quiet"])
+        .status()
+        .map_err(|e| format!("failed to spawn cargo: {e}"))?;
+    if !build.success() {
+        return Err(format!(
+            "cargo build exited with {} — fix the compile errors above, then run again",
+            build.code().unwrap_or(-1)
+        ));
+    }
+
+    print_run_banner(port).await;
+
     let status = ProcessCommand::new("cargo")
-        .arg("run")
+        .args(["run", "--quiet"])
+        .env("RUSTIO_PORT", port.to_string())
+        // The project binary prints its own "serving on …" line; the
+        // banner above already said it better.
+        .env("RUSTIO_QUIET", "1")
         .status()
         .map_err(|e| format!("failed to spawn cargo: {e}"))?;
     if !status.success() {
@@ -989,6 +1061,38 @@ fn run() -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Three lines, in the order a person needs them: where it is, who to
+/// sign in as, how to stop. The sign-in line is only printed when the
+/// project actually has an admin — promising a login that doesn't
+/// exist is worse than saying nothing.
+async fn print_run_banner(port: u16) {
+    let name = project_name();
+    println!();
+    println!(
+        "  {name} is running {} http://127.0.0.1:{port}/admin",
+        out::dim("→")
+    );
+    match first_admin_email().await {
+        Some(email) => println!("  sign in as {email}"),
+        None => println!(
+            "  {}",
+            out::dim("no admin user yet — rustio user create --email you@example.com --role admin")
+        ),
+    }
+    println!("  {}", out::dim("Ctrl+C to stop"));
+    println!();
+}
+
+/// Best-effort admin lookup for the run banner. Any failure (no DB
+/// file yet, unreadable DB, no admin) collapses to `None`.
+async fn first_admin_email() -> Option<String> {
+    if !Path::new("app.db").exists() {
+        return None;
+    }
+    let db = rustio_core::Db::connect(&database_url()).await.ok()?;
+    rustio_core::auth::user::first_admin_email(&db).await.ok()?
 }
 
 fn migrate_generate(name: &str) -> Result<(), String> {
@@ -4026,9 +4130,13 @@ fn why_for(name: &str) {
              Run it without --why to create the app."
         }
         "run" => {
-            "`rustio run` is `cargo run` for your RustIO project: build the binary and\n\
-             start the server on :8000. First run takes ~1 minute (downloads + compiles\n\
-             dependencies). Subsequent runs are instant.\n\
+            "`rustio run` builds your project and starts the server on :8000 (`--port <n>`\n\
+             to pick another). It checks the port is free first, and prints where to open\n\
+             it and which admin to sign in as. First run takes ~1 minute; later runs are\n\
+             instant.\n\
+             \n\
+             `--port` needs the RUSTIO_PORT block a 0.11+ `main.rs` has; on an older\n\
+             project it is refused rather than silently ignored.\n\
              \n\
              Run it without --why to start the server."
         }
@@ -4421,8 +4529,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let router = apps::register_all(router, &db);
     let router = with_defaults(router).wrap(authenticate(db.clone()));
 
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8000));
-    eprintln!("serving on http://{addr}");
+    // Port comes from RUSTIO_PORT when set (that's how `rustio run
+    // --port 8001` reaches this binary); 8000 otherwise.
+    let port: u16 = std::env::var("RUSTIO_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8000);
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    // `rustio run` prints its own banner; stay quiet under it.
+    if std::env::var_os("RUSTIO_QUIET").is_none() {
+        eprintln!("serving on http://{addr}");
+    }
     Server::bind(addr).serve_router(router).await?;
     Ok(())
 }
@@ -4916,12 +5033,39 @@ mod tests {
 
     #[test]
     fn parse_run() {
-        assert_eq!(parse_command(&args(&["run"])).unwrap(), Command::Run);
+        assert_eq!(
+            parse_command(&args(&["run"])).unwrap(),
+            Command::Run { port: None }
+        );
+        assert_eq!(
+            parse_command(&args(&["run", "--port", "8001"])).unwrap(),
+            Command::Run { port: Some(8001) }
+        );
     }
 
     #[test]
     fn parse_run_rejects_extra() {
         assert!(parse_command(&args(&["run", "extra"])).is_err());
+        assert!(parse_command(&args(&["run", "--port"])).is_err());
+        assert!(parse_command(&args(&["run", "--port", "nope"])).is_err());
+    }
+
+    /// `--port` only works when the project's `main.rs` can act on it.
+    /// A project scaffolded before that block existed binds 8000 no
+    /// matter what we pass, so the flag is refused — printing a URL
+    /// for a port the server will not bind is worse than saying no.
+    #[test]
+    fn port_flag_is_refused_when_main_rs_cannot_honour_it() {
+        // What `rustio init` scaffolds today.
+        assert!(declares_port_support(MAIN_RS));
+
+        // The pre-0.11 shape: a hardcoded bind, no RUSTIO_PORT.
+        const LEGACY_MAIN_RS: &str = r#"
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8000));
+    eprintln!("serving on http://{addr}");
+    Server::bind(addr).serve_router(router).await?;
+"#;
+        assert!(!declares_port_support(LEGACY_MAIN_RS));
     }
 
     #[test]
