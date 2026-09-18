@@ -620,8 +620,8 @@ impl ViewSpec {
 /// 2. Failing that, the first "plain" `String` field — one that no
 ///    higher-precedence rule in [`classify_view_field`] would claim
 ///    (not a secret, opaque id, `email`/`phone`, `status`, or `id`).
-/// 3. Failing *that*, the first foreign key (`*_id`, integer) becomes the
-///    Title and the second becomes the Subtitle.
+/// 3. Failing *that*, the first field carrying a **declared relation**
+///    becomes the Title and the second becomes the Subtitle.
 ///
 /// ## Why pass 3 exists
 ///
@@ -632,12 +632,22 @@ impl ViewSpec {
 /// `List` renders a bare timestamp and a pill, `Compact` renders a pill on
 /// its own. Every row reads "Accepted" and nothing else.
 ///
-/// A foreign key is the right promotion because it is the one remaining
-/// *identifying* field: `belongs_to` renders it as its related row's
-/// display value (a booking number, a resource name), not as a raw
-/// integer. Status, timestamps and the primary key are all explicitly
-/// **not** candidates — a status is shared across rows, a timestamp is not
-/// a name, and `id` is hidden by rule 3 of [`classify_view_field`].
+/// ## Why a *declared* relation, and not an `_id` name
+///
+/// The promotion is only sound because a `belongs_to` field renders as its
+/// related row's display value — a booking number, a resource name — not as
+/// a raw integer. That guarantee comes from
+/// [`SchemaField::relation`](crate::schema::SchemaField::relation), which
+/// the `#[rustio(belongs_to = "…")]` attribute populates, and from nowhere
+/// else. Naming proves nothing: `legacy_id`, `external_id` and
+/// `internal_id` are integers that end in `_id` and render as integers, so
+/// headlining a row with one would replace "no identity" with a worse lie.
+/// A model with no declared relation gets no Title, and the renderer's
+/// never-empty-row fallback covers it exactly as before.
+///
+/// Status, timestamps and the primary key are likewise not candidates — a
+/// status is shared across rows, a timestamp is not a name, and `id` is
+/// hidden by rule 3 of [`classify_view_field`].
 ///
 /// Passes 1 and 2 keep their existing behaviour exactly, and never return a
 /// subtitle: a model with a real name field gets its Subtitle from the
@@ -663,23 +673,20 @@ fn pick_identity_sources(fields: &[SchemaField]) -> (Option<String>, Option<Stri
             return (Some(f.name.clone()), None);
         }
     }
-    // Pass 3 — relation fallback. `is_plain_text_name` still gates it, so a
-    // secret- or opaque-PII-shaped key is never promoted into the headline.
+    // Pass 3 — relation fallback. Gated on a declared `belongs_to`, never on
+    // the `_id` suffix, so only a field that actually renders as a display
+    // value can headline a row. `is_plain_text_name` still applies, so a
+    // secret- or opaque-PII-shaped key is never promoted even if it declares
+    // a relation.
     let mut relations = fields
         .iter()
-        .filter(|f| is_relation_name(&f.name) && matches!(f.ty.as_str(), "i32" | "i64"))
-        .filter(|f| is_plain_text_name(&f.name))
+        .filter(|f| f.relation.is_some())
+        .filter(|f| f.name != "id" && is_plain_text_name(&f.name))
         .map(|f| f.name.clone());
     match relations.next() {
         Some(title) => (Some(title), relations.next()),
         None => (None, None),
     }
-}
-
-/// `true` for a foreign-key-shaped column name: `*_id`, but not the bare
-/// primary key `id`, which rule 3 of [`classify_view_field`] hides.
-fn is_relation_name(name: &str) -> bool {
-    name != "id" && name.ends_with("_id")
 }
 
 /// Assign a view [`FieldRole`] and a default `filterable` flag to one

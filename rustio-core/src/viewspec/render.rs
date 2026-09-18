@@ -454,9 +454,26 @@ mod tests {
         }
     }
 
+    /// A field carrying a declared `belongs_to` — what
+    /// `#[rustio(belongs_to = "…")]` writes into the schema, and the only
+    /// thing the identity fallback will promote.
+    fn fk(name: &str, target: &str, display: &str) -> SchemaField {
+        SchemaField {
+            relation: Some(crate::schema::Relation {
+                model: target.to_string(),
+                field: "id".to_string(),
+                kind: crate::schema::RelationKind::BelongsTo,
+                display_field: Some(display.to_string()),
+                required: None,
+                on_delete: None,
+            }),
+            ..sf(name, "i64")
+        }
+    }
+
     /// "Assignment"-shaped join model: no `String` field to headline with,
-    /// two foreign keys, a timestamp and a status. The shape that used to
-    /// lose its identity in `List` and `Compact`.
+    /// two declared relations, a timestamp and a status. The shape that used
+    /// to lose its identity in `List` and `Compact`.
     fn assignment_model() -> SchemaModel {
         SchemaModel {
             name: "Assignment".to_string(),
@@ -466,8 +483,8 @@ mod tests {
             singular_name: "Assignment".to_string(),
             fields: vec![
                 sf("id", "i64"),
-                sf("booking_id", "i64"),
-                sf("resource_id", "i64"),
+                fk("booking_id", "Booking", "booking_number"),
+                fk("resource_id", "Resource", "name"),
                 sf("accepted_at", "DateTime"),
                 sf("status", "String"),
             ],
@@ -565,7 +582,7 @@ mod tests {
         // name headlines, the contact line is the Subtitle, and the FK stays
         // Meta. The relation fallback is a last resort, not a preference.
         let mut model = customer_model();
-        model.fields.push(sf("account_id", "i64"));
+        model.fields.push(fk("account_id", "Account", "name"));
         let spec = ViewSpec::from_schema_model(&model);
 
         let role_of = |source: &str| {
@@ -595,8 +612,8 @@ mod tests {
             singular_name: "Visit".to_string(),
             fields: vec![
                 sf("id", "i64"),
-                sf("patient_id", "i64"),
-                sf("clinic_id", "i64"),
+                fk("patient_id", "Patient", "full_name"),
+                fk("clinic_id", "Clinic", "name"),
                 sf("status", "String"),
             ],
             relations: Vec::new(),
@@ -618,6 +635,68 @@ mod tests {
             role_of("clinic_id"),
             Some(FieldRole::Title),
             "the next eligible relation headlines instead"
+        );
+    }
+
+    #[test]
+    fn an_id_suffixed_column_is_not_a_relation() {
+        // `legacy_id` / `external_id` / `internal_id` are integers that end in
+        // `_id` and render as integers. Headlining a row with one would swap
+        // "no identity" for a worse lie, so only a declared `belongs_to` — the
+        // thing that renders as its target's display value — may be promoted.
+        let model = SchemaModel {
+            name: "Import".to_string(),
+            table: "imports".to_string(),
+            admin_name: "imports".to_string(),
+            display_name: "Imports".to_string(),
+            singular_name: "Import".to_string(),
+            fields: vec![
+                sf("id", "i64"),
+                sf("legacy_id", "i64"),
+                sf("external_id", "i64"),
+                sf("internal_id", "i32"),
+                sf("imported_at", "DateTime"),
+                sf("status", "String"),
+            ],
+            relations: Vec::new(),
+            core: false,
+        };
+        let spec = ViewSpec::from_schema_model(&model);
+        for f in &spec.fields {
+            assert_ne!(
+                f.role,
+                FieldRole::Title,
+                "{} was promoted to Title on its name alone",
+                f.source
+            );
+            assert_ne!(
+                f.role,
+                FieldRole::Subtitle,
+                "{} was promoted to Subtitle on its name alone",
+                f.source
+            );
+        }
+
+        // Declaring the relation is what makes it eligible — same column name,
+        // different schema.
+        let mut declared = model.clone();
+        declared.fields[1] = fk("legacy_id", "LegacyRecord", "reference");
+        let spec = ViewSpec::from_schema_model(&declared);
+        let role_of = |source: &str| {
+            spec.fields
+                .iter()
+                .find(|f| f.source == source)
+                .map(|f| f.role)
+        };
+        assert_eq!(
+            role_of("legacy_id"),
+            Some(FieldRole::Title),
+            "a declared relation is eligible"
+        );
+        assert_eq!(
+            role_of("external_id"),
+            Some(FieldRole::Meta),
+            "its undeclared neighbours still are not"
         );
     }
 
