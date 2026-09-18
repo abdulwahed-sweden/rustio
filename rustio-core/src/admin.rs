@@ -236,7 +236,7 @@ const ADMIN_FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" view
 // Inline Lucide SVG icon markup. Each function returns a complete
 // `<svg>` element sized by the caller's CSS (16px for toolbar,
 // 18px for nav, etc.). `currentColor` lets the surrounding class
-// (`.button-primary`, `.button button-secondary.button-danger`) drive the stroke.
+// (`.button-primary`, `.button-secondary`, `.button-danger`) drive the stroke.
 fn svg(path: &str) -> String {
     format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{path}</svg>"#
@@ -1939,12 +1939,12 @@ fn render_shell_page(
 </div>
 {body}
 </main>
-<footer class="app-footer"><span>{project}</span><span></span></footer>
+<footer class="app-footer"><span>{project}</span></footer>
 </div>
 </div>
 <script>
 // Admin Intelligence Layer (0.7.0) — minimal JS for PII toggle.
-// Click a .button button-secondary to reveal / hide the adjacent masked value.
+// Click a [data-pii-toggle] control to reveal / hide the adjacent masked value.
 document.addEventListener("click", function(e){{
   var btn = e.target.closest ? e.target.closest("[data-pii-toggle]") : null;
   if(!btn) return;
@@ -2688,7 +2688,7 @@ if(form){{
 // and every matching <td> via `data-col` attribute. Checkbox and
 // actions columns carry no `data-col`, so they're never touched.
 document.addEventListener('click',function(e){{
-  var d=document.querySelector('details.button button-secondary[open]');
+  var d=document.querySelector('details.column-picker[open]');
   if(!d)return;
   if(d.contains(e.target))return;
   d.open=false;

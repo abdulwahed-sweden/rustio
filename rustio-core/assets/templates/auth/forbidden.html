@@ -15,7 +15,7 @@
 
   <form method="post" action="/admin/logout" class="flush">
     {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-    <button type="submit" class="button button-block">{{ t("Sign out") }}</button>
+    <button type="submit" class="button button-primary button-block">{{ t("Sign out") }}</button>
   </form>
 </main>
 </div>

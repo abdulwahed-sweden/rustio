@@ -662,3 +662,13 @@ a.signed-in:hover { color: var(--blue); }
   .role-note { order: -1; }
   .env-chip { order: -2; }
 }
+
+/* Empty-state copy is a paragraph, not a banner — it keeps a measure. */
+.empty p { max-width: 52ch; margin-right: auto; margin-left: auto; }
+
+/* A button row keeps one baseline whether or not a child is a <form>. */
+.button-row, .form-actions { align-items: center; }
+
+/* A form card hugs the form's measure rather than stretching to the full
+   content width with 400px of empty card beside the fields. */
+.detail-single { max-width: calc(680px + 2 * var(--s5)); }
