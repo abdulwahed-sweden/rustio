@@ -42,7 +42,7 @@
       <input type="hidden" name="sort" value="{{ sort | default('') }}">
       <input type="hidden" name="dir" value="{{ dir | default('') }}">
       <span class="ops-search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m19.5 19.5-3.2-3.2"/></svg>
         <input type="search" aria-label="{{ t("Search") }} {{ model.display_name | lower }}" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…">
       </span>
 

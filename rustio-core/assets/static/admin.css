@@ -409,7 +409,7 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 .ops-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); }
 .ops-view { border-top: 1px solid var(--border); background: var(--surface-soft); }
 .ops-search { position: relative; display: block; flex: 0 1 340px; min-width: 220px; }
-.ops-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; color: var(--ink-hint); pointer-events: none; }
+.ops-search .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; min-width: 16px; max-width: 16px; color: var(--ink-hint); pointer-events: none; }
 .ops-search input { padding-left: 38px; }
 /* `type="search"` brings the platform's own clear control, which is the
    affordance the design asks for — sized so it is a real target and does not
