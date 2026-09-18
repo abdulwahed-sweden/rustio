@@ -412,7 +412,6 @@ body.admin-shell, body.admin-auth {
   box-shadow: 0 6px 16px -8px var(--color-accent), inset 0 1px 0 rgba(255,255,255,.18);
 }
 .rio-btn--primary:hover { background: var(--color-accent-deep); border-color: var(--color-accent-deep); color: var(--color-accent-text); }
-.rio-btn--secondary { background: var(--color-elevated); }
 .rio-btn--ghost {
   background: transparent; border-color: transparent; color: var(--color-text-secondary);
   padding-inline: var(--space-3);
@@ -521,7 +520,7 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
 
 .rio-form { display: flex; flex-direction: column; gap: var(--space-4); }
 .rio-form__field, .rio-field { display: flex; flex-direction: column; gap: var(--space-2); }
-.rio-form__label, .rio-label {
+.rio-form__label {
   font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700;
   letter-spacing: .07em; text-transform: uppercase; color: var(--color-text-muted);
 }
@@ -565,7 +564,6 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
 .rio-table td:last-child { white-space: nowrap; text-align: end; }
 .rio-cell-primary { font-family: var(--font-mono); font-weight: 700; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
 .rio-cell-id { font-family: var(--font-mono); font-size: var(--text-mono); font-weight: 600; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-.rio-num { font-variant-numeric: tabular-nums; }
 
 /* ============================================================================
  * Cards / list / compact layouts (list view alternatives)
@@ -804,8 +802,6 @@ table[data-view-editor] td:nth-child(4) { text-align: center; }
  * Avatar · role badge · profile · permission list  (reusable building blocks)
  * ========================================================================== */
 .rio-avatar { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 700; font-size: 15px; color: #fff; background: var(--color-text-muted); flex: none; letter-spacing: .02em; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
-.rio-avatar--sm { width: 30px; height: 30px; font-size: 12px; }
-.rio-avatar--lg { width: 56px; height: 56px; font-size: 20px; border-radius: 16px; }
 .rio-avatar--xl { width: 78px; height: 78px; font-size: 27px; border-radius: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), var(--shadow-md); }
 .rio-avatar--customer  { background: linear-gradient(135deg, #64748B, #475569); }
 .rio-avatar--admin     { background: linear-gradient(135deg, #3B6FE0, #1E3FB8); }
@@ -853,11 +849,7 @@ table[data-view-editor] td:nth-child(4) { text-align: center; }
  * backend page renders fully styled, not only the eight previewed here.
  * ========================================================================== */
 .rio-card__title { font-size: var(--text-h3); font-weight: 700; margin: 0 0 var(--space-3); color: var(--color-text-primary); }
-.rio-card__subtitle { font-size: var(--text-small); color: var(--color-text-muted); margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
-.rio-card__meta { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--color-text-muted); }
-.rio-card--featured { border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); }
 
-.rio-page-head--with-action { flex-direction: row; align-items: center; justify-content: space-between; max-width: none; }
 
 /* Form checkbox / radio rows */
 .rio-form__check { display: flex; align-items: center; gap: var(--space-2); }
@@ -880,24 +872,10 @@ table[data-view-editor] td:nth-child(4) { text-align: center; }
 [data-status="error"], [data-status="failed"], [data-status="cancelled"], [data-status="danger"] { color: var(--bad-text); background: var(--bad-bg); border-color: var(--bad-bd); }
 
 /* Timeline (recent actions / audit log) */
-.rio-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.rio-timeline > li { display: grid; grid-template-columns: auto minmax(0,1fr); gap: var(--space-4); padding: var(--space-4) 0; border-bottom: 1px solid var(--color-border); }
-.rio-timeline > li:last-child { border-bottom: 0; }
-.rio-timeline__dot { width: 10px; height: 10px; margin-top: 5px; border-radius: 999px; background: var(--color-accent); box-shadow: 0 0 0 4px var(--color-accent-soft); flex: none; }
-.rio-timeline time, .rio-timeline__time { font-family: var(--font-mono); font-size: var(--text-small); color: var(--color-text-muted); }
 
 /* Alerts — extra variants */
-.rio-alert--warn { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); border-inline-start-color: var(--warn-dot); }
-.rio-alert--info { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); border-inline-start-color: var(--color-accent); }
-[data-theme="dark"] .rio-alert--info { color: var(--color-accent); }
 
 /* Topbar brand (shells that render an identity inside the topbar) */
-.rio-topbar__brand { display: flex; align-items: center; gap: var(--space-2); }
-.rio-topbar__mark { display: grid; place-items: center; width: 28px; height: 28px; background: var(--color-accent); color: var(--color-accent-text); border-radius: var(--radius-sm); font-weight: 700; font-size: 15px; }
-.rio-topbar__wordmark { font-weight: 700; color: var(--color-text-primary); }
-.rio-topbar__nav { display: flex; align-items: center; gap: var(--space-2); }
-.rio-topbar__link { font-size: var(--text-meta); font-weight: 600; color: var(--color-text-secondary); padding: 7px var(--space-3); border-radius: var(--radius-sm); }
-.rio-topbar__link:hover { color: var(--color-text-primary); background: var(--color-accent-soft); }
 
 /* ============================================================================
  * Motion
