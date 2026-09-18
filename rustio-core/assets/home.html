@@ -15,6 +15,7 @@
 <style>
   *, *::before, *::after { box-sizing:border-box; }
   :root {
+    color-scheme: light dark;
     --paper:#F4F6FB; --surface:#FFFFFF; --raise:#FAFBFE;
     --line:#E5E9F2; --line-2:#D5DBE8;
     --ink:#162038; --text:#33405A; --muted:#697892; --faint:#93A0B6;
@@ -26,6 +27,21 @@
     --t-flag:#C9ABFF; --t-cmt:#6B7894; --t-out:#79DBA0; --t-dim:#A9B4C9;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+
+  /* Dark support. The values are the admin's own dark palette
+     (assets/static/admin.css, [data-theme="dark"]) so a developer who
+     lands here after signing in doesn't get a white flash and two
+     different products. The terminal tokens below are already dark and
+     stay as they are. */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#21262D; --surface:#2B313A; --raise:#353D47;
+      --line:#414A55; --line-2:#545E6B;
+      --ink:#D8DEE6; --text:#BFC8D2; --muted:#9AA6B3; --faint:#7E8995;
+      --accent:#7E9BFF; --accent-deep:#99B0FF; --accent-soft:rgba(126,155,255,.16);
+      --warn:#F1CB86; --warn-soft:rgba(241,203,134,.12); --warn-line:rgba(241,203,134,.3);
+    }
   }
   html,body { margin:0; padding:0; }
   body {

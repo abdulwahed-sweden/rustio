@@ -3988,8 +3988,10 @@ const WELCOME_HTML: &str = r##"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{STRUCT}} — RustIO</title>
 <style>
+  :root { color-scheme: light dark; }
   *, *::before, *::after { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -4001,6 +4003,13 @@ const WELCOME_HTML: &str = r##"<!doctype html>
   p { line-height: 1.55; margin: 0.75rem 0; }
   code { background: #f0f0f2; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
   a { color: #0366d6; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #12161F; color: #C4CCDA; }
+    main { background: #1A1F2B; box-shadow: 0 4px 20px rgba(0,0,0,0.35); }
+    .tag { color: #818D9F; }
+    code { background: #232A38; }
+    a { color: #7C97FF; }
+  }
   .actions { margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
   .btn { padding: 0.55rem 1rem; border-radius: 5px; text-decoration: none; font-size: 0.95rem; font-weight: 500; }
   .btn.primary { background: #222; color: white; }
