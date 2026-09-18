@@ -69,8 +69,8 @@
               <td class="nowrap">
                 {# Position is explicit, not DOM-order — see build_edited_spec. #}
                 <input type="hidden" name="order[{{ field.source }}]" value="{{ loop.index0 }}" data-order>
-                <button type="button" class="button button-quiet" data-move="up" aria-label="Move {{ field.label }} up" title="{{ t('Move up') }}">&#9650;</button>
-                <button type="button" class="button button-quiet" data-move="down" aria-label="Move {{ field.label }} down" title="{{ t('Move down') }}">&#9660;</button>
+                <button type="button" class="button button-secondary" data-move="up" aria-label="Move {{ field.label }} up" title="{{ t('Move up') }}">&#9650;</button>
+                <button type="button" class="button button-secondary" data-move="down" aria-label="Move {{ field.label }} down" title="{{ t('Move down') }}">&#9660;</button>
               </td>
               <td>{{ field.label }} <span class="cell-id">{{ field.source }}</span></td>
               <td>
@@ -153,7 +153,7 @@
 
       <div class="stack row-tight">
         <button type="submit" class="button button-primary">{{ t("Save view") }}</button>
-        <a href="{{ model.list_url }}" class="button button-quiet">{{ t("Back to list") }}</a>
+        <a href="{{ model.list_url }}" class="button button-secondary">{{ t("Back to list") }}</a>
       </div>
     </form>
   </div>

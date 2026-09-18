@@ -1,15 +1,14 @@
-{# The identity cluster in the top bar: environment chip, signed-in
-   address, language switcher, log-out form. Brand and primary areas sit
-   to the left of it; the model rail is below. #}
+{# The identity cluster in the top bar, one row on one baseline:
+   environment badge · "Signed in as" · address · language · log out. #}
 {% if current_user is defined and current_user %}
 <div class="sidebar-foot">
   <span class="env-chip">{{ env_label | default('Dev') }}</span>
-  <span class="signed-in">{{ current_user.email }}</span>
   <span class="role-note">{{ t("Signed in as") }}</span>
+  <span class="signed-in">{{ current_user.email }}</span>
   {% include "includes/lang_switcher.html" %}
   <form method="post" action="/admin/logout" class="inline-form">
     {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-    <button type="submit" class="button button-quiet">{{ t("Log out") }}</button>
+    <button type="submit" class="button button-secondary button-sm">{{ t("Log out") }}</button>
   </form>
 </div>
 {% endif %}

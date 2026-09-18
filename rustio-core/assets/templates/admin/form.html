@@ -18,8 +18,8 @@
       <h1>{{ form.title }}</h1>
     </div>
     <div class="page-head-actions">
-      <a href="{{ form.cancel_url }}" class="button button-quiet">{{ t("Cancel") }}</a>
-      <button type="submit" form="rio-detail-form" class="button button-primary">{{ form.submit_label | default('Save changes') }}</button>
+      <a href="{{ form.cancel_url }}" class="button button-secondary button-sm">{{ t("Cancel") }}</a>
+      <button type="submit" form="rio-detail-form" class="button button-secondary button-sm">{{ form.submit_label | default('Save changes') }}</button>
     </div>
   </div>
 
@@ -50,7 +50,7 @@
           {% endfor %}
 
           <div class="form-actions">
-            <a href="{{ form.cancel_url }}" class="button button-quiet">{{ t("Cancel") }}</a>
+            <a href="{{ form.cancel_url }}" class="button button-secondary">{{ t("Cancel") }}</a>
             <button type="submit" class="button button-primary">{{ form.submit_label | default('Save changes') }}</button>
           </div>
         </form>

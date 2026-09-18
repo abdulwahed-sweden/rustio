@@ -32,65 +32,74 @@
     <input type="hidden" name="layout" value="{{ layout | default('table') }}">
     <input type="hidden" name="sort" value="{{ sort | default('') }}">
     <input type="hidden" name="dir" value="{{ dir | default('') }}">
-    <input class="input-wide" aria-label="{{ t("Search") }} {{ model.display_name | lower }}" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…">
 
-    {# DW-1 — filter controls from the view's `filters`. Submitting the toolbar
-       applies them via the query string; the server honours ViewSpec.filters.
-       Selects/text auto-submit on change (app.js); a <noscript> Apply button
-       and a Clear link cover the no-JS and reset cases. Option values are the
-       English stored tokens; labels are translated via value labels. #}
-    {% if filter_controls is defined and filter_controls | length > 0 %}
-      <span class="filters inline-actions-wide">
-        {% for f in filter_controls %}
-          {% if f.kind == 'exact' %}
-            <label class="filter inline-actions">{{ f.label }}
-              <input class="input-narrow" name="{{ f.source }}" value="{{ f.current }}" placeholder="{{ f.label }}…" data-filter>
-            </label>
-          {% else %}
-            <label class="filter inline-actions">{{ f.label }}
-              <select class="w-auto" name="{{ f.source }}" data-filter>
-                {% for o in f.options %}
-                  <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>
-                {% endfor %}
-              </select>
-            </label>
+    {# Row one: search, the filters with their labels inline, and the count
+       pushed to the right edge. #}
+    <div class="toolbar-row">
+      <input class="input-wide" aria-label="{{ t("Search") }} {{ model.display_name | lower }}" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…">
+
+      {# DW-1 — filter controls from the view's `filters`. Submitting the toolbar
+         applies them via the query string; the server honours ViewSpec.filters.
+         Selects/text auto-submit on change (app.js); a <noscript> Apply button
+         and a Clear link cover the no-JS and reset cases. #}
+      {% if filter_controls is defined and filter_controls | length > 0 %}
+        <span class="filters">
+          {% for f in filter_controls %}
+            {% if f.kind == 'exact' %}
+              <label class="filter">{{ f.label }}
+                <input class="input-narrow" name="{{ f.source }}" value="{{ f.current }}" placeholder="{{ f.label }}…" data-filter>
+              </label>
+            {% else %}
+              <label class="filter">{{ f.label }}
+                <select name="{{ f.source }}" data-filter>
+                  {% for o in f.options %}
+                    <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            {% endif %}
+          {% endfor %}
+          {% if any_filter_active %}
+            <a href="{{ clear_filters_href }}" class="button button-secondary button-sm">{{ t("Clear") }}</a>
           {% endif %}
-        {% endfor %}
-        {% if any_filter_active %}
-          <a href="{{ clear_filters_href }}" class="button button-quiet">{{ t("Clear") }}</a>
-        {% endif %}
-        <noscript><button type="submit" class="button button-quiet">{{ t("Apply") }}</button></noscript>
-      </span>
-    {% endif %}
-
-    <span class="toolbar-count">
-      {% if pagination is defined and pagination.total > 0 %}
-        {{ t("Showing") }} {{ pagination.from }}–{{ pagination.to }} {{ t("of") }} {{ pagination.total }}
-      {% else %}
-        {{ total | default(0) }} {% if total != 1 %}{{ t("records") }}{% else %}{{ t("record") }}{% endif %}
+          <noscript><button type="submit" class="button button-secondary button-sm">{{ t("Apply") }}</button></noscript>
+        </span>
       {% endif %}
-    </span>
-    {% if layout_options is defined %}
-      <nav class="layout-switch" aria-label="{{ t('Layout') }}">
-        {% for opt in layout_options %}
-          <a href="{{ opt.href }}" class="button button-quiet{% if opt.active %} is-active{% endif %}"
-             {% if opt.active %}aria-current="true"{% endif %}>{{ opt.label }}</a>
-        {% endfor %}
-        {# Phase 8 — persist the active layout as this model's default.
-           State-changing → POST + CSRF (mirrors the logout form). Shown
-           only to users with edit permission; the handler also re-checks. #}
-        {% if permissions.edit %}
-          <form method="post" action="/admin/{{ model.singular_name | lower }}s/layout"
-                data-confirm="Set {{ layout | default('table') }} as the default layout for {{ model.display_name | lower }}?" class="inline-form">
-            {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-            <input type="hidden" name="layout" value="{{ layout | default('table') }}">
-            <input type="hidden" name="_return" value="{{ return_to | default('') }}">
-            <button type="submit" class="button button-quiet" title="{{ t('Save this layout as the default for everyone') }}">{{ t("Set as default") }}</button>
-          </form>
-          {# Phase 9a — open the composition editor (field-role editing). #}
-          <a href="/admin/{{ model.singular_name | lower }}s/view" class="button button-quiet" title="{{ t('Edit which role each field plays in this view') }}">{{ t("Edit view") }}</a>
+
+      <span class="toolbar-count">
+        {% if pagination is defined and pagination.total > 0 %}
+          {{ t("Showing") }} {{ pagination.from }}–{{ pagination.to }} {{ t("of") }} {{ pagination.total }}
+        {% else %}
+          {{ total | default(0) }} {% if total != 1 %}{{ t("records") }}{% else %}{{ t("record") }}{% endif %}
         {% endif %}
-      </nav>
+      </span>
+    </div>
+
+    {# Row two: the layout switch as one segmented control, then — separately —
+       the two view tools. They are not siblings of the switch. #}
+    {% if layout_options is defined %}
+      <div class="toolbar-row">
+        <nav class="layout-switch" aria-label="{{ t('Layout') }}">
+          {% for opt in layout_options %}
+            <a href="{{ opt.href }}"{% if opt.active %} class="is-active" aria-current="true"{% endif %}>{{ opt.label }}</a>
+          {% endfor %}
+        </nav>
+        {% if permissions.edit %}
+          <span class="view-tools">
+            {# Phase 8 — persist the active layout as this model's default.
+               State-changing → POST + CSRF (mirrors the logout form). #}
+            <form method="post" action="/admin/{{ model.singular_name | lower }}s/layout"
+                  data-confirm="Set {{ layout | default('table') }} as the default layout for {{ model.display_name | lower }}?" class="inline-form">
+              {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+              <input type="hidden" name="layout" value="{{ layout | default('table') }}">
+              <input type="hidden" name="_return" value="{{ return_to | default('') }}">
+              <button type="submit" class="button button-secondary button-sm" title="{{ t('Save this layout as the default for everyone') }}">{{ t("Set as default") }}</button>
+            </form>
+            {# Phase 9a — open the composition editor (field-role editing). #}
+            <a href="/admin/{{ model.singular_name | lower }}s/view" class="button button-secondary button-sm" title="{{ t('Edit which role each field plays in this view') }}">{{ t("Edit view") }}</a>
+          </span>
+        {% endif %}
+      </div>
     {% endif %}
   </form>
 
@@ -118,8 +127,8 @@
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
               <div class="actions">
-                {% if permissions.edit %}<a class="button button-quiet" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="button button-quiet">{{ t("Delete") }}</button></form>{% endif %}
+                {% if permissions.edit %}<a class="button button-secondary button-sm" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="button button-secondary button-sm">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -134,8 +143,8 @@
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
               <div class="button-row">
-                {% if permissions.edit %}<a class="button button-quiet" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="button button-quiet">{{ t("Delete") }}</button></form>{% endif %}
+                {% if permissions.edit %}<a class="button button-secondary button-sm" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="button button-secondary button-sm">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -153,7 +162,7 @@
                 <th scope="col">{{ col.label }}</th>
               {% endfor %}
               {% if permissions.edit or permissions.delete %}
-                <th scope="col" class="cell-fit">&nbsp;</th>
+                <th scope="col" class="actions"><span class="sr-only">{{ t("Actions") }}</span></th>
               {% endif %}
             </tr>
           </thead>
@@ -165,8 +174,8 @@
                 {% endfor %}
                 {% if permissions.edit or permissions.delete %}
                   <td class="actions">
-                    {% if permissions.edit %}<a class="button button-quiet" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                    {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="button button-quiet">{{ t("Delete") }}</button></form>{% endif %}
+                    {% if permissions.edit %}<a class="button button-secondary button-sm" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
+                    {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="button button-secondary button-sm">{{ t("Delete") }}</button></form>{% endif %}
                   </td>
                 {% endif %}
               </tr>
@@ -185,7 +194,7 @@
               <th scope="col">{{ col.label }}</th>
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
-              <th scope="col" class="cell-fit">&nbsp;</th>
+              <th scope="col" class="actions"><span class="sr-only">{{ t("Actions") }}</span></th>
             {% endif %}
           </tr>
         </thead>
@@ -196,14 +205,14 @@
                 <td>{{ cell | safe }}</td>
               {% endfor %}
               {% if permissions.edit or permissions.delete %}
-                <td>
+                <td class="actions">
                   {% if permissions.edit %}
-                    <a class="button button-quiet" href="{{ row.edit_url }}">{{ t("Edit") }}</a>
+                    <a class="button button-secondary button-sm" href="{{ row.edit_url }}">{{ t("Edit") }}</a>
                   {% endif %}
                   {% if permissions.delete %}
                     <form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">
                       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-                      <button type="submit" class="button button-quiet">{{ t("Delete") }}</button>
+                      <button type="submit" class="button button-secondary button-sm">{{ t("Delete") }}</button>
                     </form>
                   {% endif %}
                 </td>

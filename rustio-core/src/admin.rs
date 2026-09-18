@@ -236,7 +236,7 @@ const ADMIN_FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" view
 // Inline Lucide SVG icon markup. Each function returns a complete
 // `<svg>` element sized by the caller's CSS (16px for toolbar,
 // 18px for nav, etc.). `currentColor` lets the surrounding class
-// (`.button-primary`, `.button button-quiet.button-danger`) drive the stroke.
+// (`.button-primary`, `.button button-secondary.button-danger`) drive the stroke.
 fn svg(path: &str) -> String {
     format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{path}</svg>"#
@@ -1793,7 +1793,7 @@ fn render_identity(shell: &Shell<'_>) -> String {
         format!(
             r#"<form class="inline-form" method="post" action="/admin/logout">
 {csrf}
-<button class="button button-quiet" type="submit">{icon}<span>Sign out</span></button>
+<button class="button button-secondary" type="submit">{icon}<span>Sign out</span></button>
 </form>"#,
             csrf = csrf_input(shell.csrf),
             icon = icon_logout(),
@@ -1965,7 +1965,7 @@ fn render_shell_page(
 </div>
 <script>
 // Admin Intelligence Layer (0.7.0) — minimal JS for PII toggle.
-// Click a .button button-quiet to reveal / hide the adjacent masked value.
+// Click a .button button-secondary to reveal / hide the adjacent masked value.
 document.addEventListener("click", function(e){{
   var btn = e.target.closest ? e.target.closest("[data-pii-toggle]") : null;
   if(!btn) return;
@@ -2709,7 +2709,7 @@ if(form){{
 // and every matching <td> via `data-col` attribute. Checkbox and
 // actions columns carry no `data-col`, so they're never touched.
 document.addEventListener('click',function(e){{
-  var d=document.querySelector('details.button button-quiet[open]');
+  var d=document.querySelector('details.button button-secondary[open]');
   if(!d)return;
   if(d.contains(e.target))return;
   d.open=false;
@@ -2899,7 +2899,7 @@ fn render_columns_control<T: AdminModel>(filters: &ListFilters<'_>) -> String {
         .collect();
 
     format!(
-        r#"<details class="column-picker"><summary class="button button-quiet">Columns</summary><div class="card"><div class="card-body">{rows}</div></div></details>"#,
+        r#"<details class="column-picker"><summary class="button button-secondary">Columns</summary><div class="card"><div class="card-body">{rows}</div></div></details>"#,
     )
 }
 
@@ -3155,7 +3155,7 @@ fn render_list_toolbar<T: AdminModel>(
 
     let reset_btn = if filters.is_active() {
         format!(
-            r#"<a class="button button-quiet" href="/admin/{name}">Reset</a>"#,
+            r#"<a class="button button-secondary" href="/admin/{name}">Reset</a>"#,
             name = escape_html(admin_name),
         )
     } else {
@@ -3547,7 +3547,7 @@ fn form_response<T: AdminModel>(
 </div>
 </section>
 <div class="form-actions">
-<a class="button button-quiet" href="/admin/{name}">{back_icon}<span>{back_label}</span></a>
+<a class="button button-secondary" href="/admin/{name}">{back_icon}<span>{back_label}</span></a>
 <a class="button button-secondary" href="/admin/{name}">Cancel</a>
 <button class="button button-primary" type="submit">Save</button>
 </div>
@@ -4263,7 +4263,7 @@ Deleting this record removes it permanently. Rows that reference it via a foreig
 </div>
 </div>
 <div class="form-actions">
-<a class="button button-quiet" href="/admin/{name}">{back}<span>Back to {plural_lower}</span></a>
+<a class="button button-secondary" href="/admin/{name}">{back}<span>Back to {plural_lower}</span></a>
 <div class="form-actions">
 <a class="button" href="/admin/{name}/{id}/edit">Cancel</a>
 <form class="inline-form" method="post" action="/admin/{name}/{id}/delete">
@@ -4363,7 +4363,7 @@ You are about to delete <strong>{count_label}</strong>. Each record removed here
 <input type="hidden" name="action" value="delete">
 <input type="hidden" name="_selected" value="{selected}">
 <input type="hidden" name="_confirm" value="yes">
-<a class="button button-quiet" href="/admin/{name}">{back}<span>Cancel</span></a>
+<a class="button button-secondary" href="/admin/{name}">{back}<span>Cancel</span></a>
 <div class="form-actions">
 <button class="button button-danger" type="submit">{trash}<span>Yes, delete {count_label}</span></button>
 </div>

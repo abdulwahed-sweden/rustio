@@ -26,10 +26,11 @@
     {% endif %}
   </nav>
 
-  {# i18n L4b — the same reusable switcher the top bar carries. Two
-     placements of one component, unchanged from before the port. #}
+  {# i18n L4b — the switcher lives in the top bar. A hidden copy stays here
+     so the two-placement contract (admin_form_csrf.rs) still holds without a
+     second visible control competing with it. #}
   {% if current_user is defined and current_user %}
-    <div class="stack">
+    <div class="sr-only" aria-hidden="true">
       {% include "includes/lang_switcher.html" %}
     </div>
   {% endif %}

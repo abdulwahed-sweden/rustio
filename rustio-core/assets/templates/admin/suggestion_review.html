@@ -58,7 +58,7 @@
     {% endif %}
 
     <div class="form-actions">
-      <a href="/admin" class="button button-quiet">{{ t("Cancel") }}</a>
+      <a href="/admin" class="button button-secondary">{{ t("Cancel") }}</a>
       {% if view.can_apply %}
         <form method="post" action="{{ view.apply_url }}" class="inline-form">
           {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}

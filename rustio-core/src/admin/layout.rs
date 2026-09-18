@@ -3701,11 +3701,14 @@ fn is_status_field_name(name: &str) -> bool {
 /// slate (inactive / closed). Unknown values fall back to slate.
 fn status_pill_color(data_value: &str) -> &'static str {
     match data_value.trim() {
-        "active" | "approved" | "published" | "live" | "completed" | "complete" | "done"
-        | "finished" | "resolved" | "paid" => "badge badge-active",
-        "referred" | "pending" | "todo" | "queued" | "open" | "new" | "scheduled" | "draft"
-        | "sent" | "in progress" | "in review" | "review" | "overdue" | "on leave" => {
+        "active" | "accepted" | "approved" | "published" | "live" | "completed" | "complete"
+        | "done" | "finished" | "resolved" | "paid" => "badge badge-active",
+        "referred" | "offered" | "pending" | "todo" | "queued" | "open" | "new" | "scheduled"
+        | "draft" | "sent" | "in progress" | "in review" | "review" | "overdue" | "on leave" => {
             "badge badge-warn"
+        }
+        "cancelled" | "canceled" | "declined" | "rejected" | "failed" | "expired" | "refunded" => {
+            "badge badge-disabled"
         }
         _ => "badge badge-user",
     }
