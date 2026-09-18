@@ -514,6 +514,9 @@ nav.rio-layout-switch > a[title]:hover { background: var(--color-accent-soft); c
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
 }
 select.rio-input, select.rio-form__input { cursor: pointer; }
+/* Toolbar variant: a control sitting in a row of controls, sized to its
+   content rather than filling the line like a stacked form field. */
+.rio-form__input--inline { width: auto; min-width: 0; flex: none; }
 .rio-form textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
 
 .rio-form { display: flex; flex-direction: column; gap: var(--space-4); }
@@ -820,7 +823,9 @@ table[data-view-editor] td:nth-child(4) { text-align: center; }
 [data-theme="dark"] .rio-role-badge--developer { color: #C4A9F5; background: rgba(109,40,217,.22); border-color: rgba(109,40,217,.45); }
 [data-theme="dark"] .rio-role-badge--customer  { color: #AEB9C6; background: rgba(120,131,148,.18); border-color: rgba(120,131,148,.4); }
 
+.rio-profile { display: flex; flex-direction: column; gap: var(--space-4); }
 .rio-profile__id { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
+.rio-profile__meta { display: flex; flex-direction: column; min-width: 0; }
 .rio-profile__name { font-size: var(--text-h2); font-weight: 700; margin: 0; letter-spacing: -.01em; }
 .rio-profile__email { font-family: var(--font-mono); font-size: var(--text-small); color: var(--color-text-muted); margin: 3px 0 0; }
 .rio-profile__tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }

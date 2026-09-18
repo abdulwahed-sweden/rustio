@@ -30,7 +30,7 @@
     <input type="hidden" name="layout" value="{{ layout | default('table') }}">
     <input type="hidden" name="sort" value="{{ sort | default('') }}">
     <input type="hidden" name="dir" value="{{ dir | default('') }}">
-    <input class="rio-input" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…" style="max-width: 320px;">
+    <input class="rio-input" aria-label="{{ t("Search") }} {{ model.display_name | lower }}" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…" style="max-width: 320px;">
 
     {# DW-1 — filter controls from the view's `filters`. Submitting the toolbar
        applies them via the query string; the server honours ViewSpec.filters.
@@ -143,6 +143,7 @@
       {# Compact = a dense, scannable table. Same headed columns as the table
          layout, tighter rows. #}
       <div class="rio-card">
+        <div class="rio-table-wrap">
         <table class="rio-table rio-table--compact">
           <thead>
             <tr>
@@ -170,9 +171,11 @@
             {% endfor %}
           </tbody>
         </table>
+        </div>
       </div>
     {% else %}
     <div class="rio-card">
+      <div class="rio-table-wrap">
       <table class="rio-table">
         <thead>
           <tr>
@@ -207,6 +210,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
     {% endif %}
 

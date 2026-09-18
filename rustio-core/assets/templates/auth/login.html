@@ -4,7 +4,7 @@
 {% block body_class %}admin-auth{% endblock %}
 
 {% block body %}
-<div class="rio-auth">
+<main class="rio-auth">
   <div class="rio-auth__header">
     <div class="rio-auth__mark">{{ design.logo_initial | default('R') }}</div>
     <h1 class="rio-auth__title">{{ t("Sign in") }}</h1>
@@ -27,5 +27,5 @@
     </div>
     <button type="submit" class="rio-btn rio-btn--primary rio-btn--block">{{ t("Sign in") }}</button>
   </form>
-</div>
+</main>
 {% endblock %}

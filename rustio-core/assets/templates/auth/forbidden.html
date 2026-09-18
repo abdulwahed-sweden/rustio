@@ -4,7 +4,7 @@
 {% block body_class %}admin-auth{% endblock %}
 
 {% block body %}
-<div class="rio-auth">
+<main class="rio-auth">
   <div class="rio-auth__header">
     <div class="rio-auth__mark">!</div>
     <p class="rio-meta">{{ t("403 Forbidden") }}</p>
@@ -16,5 +16,5 @@
     {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
     <button type="submit" class="rio-btn rio-btn--block">{{ t("Sign out") }}</button>
   </form>
-</div>
+</main>
 {% endblock %}
