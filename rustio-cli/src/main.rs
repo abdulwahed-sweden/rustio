@@ -3991,29 +3991,43 @@ const WELCOME_HTML: &str = r##"<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{STRUCT}} — RustIO</title>
 <style>
-  :root { color-scheme: light dark; }
+  /* The admin's ported palette (rustio-core/assets/static/admin.css):
+     rustio-lite's tokens, light only. Self-contained on purpose — this
+     page must render before any framework asset is reachable. */
+  :root {
+    color-scheme: light;
+    --page: #f1f1ee;
+    --surface: #ffffff;
+    --border: #d5dce5;
+    --ink: #202733;
+    --ink-soft: #4c5868;
+    --blue: #1f5797;
+    --blue-dark: #174578;
+    --blue-soft: #dfeafb;
+    --surface-soft: #f7f9fc;
+    --radius: 9px;
+  }
   *, *::before, *::after { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: #fafafa; color: #222; display: flex; align-items: center; justify-content: center; }
-  main { max-width: 32rem; padding: 2.5rem; background: white; border-radius: 8px;
-         box-shadow: 0 4px 20px rgba(0,0,0,0.05); text-align: left; }
-  h1 { margin: 0 0 0.25rem; font-size: 1.5rem; }
-  .tag { color: #888; font-size: 0.9rem; margin: 0 0 1.5rem; }
-  p { line-height: 1.55; margin: 0.75rem 0; }
-  code { background: #f0f0f2; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
-  a { color: #0366d6; }
-  @media (prefers-color-scheme: dark) {
-    body { background: #12161F; color: #C4CCDA; }
-    main { background: #1A1F2B; box-shadow: 0 4px 20px rgba(0,0,0,0.35); }
-    .tag { color: #818D9F; }
-    code { background: #232A38; }
-    a { color: #7C97FF; }
-  }
-  .actions { margin-top: 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-  .btn { padding: 0.55rem 1rem; border-radius: 5px; text-decoration: none; font-size: 0.95rem; font-weight: 500; }
-  .btn.primary { background: #222; color: white; }
-  .btn.secondary { background: #f0f0f2; color: #222; }
+  body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         font-size: 1.0625rem; font-weight: 450; line-height: 1.5;
+         background: var(--page); color: var(--ink); display: flex; align-items: center; justify-content: center;
+         -webkit-font-smoothing: antialiased; }
+  main { max-width: 32rem; padding: 2.5rem; background: var(--surface);
+         border: 1px solid var(--border); border-radius: var(--radius);
+         box-shadow: 0 2px 5px rgba(24,39,61,.07); text-align: left; }
+  h1 { margin: 0 0 0.25rem; font-size: 1.8rem; font-weight: 820; letter-spacing: -.02em; line-height: 1.2; }
+  .tag { color: var(--ink-soft); font-size: .875rem; font-weight: 620; margin: 0 0 1.5rem; }
+  p { line-height: 1.5; margin: 0.75rem 0; }
+  code { background: var(--surface-soft); border: 1px solid var(--border); padding: 0.1rem 0.35rem; border-radius: 6px; font-size: 0.9em; }
+  a { color: var(--blue); text-underline-offset: 3px; }
+  a:hover { color: var(--blue-dark); }
+  :focus-visible { outline: 3px solid #2f7bd6; outline-offset: 2px; }
+  .actions { margin-top: 1.5rem; display: flex; gap: 9px; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; min-height: 44px; padding: 7px 13px;
+         border: 1px solid transparent; border-radius: 7px; font-size: .9375rem; font-weight: 760; text-decoration: none; }
+  .btn.primary { background: var(--blue); color: #fff; }
+  .btn.secondary { border-color: var(--border); background: #f8fafc; color: #354154; }
 </style>
 </head>
 <body>

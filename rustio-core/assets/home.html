@@ -16,33 +16,20 @@
   *, *::before, *::after { box-sizing:border-box; }
   :root {
     color-scheme: light dark;
-    --paper:#F4F6FB; --surface:#FFFFFF; --raise:#FAFBFE;
-    --line:#E5E9F2; --line-2:#D5DBE8;
-    --ink:#162038; --text:#33405A; --muted:#697892; --faint:#93A0B6;
-    --accent:#2B54E0; --accent-deep:#1E3FB8; --accent-soft:#EEF1FE;
-    --warn:#9A6B12; --warn-soft:#FBF3E0; --warn-line:#F0DEB4;
+    --paper:#f1f1ee; --surface:#ffffff; --raise:#f7f9fc;
+    --line:#d5dce5; --line-2:#b9c5d3;
+    --ink:#202733; --text:#4c5868; --muted:#596779; --faint:#aebbd0;
+    --accent:#1f5797; --accent-deep:#174578; --accent-soft:#dfeafb;
+    --warn:#935b0a; --warn-soft:#fff4df; --warn-line:#e7c27b;
     /* terminal syntax palette (on the dark code card) */
-    --t-bg:#161D33; --t-bg2:#1E2848; --t-line:rgba(255,255,255,.085);
-    --t-prompt:#7E8CA8; --t-cmd:#8FB2FF; --t-sub:#5FD3C0; --t-arg:#F2B45C;
-    --t-flag:#C9ABFF; --t-cmt:#6B7894; --t-out:#79DBA0; --t-dim:#A9B4C9;
+    --t-bg:#202733; --t-bg2:#273345; --t-line:rgba(255,255,255,.085);
+    --t-prompt:#9fb3ca; --t-cmd:#dfeafb; --t-sub:#e8f6ee; --t-arg:#fff4df;
+    --t-flag:#b7cdea; --t-cmt:#71869f; --t-out:#b4dbc5; --t-dim:#cfd6df;
     --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,"Helvetica Neue",Arial,sans-serif;
     --mono:ui-monospace,SFMono-Regular,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
   }
 
-  /* Dark support. The values are the admin's own dark palette
-     (assets/static/admin.css, [data-theme="dark"]) so a developer who
-     lands here after signing in doesn't get a white flash and two
-     different products. The terminal tokens below are already dark and
-     stay as they are. */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --paper:#21262D; --surface:#2B313A; --raise:#353D47;
-      --line:#414A55; --line-2:#545E6B;
-      --ink:#D8DEE6; --text:#BFC8D2; --muted:#9AA6B3; --faint:#7E8995;
-      --accent:#7E9BFF; --accent-deep:#99B0FF; --accent-soft:rgba(126,155,255,.16);
-      --warn:#F1CB86; --warn-soft:rgba(241,203,134,.12); --warn-line:rgba(241,203,134,.3);
-    }
-  }
+
   html,body { margin:0; padding:0; }
   body {
     font-family:var(--sans); color:var(--text); background:var(--paper);
@@ -63,7 +50,7 @@
   .brand { display:flex; align-items:center; gap:11px; }
   .brand-mark { width:30px; height:30px; border-radius:8px; display:grid; place-items:center;
     font-weight:800; font-size:15px; color:#fff;
-    background:linear-gradient(135deg,var(--accent),#1A39A8);
+    background:linear-gradient(135deg,var(--accent),var(--accent-deep));
     box-shadow:0 3px 10px -3px rgba(43,84,224,.6); }
   .brand-name { font-weight:680; letter-spacing:-.01em; color:var(--ink); }
   .pill-version { font-family:var(--mono); font-size:11.5px; color:var(--muted);
@@ -82,7 +69,7 @@
   main { flex:1; width:100%; max-width:720px; margin:0 auto; padding:64px 28px 44px; }
   .eyebrow { display:inline-flex; align-items:center; gap:8px;
     font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.16em; text-transform:uppercase;
-    color:var(--accent); background:var(--accent-soft); border:1px solid #DCE3FB;
+    color:var(--accent); background:var(--accent-soft); border:1px solid #B7CDEA;
     padding:5px 12px; border-radius:999px; margin-bottom:20px; }
   .eyebrow .dot { width:6px; height:6px; border-radius:50%; background:var(--accent);
     animation:pulse 2.4s ease-out infinite; }
@@ -95,9 +82,9 @@
     border:1px solid rgba(0,0,0,.06);
     box-shadow:0 1px 0 rgba(255,255,255,.6), 0 24px 50px -24px rgba(22,32,56,.45), 0 8px 20px -12px rgba(22,32,56,.25); }
   .term__bar { display:flex; align-items:center; gap:8px; padding:11px 14px;
-    background:linear-gradient(180deg,#232F52,#1B2444); border-bottom:1px solid var(--t-line); }
+    background:linear-gradient(180deg,var(--t-bg2),var(--t-bg)); border-bottom:1px solid var(--t-line); }
   .term__dot { width:11px; height:11px; border-radius:50%; }
-  .term__dot.r{background:#ED6A5E} .term__dot.y{background:#F4BE4F} .term__dot.g{background:#61C554}
+  .term__dot.r{background:#E0A7A2} .term__dot.y{background:#E7C27B} .term__dot.g{background:#9DCEB4}
   .term__title { margin-inline-start:8px; font-family:var(--mono); font-size:12px; color:var(--t-prompt); }
   .term__body { padding:18px 18px 20px; font-family:var(--mono); font-size:13.5px; line-height:1.95; color:var(--t-dim);
     overflow-x:auto; background:radial-gradient(120% 80% at 0% 0%, rgba(63,98,232,.06), transparent 60%); }
@@ -118,7 +105,7 @@
   .next__tag { font-family:var(--mono); font-size:10.5px; font-weight:700; letter-spacing:.12em; text-transform:uppercase;
     color:var(--accent); white-space:nowrap; }
   .next__cmd { font-family:var(--mono); font-size:13px; color:var(--ink);
-    background:var(--accent-soft); border:1px solid #DCE3FB; border-radius:7px; padding:5px 10px; }
+    background:var(--accent-soft); border:1px solid #B7CDEA; border-radius:7px; padding:5px 10px; }
 
   .actions { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:30px; }
   .btn { display:inline-flex; align-items:center; gap:9px; padding:12px 20px; border-radius:10px;
