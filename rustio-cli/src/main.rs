@@ -40,9 +40,9 @@ To change something later: `rustio change "<what you want>"`. That's
 the whole loop.
 
 SCAFFOLD
-    init [name]                 Wizard (no name) or non-interactive scaffold
-                                  (with name). Options:
-                                  --preset <basic|blog|api>, --model <name>.
+    init [name]                 Create an empty project. Wizard (no name) or
+                                  non-interactive (with name). Option:
+                                  --model <name> to scaffold one model.
     add model <name>            Add a model to the current project — struct,
                                   admin entry, and migration.
 
@@ -203,16 +203,12 @@ async fn main() -> ExitCode {
                 explain_command(&topic)
             }
         }
-        Ok(Command::Init {
-            name,
-            preset,
-            model,
-        }) => {
+        Ok(Command::Init { name, model }) => {
             if why_mode {
                 why_for("init");
                 Ok(())
             } else {
-                init_command(name, preset, model)
+                init_command(name, model)
             }
         }
         Ok(Command::NewProject(name)) => {
@@ -379,7 +375,6 @@ enum Command {
     /// non-interactive scaffold when a name is given.
     Init {
         name: Option<String>,
-        preset: Option<wizard::Preset>,
         model: Option<String>,
     },
     NewProject(String),
@@ -728,25 +723,16 @@ fn parse_layout(s: &str) -> Result<rustio_core::viewspec::ViewLayout, String> {
 /// Parse arguments to `rustio init`. Accepts a positional project name
 /// and the flags:
 ///
-/// - `--preset <basic|blog|api>` — starter preset.
-/// - `--model <name>` — override the preset's model name. Ignored
-///   under `--preset basic`. `--app` is accepted as a retired spelling.
+/// - `--model <name>` — scaffold one model in the new project. Without
+///   it the project is empty. `--app` is accepted as a retired spelling.
 /// - `--db <kind>` — reserved for future drivers; today only SQLite is
 ///   supported and the value is ignored.
 fn parse_init_args(rest: &[String]) -> Result<Command, String> {
     let mut name: Option<String> = None;
-    let mut preset: Option<wizard::Preset> = None;
     let mut model: Option<String> = None;
     let mut i = 0;
     while i < rest.len() {
         match rest[i].as_str() {
-            "--preset" => {
-                let v = rest
-                    .get(i + 1)
-                    .ok_or("missing value for --preset (expected basic, blog, or api)")?;
-                preset = Some(v.parse::<wizard::Preset>()?);
-                i += 2;
-            }
             // `--app` is the retired spelling of `--model`, kept
             // working for one release alongside `new app`.
             "--model" | "--app" => {
@@ -771,18 +757,10 @@ fn parse_init_args(rest: &[String]) -> Result<Command, String> {
             other => return Err(format!("unexpected argument `{other}`")),
         }
     }
-    Ok(Command::Init {
-        name,
-        preset,
-        model,
-    })
+    Ok(Command::Init { name, model })
 }
 
-fn init_command(
-    name: Option<String>,
-    preset: Option<wizard::Preset>,
-    model: Option<String>,
-) -> Result<(), String> {
+fn init_command(name: Option<String>, model: Option<String>) -> Result<(), String> {
     // If a name is provided, we're in non-interactive mode. Otherwise launch
     // the wizard. The wizard will fail fast with a clear message when stdin
     // is not a terminal (e.g. piped input, CI) — the correct fix there is to
@@ -790,10 +768,9 @@ fn init_command(
     let plan = match name {
         Some(n) => wizard::Plan {
             project_name: n,
-            preset: preset.unwrap_or(wizard::Preset::Basic),
             model_name: model,
         },
-        None => wizard::run(preset, model)?,
+        None => wizard::run(model)?,
     };
     wizard::execute(&plan)?;
 
@@ -3457,8 +3434,8 @@ fn why_for(name: &str) {
         }
         "init" => {
             "`rustio init <name>` scaffolds a new RustIO project: Cargo.toml, main.rs,\n\
-             models/mod.rs, migrations/, the standard auth tables. With no name it starts\n\
-             an interactive wizard.\n\
+             models/mod.rs, migrations/, the standard auth tables. The project is empty:\n\
+             add models with `rustio add model <name>`. With no name it asks for one.\n\
              \n\
              Run it without --why to actually create the project."
         }
@@ -4648,7 +4625,6 @@ mod tests {
             parse_command(&args(&["init"])).unwrap(),
             Command::Init {
                 name: None,
-                preset: None,
                 model: None,
             },
         );
@@ -4660,39 +4636,9 @@ mod tests {
             parse_command(&args(&["init", "mysite"])).unwrap(),
             Command::Init {
                 name: Some(String::from("mysite")),
-                preset: None,
                 model: None,
             },
         );
-    }
-
-    #[test]
-    fn parse_init_with_name_and_preset() {
-        assert_eq!(
-            parse_command(&args(&["init", "mysite", "--preset", "blog"])).unwrap(),
-            Command::Init {
-                name: Some(String::from("mysite")),
-                preset: Some(wizard::Preset::Blog),
-                model: None,
-            },
-        );
-    }
-
-    #[test]
-    fn parse_init_preset_before_name() {
-        assert_eq!(
-            parse_command(&args(&["init", "--preset", "api", "mysite"])).unwrap(),
-            Command::Init {
-                name: Some(String::from("mysite")),
-                preset: Some(wizard::Preset::Api),
-                model: None,
-            },
-        );
-    }
-
-    #[test]
-    fn parse_init_unknown_preset_errors() {
-        assert!(parse_command(&args(&["init", "--preset", "nope"])).is_err());
     }
 
     #[test]
@@ -4704,7 +4650,6 @@ mod tests {
             parse_command(&args(&["init", "mysite", "--db", "sqlite"])).unwrap(),
             Command::Init {
                 name: Some(String::from("mysite")),
-                preset: None,
                 model: None,
             },
         );
@@ -4716,21 +4661,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_init_app_flag() {
-        assert_eq!(
-            parse_command(&args(&[
-                "init", "mysite", "--preset", "blog", "--app", "books",
-            ]))
-            .unwrap(),
-            Command::Init {
-                name: Some(String::from("mysite")),
-                preset: Some(wizard::Preset::Blog),
-                model: Some(String::from("books")),
-            },
-        );
-    }
-
-    #[test]
     fn parse_init_app_flag_without_preset() {
         // The wizard will default the preset to Basic; `--app` without a
         // `--preset` on Basic is effectively a no-op (Basic ignores it).
@@ -4739,7 +4669,6 @@ mod tests {
             parse_command(&args(&["init", "mysite", "--app", "books"])).unwrap(),
             Command::Init {
                 name: Some(String::from("mysite")),
-                preset: None,
                 model: Some(String::from("books")),
             },
         );

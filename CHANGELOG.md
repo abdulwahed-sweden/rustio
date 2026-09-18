@@ -162,6 +162,10 @@ sources, stored values, sorting, links, data are never translated); only the
   add with `rustio add model <name>`. A curated shape that has to be walked,
   accepted model by model, and then rewritten anyway was a detour on the way
   to the thing the user came to build.
+- **`--preset basic|blog|api` is removed.** With the menu gone, a preset
+  saved exactly one `rustio add model <name>` call and produced the same
+  default scaffold that command produces. `init` means empty; `--model
+  <name>` still scaffolds one model if you want it in the same breath.
 - **`rustio start` is removed.** With no menu to reopen it started nothing,
   and the bare `rustio` command already prints where you are plus the likely
   next commands — better, because it reads the project first.

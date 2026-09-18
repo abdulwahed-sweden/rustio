@@ -15,25 +15,25 @@ rustio init readlist
 cd readlist
 ```
 
-`rustio init <name>` scaffolds a Rust project and opens the setup menu — a small Guided / Manual / Import picker. Pick **Guided** and describe what you're building in one sentence:
+`rustio init <name>` scaffolds a Rust project and prints the next commands.
+The project is empty; you add models one at a time:
 
-```text
-  How would you like to begin?
-  › Guided — I'll propose a starting shape and walk it with you
-    Manual — I'll get out of the way; you add models one at a time
-    Import — read an existing rustio.schema.json (coming soon)
-
-  ? What are you building?
-  › a small clinic with patients and appointments
-
-  I read this as a `clinic` project.
-  Here's what I'd suggest:
-    1. Patient      name, date_of_birth, phone
-    2. Doctor       name, specialty
-    3. Appointment  patient_id, doctor_id, scheduled_for, notes
+```bash
+rustio add model books
 ```
 
-RustIO walks each model with one keystroke (`add` / `skip`) and shows a system-blueprint summary before any file is written. The technical view (typed plan operations, risk classification, warnings) lives behind a *"Show technical details"* choice — you decide what lands.
+```text
+✔ Created model Book
+
+  file       models/books/models.rs
+  migration  migrations/0001_create_books.sql
+  admin      /admin/books
+
+  Default fields: title (String), priority (i32), is_active (bool)
+  Add more with:  rustio change "add <field> as <Type> to Book"
+
+  → rustio migrate apply
+```
 
 Then bring the project up:
 
@@ -59,11 +59,11 @@ The planner expresses changes inside a fixed vocabulary (add field, rename field
 
 ## Non-interactive
 
-Skip the menu by passing the preset and app upfront:
+Pass the project name upfront to skip the prompt:
 
 ```bash
-rustio init readlist --preset blog                    # default app: posts
-rustio init readlist --preset blog --app books        # custom app name
+rustio init readlist                                  # empty project
+rustio init readlist --model books                    # plus one model
 ```
 
 ## Common commands
@@ -72,8 +72,7 @@ For a small day-one surface, run `rustio help`. The everyday loop:
 
 | Command                          | What it does                                                         |
 | -------------------------------- | -------------------------------------------------------------------- |
-| `rustio init [name]`             | Scaffold a project + open the setup menu                             |
-| `rustio start`                   | Re-open the setup menu inside an existing project                    |
+| `rustio init [name]`             | Scaffold an empty project                                            |
 | `rustio add model <name>`        | Add one model to the current project                                 |
 | `rustio run`                     | Build (cargo build) + start the server on `:8000`                    |
 | `rustio change "<request>"`      | Describe a change in plain English — RustIO proposes the diff        |
@@ -98,7 +97,7 @@ rustio help advanced
 
 ## Notes
 
-- The interactive setup menu needs a real terminal. In CI or when stdin is piped, pass a name + preset explicitly: `rustio init mysite --preset basic`.
+- The name prompt needs a real terminal. In CI or when stdin is piped, pass the name explicitly: `rustio init mysite`.
 - Presets are coarse starting points, not lock-in. You can always add more with `rustio add model <name>` or change the shape with `rustio change "<request>"`.
 
 See the [main repository](https://github.com/abdulwahed-sweden/rustio) for the full guide.

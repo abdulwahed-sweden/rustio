@@ -30,11 +30,11 @@ That's the page. Below is how to build it.
 
 ```bash
 cargo install rustio-cli       # skip if you did the quickstart
-rustio init clinic --preset basic
+rustio init clinic
 cd clinic
 ```
 
-`--preset basic` gives you an empty project (`models/mod.rs` with markers, no models yet). You'll scaffold the models one at a time.
+`rustio init` gives you an empty project (`models/mod.rs` with markers, no models yet). You'll scaffold the models one at a time.
 
 ## 2. Scaffold two model folders
 

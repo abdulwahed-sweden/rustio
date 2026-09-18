@@ -30,11 +30,12 @@ Requires **Rust 1.75+** and a C toolchain for `sqlx` / SQLite. That's it — no 
 ## 2. Create a project
 
 ```bash
-rustio init myblog --preset blog
+rustio init myblog
 cd myblog
+rustio add model posts
 ```
 
-The `blog` preset scaffolds a project with one app called `posts`, already registered in `apps/mod.rs`. The `basic` preset gives you an empty project; the `api` preset scaffolds an `items` app instead.
+`rustio init` creates an empty project; `rustio add model posts` adds one model, already registered in `models/mod.rs`. (`rustio init myblog --model posts` does both in one step.)
 
 ## 3. Look at the model RustIO generated
 

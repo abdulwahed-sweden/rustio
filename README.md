@@ -119,7 +119,7 @@ A RustIO project revolves around three things:
 2. **Migrations** — explicit SQL changes to the database.
 3. **`rustio.schema.json`** — the stable machine-readable contract used by tooling.
 
-Everything else — admin screens, login flow, schema export, the setup menu —
+Everything else — admin screens, login flow, schema export, the scaffolding —
 exists to reduce repeated work around those three pieces.
 
 Each model lives in its own folder: `models/<name>/models.rs` is the struct,
