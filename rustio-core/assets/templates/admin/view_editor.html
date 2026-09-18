@@ -15,13 +15,13 @@
   </div>
 
   {% if error %}
-    <div class="rio-card" style="border-inline-start:4px solid #b91c1c;color:#b91c1c;margin-bottom:14px;">
+    <div class="rio-card rio-view-error">
       <strong>{{ t("Not saved.") }}</strong> {{ error }}
     </div>
   {% endif %}
 
   <div class="rio-card">
-    <p style="color:var(--rio-muted,#667);margin-top:0;">
+    <p class="rio-muted-text rio-flush-top">
       Choose the role each field plays in the list view, order them with the
       ▲ ▼ controls (top row appears first), tick <strong>Filter</strong> to
       expose a field as a list filter, use <strong>Merge into</strong> to
@@ -33,15 +33,15 @@
 
     {# i18n L3 — editing-language switch. This is a GET reload (no save), so
        changing it can never clobber another language's label. #}
-    <div class="rio-lang-bar" style="margin:6px 0 14px;display:flex;gap:10px;align-items:center;">
+    <div class="rio-lang-bar rio-row--tight rio-editor-note">
       <label>{{ t("Editing labels in:") }}
-        <select class="rio-input" data-lang-switch aria-label="{{ t('Editing language') }}" style="width:auto;">
+        <select class="rio-input rio-w-auto" data-lang-switch aria-label="{{ t('Editing language') }}">
           {% for code in language_options %}
             <option value="{{ code }}"{% if code == editing_lang %} selected{% endif %}>{{ code }}</option>
           {% endfor %}
         </select>
       </label>
-      <span style="color:var(--rio-muted,#667);">{{ t("View default:") }} <code>{{ view_default_language }}</code></span>
+      <span class="rio-muted-text">{{ t("View default:") }} <code>{{ view_default_language }}</code></span>
     </div>
 
     <form method="post" action="{{ save_action }}">
@@ -59,12 +59,12 @@
       <input type="hidden" name="editing_lang" value="{{ editing_lang }}">
       <table class="rio-table" data-view-editor>
         <thead>
-          <tr><th scope="col" style="width:1%;">{{ t("Order") }}</th><th scope="col">{{ t("Field") }}</th><th scope="col">{{ t("Role") }}</th><th scope="col" style="width:1%;">{{ t("Filter") }}</th><th scope="col">{{ t("Merge into") }}</th><th scope="col">{{ t("Display label") }} (<code>{{ editing_lang }}</code>)</th></tr>
+          <tr><th scope="col" class="rio-col-fit">{{ t("Order") }}</th><th scope="col">{{ t("Field") }}</th><th scope="col">{{ t("Role") }}</th><th scope="col" class="rio-col-fit">{{ t("Filter") }}</th><th scope="col">{{ t("Merge into") }}</th><th scope="col">{{ t("Display label") }} (<code>{{ editing_lang }}</code>)</th></tr>
         </thead>
         <tbody>
           {% for field in fields %}
             <tr data-row data-source="{{ field.source }}">
-              <td style="white-space:nowrap;">
+              <td class="rio-nowrap">
                 {# Position is explicit, not DOM-order — see build_edited_spec. #}
                 <input type="hidden" name="order[{{ field.source }}]" value="{{ loop.index0 }}" data-order>
                 <button type="button" class="rio-btn rio-btn--ghost" data-move="up" aria-label="Move {{ field.label }} up" title="{{ t('Move up') }}">&#9650;</button>
@@ -78,7 +78,7 @@
                   {% endfor %}
                 </select>
               </td>
-              <td style="text-align:center;">
+              <td class="rio-center">
                 <input type="checkbox" name="filterable[{{ field.source }}]" value="1" data-filterable
                        {% if field.filterable %} checked{% endif %}{% if field.is_hidden %} disabled{% endif %}
                        aria-label="Use {{ field.label }} as a filter">
@@ -111,7 +111,7 @@
       {# Explicit, separate control: make the editing language the view's stored
          default (what the list headers render in). Kept distinct from the
          editing-language switch above so the two never conflate. #}
-      <label style="display:inline-flex;gap:6px;align-items:center;margin-top:12px;">
+      <label class="rio-inline-actions rio-stack-sm">
         <input type="checkbox" name="set_as_default" value="1">
         Set <code>{{ editing_lang }}</code> as this view's default display language
         (currently <code>{{ view_default_language }}</code>)
@@ -122,15 +122,15 @@
          (read-only); only its shown label is editable. Auto-discovered for
          status-shaped fields; any already-labelled value also appears. #}
       {% if value_label_fields and value_label_fields | length > 0 %}
-        <h2 style="margin-top:22px;font-size:1.05rem;">{{ t("Value labels") }} <span style="color:var(--rio-muted,#667);font-weight:400;">(<code>{{ editing_lang }}</code>)</span></h2>
+        <h2 class="rio-stack-lg rio-section-title">{{ t("Value labels") }} <span class="rio-muted-text rio-weight-normal">(<code>{{ editing_lang }}</code>)</span></h2>
         {% for vf in value_label_fields %}
-          <div class="rio-card" style="margin-top:10px;">
+          <div class="rio-card rio-stack-sm">
             <strong>{{ vf.label }}</strong> <span class="rio-cell-id">{{ vf.source }}</span>
             {# Hidden list of the values offered, so the server knows which
                (source, value) pairs this submit covers. #}
             <input type="hidden" name="value_keys[{{ vf.source }}]" value="{{ vf.keys }}">
-            <table class="rio-table" style="margin-top:8px;">
-              <thead><tr><th scope="col" style="width:30%;">{{ t("Value") }}</th><th scope="col">{{ t("Display label") }}</th></tr></thead>
+            <table class="rio-table rio-stack-sm">
+              <thead><tr><th scope="col" class="rio-col-30">{{ t("Value") }}</th><th scope="col">{{ t("Display label") }}</th></tr></thead>
               <tbody>
                 {% for v in vf.values %}
                   <tr>
@@ -149,7 +149,7 @@
         {% endfor %}
       {% endif %}
 
-      <div style="margin-top:14px;display:flex;gap:8px;">
+      <div class="rio-stack rio-row--tight">
         <button type="submit" class="rio-btn rio-btn--primary">{{ t("Save view") }}</button>
         <a href="{{ model.list_url }}" class="rio-btn rio-btn--ghost">{{ t("Back to list") }}</a>
       </div>

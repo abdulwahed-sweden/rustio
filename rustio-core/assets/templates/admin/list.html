@@ -30,7 +30,7 @@
     <input type="hidden" name="layout" value="{{ layout | default('table') }}">
     <input type="hidden" name="sort" value="{{ sort | default('') }}">
     <input type="hidden" name="dir" value="{{ dir | default('') }}">
-    <input class="rio-input" aria-label="{{ t("Search") }} {{ model.display_name | lower }}" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…" style="max-width: 320px;">
+    <input class="rio-input rio-search-wide" aria-label="{{ t("Search") }} {{ model.display_name | lower }}" name="q" value="{{ query | default('') }}" placeholder="{{ t('Search') }} {{ model.display_name | lower }}…">
 
     {# DW-1 — filter controls from the view's `filters`. Submitting the toolbar
        applies them via the query string; the server honours ViewSpec.filters.
@@ -38,15 +38,15 @@
        and a Clear link cover the no-JS and reset cases. Option values are the
        English stored tokens; labels are translated via value labels. #}
     {% if filter_controls is defined and filter_controls | length > 0 %}
-      <span class="rio-filters" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span class="rio-filters rio-inline-actions--wide">
         {% for f in filter_controls %}
           {% if f.kind == 'exact' %}
-            <label class="rio-filter" style="display:inline-flex;gap:4px;align-items:center;">{{ f.label }}
-              <input class="rio-input" name="{{ f.source }}" value="{{ f.current }}" placeholder="{{ f.label }}…" data-filter style="max-width:150px;">
+            <label class="rio-filter rio-inline-actions">{{ f.label }}
+              <input class="rio-input rio-search-narrow" name="{{ f.source }}" value="{{ f.current }}" placeholder="{{ f.label }}…" data-filter>
             </label>
           {% else %}
-            <label class="rio-filter" style="display:inline-flex;gap:4px;align-items:center;">{{ f.label }}
-              <select class="rio-input" name="{{ f.source }}" data-filter style="width:auto;">
+            <label class="rio-filter rio-inline-actions">{{ f.label }}
+              <select class="rio-input rio-w-auto" name="{{ f.source }}" data-filter>
                 {% for o in f.options %}
                   <option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>
                 {% endfor %}
@@ -79,7 +79,7 @@
            only to users with edit permission; the handler also re-checks. #}
         {% if permissions.edit %}
           <form method="post" action="/admin/{{ model.singular_name | lower }}s/layout"
-                style="display:inline" data-confirm="Set {{ layout | default('table') }} as the default layout for {{ model.display_name | lower }}?">
+                data-confirm="Set {{ layout | default('table') }} as the default layout for {{ model.display_name | lower }}?" class="rio-inline-form">
             {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
             <input type="hidden" name="layout" value="{{ layout | default('table') }}">
             <input type="hidden" name="_return" value="{{ return_to | default('') }}">
@@ -97,7 +97,7 @@
       <h3 class="rio-card__title">{{ t("No") }} {{ model.display_name | lower }} {{ t("yet") }}</h3>
       <p>{{ t("Get started by creating your first") }} {{ model.singular_name | lower }}. {{ t("It only takes a moment.") }}</p>
       {% if permissions.create %}
-        <p style="margin-top: 18px;"><a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ {{ t("Add") }} {{ model.singular_name | lower }}</a></p>
+        <p class="rio-stack"><a href="{{ model.new_url }}" class="rio-btn rio-btn--primary">+ {{ t("Add") }} {{ model.singular_name | lower }}</a></p>
       {% endif %}
     </div>
   {% else %}
@@ -117,7 +117,7 @@
             {% if permissions.edit or permissions.delete %}
               <div class="rio-list-actions">
                 {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="rio-inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -133,7 +133,7 @@
             {% if permissions.edit or permissions.delete %}
               <div class="rio-card-actions">
                 {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
+                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="rio-inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
               </div>
             {% endif %}
           </div>
@@ -151,7 +151,7 @@
                 <th scope="col">{{ col.label }}</th>
               {% endfor %}
               {% if permissions.edit or permissions.delete %}
-                <th scope="col" style="width: 1%;">&nbsp;</th>
+                <th scope="col" class="rio-col-fit">&nbsp;</th>
               {% endif %}
             </tr>
           </thead>
@@ -164,7 +164,7 @@
                 {% if permissions.edit or permissions.delete %}
                   <td class="rio-row-actions">
                     {% if permissions.edit %}<a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                    {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
+                    {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="rio-inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button></form>{% endif %}
                   </td>
                 {% endif %}
               </tr>
@@ -183,7 +183,7 @@
               <th scope="col">{{ col.label }}</th>
             {% endfor %}
             {% if permissions.edit or permissions.delete %}
-              <th scope="col" style="width: 1%;">&nbsp;</th>
+              <th scope="col" class="rio-col-fit">&nbsp;</th>
             {% endif %}
           </tr>
         </thead>
@@ -199,7 +199,7 @@
                     <a class="rio-btn rio-btn--ghost" href="{{ row.edit_url }}">{{ t("Edit") }}</a>
                   {% endif %}
                   {% if permissions.delete %}
-                    <form method="post" action="{{ row.delete_url }}" style="display:inline;margin:0;" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?">
+                    <form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="rio-inline-form">
                       {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
                       <button type="submit" class="rio-btn rio-btn--ghost">{{ t("Delete") }}</button>
                     </form>
@@ -220,8 +220,7 @@
         <div class="rio-pagination__pages">
           {% for page in pagination.links %}
             <a href="{{ page.href }}"
-               class="{% if page.active %}is-active{% endif %}"
-               {% if page.disabled %}style="pointer-events:none;opacity:.4;"{% endif %}>{{ page.label }}</a>
+               class="{% if page.active %}is-active{% endif %}{% if page.disabled %} rio-is-disabled{% endif %}">{{ page.label }}</a>
           {% endfor %}
         </div>
       </footer>

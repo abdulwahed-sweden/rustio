@@ -24,12 +24,12 @@
     </ul>
 
     {% if view.schema_diff_html %}
-      <div style="margin-top: var(--space-4);">{{ view.schema_diff_html | safe }}</div>
+      <div class="rio-stack">{{ view.schema_diff_html | safe }}</div>
     {% endif %}
 
-    <p style="margin-top: var(--space-4);"><strong>{{ t("Explanation.") }}</strong> {{ view.explanation }}</p>
+    <p class="rio-stack"><strong>{{ t("Explanation.") }}</strong> {{ view.explanation }}</p>
 
-    <dl class="rio-detail-list" style="margin-top: var(--space-4);">
+    <dl class="rio-detail-list rio-stack">
       <dt>{{ t("Risk") }}</dt>
       <dd>{{ view.risk_label }}</dd>
 
@@ -43,12 +43,12 @@
         {% if view.validation_ok %}
           {{ t("Plan passes validation against the current schema.") }}
         {% else %}
-          <div class="rio-alert rio-alert--danger" style="margin:0;">{{ view.validation_message }}</div>
+          <div class="rio-alert rio-alert--danger rio-flush">{{ view.validation_message }}</div>
         {% endif %}
       </dd>
     </dl>
 
-    <h2 style="margin-top: var(--space-5);">{{ t("Warnings") }}</h2>
+    <h2 class="rio-stack-lg">{{ t("Warnings") }}</h2>
     {% if view.warnings | length == 0 %}
       <p>{{ t("None") }}</p>
     {% else %}
@@ -60,7 +60,7 @@
     <div class="rio-form__actions">
       <a href="/admin" class="rio-btn rio-btn--ghost">{{ t("Cancel") }}</a>
       {% if view.can_apply %}
-        <form method="post" action="{{ view.apply_url }}" style="display:inline;margin:0;">
+        <form method="post" action="{{ view.apply_url }}" class="rio-inline-form">
           {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
           <button type="submit" class="rio-btn rio-btn--primary">{{ t("Approve and apply") }}</button>
         </form>

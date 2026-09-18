@@ -45,7 +45,7 @@
         </ul>
       </section>
 
-      <section class="rio-card" style="margin-top:var(--space-4);">
+      <section class="rio-card rio-stack">
         <h3 class="rio-card__title">{{ t("Roles in this workspace") }}</h3>
         <ul class="rio-role-list">
           {% for r in account.roles %}
@@ -53,7 +53,7 @@
               <span class="rio-avatar rio-avatar--{{ r.style }}">{{ r.initials }}</span>
               <div>
                 <span class="rio-role-badge rio-role-badge--{{ r.style }}">{{ r.name }}</span>
-                {% if r.is_you %}<span class="rio-pill rio-pill-emerald" style="margin-inline-start:6px;">{{ t("You") }}</span>{% endif %}
+                {% if r.is_you %}<span class="rio-pill rio-pill-emerald rio-inline-gap">{{ t("You") }}</span>{% endif %}
                 <p>{{ r.desc }}</p>
               </div>
             </li>
@@ -65,7 +65,7 @@
     <aside class="rio-detail-side">
       <section class="rio-card">
         <h3 class="rio-card__title">{{ t("Account details") }}</h3>
-        <dl class="rio-meta-list" style="margin-top:var(--space-3);">
+        <dl class="rio-meta-list rio-stack-sm">
           <dt>{{ t("Email") }}</dt><dd>{{ account.email }}</dd>
           <dt>{{ t("Role") }}</dt><dd>{{ account.role_name }}</dd>
           <dt>{{ t("User ID") }}</dt><dd>#{{ account.user_id }}</dd>
@@ -73,15 +73,15 @@
           <dt>{{ t("Language") }}</dt><dd>{{ account.language }}</dd>
         </dl>
       </section>
-      <section class="rio-card" style="margin-top:var(--space-4);">
+      <section class="rio-card rio-stack">
         <h3 class="rio-card__title">{{ t("Security") }}</h3>
-        <dl class="rio-meta-list" style="margin-top:var(--space-3);">
+        <dl class="rio-meta-list rio-stack-sm">
           <dt>{{ t("Active sessions") }}</dt><dd>{{ account.sessions }}</dd>
         </dl>
-        <div style="margin-top:var(--space-4);display:flex;flex-wrap:wrap;gap:var(--space-2);">
+        <div class="rio-stack rio-tag-row">
           <a href="/admin/password_change" class="rio-btn rio-btn--primary">{{ t("Change password") }}</a>
           {% if account.sessions > 1 %}
-            <form method="post" action="/admin/sessions/clear" style="margin:0;" data-confirm="Sign out all your other sessions? You'll stay signed in here.">
+            <form method="post" action="/admin/sessions/clear" data-confirm="Sign out all your other sessions? You'll stay signed in here." class="rio-flush">
               {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
               <button type="submit" class="rio-btn rio-btn--ghost">{{ t("Sign out other sessions") }}</button>
             </form>

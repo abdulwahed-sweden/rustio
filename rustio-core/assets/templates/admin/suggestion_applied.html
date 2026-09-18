@@ -14,14 +14,14 @@
       {% for line in applied.change_lines %}<li>{{ line | safe }}</li>{% endfor %}
     </ul>
 
-    <h2 style="margin-top: var(--space-5);">{{ t("Files written") }}</h2>
+    <h2 class="rio-stack-lg">{{ t("Files written") }}</h2>
     <ul>
       {% for f in applied.files %}
         <li>{{ f.kind }} <code>{{ f.path }}</code></li>
       {% endfor %}
     </ul>
 
-    <h2 style="margin-top: var(--space-5);">Next</h2>
+    <h2 class="rio-stack-lg">Next</h2>
     <ol>
       <li>Stop this admin server.</li>
       <li>Run <code>rustio migrate apply</code> to apply the new migration to the database.</li>

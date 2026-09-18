@@ -546,6 +546,44 @@ select.rio-input, select.rio-form__input { cursor: pointer; }
  * Table
  * ========================================================================== */
 .rio-table-wrap { overflow-x: auto; }
+
+/* ---------------------------------------------------------------
+   Small shared primitives.
+   These replace inline style= attributes that were repeated across
+   templates. Each one carries the declarations the inline rule
+   carried, with magic numbers snapped onto the spacing scale.
+   --------------------------------------------------------------- */
+.rio-stack-sm { margin-top: var(--space-3); }
+.rio-stack    { margin-top: var(--space-4); }
+.rio-stack-lg { margin-top: var(--space-5); }
+.rio-flush    { margin: 0; }
+.rio-inline-form { display: inline; margin: 0; }
+.rio-inline-actions { display: inline-flex; align-items: center; gap: var(--space-1); }
+.rio-inline-actions--wide { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.rio-muted-text { color: var(--color-text-muted); }
+.rio-nowrap { white-space: nowrap; }
+.rio-center { text-align: center; }
+.rio-is-disabled { pointer-events: none; opacity: .4; }
+.rio-col-fit { width: 1%; }
+.rio-col-30 { width: 30%; }
+.rio-w-auto { width: auto; }
+.rio-search-wide { max-width: 320px; }
+.rio-search-narrow { max-width: 150px; }
+.rio-inline-gap { margin-inline-start: var(--space-2); }
+.rio-row { display: flex; align-items: center; gap: var(--space-3); }
+.rio-row--tight { display: flex; align-items: center; gap: var(--space-2); }
+.rio-tag-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.rio-section-title { font-size: var(--text-h3); font-weight: 600; }
+.rio-weight-normal { font-weight: 400; }
+.rio-flush-top { margin-top: 0; }
+.rio-editor-note { margin: var(--space-2) 0 var(--space-4); }
+/* Danger note in the view editor — uses the shipped semantic triplet
+   instead of the hardcoded red it carried. */
+.rio-view-error {
+  border-inline-start: 4px solid var(--bad-dot);
+  color: var(--bad-text);
+  margin-bottom: var(--space-4);
+}
 .rio-table { width: 100%; border-collapse: collapse; font-size: var(--text-meta); }
 .rio-table thead th {
   text-align: start; padding: var(--space-3) var(--space-4);
