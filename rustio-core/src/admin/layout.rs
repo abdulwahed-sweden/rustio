@@ -1540,6 +1540,9 @@ struct ModelView {
 struct ColumnView {
     name: String,
     label: String,
+    /// Presentation role from the active ViewSpec. The List template uses
+    /// this to compose identity / status / time without guessing from labels.
+    role: &'static str,
     sortable: bool,
     /// Canonical URL that sorts the list by this column, or `None` when the
     /// column is not sortable. Built by [`list_layout_href`] — the same
@@ -1586,6 +1589,10 @@ struct FilterOptionView {
 struct RowView {
     id: String,
     cells: Vec<String>,
+    /// Deterministic, presentation-only fallback for the List avatar.
+    /// Derived from the row's Title/Subtitle display identity; no schema
+    /// field or ViewSpec wire-format change is introduced.
+    avatar_initials: String,
     edit_url: String,
     delete_url: String,
 }
@@ -2443,6 +2450,14 @@ fn view_columns(
                 label: spec
                     .label_for(anchor, active_lang)
                     .unwrap_or_else(|| humanize_field_label(f.label)),
+                role: match c.role {
+                    crate::viewspec::FieldRole::Title => "title",
+                    crate::viewspec::FieldRole::Subtitle => "subtitle",
+                    crate::viewspec::FieldRole::Badge => "badge",
+                    crate::viewspec::FieldRole::Timestamp => "timestamp",
+                    crate::viewspec::FieldRole::Meta => "meta",
+                    crate::viewspec::FieldRole::Hidden => "hidden",
+                },
                 // A merged column has no single sortable source.
                 sortable: f.sortable && !merged,
                 sort_href: sort_link.0,
@@ -2455,6 +2470,34 @@ fn view_columns(
             })
         })
         .collect()
+}
+
+/// Build a compact two-letter avatar fallback from a row identity. Two words
+/// use their first letters ("Alice Smith" -> "AS"); one token uses its first
+/// two alphanumeric characters ("BK-2041" -> "BK"). Unicode letters are kept.
+fn avatar_initials(value: &str, fallback: &str) -> String {
+    let source = if value.trim().is_empty() {
+        fallback.trim()
+    } else {
+        value.trim()
+    };
+    let words: Vec<&str> = source.split_whitespace().filter(|w| !w.is_empty()).collect();
+    let mut out = String::new();
+    if words.len() >= 2 {
+        for word in words.iter().take(2) {
+            if let Some(ch) = word.chars().find(|c| c.is_alphanumeric()) {
+                out.extend(ch.to_uppercase());
+            }
+        }
+    } else {
+        for ch in source.chars().filter(|c| c.is_alphanumeric()).take(2) {
+            out.extend(ch.to_uppercase());
+        }
+    }
+    if out.is_empty() {
+        out.push('•');
+    }
+    out
 }
 
 /// One entry in the list-page layout switcher. `href` preserves the
@@ -2822,6 +2865,43 @@ pub async fn list_render(
         .iter()
         .map(|row| {
             let id = row.get(pk).cloned().unwrap_or_default();
+
+            // List avatar: use the same identity the ViewSpec selected for
+            // the row, preferring Title then Subtitle. FK titles use the
+            // resolved human label, not the raw integer id. Sensitive fields
+            // never feed the avatar; in that case fall back to the model name.
+            let avatar_seed = columns
+                .iter()
+                .enumerate()
+                .filter(|(_, col)| col.role == "title" || col.role == "subtitle")
+                .find_map(|(col_idx, col)| {
+                    if !col.merge.is_empty() {
+                        return col.merge.iter().find_map(|source| {
+                            if sensitive_cols.contains(source.as_str()) {
+                                return None;
+                            }
+                            row.get(source).cloned().filter(|v| !v.trim().is_empty())
+                        });
+                    }
+                    if sensitive_cols.contains(col.name.as_str()) {
+                        return None;
+                    }
+                    let raw = row.get(&col.name).cloned().unwrap_or_default();
+                    if raw.trim().is_empty() {
+                        return None;
+                    }
+                    if let Some(fk) = fk_lookups.iter().find(|f| f.column_index == col_idx) {
+                        return fk
+                            .id_to_label
+                            .get(&raw)
+                            .cloned()
+                            .or_else(|| Some(format!("#{raw}")));
+                    }
+                    Some(raw)
+                })
+                .unwrap_or_else(|| model.model_name().to_string());
+            let avatar_initials = avatar_initials(&avatar_seed, model.model_name());
+
             let cells = columns
                 .iter()
                 .enumerate()
@@ -2919,6 +2999,7 @@ pub async fn list_render(
             RowView {
                 id: id.clone(),
                 cells,
+                avatar_initials,
                 edit_url: format!("/admin/{slug}/{id}/edit"),
                 delete_url: format!("/admin/{slug}/{id}/delete"),
             }

@@ -167,19 +167,59 @@
        List/Cards label each cell by zipping `columns` to `row.cells` by
        index. The `table` branch below is the unchanged Phase-6 markup. #}
     {% if layout == 'list' %}
-      <div class="stack-list">
+      <div class="record-list">
         {% for row in rows %}
-          <div class="card card">
-            {% for cell in row.cells %}
-              <div class="detail-row"><span class="detail-label">{{ columns[loop.index0].label }}</span><span class="detail-value">{{ cell | safe }}</span></div>
-            {% endfor %}
+          <article class="record-list-item">
+            <div class="record-avatar" aria-hidden="true">{{ row.avatar_initials }}</div>
+
+            <div class="record-list-main">
+              <div class="record-list-heading">
+                <div class="record-list-identity">
+                  {% for cell in row.cells %}
+                    {% if columns[loop.index0].role == 'title' %}
+                      <div class="record-title">{{ cell | safe }}</div>
+                    {% endif %}
+                  {% endfor %}
+                  {% for cell in row.cells %}
+                    {% if columns[loop.index0].role == 'subtitle' %}
+                      <div class="record-subtitle">{{ cell | safe }}</div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+
+                <div class="record-list-status">
+                  {% for cell in row.cells %}
+                    {% if columns[loop.index0].role == 'badge' %}
+                      {{ cell | safe }}
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+
+              <div class="record-list-meta">
+                {% for cell in row.cells %}
+                  {% set col = columns[loop.index0] %}
+                  {% if col.role == 'timestamp' %}
+                    <span class="record-meta-item"><span class="record-meta-label">{{ col.label }}</span>{{ cell | safe }}</span>
+                  {% elif col.role != 'title' and col.role != 'subtitle' and col.role != 'badge' %}
+                    <span class="record-meta-item"><span class="record-meta-label">{{ col.label }}</span>{{ cell | safe }}</span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </div>
+
             {% if permissions.edit or permissions.delete %}
-              <div class="actions">
+              <div class="record-list-actions">
                 {% if permissions.edit %}<a class="button button-secondary button-sm" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}<form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">{% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}<button type="submit" class="button button-secondary button-sm">{{ t("Delete") }}</button></form>{% endif %}
+                {% if permissions.delete %}
+                  <form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">
+                    {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+                    <button type="submit" class="button button-danger button-sm">{{ t("Delete") }}</button>
+                  </form>
+                {% endif %}
               </div>
             {% endif %}
-          </div>
+          </article>
         {% endfor %}
       </div>
     {% elif layout == 'cards' %}

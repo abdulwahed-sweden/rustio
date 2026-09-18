@@ -433,6 +433,59 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 .pagination-pages a.is-disabled { opacity: .45; pointer-events: none; }
 .card + .pagination { margin-top: -1px; border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); }
 
+/* List layout — a horizontal record summary, not a vertical stack of
+   field labels. The avatar is deliberately square with a mild corner radius:
+   enough softness to fit the system, without turning every record into a
+   circular profile picture. */
+.record-list { display: grid; gap: 10px; }
+.record-list-item {
+  display: grid;
+  grid-template-columns: 48px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.record-list-item:hover { border-color: var(--blue-line); background: #fbfcfe; }
+.record-avatar {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid var(--blue-line);
+  border-radius: 8px;
+  background: var(--blue-soft);
+  color: var(--blue-dark);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1;
+}
+.record-list-main { display: grid; min-width: 0; gap: 6px; }
+.record-list-heading { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.record-list-identity { min-width: 0; }
+.record-title { min-width: 0; color: var(--ink); font-size: 15px; font-weight: 680; line-height: 1.35; overflow-wrap: anywhere; }
+.record-title .table-link, .record-title > a { font-weight: 680; }
+.record-subtitle { margin-top: 2px; color: var(--ink-2); font-size: 14px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+.record-list-status { display: inline-flex; flex: none; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.record-list-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px 16px; color: var(--ink-2); font-size: 14px; font-weight: 500; line-height: 1.4; }
+.record-meta-item { display: inline-flex; min-width: 0; align-items: baseline; gap: 6px; overflow-wrap: anywhere; }
+.record-meta-label { color: var(--ink-mono); font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.record-list-actions { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: 8px; padding-left: 4px; }
+
+@media (max-width:600px) {
+  .record-list-item { grid-template-columns: 44px minmax(0,1fr); align-items: start; gap: 12px; padding: 12px; }
+  .record-avatar { width: 44px; height: 44px; }
+  .record-list-heading { display: grid; gap: 6px; }
+  .record-list-status { justify-content: flex-start; }
+  .record-list-actions { grid-column: 2; justify-content: flex-start; padding-left: 0; }
+}
+
 /* Empty state — .card-body copy, centred. */
 .empty { padding: 44px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); text-align: center; }
 .empty-icon { display: grid; width: 40px; height: 40px; margin: 0 auto 12px; place-items: center; border-radius: 9px; background: var(--blue-soft); color: var(--blue); font-size: 17px; font-weight: 800; }
