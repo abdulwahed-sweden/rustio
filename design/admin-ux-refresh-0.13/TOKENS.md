@@ -150,11 +150,20 @@ screens use the **focused** measure.
 | Element | Height |
 |---|---|
 | Input, select, standard button | 38px |
+| Compact masthead utility control | 32px |
 | Small action button | ~31px |
 | Segmented-control segment | ~31px |
 | Table header | 40px |
 | Table row | 48px minimum |
 | Rail item | 38px, 4px apart |
+
+**Compact masthead utility controls are 32px, not 38px.** The masthead is
+56px, and a 38px control leaves 9px of clearance above and below — too tight
+beside the 31px log-out button it sits next to. The exception covers utility
+controls in the masthead only: the language switcher is the one in the product
+today. Every control inside the page — every form input, every select, every
+standard button — is 38px. No board renders the masthead's utility controls,
+which is why this needed stating explicitly.
 
 | Element | Value |
 |---|---|
