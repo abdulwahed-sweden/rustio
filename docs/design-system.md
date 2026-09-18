@@ -154,7 +154,8 @@ weight; that constraint is what keeps the two systems one system.
 - `rustio-core/src/admin/layout.rs` — the context dicts, and the handful of
   class strings Rust emits (status badges, form controls, table cells).
 - `rustio-core/src/admin.rs` — the legacy string-built shell behind
-  `/admin/<model>/create`, `/…/history`, `/…/delete` and `/admin/logout`.
+  `/admin/<model>/create` (the compatibility alias for `/new`), `/…/history`,
+  `/…/delete` and `/admin/logout`.
 - `rustio-core/build.rs` — the Tailwind/minify step and its passthrough.
 - `rustio-core/src/admin/design.rs` — `rustio.design.json`: project name and
   logo initial.

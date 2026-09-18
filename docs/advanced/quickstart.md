@@ -111,12 +111,19 @@ From **one struct + one derive**:
 |---|---|
 | `GET /admin` | dashboard listing every registered model |
 | `GET /admin/posts` | list with search, filters, chips, columns toggle, row expansion, sort, bulk delete |
-| `GET /admin/posts/create` · `POST /admin/posts/create` | create form |
+| `GET /admin/posts/new` · `POST /admin/posts/new` | create form |
 | `GET /admin/posts/:id` | read-only detail page |
 | `GET /admin/posts/:id/edit` · `POST /admin/posts/:id/edit` | edit form |
 | `GET /admin/posts/:id/delete` · `POST /admin/posts/:id/delete` | confirmed delete |
 | `POST /admin/posts/bulk_action` | multi-row delete |
+| `GET /admin/posts/create` · `POST /admin/posts/create` | compatibility alias for the create form — see below |
 | `GET /admin/login` · `POST /admin/login` · `POST /admin/logout` | auth |
+
+The create form is `/admin/<model>/new`. `/admin/<model>/create` is kept as
+a compatibility alias for projects generated before the templated admin
+landed — it still renders and still saves, but nothing the admin renders
+links to it. New code should use `/new`.
+
 
 Also generated: `rustio.schema.json` (run `rustio schema`) — the contract every AI tool reads.
 

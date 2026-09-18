@@ -906,6 +906,22 @@ where
     T: AdminModel + Model,
 {
     let base = format!("/admin/{}", T::ADMIN_NAME);
+    // FORM-ROUTE CONTRACT. The canonical create route is
+    // `/admin/<model>/new` (GET + POST), registered generically in
+    // `Admin::register` before this loop runs; it is what every template
+    // renders and what `rustio init` projects link to.
+    //
+    // `/admin/<model>/create` is a **compatibility alias**, not a second
+    // contract. Projects generated before the templated engine landed have
+    // it in bookmarks and in their own pages, so it stays served — as a
+    // self-consistent pair: this GET renders the legacy form and that form
+    // posts back here, never into the templated handler. Nothing the admin
+    // renders links to it any more.
+    //
+    // `both_form_route_contracts_are_served` in
+    // `tests/admin_form_navigation.rs` holds both halves in place: dropping
+    // `/create` breaks older projects, dropping `/new` breaks every page
+    // this admin renders.
     let create_path = format!("{base}/create");
     let edit_path = format!("{base}/:id/edit");
     let delete_path = format!("{base}/:id/delete");
@@ -2475,7 +2491,7 @@ fn list_response<T: AdminModel>(
     let admin_name = T::ADMIN_NAME;
 
     let page_actions = format!(
-        r#"<a class="button button-primary" href="/admin/{name}/create">{icon}<span>Add {singular}</span></a>"#,
+        r#"<a class="button button-primary" href="/admin/{name}/new">{icon}<span>Add {singular}</span></a>"#,
         name = escape_html(admin_name),
         singular = escape_html(singular),
         icon = icon_plus(),
@@ -2497,7 +2513,7 @@ fn list_response<T: AdminModel>(
 <h3>Start by adding your first {singular_lower}</h3>
 <p>This table is empty. Create the first record to get started.</p>
 {hint}
-<a class="button button-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
+<a class="button button-primary" href="/admin/{name}/new">{plus}<span>Add {singular_lower}</span></a>
 </div>
 </div>"#,
             icon = icon_inbox(),
@@ -2525,7 +2541,7 @@ fn list_response<T: AdminModel>(
 <p>Try a different search term, clear the filters, or add a new {singular_lower}.</p>
 <div class="button-row">
 <a class="button button-secondary" href="/admin/{name}">{reset}<span>Clear filters</span></a>
-<a class="button button-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
+<a class="button button-primary" href="/admin/{name}/new">{plus}<span>Add {singular_lower}</span></a>
 </div>
 </div>
 </div>"#,
