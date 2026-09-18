@@ -519,25 +519,27 @@ mod tests {
         let spec = ViewSpec::from_schema_model(&assignment_model());
         let rows = assignment_rows();
 
-        // Derivation promotes the first FK to Title, the second to Subtitle.
+        // Derivation promotes the first FK to Title, the second to Subtitle,
+        // and orders the spec by role — so the table reads identity, context,
+        // state, time, left to right.
         let table = RenderedView::render_with_layout(&spec, ViewLayout::Table, &rows);
         assert_eq!(
             first_row_sources(&table),
             vec![
                 vec!["booking_id".to_string()],
                 vec!["resource_id".to_string()],
-                vec!["accepted_at".to_string()],
                 vec!["status".to_string()],
+                vec!["accepted_at".to_string()],
             ],
-            "Table still shows every visible field"
+            "Table still shows every visible field, in role order"
         );
         assert_eq!(
             first_row_roles(&table),
             vec![
                 FieldRole::Title,
                 FieldRole::Subtitle,
-                FieldRole::Timestamp,
                 FieldRole::Badge,
+                FieldRole::Timestamp,
             ]
         );
 
@@ -552,8 +554,8 @@ mod tests {
             vec![
                 vec!["booking_id".to_string()],
                 vec!["resource_id".to_string()],
-                vec!["accepted_at".to_string()],
                 vec!["status".to_string()],
+                vec!["accepted_at".to_string()],
             ],
             "List identifies the record, not just when it happened"
         );

@@ -558,6 +558,26 @@ impl ViewSpec {
     /// returns a [`ViewSpec`] that is guaranteed to pass
     /// [`ViewSpec::validate`].
     ///
+    /// ## Field order
+    ///
+    /// A **derived** spec orders its fields by role, not by schema
+    /// declaration order, so the default list reads identity → context →
+    /// state → time → detail left to right:
+    ///
+    /// [`Title`] · [`Subtitle`] · [`Badge`] · [`Timestamp`] · [`Meta`] ·
+    /// [`Hidden`]
+    ///
+    /// Within one role, declaration order is preserved, and the sort is
+    /// stable, so the same schema always derives the same order. Every
+    /// field survives the reordering — `Hidden` fields stay in the spec,
+    /// last, because a developer editing the view still needs to see and
+    /// reorder them.
+    ///
+    /// **This applies to derivation only.** A ViewSpec that exists as
+    /// authored data — a project's `<model>.view.json` — has a meaningful
+    /// `fields` order that is never re-sorted, normalised or rewritten on
+    /// load or on save.
+    ///
     /// Defaults:
     /// - `layout` is [`ViewLayout::List`].
     /// - `filters` lists the source of every field marked filterable. By
@@ -571,8 +591,8 @@ impl ViewSpec {
         // front so the role pass can simply ask "is this an identity source?".
         let (title_source, subtitle_source) = pick_identity_sources(&model.fields);
 
-        // Pass 2: assign a role (and filterability) to every field, in the
-        // schema's declared order — which becomes the view's display order.
+        // Pass 2: assign a role (and filterability) to every field, walking
+        // the schema's declared order.
         let mut fields: Vec<FieldSpec> = Vec::with_capacity(model.fields.len());
         let mut filters: Vec<String> = Vec::new();
         for f in &model.fields {
@@ -593,6 +613,12 @@ impl ViewSpec {
             });
         }
 
+        // Pass 3: order by role so the derived list reads identity → context
+        // → state → time → detail. `sort_by_key` is stable, so fields sharing
+        // a role keep the declaration order pass 2 gave them, and nothing is
+        // dropped — `Hidden` fields sort last but stay in the spec.
+        fields.sort_by_key(|f| role_order(f.role));
+
         Self {
             version: VIEWSPEC_VERSION,
             model: model.name.clone(),
@@ -605,6 +631,23 @@ impl ViewSpec {
             labels: BTreeMap::new(),
             value_labels: BTreeMap::new(),
         }
+    }
+}
+
+/// Display rank of a role in a **derived** ViewSpec: identity first, then
+/// the row's context, its state, its time, its detail, and finally the
+/// fields that never render.
+///
+/// Only [`ViewSpec::from_schema_model`] consults this. An authored spec's
+/// `fields` order is the developer's and is never re-ranked.
+fn role_order(role: FieldRole) -> u8 {
+    match role {
+        FieldRole::Title => 0,
+        FieldRole::Subtitle => 1,
+        FieldRole::Badge => 2,
+        FieldRole::Timestamp => 3,
+        FieldRole::Meta => 4,
+        FieldRole::Hidden => 5,
     }
 }
 
@@ -1336,6 +1379,272 @@ mod tests {
         }
     }
 
+    /// A field carrying a declared `belongs_to` — what
+    /// `#[rustio(belongs_to = "…")]` writes into the schema, and the only
+    /// thing the identity fallback promotes.
+    fn fk(name: &str, target: &str, display: &str) -> SchemaField {
+        SchemaField {
+            relation: Some(crate::schema::Relation {
+                model: target.to_string(),
+                field: "id".to_string(),
+                kind: crate::schema::RelationKind::BelongsTo,
+                display_field: Some(display.to_string()),
+                required: None,
+                on_delete: None,
+            }),
+            ..field(name, "i64")
+        }
+    }
+
+    fn model_of(name: &str, fields: Vec<SchemaField>) -> SchemaModel {
+        SchemaModel {
+            name: name.to_string(),
+            table: String::new(),
+            admin_name: String::new(),
+            display_name: String::new(),
+            singular_name: name.to_string(),
+            fields,
+            relations: Vec::new(),
+            core: false,
+        }
+    }
+
+    /// `(source, role)` in the order the spec holds them.
+    fn order_of(spec: &ViewSpec) -> Vec<(&str, FieldRole)> {
+        spec.fields
+            .iter()
+            .map(|f| (f.source.as_str(), f.role))
+            .collect()
+    }
+
+    /// DECISION B (1) — a relation-heavy model derives in role order, so the
+    /// default list reads identity → context → state → time, and `Hidden`
+    /// survives at the end rather than being dropped.
+    #[test]
+    fn derived_fields_are_ordered_by_role() {
+        let model = model_of(
+            "Assignment",
+            vec![
+                field("id", "i64"),
+                fk("booking_id", "Booking", "booking_number"),
+                fk("resource_id", "Resource", "name"),
+                field("accepted_at", "DateTime"),
+                field("status", "String"),
+            ],
+        );
+        let spec = ViewSpec::from_schema_model(&model);
+        assert_eq!(
+            order_of(&spec),
+            vec![
+                ("booking_id", FieldRole::Title),
+                ("resource_id", FieldRole::Subtitle),
+                ("status", FieldRole::Badge),
+                ("accepted_at", FieldRole::Timestamp),
+                ("id", FieldRole::Hidden),
+            ],
+            "derived order is Title, Subtitle, Badge, Timestamp, then Hidden last"
+        );
+        // The visible run — what the table renders left to right.
+        let visible: Vec<&str> = spec
+            .fields
+            .iter()
+            .filter(|f| f.role != FieldRole::Hidden)
+            .map(|f| f.source.as_str())
+            .collect();
+        assert_eq!(
+            visible,
+            vec!["booking_id", "resource_id", "status", "accepted_at"]
+        );
+    }
+
+    /// DECISION B (2) — the sort is stable: fields sharing a role keep the
+    /// declaration order relative to each other.
+    #[test]
+    fn derived_order_is_stable_within_a_role() {
+        // Four Meta fields and two Badges, deliberately interleaved in the
+        // declaration so a non-stable sort would scramble them.
+        let model = model_of(
+            "Widget",
+            vec![
+                field("alpha_count", "i32"),
+                field("is_active", "bool"),
+                field("beta_count", "i32"),
+                field("is_archived", "bool"),
+                field("gamma_count", "i32"),
+                field("delta_count", "i32"),
+            ],
+        );
+        let spec = ViewSpec::from_schema_model(&model);
+        let by_role = |want: FieldRole| -> Vec<&str> {
+            spec.fields
+                .iter()
+                .filter(|f| f.role == want)
+                .map(|f| f.source.as_str())
+                .collect()
+        };
+        assert_eq!(
+            by_role(FieldRole::Badge),
+            vec!["is_active", "is_archived"],
+            "badges keep declaration order relative to each other"
+        );
+        assert_eq!(
+            by_role(FieldRole::Meta),
+            vec!["alpha_count", "beta_count", "gamma_count", "delta_count"],
+            "metas keep declaration order relative to each other"
+        );
+        // Deriving twice yields the same order — no hash iteration anywhere.
+        assert_eq!(
+            order_of(&ViewSpec::from_schema_model(&model)),
+            order_of(&spec),
+            "derivation is deterministic"
+        );
+    }
+
+    /// DECISION B (3) — when every visible field lands on the same role there
+    /// is nothing to reorder, so declaration order survives untouched.
+    #[test]
+    fn all_meta_model_keeps_declaration_order() {
+        let model = model_of(
+            "Reading",
+            vec![
+                field("zulu", "i32"),
+                field("yankee", "i32"),
+                field("xray", "i32"),
+                field("whiskey", "i32"),
+            ],
+        );
+        let spec = ViewSpec::from_schema_model(&model);
+        assert!(spec.fields.iter().all(|f| f.role == FieldRole::Meta));
+        assert_eq!(
+            spec.fields
+                .iter()
+                .map(|f| f.source.as_str())
+                .collect::<Vec<_>>(),
+            vec!["zulu", "yankee", "xray", "whiskey"],
+            "a same-role model is left in declaration order, not alphabetised"
+        );
+    }
+
+    /// DECISION B (4) — the boundary. A ViewSpec that exists as authored data
+    /// keeps the order its author chose. Exercised through the real load path
+    /// (`parse`), not a hand-built `Vec`.
+    #[test]
+    fn a_loaded_viewspec_keeps_its_authored_field_order() {
+        // Deliberately "wrong" by the derivation's taste: Hidden first, then
+        // Timestamp, then Badge, then Title last.
+        let json = r#"{
+          "version": 1,
+          "model": "Assignment",
+          "layout": "table",
+          "fields": [
+            { "source": "id",          "role": "hidden"    },
+            { "source": "accepted_at", "role": "timestamp" },
+            { "source": "status",      "role": "badge"     },
+            { "source": "resource_id", "role": "subtitle"  },
+            { "source": "booking_id",  "role": "title"     }
+          ],
+          "filters": [],
+          "default_language": "en"
+        }"#;
+        let loaded = ViewSpec::parse(json).expect("authored spec parses");
+        assert_eq!(
+            loaded
+                .fields
+                .iter()
+                .map(|f| f.source.as_str())
+                .collect::<Vec<_>>(),
+            vec!["id", "accepted_at", "status", "resource_id", "booking_id"],
+            "an authored order is authoritative and is never re-ranked by role"
+        );
+        // And it is emphatically not what derivation would have produced.
+        let derived = ViewSpec::from_schema_model(&model_of(
+            "Assignment",
+            vec![
+                field("id", "i64"),
+                fk("booking_id", "Booking", "booking_number"),
+                fk("resource_id", "Resource", "name"),
+                field("accepted_at", "DateTime"),
+                field("status", "String"),
+            ],
+        ));
+        assert_ne!(
+            loaded.fields.iter().map(|f| &f.source).collect::<Vec<_>>(),
+            derived.fields.iter().map(|f| &f.source).collect::<Vec<_>>(),
+            "the fixture must actually differ from the derived order, or it proves nothing"
+        );
+    }
+
+    /// DECISION B (5) — round-tripping a loaded spec is order-preserving and
+    /// canonically deterministic. This deliberately does not claim the source
+    /// JSON's whitespace survives; it claims the *field order* does and that
+    /// serialising twice gives the same bytes.
+    #[test]
+    fn loaded_viewspec_round_trips_without_reordering() {
+        let json = r#"{
+          "version": 1,
+          "model": "Assignment",
+          "layout": "table",
+          "fields": [
+            { "source": "status",      "role": "badge", "filterable": true },
+            { "source": "booking_id",  "role": "title"     },
+            { "source": "id",          "role": "hidden"    },
+            { "source": "accepted_at", "role": "timestamp" }
+          ],
+          "filters": ["status"],
+          "default_language": "en"
+        }"#;
+        let loaded = ViewSpec::parse(json).expect("parses");
+        let once = serde_json::to_string_pretty(&loaded).expect("serialises");
+        let again = ViewSpec::parse(&once).expect("re-parses");
+        assert_eq!(
+            again.fields.iter().map(|f| &f.source).collect::<Vec<_>>(),
+            loaded.fields.iter().map(|f| &f.source).collect::<Vec<_>>(),
+            "a save/load cycle preserves authored field order"
+        );
+        assert_eq!(
+            serde_json::to_string_pretty(&again).expect("serialises"),
+            once,
+            "canonical serialisation is deterministic"
+        );
+        assert_eq!(
+            again.version, VIEWSPEC_VERSION,
+            "the wire version is untouched"
+        );
+    }
+
+    /// DECISION B (6) — reordering moves fields, it never removes them.
+    #[test]
+    fn role_ordering_loses_no_field() {
+        let model = customer_model();
+        let spec = ViewSpec::from_schema_model(&model);
+        assert_eq!(
+            spec.fields.len(),
+            model.fields.len(),
+            "every schema field is represented in the derived spec"
+        );
+        let mut got: Vec<&str> = spec.fields.iter().map(|f| f.source.as_str()).collect();
+        let mut want: Vec<&str> = model.fields.iter().map(|f| f.name.as_str()).collect();
+        got.sort_unstable();
+        want.sort_unstable();
+        assert_eq!(got, want, "the same set of fields, only reordered");
+        // Hidden fields are present and last.
+        assert!(spec
+            .fields
+            .iter()
+            .any(|f| f.source == "password_hash" && f.role == FieldRole::Hidden));
+        let first_hidden = spec
+            .fields
+            .iter()
+            .position(|f| f.role == FieldRole::Hidden)
+            .expect("has hidden fields");
+        assert!(
+            spec.fields[first_hidden..]
+                .iter()
+                .all(|f| f.role == FieldRole::Hidden),
+            "once the hidden run starts, nothing visible follows it"
+        );
+    }
+
     /// A "Customer"-shaped model in declared order, matching the agreed
     /// mapping table.
     fn customer_model() -> SchemaModel {
@@ -1376,18 +1685,22 @@ mod tests {
         assert_eq!(spec.model, "Customer");
         assert_eq!(spec.layout, ViewLayout::List);
 
-        // Declared order is preserved as display order.
+        // A derived spec is ordered by role — Title, Subtitle, Badge,
+        // Timestamp, Meta, Hidden — with declaration order kept inside each
+        // role. `name` is the Title, `email` the Subtitle, `status` the
+        // Badge, `created_at` the Timestamp, `notes` the lone Meta, and the
+        // two Hidden fields land last in the order they were declared.
         let order: Vec<&str> = spec.fields.iter().map(|f| f.source.as_str()).collect();
         assert_eq!(
             order,
             vec![
-                "id",
                 "name",
                 "email",
                 "status",
                 "created_at",
-                "password_hash",
-                "notes"
+                "notes",
+                "id",
+                "password_hash"
             ]
         );
 
