@@ -225,20 +225,6 @@ pub(crate) const USER_ENTRY: AdminEntry = AdminEntry {
 // Bundled CSS + icon assets
 // ---------------------------------------------------------------------------
 
-/// Framework-owned stylesheet. Bundled into the binary via `include_str!`
-/// and served at `/admin/assets/admin.css` so the admin pages reference
-/// it with a single `<link>`. Projects must not edit this.
-const ADMIN_CSS_BUNDLE: &str = include_str!("../assets/admin.css");
-
-/// Cache-buster appended to the stylesheet `<link>` URL as `?v=…`.
-/// Uses the CSS byte length — changes on every content edit, so the
-/// browser fetches a fresh copy without relying on the etag /
-/// must-revalidate dance (which some browsers treat softly). Served
-/// bytes are still cached at the `/admin/assets/admin.css` route;
-/// the query string is ignored by the handler but re-keys the HTTP
-/// cache entry.
-const ADMIN_CSS_VER: usize = ADMIN_CSS_BUNDLE.len();
-
 /// Framework-owned favicon: a compact SVG rust-coloured square with a
 /// white "R". Scalable, CSP-friendly, zero network dependency. Served
 /// at `/admin/assets/favicon.svg` and referenced from every page
@@ -250,7 +236,7 @@ const ADMIN_FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" view
 // Inline Lucide SVG icon markup. Each function returns a complete
 // `<svg>` element sized by the caller's CSS (16px for toolbar,
 // 18px for nav, etc.). `currentColor` lets the surrounding class
-// (`.rio-btn-primary`, `.rio-icon-btn.rio-danger`) drive the stroke.
+// (`.button-primary`, `.button button-quiet.button-danger`) drive the stroke.
 fn svg(path: &str) -> String {
     format!(
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{path}</svg>"#
@@ -417,7 +403,7 @@ impl Admin {
                 // and neither should ever render a shell page on a
                 // 404 / 500 from an upstream handler.
                 let path = req.uri().path();
-                if path == "/admin/assets/admin.css" || path == "/admin/assets/favicon.svg" {
+                if path == "/admin/assets/favicon.svg" {
                     return next.run(req).await;
                 }
                 let user_email = req
@@ -451,12 +437,6 @@ impl Admin {
             }
         });
 
-        // Static asset: framework-owned stylesheet. Cached for an hour
-        // because the bytes are pinned to the compiled binary — the
-        // content can only change with a redeploy.
-        router = router.get("/admin/assets/admin.css", |_req, _params| async move {
-            Ok::<Response, Error>(admin_css_response())
-        });
         // Favicon — scalable SVG served from the same /admin/assets
         // namespace. No binary asset, no external dependency, full
         // brand colouring. Requested by every browser tab.
@@ -1644,73 +1624,20 @@ fn redirect(to: &str) -> Response {
         .expect("valid redirect")
 }
 
-/// Serve the bundled admin stylesheet.
-///
-/// We use `no-cache, must-revalidate` rather than a long-lived
-/// `max-age` because the CSS is baked into the binary via
-/// `include_str!` — when a project redeploys, the CSS may have
-/// changed, and a stale browser cache would silently render the old
-/// UI for up to the cache lifetime. `no-cache` forces the browser to
-/// re-send the request every time, but the 304 short-circuit on the
-/// cheap ETag keeps the wire cost near-zero for repeat loads.
-///
-/// The ETag fingerprints the compiled CSS bytes so it changes every
-/// time the binary is rebuilt with a different stylesheet. Browsers
-/// sending `If-None-Match` get 304 Not Modified.
-fn admin_css_response() -> Response {
-    use hyper::header::HeaderValue;
-    let body = ADMIN_CSS_BUNDLE.as_bytes();
-    // Cheap stable fingerprint: length + first/last 4 bytes. Good
-    // enough to change whenever the CSS content changes; avoids
-    // pulling a hash crate. `'W/'` prefix marks it as a weak ETag
-    // (byte-for-byte equivalence not guaranteed across CDNs).
-    let etag = {
-        let len = body.len();
-        let head = u32::from_le_bytes([
-            *body.first().unwrap_or(&0),
-            *body.get(1).unwrap_or(&0),
-            *body.get(2).unwrap_or(&0),
-            *body.get(3).unwrap_or(&0),
-        ]);
-        let tail = u32::from_le_bytes([
-            *body.get(len.saturating_sub(4)).unwrap_or(&0),
-            *body.get(len.saturating_sub(3)).unwrap_or(&0),
-            *body.get(len.saturating_sub(2)).unwrap_or(&0),
-            *body.get(len.saturating_sub(1)).unwrap_or(&0),
-        ]);
-        format!("W/\"rio-{len}-{head:x}-{tail:x}\"")
-    };
-    let mut resp = hyper::Response::builder()
-        .status(200)
-        .header("content-type", "text/css; charset=utf-8")
-        .header("cache-control", "no-cache, must-revalidate")
-        .header("etag", etag)
-        .body(Full::new(Bytes::from_static(ADMIN_CSS_BUNDLE.as_bytes())))
-        .expect("valid css response");
-    let h = resp.headers_mut();
-    // Nosniff on the stylesheet too — an attacker who can upload to an
-    // admin-adjacent endpoint mustn't get the browser to execute it.
-    h.insert(
-        "x-content-type-options",
-        HeaderValue::from_static("nosniff"),
-    );
-    resp
-}
-
 /// Serve the admin favicon — a scalable SVG. Cached for a day because
 /// the brand mark changes rarely (and only with a redeploy), and the
 /// bytes are tiny. `nosniff` for the same reason the CSS has it: an
 /// attacker must not trick the browser into executing it as script.
-/// `<span class="rio-env-chip">` markup, rendered consistently
+/// `<span class="env-chip">` markup, rendered consistently
 /// everywhere the admin shell appears (main pages *and* the auth
 /// shell). Signed-out operators still see whether they're logging
 /// into dev or prod, which closes a small phishing surface — an
 /// attacker who puts up a lookalike dev admin can't hide the chip.
 fn env_chip_html() -> String {
     if crate::auth::in_production() {
-        r#"<span class="rio-env-chip is-prod">production</span>"#.to_string()
+        r#"<span class="env-chip is-prod">production</span>"#.to_string()
     } else {
-        r#"<span class="rio-env-chip">development</span>"#.to_string()
+        r#"<span class="env-chip">development</span>"#.to_string()
     }
 }
 
@@ -1805,10 +1732,10 @@ fn render_breadcrumbs(crumbs: &[Crumb<'_>]) -> String {
         return String::new();
     }
     let sep = format!(
-        r#"<span class="rio-crumb-sep">{}</span>"#,
+        r#"<span class="breadcrumb-sep">{}</span>"#,
         icon_chevron_right()
     );
-    let mut out = String::from(r#"<nav class="rio-breadcrumbs" aria-label="Breadcrumb">"#);
+    let mut out = String::from(r#"<nav class="breadcrumb" aria-label="Breadcrumb">"#);
     for (i, (label, href)) in crumbs.iter().enumerate() {
         let is_last = i == crumbs.len() - 1;
         if i > 0 {
@@ -1817,7 +1744,7 @@ fn render_breadcrumbs(crumbs: &[Crumb<'_>]) -> String {
         match (is_last, href) {
             (true, _) => {
                 out.push_str(&format!(
-                    r#"<span class="rio-crumb-current" aria-current="page">{}</span>"#,
+                    r#"<span class="breadcrumb-current" aria-current="page">{}</span>"#,
                     escape_html(label),
                 ));
             }
@@ -1883,13 +1810,13 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
 
     let mut models_html = String::new();
     if !user_facing.is_empty() {
-        models_html.push_str(r#"<div class="rio-nav">"#);
-        models_html.push_str(r#"<div class="rio-nav-section">Models</div>"#);
+        models_html.push_str(r#"<div class="module-nav">"#);
+        models_html.push_str(r#"<div class="module-title">Models</div>"#);
         for e in &user_facing {
             let active_cls = if shell.active == Some(e.admin_name) {
-                "rio-nav-link is-active"
+                "module-link is-active"
             } else {
-                "rio-nav-link"
+                "module-link"
             };
             models_html.push_str(&format!(
                 r#"<a class="{cls}" href="/admin/{name}">{icon}<span>{label}</span></a>"#,
@@ -1907,19 +1834,19 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
     // sentinel strings so they can claim their own highlight without
     // this falling through and lighting up Dashboard on their pages.
     let dashboard_active = if shell.active.is_none() {
-        "rio-nav-link is-active"
+        "module-link is-active"
     } else {
-        "rio-nav-link"
+        "module-link"
     };
     let actions_active = if shell.active == Some(NAV_ACTIONS) {
-        "rio-nav-link is-active"
+        "module-link is-active"
     } else {
-        "rio-nav-link"
+        "module-link"
     };
 
     let logout_form = if shell.csrf.is_some() {
         format!(
-            r#"<form class="rio-sidebar-logout" method="post" action="/admin/logout">
+            r#"<form class="sidebar-foot" method="post" action="/admin/logout">
 {csrf}
 <button type="submit">{icon}<span>Sign out</span></button>
 </form>"#,
@@ -1942,9 +1869,9 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
         // Django's "Welcome, name" dropdown in the header, but fits
         // our sidebar footer.
         format!(
-            r#"<a class="rio-sidebar-user" href="/admin/profile" title="Your profile">
-<span class="rio-avatar">{avatar}</span>
-<span class="rio-user-email">{email}</span>
+            r#"<a class="signed-in" href="/admin/profile" title="Your profile">
+<span class="avatar">{avatar}</span>
+<span class="signed-in">{email}</span>
 </a>"#,
             avatar = escape_html(&avatar_initial),
             email = escape_html(email),
@@ -1954,21 +1881,21 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
     };
 
     format!(
-        r#"<aside class="rio-sidebar">
-<div class="rio-sidebar-inner">
-<a class="rio-brand" href="/admin">
-<span class="rio-brand-mark">{logo}</span>
-<span class="rio-brand-meta">
-<span class="rio-brand-name">{project}</span>
-<span class="rio-brand-label">Admin</span>
+        r#"<aside class="module-sidebar">
+<div class="module-nav">
+<a class="brand" href="/admin">
+<span class="brand-mark">{logo}</span>
+<span class="brand-note">
+<span class="brand-name">{project}</span>
+<span class="brand-name">Admin</span>
 </span>
 </a>
-<nav class="rio-nav">
+<nav class="module-nav">
 <a class="{dash}" href="/admin">{dash_icon}<span>Dashboard</span></a>
 <a class="{actions}" href="/admin/actions">{actions_icon}<span>Recent actions</span></a>
 </nav>
 {models}
-<div class="rio-sidebar-footer">
+<div class="sidebar-foot">
 {user}
 {logout}
 </div>
@@ -2013,12 +1940,12 @@ fn render_shell_page(
     // cluster collapses to just the env-chip.
     let topbar_actions = match shell.csrf {
         Some(csrf) => format!(
-            r#"<div class="rio-topbar-actions">
+            r#"<div class="sidebar-foot">
 {env}
-<a class="rio-topbar-icon" href="/admin" title="Home" aria-label="Home">{home}</a>
-<button class="rio-topbar-icon" type="button" title="Notifications" aria-label="Notifications">{bell}<span class="rio-topbar-dot"></span></button>
-<button class="rio-topbar-icon" type="button" title="Messages" aria-label="Messages">{mail}</button>
-<form class="rio-topbar-logout" method="post" action="/admin/logout">
+<a class="button button-quiet" href="/admin" title="Home" aria-label="Home">{home}</a>
+<button class="button button-quiet" type="button" title="Notifications" aria-label="Notifications">{bell}<span class="notice-icon"></span></button>
+<button class="button button-quiet" type="button" title="Messages" aria-label="Messages">{mail}</button>
+<form class="inline-form" method="post" action="/admin/logout">
 <input type="hidden" name="_csrf" value="{csrf_val}">
 <button type="submit" title="Sign out">{logout}<span>Logout</span></button>
 </form>
@@ -2030,24 +1957,21 @@ fn render_shell_page(
             logout = icon_logout(),
             csrf_val = escape_html(csrf),
         ),
-        None => format!(
-            r#"<div class="rio-topbar-actions">{env}</div>"#,
-            env = env_chip
-        ),
+        None => format!(r#"<div class="sidebar-foot">{env}</div>"#, env = env_chip),
     };
 
     let subtitle_html = page_subtitle
-        .map(|s| format!(r#"<p class="rio-page-subtitle">{}</p>"#, escape_html(s)))
+        .map(|s| format!(r#"<p class="lead">{}</p>"#, escape_html(s)))
         .unwrap_or_default();
 
     let actions_block = if actions.is_empty() {
         String::new()
     } else {
-        format!(r#"<div class="rio-page-actions">{actions}</div>"#)
+        format!(r#"<div class="page-head-actions">{actions}</div>"#)
     };
 
     let theme_style = format!(
-        "\n:root {{\n  --rio-primary: {p};\n  --rio-primary-hover: {ph};\n  --rio-accent: {a};\n  --rio-accent-hover: {ah};\n}}\n",
+        "\n:root {{\n  --: {p};\n  --: {ph};\n  --: {a};\n  --: {ah};\n}}\n",
         p = escape_css_color(&design.primary_color),
         ph = escape_css_color(&design.primary_color),
         a = escape_css_color(&design.accent_color),
@@ -2056,7 +1980,7 @@ fn render_shell_page(
 
     let density_class = match design.density {
         design::Density::Comfortable => "",
-        design::Density::Compact => " rio-density-compact",
+        design::Density::Compact => " ",
     };
 
     let body_html = format!(
@@ -2066,22 +1990,22 @@ fn render_shell_page(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{doc_title} · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
+<link rel="stylesheet" href="/admin/static/admin.css">
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
-<body class="rio-body{density}">
-<div class="rio-app">
+<body class="{density}">
+<div class="shell">
 {sidebar}
-<main class="rio-main">
-<div class="rio-container">
-<header class="rio-topbar">
+<main class="main">
+<div class="main">
+<header class="sidebar">
 {crumbs}
 {topbar_actions}
 </header>
-<div class="rio-page-header">
+<div class="page-head">
 <div>
-<h1 class="rio-page-title">{page_title}</h1>
+<h1 class="">{page_title}</h1>
 {subtitle}
 </div>
 {actions}
@@ -2092,13 +2016,13 @@ fn render_shell_page(
 </div>
 <script>
 // Admin Intelligence Layer (0.7.0) — minimal JS for PII toggle.
-// Click a .rio-pii-toggle to reveal / hide the adjacent masked value.
+// Click a .button button-quiet to reveal / hide the adjacent masked value.
 document.addEventListener("click", function(e){{
-  var btn = e.target.closest ? e.target.closest(".rio-pii-toggle") : null;
+  var btn = e.target.closest ? e.target.closest(".button button-quiet") : null;
   if(!btn) return;
   // The masked <span> is the button's previous sibling by construction.
   var span = btn.previousElementSibling;
-  if(!span || !span.classList.contains("rio-pii")) return;
+  if(!span || !span.classList.contains("cell-muted")) return;
   if(span.getAttribute("data-hidden") === "1"){{
     span.textContent = span.getAttribute("data-value") || "";
     span.setAttribute("data-hidden","0");
@@ -2123,7 +2047,6 @@ document.addEventListener("click", function(e){{
         subtitle = subtitle_html,
         actions = actions_block,
         body = body,
-        css_ver = ADMIN_CSS_VER,
     );
 
     let resp = hyper::Response::builder()
@@ -2624,7 +2547,7 @@ fn list_response<T: AdminModel>(
     let admin_name = T::ADMIN_NAME;
 
     let page_actions = format!(
-        r#"<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{icon}<span>Add {singular}</span></a>"#,
+        r#"<a class="button button-primary" href="/admin/{name}/create">{icon}<span>Add {singular}</span></a>"#,
         name = escape_html(admin_name),
         singular = escape_html(singular),
         icon = icon_plus(),
@@ -2636,17 +2559,17 @@ fn list_response<T: AdminModel>(
     // 2. Filter returned zero of N → explain the filter is the reason.
     let body = if total == 0 {
         let hint_html = match empty_state_hint::<T>(intelligence::context_global()) {
-            Some(h) => format!(r#"<p class="rio-empty-hint">{}</p>"#, escape_html(&h)),
+            Some(h) => format!(r#"<p class="lead">{}</p>"#, escape_html(&h)),
             None => String::new(),
         };
         format!(
-            r#"<div class="rio-card">
-<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
+            r#"<div class="card">
+<div class="empty">
+<div class="empty-icon">{icon}</div>
 <h3>Start by adding your first {singular_lower}</h3>
 <p>This table is empty. Create the first record to get started.</p>
 {hint}
-<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
+<a class="button button-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
 </div>
 </div>"#,
             icon = icon_inbox(),
@@ -2665,16 +2588,16 @@ fn list_response<T: AdminModel>(
 
         if items.is_empty() {
             format!(
-                r#"<div class="rio-table-wrap">
+                r#"<div class="table-wrap">
 {toolbar}
 {chips}
-<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
+<div class="empty">
+<div class="empty-icon">{icon}</div>
 <h3>No records match these filters</h3>
 <p>Try a different search term, clear the filters, or add a new {singular_lower}.</p>
-<div class="rio-empty-actions">
-<a class="rio-btn" href="/admin/{name}">{reset}<span>Clear filters</span></a>
-<a class="rio-btn rio-btn-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
+<div class="button-row">
+<a class="button" href="/admin/{name}">{reset}<span>Clear filters</span></a>
+<a class="button button-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
 </div>
 </div>
 </div>"#,
@@ -2725,7 +2648,7 @@ fn list_response<T: AdminModel>(
                 })
                 .collect();
             let expand_header = if has_hidden_fields {
-                r#"<th class="rio-cell-expand" aria-label="Expand"></th>"#.to_string()
+                r#"<th class="cell-fit" aria-label="Expand"></th>"#.to_string()
             } else {
                 String::new()
             };
@@ -2744,10 +2667,10 @@ fn list_response<T: AdminModel>(
                     // users. Delete uses a danger-ghost style so the
                     // destructive path reads but doesn't scream.
                     let row_actions = format!(
-                        r#"<td class="rio-cell-actions">
-<div class="rio-row-actions">
-<a class="rio-btn rio-btn-sm" href="/admin/{name}/{id}/edit">{pencil}<span>Edit</span></a>
-<a class="rio-btn rio-btn-sm rio-btn-danger-ghost" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete</span></a>
+                        r#"<td class="actions">
+<div class="actions">
+<a class="button button-sm" href="/admin/{name}/{id}/edit">{pencil}<span>Edit</span></a>
+<a class="button button-sm button-danger" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete</span></a>
 </div>
 </td>"#,
                         name = escape_html(admin_name),
@@ -2756,7 +2679,7 @@ fn list_response<T: AdminModel>(
                         trash = icon_trash(),
                     );
                     let checkbox = format!(
-                        r#"<td class="rio-cell-check"><input type="checkbox" class="rio-bulk-row" value="{id}" aria-label="Select row {id}"></td>"#,
+                        r#"<td class="cell-fit"><input type="checkbox" class="button-row" value="{id}" aria-label="Select row {id}"></td>"#,
                     );
                     if !has_hidden_fields {
                         return format!("<tr>{checkbox}{cells}{row_actions}</tr>");
@@ -2766,64 +2689,64 @@ fn list_response<T: AdminModel>(
                     // carries the `hidden` attribute; the inline IIFE
                     // at the bottom of the page flips it on click.
                     let expand_cell = format!(
-                        r#"<td class="rio-cell-expand"><button type="button" class="rio-expand-btn" data-expand-toggle aria-expanded="false" aria-label="Expand row {id}">&#9656;</button></td>"#,
+                        r#"<td class="cell-fit"><button type="button" class="expand-btn" data-expand-toggle aria-expanded="false" aria-label="Expand row {id}">&#9656;</button></td>"#,
                     );
                     let detail_fields: String = hidden_fields
                         .iter()
                         .map(|f| {
                             format!(
-                                r#"<div class="rio-expand-field"><dt>{label}</dt><dd>{value}</dd></div>"#,
+                                r#"<div class="detail-row"><dt>{label}</dt><dd>{value}</dd></div>"#,
                                 label = escape_html(&humanise(f.name)),
                                 value = render_cell_inner::<T>(f, *item, cell_ctx),
                             )
                         })
                         .collect();
                     let expand_row = format!(
-                        r#"<tr class="rio-row-expand" data-row-id="{id}" hidden><td colspan="{colspan}" class="rio-cell-expand-panel"><dl class="rio-expand-details">{fields}</dl></td></tr>"#,
+                        r#"<tr class="expand-btn" data-row-id="{id}" hidden><td colspan="{colspan}" class="expand-panel"><dl class="details">{fields}</dl></td></tr>"#,
                         id = id,
                         colspan = colspan_total,
                         fields = detail_fields,
                     );
                     format!(
-                        r#"<tr class="rio-row-main" data-row-id="{id}">{expand_cell}{checkbox}{cells}{row_actions}</tr>{expand_row}"#,
+                        r#"<tr class="" data-row-id="{id}">{expand_cell}{checkbox}{cells}{row_actions}</tr>{expand_row}"#,
                     )
                 })
                 .collect();
 
             let csrf = csrf_input(shell.csrf);
             let bulk_bar = format!(
-                r#"<div class="rio-bulk-bar">
-<label class="rio-bulk-label" for="rio-bulk-action">Action</label>
-<select class="rio-select" id="rio-bulk-action" name="action">
+                r#"<div class="toolbar">
+<label class="label" for="button button-quiet">Action</label>
+<select class="" id="button button-quiet" name="action">
 <option value="">-- Select an action --</option>
 <option value="delete">Delete selected {plural_lower}</option>
 </select>
-<button type="submit" class="rio-btn">Go</button>
-<span class="rio-bulk-count" data-rio-bulk-count>0 selected</span>
+<button type="submit" class="button">Go</button>
+<span class="toolbar-count" data-toolbar-count>0 selected</span>
 </div>"#,
                 plural_lower = escape_html(&plural.to_lowercase()),
             );
 
             format!(
-                r#"<div class="rio-table-wrap">
+                r#"<div class="table-wrap">
 {toolbar}
 {chips}
-<form method="post" action="/admin/{name}/bulk_action" class="rio-bulk-form">
+<form method="post" action="/admin/{name}/bulk_action" class="inline-form">
 {csrf}
 <input type="hidden" name="_selected" value="">
 {bulk_bar}
-<table class="rio-table">
-<thead><tr>{expand_header}<th class="rio-cell-check"><input type="checkbox" class="rio-bulk-all" aria-label="Select all"></th>{headers}<th aria-label="Actions"></th></tr></thead>
+<table class="">
+<thead><tr>{expand_header}<th class="cell-fit"><input type="checkbox" class="checkbox" aria-label="Select all"></th>{headers}<th aria-label="Actions"></th></tr></thead>
 <tbody>{rows}</tbody>
 </table>
 </form>
 <script>
 (function(){{
-var form=document.querySelector('.rio-bulk-form');
+var form=document.querySelector('.inline-form');
 if(form){{
-  var all=form.querySelector('.rio-bulk-all');
-  var rows=form.querySelectorAll('.rio-bulk-row');
-  var count=form.querySelector('[data-rio-bulk-count]');
+  var all=form.querySelector('.checkbox');
+  var rows=form.querySelectorAll('.button-row');
+  var count=form.querySelector('[data-toolbar-count]');
   var hidden=form.querySelector('input[name="_selected"]');
   function collect(){{var ids=[];rows.forEach(function(cb){{if(cb.checked)ids.push(cb.value);}});return ids;}}
   function update(){{var ids=collect();if(hidden)hidden.value=ids.join(',');if(count)count.textContent=ids.length+' selected';}}
@@ -2837,13 +2760,13 @@ if(form){{
 // and every matching <td> via `data-col` attribute. Checkbox and
 // actions columns carry no `data-col`, so they're never touched.
 document.addEventListener('click',function(e){{
-  var d=document.querySelector('details.rio-cols-ctl[open]');
+  var d=document.querySelector('details.button button-quiet[open]');
   if(!d)return;
   if(d.contains(e.target))return;
   d.open=false;
 }});
 document.addEventListener('change',function(e){{
-  var cb=e.target&&e.target.closest?e.target.closest('.rio-cols-check'):null;
+  var cb=e.target&&e.target.closest?e.target.closest('.checkbox'):null;
   if(!cb)return;
   var col=cb.getAttribute('data-col');
   if(!col)return;
@@ -2872,7 +2795,7 @@ document.addEventListener('click',function(e){{
   }}
 }});
 // Row expansion toggle (Change 5) — the button lives in the first
-// column of each `.rio-row-main`, the paired `.rio-row-expand` is
+// column of each `.`, the paired `.expand-btn` is
 // its `nextElementSibling`. Flip the `hidden` attribute + chevron
 // glyph + aria-expanded; nothing else.
 document.addEventListener('click',function(e){{
@@ -2881,7 +2804,7 @@ document.addEventListener('click',function(e){{
   var main=btn.closest('tr');
   if(!main)return;
   var panel=main.nextElementSibling;
-  if(!panel||!panel.classList.contains('rio-row-expand'))return;
+  if(!panel||!panel.classList.contains('expand-btn'))return;
   var open=!panel.hasAttribute('hidden');
   if(open){{
     panel.setAttribute('hidden','');
@@ -2949,7 +2872,7 @@ fn render_relation_filter_control(state: &RelationFilterState) -> String {
             }))
             .collect();
             format!(
-                r#"<select class="rio-select" name="{field}" aria-label="Filter by {label}">{options_html}</select>"#,
+                r#"<select class="" name="{field}" aria-label="Filter by {label}">{options_html}</select>"#,
             )
         }
         RelationFilterMode::Numeric { too_many } => {
@@ -2962,19 +2885,19 @@ fn render_relation_filter_control(state: &RelationFilterState) -> String {
             // dropdown, vs. no display_field declared on the target.
             let hint = if *too_many {
                 format!(
-                    r#"<span class="rio-field-hint">Too many options for a dropdown — enter the {label} ID directly.</span>"#,
+                    r#"<span class="hint">Too many options for a dropdown — enter the {label} ID directly.</span>"#,
                     label = label,
                 )
             } else {
                 format!(
-                    r#"<span class="rio-field-hint">No display field declared for {label} — enter the ID directly.</span>"#,
+                    r#"<span class="hint">No display field declared for {label} — enter the ID directly.</span>"#,
                     label = label,
                 )
             };
             format!(
-                r#"<label class="rio-field" style="display:inline-flex; gap:var(--rio-s-1); align-items:center; margin:0">\
-<span class="rio-field-label">{label} ID</span>\
-<input class="rio-input" type="number" name="{field}" value="{current}" style="width:140px" aria-label="Filter by {label} id">\
+                r#"<label class="field" style="display:inline-flex; gap:var(--); align-items:center; margin:0">\
+<span class="label">{label} ID</span>\
+<input class="" type="number" name="{field}" value="{current}" style="width:140px" aria-label="Filter by {label} id">\
 {hint}\
 </label>"#,
                 label = label,
@@ -3018,7 +2941,7 @@ fn render_columns_control<T: AdminModel>(filters: &ListFilters<'_>) -> String {
                 format!(" <small>{}</small>", tags.join(" · "))
             };
             format!(
-                r#"<label class="rio-cols-panel-row"><input type="checkbox" class="rio-cols-check" data-col="{name}"{checked}{disabled}><span>{label}{tags}</span></label>"#,
+                r#"<label class="detail-row"><input type="checkbox" class="checkbox" data-col="{name}"{checked}{disabled}><span>{label}{tags}</span></label>"#,
                 name = escape_html(f.name),
                 label = escape_html(&humanise(f.name)),
                 tags = tag_html,
@@ -3027,7 +2950,7 @@ fn render_columns_control<T: AdminModel>(filters: &ListFilters<'_>) -> String {
         .collect();
 
     format!(
-        r#"<details class="rio-cols-ctl"><summary class="rio-btn">Columns</summary><div class="rio-cols-panel">{rows}</div></details>"#,
+        r#"<details class="button button-quiet"><summary class="button">Columns</summary><div class="card">{rows}</div></details>"#,
     )
 }
 
@@ -3201,7 +3124,7 @@ fn render_list_toolbar<T: AdminModel>(
                 }))
                 .collect();
         format!(
-            r#"<select class="rio-select" name="status" aria-label="Filter by status">{options}</select>"#,
+            r#"<select class="" name="status" aria-label="Filter by status">{options}</select>"#,
         )
     } else {
         String::new()
@@ -3235,7 +3158,7 @@ fn render_list_toolbar<T: AdminModel>(
                 }))
                 .collect();
         format!(
-            r#"<select class="rio-select" name="priority" aria-label="Filter by priority">{options}</select>"#,
+            r#"<select class="" name="priority" aria-label="Filter by priority">{options}</select>"#,
         )
     } else {
         String::new()
@@ -3281,13 +3204,13 @@ fn render_list_toolbar<T: AdminModel>(
             format!("More filters ({secondary_active_count})")
         };
         format!(
-            r#"<button type="button" class="rio-btn" data-more-filters-toggle aria-controls="more-filters-panel" aria-expanded="false">{label}</button>"#,
+            r#"<button type="button" class="button" data-more-filters-toggle aria-controls="more-filters-panel" aria-expanded="false">{label}</button>"#,
         )
     };
 
     let reset_btn = if filters.is_active() {
         format!(
-            r#"<a class="rio-btn rio-btn-ghost" href="/admin/{name}">Reset</a>"#,
+            r#"<a class="button button-quiet" href="/admin/{name}">Reset</a>"#,
             name = escape_html(admin_name),
         )
     } else {
@@ -3311,9 +3234,7 @@ fn render_list_toolbar<T: AdminModel>(
                 )
             })
             .collect();
-        format!(
-            r#"<select class="rio-select rio-select-sort" name="sort" aria-label="Sort records">{options}</select>"#,
-        )
+        format!(r#"<select class=" " name="sort" aria-label="Sort records">{options}</select>"#,)
     };
 
     let count_label = if filters.is_active() {
@@ -3334,13 +3255,13 @@ fn render_list_toolbar<T: AdminModel>(
         .map(|q| match intelligence::classify_search(q) {
             intelligence::SearchIntent::Text(_) => String::new(),
             other => format!(
-                r#"<span class="rio-search-intent">Interpreted as: {}</span>"#,
+                r#"<span class="hint">Interpreted as: {}</span>"#,
                 escape_html(other.label()),
             ),
         })
         .unwrap_or_default();
 
-    // Columns control — sits inside .rio-toolbar-actions, right
+    // Columns control — sits inside .button-row, right
     // after the "More filters" button (Change 3). Native <details>
     // whose panel is positioned below the summary; open/close is
     // browser-default, outside-click closes it via a small JS
@@ -3348,21 +3269,21 @@ fn render_list_toolbar<T: AdminModel>(
     let columns_control = render_columns_control::<T>(filters);
 
     format!(
-        r#"<form class="rio-table-toolbar" method="get" action="/admin/{name}" role="search" aria-label="Search {plural}">
-<div class="rio-search">
+        r#"<form class="toolbar" method="get" action="/admin/{name}" role="search" aria-label="Search {plural}">
+<div class="">
 {search_icon}
 <input type="search" name="q" value="{q}" placeholder="Search {plural_lower}…" aria-label="Search text">
 {intent}
 </div>
 {primary_relation}
 {sort}
-<div class="rio-toolbar-actions">
-<button type="submit" class="rio-btn rio-btn-primary">{submit_icon}<span>Search</span></button>
+<div class="button-row">
+<button type="submit" class="button button-primary">{submit_icon}<span>Search</span></button>
 {more_filters_btn}
 {reset}
 {columns}
 </div>
-<div class="rio-count">{count}</div>
+<div class="badge badge-user">{count}</div>
 {more_filters_panel}
 </form>"#,
         name = escape_html(admin_name),
@@ -3426,13 +3347,13 @@ fn distinct_values<T: AdminModel>(items: &[T], field_name: &str) -> Vec<String> 
 /// and known is deliberate — no ad-hoc colour explosions.
 fn status_pill_class(value: &str) -> &'static str {
     match value {
-        "done" | "complete" | "completed" | "finished" | "resolved" => "rio-pill rio-pill-emerald",
-        "active" | "approved" | "published" | "live" => "rio-pill rio-pill-emerald",
-        "pending" | "todo" | "queued" | "open" | "new" => "rio-pill rio-pill-amber",
-        "in_progress" | "doing" | "working" | "review" | "in_review" => "rio-pill rio-pill-indigo",
-        "archived" | "inactive" | "closed" | "cancelled" | "canceled" => "rio-pill rio-pill-slate",
-        "blocked" | "failed" | "rejected" | "error" => "rio-pill rio-pill-rose",
-        _ => "rio-pill rio-pill-slate",
+        "done" | "complete" | "completed" | "finished" | "resolved" => "badge badge-active",
+        "active" | "approved" | "published" | "live" => "badge badge-active",
+        "pending" | "todo" | "queued" | "open" | "new" => "badge badge-warn",
+        "in_progress" | "doing" | "working" | "review" | "in_review" => "badge badge-admin",
+        "archived" | "inactive" | "closed" | "cancelled" | "canceled" => "badge badge-user",
+        "blocked" | "failed" | "rejected" | "error" => "badge badge-disabled",
+        _ => "badge badge-user",
     }
 }
 
@@ -3471,10 +3392,10 @@ fn inject_data_col(cell: &str, col: &str) -> String {
 fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> String {
     let value = item.field_display(f.name).unwrap_or_default();
     if f.name == "id" {
-        return format!(r#"<td class="rio-cell-id">#{}</td>"#, escape_html(&value));
+        return format!(r#"<td class="cell-id">#{}</td>"#, escape_html(&value));
     }
     if value.is_empty() && f.nullable {
-        return r#"<td class="rio-cell-muted">—</td>"#.to_string();
+        return r#"<td class="cell-muted">—</td>"#.to_string();
     }
     // Relation branch: if this field is a FK to another model, render
     // a link to the target admin page plus the id. Uses the prefetched
@@ -3486,7 +3407,7 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
             return match (label, &resolved.target_display_field) {
                 // Best case: label resolved, render name + muted id.
                 (Some(name), _) => format!(
-                    r#"<td class="rio-cell-muted"><a href="/admin/{admin}/{id}">{name}</a> <span class="rio-cell-id">#{id}</span></td>"#,
+                    r#"<td class="cell-muted"><a href="/admin/{admin}/{id}">{name}</a> <span class="cell-id">#{id}</span></td>"#,
                     admin = admin,
                     id = id,
                     name = escape_html(name),
@@ -3495,14 +3416,14 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
                 // row, stale schema). Link still works — the target
                 // admin will produce a 404.
                 (None, Some(_)) => format!(
-                    r#"<td class="rio-cell-muted"><a href="/admin/{admin}/{id}">#{id}</a></td>"#,
+                    r#"<td class="cell-muted"><a href="/admin/{admin}/{id}">#{id}</a></td>"#,
                     admin = admin,
                     id = id,
                 ),
                 // No display_field declared → explicit #<id> with
                 // link. We never guess a column.
                 (None, None) => format!(
-                    r#"<td class="rio-cell-muted"><a href="/admin/{admin}/{id}">#{id}</a></td>"#,
+                    r#"<td class="cell-muted"><a href="/admin/{admin}/{id}">#{id}</a></td>"#,
                     admin = admin,
                     id = id,
                 ),
@@ -3519,9 +3440,9 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
     if ui.sensitive && !value.is_empty() {
         let masked = intelligence::mask_pii(&value);
         return format!(
-            r#"<td class="rio-cell-muted">\
-<span class="rio-pii" data-value="{real}" data-mask="{mask}" data-hidden="1">{mask}</span>\
-<button class="rio-pii-toggle" type="button" aria-label="Reveal value">show</button>\
+            r#"<td class="cell-muted">\
+<span class="cell-muted" data-value="{real}" data-mask="{mask}" data-hidden="1">{mask}</span>\
+<button class="button button-quiet" type="button" aria-label="Reveal value">show</button>\
 </td>"#,
             real = escape_html(&value),
             mask = escape_html(&masked),
@@ -3529,9 +3450,9 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
     }
     if matches!(f.ty, FieldType::Bool) {
         let (cls, label) = match value.as_str() {
-            "true" => ("rio-pill rio-pill-emerald", "active"),
-            "false" => ("rio-pill rio-pill-slate", "inactive"),
-            other => ("rio-pill rio-pill-slate", other),
+            "true" => ("badge badge-active", "active"),
+            "false" => ("badge badge-user", "inactive"),
+            other => ("badge badge-user", other),
         };
         return format!(
             r#"<td><span class="{cls}">{}</span></td>"#,
@@ -3550,7 +3471,7 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
     }
     // Numeric fields get tabular numerics + muted colour.
     if matches!(f.ty, FieldType::I32 | FieldType::I64) {
-        return format!(r#"<td class="rio-cell-num">{}</td>"#, escape_html(&value));
+        return format!(r#"<td class="cell-num">{}</td>"#, escape_html(&value));
     }
     // First non-id field becomes the primary-weight cell.
     let is_primary = f.name != "id"
@@ -3560,9 +3481,9 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
             .map(|first| first.name == f.name)
             .unwrap_or(false);
     let cls = if is_primary {
-        "rio-cell-primary"
+        "table-link"
     } else {
-        "rio-cell-muted"
+        "cell-muted"
     };
     format!(r#"<td class="{cls}">{}</td>"#, escape_html(&value))
 }
@@ -3652,12 +3573,12 @@ fn form_response<T: AdminModel>(
     let danger_zone = match &mode {
         FormMode::Create => String::new(),
         FormMode::Edit { id, .. } => format!(
-            r#"<section class="rio-danger-zone">
-<div class="rio-danger-copy">
-<h3 class="rio-danger-title">{warn}<span>Delete this {singular}</span></h3>
-<p class="rio-danger-hint">Permanently removes this record. Rows that reference it with <code>ON DELETE CASCADE</code> will also be deleted.</p>
+            r#"<section class="card danger-zone">
+<div class="lead">
+<h3 class="card-title">{warn}<span>Delete this {singular}</span></h3>
+<p class="hint">Permanently removes this record. Rows that reference it with <code>ON DELETE CASCADE</code> will also be deleted.</p>
 </div>
-<a class="rio-btn rio-btn-danger" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete record</span></a>
+<a class="button button-danger" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete record</span></a>
 </section>"#,
             warn = icon_triangle_alert(),
             singular = escape_html(&singular.to_lowercase()),
@@ -3671,18 +3592,18 @@ fn form_response<T: AdminModel>(
 
     let body = format!(
         r#"{meta}
-<form class="rio-card rio-form" method="post" action="{action}" autocomplete="off">
+<form class="card form" method="post" action="{action}" autocomplete="off">
 {csrf}
-<div class="rio-form-section">
-<h2 class="rio-form-section-title">Details</h2>
-<p class="rio-form-section-hint">Fields marked optional accept an empty value.</p>
+<div class="card">
+<h2 class="card-title">Details</h2>
+<p class="hint">Fields marked optional accept an empty value.</p>
 {fields}
 </div>
-<div class="rio-form-footer">
-<a class="rio-btn rio-btn-ghost" href="/admin/{name}">{back_icon}<span>{back_label}</span></a>
-<div class="rio-footer-actions">
-<a class="rio-btn" href="/admin/{name}">Cancel</a>
-<button class="rio-btn rio-btn-primary" type="submit">Save</button>
+<div class="form-actions">
+<a class="button button-quiet" href="/admin/{name}">{back_icon}<span>{back_label}</span></a>
+<div class="form-actions">
+<a class="button" href="/admin/{name}">Cancel</a>
+<button class="button button-primary" type="submit">Save</button>
 </div>
 </div>
 </form>
@@ -3722,7 +3643,7 @@ fn form_response<T: AdminModel>(
     let page_actions = match &mode {
         FormMode::Create => String::new(),
         FormMode::Edit { id, .. } => format!(
-            r#"<a class="rio-btn" href="/admin/{name}/{id}/history">History</a>"#,
+            r#"<a class="button" href="/admin/{name}/{id}/history">History</a>"#,
             name = escape_html(admin_name),
             id = id,
         ),
@@ -3769,7 +3690,7 @@ fn render_field_block<T: AdminModel>(
     // Bool fields render as a single checkbox row for compactness.
     if matches!(f.ty, FieldType::Bool) {
         return format!(
-            r#"<div class="rio-field rio-field-row-checkbox">
+            r#"<div class="field field-checkbox">
 {input}
 <label for="_{name}">{label}</label>
 </div>"#,
@@ -3780,7 +3701,7 @@ fn render_field_block<T: AdminModel>(
     }
 
     let optional_mark = if f.nullable {
-        r#"<span class="rio-field-optional">optional</span>"#.to_string()
+        r#"<span class="field-optional">optional</span>"#.to_string()
     } else {
         String::new()
     };
@@ -3790,14 +3711,14 @@ fn render_field_block<T: AdminModel>(
             .as_deref()
             .unwrap_or("Personal data — handle with care.");
         format!(
-            r#"<span class="rio-field-sensitive" title="{note}">🔒 PII</span>"#,
+            r#"<span class="field-sensitive" title="{note}">🔒 PII</span>"#,
             note = escape_html(note),
         )
     } else {
         String::new()
     };
     let hint_html = match ui.hint.as_deref() {
-        Some(h) => format!(r#"<p class="rio-field-hint">{}</p>"#, escape_html(h),),
+        Some(h) => format!(r#"<p class="hint">{}</p>"#, escape_html(h),),
         None => String::new(),
     };
 
@@ -3809,7 +3730,7 @@ fn render_field_block<T: AdminModel>(
     let relation_hint = render_relation_hint::<T>(f, item, cell_ctx);
 
     format!(
-        r#"<div class="rio-field">
+        r#"<div class="field">
 <label for="_{name}">{label}{optional}{sensitive}</label>
 {input}
 {rel}
@@ -3854,13 +3775,13 @@ fn render_relation_hint<T: AdminModel>(
     let admin = escape_html(&resolved.target_admin_name);
     match (label, &resolved.target_display_field) {
         (Some(name), _) => format!(
-            r#"<p class="rio-field-hint">Linked: <a href="/admin/{admin}/{id}">{name}</a> <span class="rio-cell-id">#{id}</span></p>"#,
+            r#"<p class="hint">Linked: <a href="/admin/{admin}/{id}">{name}</a> <span class="cell-id">#{id}</span></p>"#,
             admin = admin,
             id = id,
             name = escape_html(name),
         ),
         (None, _) => format!(
-            r#"<p class="rio-field-hint">Linked: <a href="/admin/{admin}/{id}">#{id}</a></p>"#,
+            r#"<p class="hint">Linked: <a href="/admin/{admin}/{id}">#{id}</a></p>"#,
             admin = admin,
             id = id,
         ),
@@ -3905,7 +3826,7 @@ fn render_delete_blocked_page<T: AdminModel>(
                 target_id,
             );
             format!(
-                r#"<li class="rio-dashboard-alert"><div><strong>{label}</strong> — referenced by <strong>{count}</strong> row{plural_s} via <code>{field}</code></div><a class="rio-btn rio-btn-sm" href="{url}">Open {label_lower}</a></li>"#,
+                r#"<li class="alert alert-warning"><div><strong>{label}</strong> — referenced by <strong>{count}</strong> row{plural_s} via <code>{field}</code></div><a class="button button-sm" href="{url}">Open {label_lower}</a></li>"#,
                 label = escape_html(&inv.source_display_name),
                 label_lower = escape_html(&inv.source_display_name.to_lowercase()),
                 field = escape_html(&inv.source_field),
@@ -3918,16 +3839,16 @@ fn render_delete_blocked_page<T: AdminModel>(
 
     let back_href = format!("/admin/{}", admin_name);
     let body = format!(
-        r#"<section class="rio-card">
-<div class="rio-card-header">
-<h2 class="rio-card-title">Cannot delete {subject}</h2>
-<p class="rio-card-subtitle">Other records reference this one. Remove or reassign them first, then retry the delete.</p>
+        r#"<section class="card">
+<div class="card-head">
+<h2 class="card-title">Cannot delete {subject}</h2>
+<p class="lead">Other records reference this one. Remove or reassign them first, then retry the delete.</p>
 </div>
-<ul class="rio-dashboard-alerts" style="list-style:none; margin:0; padding:var(--rio-card-pad)">
+<ul class="" style="list-style:none; margin:0; padding:var(--card-body)">
 {rows}
 </ul>
-<div class="rio-form-footer">
-<a class="rio-btn" href="{back}">Back to {plural_lower}</a>
+<div class="form-actions">
+<a class="button" href="{back}">Back to {plural_lower}</a>
 </div>
 </section>"#,
         subject = escape_html(&subject),
@@ -3989,7 +3910,7 @@ fn render_inverse_panel<T: AdminModel>(
                 target_id,
             );
             format!(
-                r#"<li><a href="{url}" class="rio-suggestion-card"><div><strong>{label}</strong> <span class="rio-cell-id">({count})</span></div><div class="rio-cell-muted">via {field}</div></a></li>"#,
+                r#"<li><a href="{url}" class="card"><div><strong>{label}</strong> <span class="cell-id">({count})</span></div><div class="cell-muted">via {field}</div></a></li>"#,
                 url = escape_html(&filter_url),
                 label = escape_html(&label),
                 count = count,
@@ -3998,12 +3919,12 @@ fn render_inverse_panel<T: AdminModel>(
         })
         .collect();
     format!(
-        r#"<section class="rio-card rio-related">
-<div class="rio-card-header">
-<h2 class="rio-card-title">Related</h2>
-<p class="rio-card-subtitle">Incoming references to this record.</p>
+        r#"<section class="card card">
+<div class="card-head">
+<h2 class="card-title">Related</h2>
+<p class="lead">Incoming references to this record.</p>
 </div>
-<ul class="rio-related-grid">
+<ul class="card-grid">
 {cards}
 </ul>
 </section>"#,
@@ -4205,9 +4126,9 @@ fn field_label(f: &AdminField) -> String {
 /// (non-editable) field values.
 fn render_meta<T: AdminModel>(id: i64, item: &T) -> String {
     let mut items = vec![format!(
-        r#"<div class="rio-meta-item">
-<span class="rio-meta-label">ID</span>
-<span class="rio-meta-value">#{id}</span>
+        r#"<div class="detail-row">
+<span class="detail-label">ID</span>
+<span class="detail-value">#{id}</span>
 </div>"#,
     )];
 
@@ -4222,16 +4143,16 @@ fn render_meta<T: AdminModel>(id: i64, item: &T) -> String {
             value
         };
         items.push(format!(
-            r#"<div class="rio-meta-item">
-<span class="rio-meta-label">{label}</span>
-<span class="rio-meta-value">{value}</span>
+            r#"<div class="detail-row">
+<span class="detail-label">{label}</span>
+<span class="detail-value">{value}</span>
 </div>"#,
             label = escape_html(&humanise(f.name)),
             value = escape_html(&shown),
         ));
     }
 
-    format!(r#"<div class="rio-meta">{}</div>"#, items.join(""))
+    format!(r#"<div class="lead">{}</div>"#, items.join(""))
 }
 
 /// Render the raw input widget for an admin field. Signature preserved
@@ -4298,7 +4219,7 @@ fn render_field<T: AdminModel>(
                 none_opt
             };
             return format!(
-                r#"<select class="rio-input rio-select" id="_{n}" name="{n}"{required}>{none}{opts}</select>"#,
+                r#"<select class=" " id="_{n}" name="{n}"{required}>{none}{opts}</select>"#,
                 n = n,
                 required = required,
                 none = none_opt,
@@ -4309,22 +4230,22 @@ fn render_field<T: AdminModel>(
 
     match f.ty {
         FieldType::Bool => format!(
-            r#"<input class="rio-checkbox" id="_{n}" type="checkbox" name="{n}" {checked}>"#,
+            r#"<input class="checkbox" id="_{n}" type="checkbox" name="{n}" {checked}>"#,
             checked = if current == "true" { "checked" } else { "" },
         ),
         FieldType::I32 | FieldType::I64 => {
             format!(
-                r#"<input class="rio-input" id="_{n}" type="number" name="{n}" value="{v}"{required}{placeholder_attr}>"#
+                r#"<input class="" id="_{n}" type="number" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
         FieldType::String => {
             format!(
-                r#"<input class="rio-input" id="_{n}" type="text" name="{n}" value="{v}"{required}{placeholder_attr}>"#
+                r#"<input class="" id="_{n}" type="text" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
         FieldType::DateTime => {
             format!(
-                r#"<input class="rio-input" id="_{n}" type="datetime-local" name="{n}" value="{v}"{required}{placeholder_attr}>"#
+                r#"<input class="" id="_{n}" type="datetime-local" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
     }
@@ -4365,7 +4286,7 @@ fn delete_confirmation_response<T: AdminModel>(shell: Shell<'_>, id: i64, item: 
             "This record contains fields flagged as personal data. Review before proceeding."
         };
         format!(
-            r#"<div class="rio-alert rio-alert-error">{icon}<div><strong>Sensitive data.</strong> {note}</div></div>"#,
+            r#"<div class="alert alert-error">{icon}<div><strong>Sensitive data.</strong> {note}</div></div>"#,
             icon = icon_shield_alert(),
             note = escape_html(note),
         )
@@ -4374,10 +4295,10 @@ fn delete_confirmation_response<T: AdminModel>(shell: Shell<'_>, id: i64, item: 
     };
 
     let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
+        r#"<div class="card">
+<div class="card-body">
 {pii_banner}
-<div class="rio-alert rio-alert-warn">
+<div class="alert alert-warning">
 {warn}
 <div>
 <strong>This action cannot be undone.</strong>
@@ -4385,24 +4306,24 @@ Deleting this record removes it permanently. Rows that reference it via a foreig
 </div>
 </div>
 <p>You are about to delete <strong>{singular}</strong>:</p>
-<div class="rio-meta">
-<div class="rio-meta-item">
-<span class="rio-meta-label">ID</span>
-<span class="rio-meta-value">#{id}</span>
+<div class="lead">
+<div class="detail-row">
+<span class="detail-label">ID</span>
+<span class="detail-value">#{id}</span>
 </div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Summary</span>
-<span class="rio-meta-value">{summary}</span>
+<div class="detail-row">
+<span class="detail-label">Summary</span>
+<span class="detail-value">{summary}</span>
 </div>
 </div>
 </div>
-<div class="rio-form-footer">
-<a class="rio-btn rio-btn-ghost" href="/admin/{name}">{back}<span>Back to {plural_lower}</span></a>
-<div class="rio-footer-actions">
-<a class="rio-btn" href="/admin/{name}/{id}/edit">Cancel</a>
-<form class="rio-inline-form" method="post" action="/admin/{name}/{id}/delete">
+<div class="form-actions">
+<a class="button button-quiet" href="/admin/{name}">{back}<span>Back to {plural_lower}</span></a>
+<div class="form-actions">
+<a class="button" href="/admin/{name}/{id}/edit">Cancel</a>
+<form class="inline-form" method="post" action="/admin/{name}/{id}/delete">
 {csrf}
-<button class="rio-btn rio-btn-danger" type="submit">{trash}<span>Delete {singular}</span></button>
+<button class="button button-danger" type="submit">{trash}<span>Delete {singular}</span></button>
 </form>
 </div>
 </div>
@@ -4473,16 +4394,16 @@ fn bulk_delete_confirmation_response<T: AdminModel>(
                 format!("#{id} · {primary}")
             };
             format!(
-                r#"<li class="rio-bulk-item">{label}</li>"#,
+                r#"<li class="detail-row">{label}</li>"#,
                 label = escape_html(&label),
             )
         })
         .collect();
 
     let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-<div class="rio-alert rio-alert-warn">
+        r#"<div class="card">
+<div class="card-body">
+<div class="alert alert-warning">
 {warn}
 <div>
 <strong>This action cannot be undone.</strong>
@@ -4490,16 +4411,16 @@ You are about to delete <strong>{count_label}</strong>. Each record removed here
 </div>
 </div>
 <p>Review the list, then confirm:</p>
-<ul class="rio-bulk-list">{rows}</ul>
+<ul class="stack-list">{rows}</ul>
 </div>
-<form method="post" action="/admin/{name}/bulk_action" class="rio-form-footer">
+<form method="post" action="/admin/{name}/bulk_action" class="form-actions">
 {csrf}
 <input type="hidden" name="action" value="delete">
 <input type="hidden" name="_selected" value="{selected}">
 <input type="hidden" name="_confirm" value="yes">
-<a class="rio-btn rio-btn-ghost" href="/admin/{name}">{back}<span>Cancel</span></a>
-<div class="rio-footer-actions">
-<button class="rio-btn rio-btn-danger" type="submit">{trash}<span>Yes, delete {count_label}</span></button>
+<a class="button button-quiet" href="/admin/{name}">{back}<span>Cancel</span></a>
+<div class="form-actions">
+<button class="button button-danger" type="submit">{trash}<span>Yes, delete {count_label}</span></button>
 </div>
 </form>
 </div>"#,
@@ -4609,27 +4530,27 @@ fn admin_server_error_response(
     let shell = error_shell(entries, email, csrf);
     let when = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
     let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-body">
-<div class="rio-alert rio-alert-error">
+        r#"<div class="card">
+<div class="card-body">
+<div class="alert alert-error">
 {icon}
 <div>
 <strong>Something went wrong.</strong>
 The admin could not complete your request. The detail has been logged server-side; the summary below is what to share when reporting.
 </div>
 </div>
-<div class="rio-meta">
-<div class="rio-meta-item">
-<span class="rio-meta-label">Request ID</span>
-<span class="rio-meta-value"><code>{rid}</code></span>
+<div class="lead">
+<div class="detail-row">
+<span class="detail-label">Request ID</span>
+<span class="detail-value"><code>{rid}</code></span>
 </div>
-<div class="rio-meta-item">
-<span class="rio-meta-label">Timestamp</span>
-<span class="rio-meta-value">{when}</span>
+<div class="detail-row">
+<span class="detail-label">Timestamp</span>
+<span class="detail-value">{when}</span>
 </div>
 </div>
-<div class="rio-error-actions">
-<a class="rio-btn" href="/admin">{back}<span>Back to dashboard</span></a>
+<div class="button-row">
+<a class="button" href="/admin">{back}<span>Back to dashboard</span></a>
 </div>
 </div>
 </div>"#,
@@ -5421,7 +5342,7 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
     let d = design::Design::global();
 
     let theme_style = format!(
-        "\n:root {{\n  --rio-primary: {p};\n  --rio-accent: {a};\n}}\n",
+        "\n:root {{\n  --: {p};\n  --: {a};\n}}\n",
         p = escape_css_color(&d.primary_color),
         a = escape_css_color(&d.accent_color),
     );
@@ -5429,20 +5350,20 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
     let card_body = if signed_in {
         let csrf_hidden = csrf_input(csrf);
         format!(
-            r#"<h1 class="rio-auth-title">Sign out</h1>
-<p class="rio-auth-subtitle">You're about to sign out of the admin.</p>
+            r#"<h1 class="login-title">Sign out</h1>
+<p class="lead">You're about to sign out of the admin.</p>
 <form method="post" action="/admin/logout">
 {csrf}
-<button class="rio-btn rio-btn-primary rio-btn-block" type="submit">Sign out</button>
+<button class="button button-primary button-block" type="submit">Sign out</button>
 </form>
-<p class="rio-auth-footer"><a href="/admin">Cancel and return to the admin</a></p>"#,
+<p class="login-foot"><a href="/admin">Cancel and return to the admin</a></p>"#,
             csrf = csrf_hidden,
         )
     } else {
         String::from(
-            r#"<h1 class="rio-auth-title">You have signed out</h1>
-<p class="rio-auth-subtitle">Thanks for your time. Sessions are already revoked server-side.</p>
-<a class="rio-btn rio-btn-primary rio-btn-block" href="/admin">Sign in again</a>"#,
+            r#"<h1 class="login-title">You have signed out</h1>
+<p class="lead">Thanks for your time. Sessions are already revoked server-side.</p>
+<a class="button button-primary button-block" href="/admin">Sign in again</a>"#,
         )
     };
 
@@ -5453,18 +5374,18 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign out · {project}</title>
-<link rel="stylesheet" href="/admin/assets/admin.css?v={css_ver}">
+<link rel="stylesheet" href="/admin/static/admin.css">
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
 <body>
-<div class="rio-auth-shell">
-<div class="rio-auth-card">
-<div class="rio-auth-logo">
-<span class="rio-brand-mark">{logo}</span>
-<span class="rio-brand-meta">
-<span class="rio-brand-name">{project}</span>
-<span class="rio-brand-label">Admin</span>
+<div class="login-shell">
+<div class="login-card">
+<div class="brand-mark">
+<span class="brand-mark">{logo}</span>
+<span class="brand-note">
+<span class="brand-name">{project}</span>
+<span class="brand-name">Admin</span>
 </span>
 </div>
 {card_body}
@@ -5476,7 +5397,6 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
         theme = theme_style,
         logo = escape_html(&d.logo_initial),
         card_body = card_body,
-        css_ver = ADMIN_CSS_VER,
     );
 
     let resp = hyper::Response::builder()
@@ -5515,8 +5435,8 @@ fn object_history_response<T: AdminModel>(
 
     let inner = if actions.is_empty() {
         format!(
-            r#"<div class="rio-empty">
-<div class="rio-empty-icon">{icon}</div>
+            r#"<div class="empty">
+<div class="empty-icon">{icon}</div>
 <h3>No change history yet</h3>
 <p>Every add, change, or delete made through the admin will appear here. This record has no entries yet — the most likely reason is that it predates the audit log, or no one has edited it through the admin.</p>
 </div>"#,
@@ -5527,13 +5447,13 @@ fn object_history_response<T: AdminModel>(
     };
 
     let body = format!(
-        r#"<div class="rio-card">
-<div class="rio-card-header">
+        r#"<div class="card">
+<div class="card-head">
 <div>
-<h2 class="rio-card-title">Change history — {singular_hdr} {summary}</h2>
-<p class="rio-card-subtitle">Every add / change / delete that happened to this record, newest first.</p>
+<h2 class="card-title">Change history — {singular_hdr} {summary}</h2>
+<p class="lead">Every add / change / delete that happened to this record, newest first.</p>
 </div>
-<a class="rio-btn" href="/admin/{name}/{id}/edit">Back to record</a>
+<a class="button" href="/admin/{name}/{id}/edit">Back to record</a>
 </div>
 {inner}
 </div>"#,
@@ -5966,7 +5886,7 @@ fn render_schema_diff(schema: &crate::schema::Schema, plan: &crate::ai::Plan) ->
             }
         }
         out.push_str(&format!(
-            r#"<div class="rio-schema-diff"><h3>Model <code>{}</code></h3><pre>"#,
+            r#"<div class="details"><h3>Model <code>{}</code></h3><pre>"#,
             escape_html(model_name),
         ));
         for (name, ty) in &before {
@@ -5974,7 +5894,7 @@ fn render_schema_diff(schema: &crate::schema::Schema, plan: &crate::ai::Plan) ->
         }
         for (name, ty) in &added {
             out.push_str(&format!(
-                "<span class=\"rio-schema-diff-add\">+ {}: {}</span>\n",
+                "<span class=\"badge badge-active\">+ {}: {}</span>\n",
                 escape_html(name),
                 escape_html(ty),
             ));
@@ -6069,7 +5989,7 @@ fn render_actions_timeline(actions: &[audit::AdminAction], show_object_link: boo
             let action = audit::ActionType::parse(&a.action_type);
             let (pill_class, label) = match action {
                 Some(at) => (at.pill_class(), at.label()),
-                None => ("rio-pill rio-pill-slate", "Action"),
+                None => ("badge badge-user", "Action"),
             };
             let when = a.timestamp.format("%Y-%m-%d %H:%M UTC").to_string();
             let who = a
@@ -6078,13 +5998,13 @@ fn render_actions_timeline(actions: &[audit::AdminAction], show_object_link: boo
                 .unwrap_or_else(|| format!("user #{}", a.user_id));
             let ip = match &a.ip_address {
                 Some(ip) if !ip.is_empty() => {
-                    format!(r#"<span class="rio-audit-ip">{}</span>"#, escape_html(ip))
+                    format!(r#"<span class="cell-id">{}</span>"#, escape_html(ip))
                 }
                 _ => String::new(),
             };
             let object_link = if show_object_link {
                 format!(
-                    r#"<a class="rio-audit-object" href="/admin/{name}/{id}/history">{name} #{id}</a>"#,
+                    r#"<a class="cell-muted" href="/admin/{name}/{id}/history">{name} #{id}</a>"#,
                     name = escape_html(&a.model_name),
                     id = a.object_id,
                 )
@@ -6092,15 +6012,15 @@ fn render_actions_timeline(actions: &[audit::AdminAction], show_object_link: boo
                 String::new()
             };
             format!(
-                r#"<li class="rio-audit-item">
-<div class="rio-audit-head">
+                r#"<li class="card">
+<div class="card-head">
 <span class="{pill}">{label}</span>
 {object_link}
-<span class="rio-audit-when">{when}</span>
+<span class="cell-id">{when}</span>
 </div>
-<p class="rio-audit-summary">{summary}</p>
-<div class="rio-audit-meta">
-<span class="rio-audit-who">{who}</span>
+<p class="card-body">{summary}</p>
+<div class="hint">
+<span class="table-link">{who}</span>
 {ip}
 </div>
 </li>"#,
@@ -6114,7 +6034,7 @@ fn render_actions_timeline(actions: &[audit::AdminAction], show_object_link: boo
             )
         })
         .collect();
-    format!(r#"<ul class="rio-audit-timeline">{rows}</ul>"#)
+    format!(r#"<ul class="stack-list">{rows}</ul>"#)
 }
 
 // ---------------------------------------------------------------------------

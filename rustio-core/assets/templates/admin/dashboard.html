@@ -9,10 +9,10 @@
     {% if card.value > total.max %}{% set total.max = card.value %}{% endif %}
   {% endfor %}
 
-  <span class="rio-pill rio-pill--lift">{{ t("Workspace overview") }}</span>
+  <span class="badge">{{ t("Workspace overview") }}</span>
 
-  <header class="rio-page-head">
-    <h1>{{ t("Your") }} <span class="rio-accent-word">{{ t("workspace") }}</span></h1>
+  <header class="page-head">
+    <h1>{{ t("Your") }} <span class="accent-word">{{ t("workspace") }}</span></h1>
     <p>
       {% if dashboard_cards | length == 0 %}
         {{ t("No models registered yet. Add one with") }} <code>rustio add model &lt;name&gt;</code>.
@@ -23,12 +23,12 @@
     </p>
   </header>
 
-  <div class="rio-stat-grid">
+  <div class="stat-grid">
     {% for card in dashboard_cards | default([]) %}
-      <a class="rio-stat{% if card.value == total.max and total.max > 0 %} rio-stat--featured{% endif %}"
+      <a class="stat{% if card.value == total.max and total.max > 0 %} stat-featured{% endif %}"
          href="/admin/{{ card.label | lower }}">
-        <div class="rio-stat__value">{{ card.value }}</div>
-        <div class="rio-stat__label">{{ card.label }}</div>
+        <div class="stat-value">{{ card.value }}</div>
+        <div class="stat-label">{{ card.label }}</div>
       </a>
     {% endfor %}
   </div>

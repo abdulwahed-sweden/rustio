@@ -1,31 +1,33 @@
 {% extends "base.html" %}
 
 {% block title %}Sign in · {{ design.project_name | default('RustIO') }}{% endblock %}
-{% block body_class %}admin-auth{% endblock %}
+{% block body_class %}auth-body{% endblock %}
 
 {% block body %}
-<main class="rio-auth">
-  <div class="rio-auth__header">
-    <div class="rio-auth__mark">{{ design.logo_initial | default('R') }}</div>
-    <h1 class="rio-auth__title">{{ t("Sign in") }}</h1>
-    <p class="rio-auth__subtitle">{{ design.project_name | default('RustIO') }}</p>
+<div class="login-shell">
+<main class="login-wrap" id="main">
+  <div class="login-brand">
+    <div class="brand-mark">{{ design.logo_initial | default('R') }}</div>
+    <h1 class="login-title">{{ t("Sign in") }}</h1>
+    <p class="lead">{{ design.project_name | default('RustIO') }}</p>
   </div>
 
   {% if error %}
-    <div class="rio-alert rio-alert--danger" role="alert">{{ error }}</div>
+    <div class="alert alert-error" role="alert">{{ error }}</div>
   {% endif %}
 
   <form method="post" action="/admin/login" novalidate>
     {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-    <div class="rio-form__field">
-      <label for="email" class="rio-form__label">{{ t("Email") }}</label>
-      <input type="email" class="rio-form__input" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
+    <div class="field">
+      <label for="email" class="label">{{ t("Email") }}</label>
+      <input type="email" id="email" name="email" value="{{ email | default('') }}" autocomplete="username" required autofocus>
     </div>
-    <div class="rio-form__field">
-      <label for="password" class="rio-form__label">{{ t("Password") }}</label>
-      <input type="password" class="rio-form__input" id="password" name="password" autocomplete="current-password" required>
+    <div class="field">
+      <label for="password" class="label">{{ t("Password") }}</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
     </div>
-    <button type="submit" class="rio-btn rio-btn--primary rio-btn--block">{{ t("Sign in") }}</button>
+    <button type="submit" class="button button-primary button-block">{{ t("Sign in") }}</button>
   </form>
 </main>
+</div>
 {% endblock %}

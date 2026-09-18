@@ -430,7 +430,7 @@ struct SidebarEntryView {
     /// Row count for the underlying table. -1 means "no count
     /// available" (used for legacy `AdminEntry`s); the template
     /// hides the badge in that case. Otherwise the count renders
-    /// in `.rio-sidebar__count` to the right of the label.
+    /// in `.badge badge-user` to the right of the label.
     count: i64,
 }
 
@@ -884,7 +884,7 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
             ));
         }
         return format!(
-            r#"<select class="rio-form__input" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
+            r#"<select class="" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
         );
     }
     if field.is_relation {
@@ -893,22 +893,22 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
         // form still submits. This matches the 0.9 relation-layer
         // rule: "never guess, never hide".
         return format!(
-            r#"<input type="number" step="1" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required} placeholder="id">"#,
+            r#"<input type="number" step="1" class="" id="{id}" name="{name}" value="{val}"{readonly}{required} placeholder="id">"#,
         );
     }
 
     match field.data_type {
         AdminDataType::Text => format!(
-            r#"<textarea class="rio-form__input rio-form__input--textarea" id="{id}" name="{name}"{readonly}{required} rows="4">{val}</textarea>"#,
+            r#"<textarea class=" " id="{id}" name="{name}"{readonly}{required} rows="4">{val}</textarea>"#,
         ),
         AdminDataType::Email => format!(
-            r#"<input type="email" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required} autocomplete="off">"#,
+            r#"<input type="email" class="" id="{id}" name="{name}" value="{val}"{readonly}{required} autocomplete="off">"#,
         ),
         AdminDataType::Integer => format!(
-            r#"<input type="number" step="1" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="number" step="1" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::Float => format!(
-            r#"<input type="number" step="any" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="number" step="any" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::Boolean => {
             let checked = if value == "1" || value.eq_ignore_ascii_case("true") {
@@ -920,14 +920,14 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
             // box is unchecked, so "unchecked" means "false" rather
             // than "omitted".
             format!(
-                r#"<input type="hidden" name="{name}" value="0"><input type="checkbox" class="rio-form__check" id="{id}" name="{name}" value="1"{checked}{readonly}>"#,
+                r#"<input type="hidden" name="{name}" value="0"><input type="checkbox" class="checkbox" id="{id}" name="{name}" value="1"{checked}{readonly}>"#,
             )
         }
         AdminDataType::DateTime => format!(
-            r#"<input type="datetime-local" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="datetime-local" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::String => format!(
-            r#"<input type="text" class="rio-form__input" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="text" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
     }
 }
@@ -2760,10 +2760,7 @@ pub async fn list_render(
                         if raw.is_empty() {
                             return String::new();
                         }
-                        return format!(
-                            r#"<span class="rio-cell-id">#{}</span>"#,
-                            html_escape(&raw)
-                        );
+                        return format!(r#"<span class="cell-id">#{}</span>"#, html_escape(&raw));
                     }
                     if let Some(fk) = fk_lookups.iter().find(|f| f.column_index == col_idx) {
                         // FK column: render as a clickable link to the
@@ -2802,10 +2799,7 @@ pub async fn list_render(
                         )
                     } else if primary_col.as_deref() == Some(col.name.as_str()) {
                         // §4.8 — primary-name cell (bold).
-                        format!(
-                            r#"<span class="rio-cell-primary">{}</span>"#,
-                            html_escape(&raw)
-                        )
+                        format!(r#"<span class="table-link">{}</span>"#, html_escape(&raw))
                     } else {
                         // i18n value labels — an enum-like value's label for the
                         // active language, keyed by the lowercased stored value;
@@ -3708,12 +3702,12 @@ fn is_status_field_name(name: &str) -> bool {
 fn status_pill_color(data_value: &str) -> &'static str {
     match data_value.trim() {
         "active" | "approved" | "published" | "live" | "completed" | "complete" | "done"
-        | "finished" | "resolved" | "paid" => "rio-pill rio-pill-emerald",
+        | "finished" | "resolved" | "paid" => "badge badge-active",
         "referred" | "pending" | "todo" | "queued" | "open" | "new" | "scheduled" | "draft"
         | "sent" | "in progress" | "in review" | "review" | "overdue" | "on leave" => {
-            "rio-pill rio-pill-amber"
+            "badge badge-warn"
         }
-        _ => "rio-pill rio-pill-slate",
+        _ => "badge badge-user",
     }
 }
 
@@ -4042,7 +4036,7 @@ mod tests {
         // Shown columns are present, and the status pill survived.
         assert!(html.contains("Alpha"), "title value missing from list HTML");
         assert!(
-            html.contains("rio-pill"),
+            html.contains("badge"),
             "status pill markup lost from live list HTML"
         );
     }
@@ -5578,7 +5572,7 @@ mod tests {
         // Meta (notes) must NOT appear.
         let html = render_gadget_layout(Some("compact"), &HashMap::new()).await;
         assert!(html.contains("Alpha"), "title missing in compact: {html}");
-        assert!(html.contains("rio-pill"), "badge pill missing in compact");
+        assert!(html.contains("badge"), "badge pill missing in compact");
         assert!(
             !html.contains("alpha@x.example"),
             "subtitle (email) should not appear in compact"
@@ -5587,10 +5581,7 @@ mod tests {
             !html.contains("MY-META-NOTE"),
             "meta (notes) should not appear in compact"
         );
-        assert!(
-            html.contains("rio-table--compact"),
-            "compact markup missing"
-        );
+        assert!(html.contains("table-compact"), "compact markup missing");
         // The dense compact layout now renders real column headers.
         assert!(
             html.contains("<thead>"),
@@ -5604,12 +5595,12 @@ mod tests {
         let html = render_gadget_layout(Some("list"), &HashMap::new()).await;
         assert!(html.contains("Alpha"), "title missing in list");
         assert!(html.contains("alpha@x.example"), "subtitle missing in list");
-        assert!(html.contains("rio-pill"), "badge missing in list");
+        assert!(html.contains("badge"), "badge missing in list");
         assert!(
             !html.contains("MY-META-NOTE"),
             "meta (notes) should be dropped in list: {html}"
         );
-        assert!(html.contains("rio-list-item"), "list markup missing");
+        assert!(html.contains("card"), "list markup missing");
     }
 
     #[tokio::test]
@@ -5619,8 +5610,8 @@ mod tests {
         for needle in ["Alpha", "alpha@x.example", "MY-META-NOTE"] {
             assert!(html.contains(needle), "cards missing {needle}");
         }
-        assert!(html.contains("rio-card-item"), "card markup missing");
-        assert!(html.contains("rio-pill"), "badge pill missing in cards");
+        assert!(html.contains("card"), "card markup missing");
+        assert!(html.contains("badge"), "badge pill missing in cards");
     }
 
     #[tokio::test]
@@ -5657,15 +5648,12 @@ mod tests {
 
         // And the Table content is the Phase-6 shape: a table, id hidden,
         // pill present, Meta column present (Table shows Meta).
+        assert!(table.contains("<table>"), "table markup missing");
         assert!(
-            table.contains("<table class=\"rio-table\">"),
-            "table markup missing"
-        );
-        assert!(
-            !table.to_lowercase().contains(">id</th>") && !table.contains("rio-cell-id"),
+            !table.to_lowercase().contains(">id</th>") && !table.contains("cell-id"),
             "id column should be hidden in Table"
         );
-        assert!(table.contains("rio-pill"), "status pill missing in Table");
+        assert!(table.contains("badge"), "status pill missing in Table");
         assert!(
             table.contains("MY-META-NOTE"),
             "Meta column should show in Table"
@@ -5684,10 +5672,7 @@ mod tests {
             html.contains("layout=cards") && html.contains("status=active"),
             "layout toggle dropped the active filter: {html}"
         );
-        assert!(
-            html.contains("rio-layout-switch"),
-            "layout switcher missing"
-        );
+        assert!(html.contains("layout-switch"), "layout switcher missing");
     }
 
     #[tokio::test]
@@ -5802,7 +5787,7 @@ mod tests {
             html.contains(r#"href="/admin/customers/1""#),
             "FK link missing in cards"
         );
-        assert!(html.contains("rio-card-item"), "cards markup missing");
+        assert!(html.contains("card"), "cards markup missing");
     }
 
     // --- Phase 8: persist per-model layout default -----------------------
@@ -5880,13 +5865,13 @@ mod tests {
 
         let no_param = render_gadget_layout_in(&base, None, &HashMap::new()).await;
         assert!(
-            no_param.contains("rio-card-item"),
+            no_param.contains("card"),
             "saved cards default should drive the no-param render: {no_param}"
         );
 
         let override_table = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
         assert!(
-            override_table.contains("<table class=\"rio-table\">"),
+            override_table.contains("<table>"),
             "?layout=table must override the saved default"
         );
         // Hidden guarantee still holds with a saved default in effect.
@@ -6177,7 +6162,7 @@ mod tests {
         );
         // status is Badge → renders as a pill.
         assert!(
-            html.contains("rio-pill"),
+            html.contains("badge"),
             "a Badge field should render as a pill"
         );
         // Hidden guarantee still holds for the always-hidden secret.
@@ -6545,7 +6530,7 @@ mod tests {
         // is NOT appended (and status, now Hidden, renders no pill at all).
         assert!(html.contains("<td>Alpha · alpha@x.example</td>"));
         assert!(
-            !html.contains("rio-pill"),
+            !html.contains("badge"),
             "hidden status value must not render: {html}"
         );
         std::fs::remove_dir_all(&base).ok();

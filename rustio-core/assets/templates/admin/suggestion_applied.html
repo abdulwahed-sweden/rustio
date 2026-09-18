@@ -3,25 +3,25 @@
 {% block title %}Changes applied · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <header class="rio-page-head">
+  <header class="page-head">
     <h1>{{ t("Changes applied") }}</h1>
     <p>The planner wrote the files below atomically. The live admin continues serving the old compiled binary until you restart.</p>
   </header>
 
-  <div class="rio-card">
+  <div class="card">
     <h2>{{ t("Summary") }}</h2>
     <ul>
       {% for line in applied.change_lines %}<li>{{ line | safe }}</li>{% endfor %}
     </ul>
 
-    <h2 class="rio-stack-lg">{{ t("Files written") }}</h2>
+    <h2 class="stack-lg">{{ t("Files written") }}</h2>
     <ul>
       {% for f in applied.files %}
         <li>{{ f.kind }} <code>{{ f.path }}</code></li>
       {% endfor %}
     </ul>
 
-    <h2 class="rio-stack-lg">Next</h2>
+    <h2 class="stack-lg">Next</h2>
     <ol>
       <li>Stop this admin server.</li>
       <li>Run <code>rustio migrate apply</code> to apply the new migration to the database.</li>
@@ -29,9 +29,9 @@
       <li>Run <code>rustio schema</code> so <code>rustio.schema.json</code> reflects the new shape, then click <a href="/admin">{{ t("Reload schema") }}</a> on the dashboard.</li>
     </ol>
 
-    <div class="rio-form__actions">
-      <a href="/admin" class="rio-btn rio-btn--ghost">{{ t("Back to dashboard") }}</a>
-      <a href="/admin/actions" class="rio-btn">{{ t("View recent actions") }}</a>
+    <div class="form-actions">
+      <a href="/admin" class="button button-quiet">{{ t("Back to dashboard") }}</a>
+      <a href="/admin/actions" class="button">{{ t("View recent actions") }}</a>
     </div>
   </div>
 {% endblock %}

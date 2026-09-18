@@ -1,40 +1,35 @@
-{# Left sidebar. Brand at top, then sections (Workspace + System) with
-   optional count badges per model — Django-admin shape, our tone. #}
-<aside class="rio-sidebar">
-  <a href="/admin" class="rio-sidebar__brand">
-    <span class="rio-sidebar__mark">{{ design.logo_initial | default('R') }}</span>
-    <span class="rio-sidebar__wordmark">{{ design.project_name | default('RustIO') }}</span>
-  </a>
-
-  <div class="rio-sidebar__group">
-    <div class="rio-sidebar__section">{{ t("Workspace") }}</div>
-    {% if sidebar_entries is defined and sidebar_entries | length > 0 %}
+{# The module rail: every model the signed-in user may view, then the
+   cross-cutting system pages. Counts come from the dashboard query;
+   a model the user lacks `view` on never reaches this template. #}
+<aside class="module-sidebar" aria-label="{{ t('Modules') }}">
+  <p class="module-title">{{ t("Workspace") }}</p>
+  {% if sidebar_entries is defined and sidebar_entries | length > 0 %}
+    <nav class="module-nav" aria-label="{{ t('Models') }}">
       {% for entry in sidebar_entries %}
         {% if entry.visible %}
-          <a href="{{ entry.href }}"
-             class="rio-sidebar__item{% if entry.active %} is-active{% endif %}">
+          <a class="module-link" href="{{ entry.href }}"{% if entry.active %} aria-current="page"{% endif %}>
             <span>{{ entry.label }}</span>
             {% if entry.count is defined and entry.count >= 0 %}
-              <span class="rio-sidebar__count">{{ entry.count }}</span>
+              <span class="badge badge-user">{{ entry.count }}</span>
             {% endif %}
           </a>
         {% endif %}
       {% endfor %}
-    {% endif %}
-  </div>
+    </nav>
+  {% endif %}
 
-  <div class="rio-sidebar__group">
-    <div class="rio-sidebar__section">{{ t("System") }}</div>
-    <a href="/admin/actions" class="rio-sidebar__item"><span>{{ t("Recent actions") }}</span></a>
+  <p class="module-title stack">{{ t("System") }}</p>
+  <nav class="module-nav" aria-label="{{ t('System') }}">
+    <a class="module-link" href="/admin/actions"><span>{{ t("Recent actions") }}</span></a>
     {% if current_user is defined and current_user %}
-      <a href="/admin/profile" class="rio-sidebar__item"><span>{{ t("Your account") }}</span></a>
+      <a class="module-link" href="/admin/profile"><span>{{ t("Your account") }}</span></a>
     {% endif %}
-  </div>
+  </nav>
 
-  {# i18n L4b — language switcher at the sidebar bottom (same reusable
-     component as the topbar). #}
+  {# i18n L4b — the same reusable switcher the top bar carries. Two
+     placements of one component, unchanged from before the port. #}
   {% if current_user is defined and current_user %}
-    <div class="rio-sidebar__group rio-sidebar__lang">
+    <div class="stack">
       {% include "includes/lang_switcher.html" %}
     </div>
   {% endif %}

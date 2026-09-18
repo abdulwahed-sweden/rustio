@@ -3,57 +3,57 @@
 {% block title %}Your account · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <div class="rio-page-header">
-    <nav class="rio-breadcrumb" aria-label="Breadcrumb">
+  <div class="page-head">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
       <a href="/admin">{{ t("Home") }}</a>
-      <span class="rio-breadcrumb__sep">/</span>
+      <span class="breadcrumb-sep">/</span>
       <span>{{ t("Your account") }}</span>
     </nav>
     <h1>{{ t("Your account") }}</h1>
-    <div class="rio-page-header__actions">
-      <a href="/admin/password_change" class="rio-btn rio-btn--ghost">{{ t("Change password") }}</a>
-      <a href="/admin/logout" class="rio-btn rio-btn--ghost">{{ t("Sign out") }}</a>
+    <div class="page-head-actions">
+      <a href="/admin/password_change" class="button button-quiet">{{ t("Change password") }}</a>
+      <a href="/admin/logout" class="button button-quiet">{{ t("Sign out") }}</a>
     </div>
   </div>
 
   {# Identity card — avatar (role-coloured), name, email, role badge. #}
-  <section class="rio-card rio-profile">
-    <div class="rio-profile__id">
-      <span class="rio-avatar rio-avatar--xl rio-avatar--{{ account.role_style }}">{{ account.initials }}</span>
-      <div class="rio-profile__meta">
-        <h2 class="rio-profile__name">{{ account.name }}</h2>
-        <p class="rio-profile__email">{{ account.email }}</p>
-        <div class="rio-profile__tags">
-          <span class="rio-role-badge rio-role-badge--{{ account.role_style }}">{{ account.role_name }}</span>
+  <section class="card profile">
+    <div class="profile-id">
+      <span class="avatar avatar-lg avatar-{{ account.role_style }}">{{ account.initials }}</span>
+      <div class="profile-meta">
+        <h2 class="profile-name">{{ account.name }}</h2>
+        <p class="profile-email">{{ account.email }}</p>
+        <div class="tag-row">
+          <span class="badge badge-{{ account.role_style }}">{{ account.role_name }}</span>
         </div>
       </div>
     </div>
   </section>
 
-  <div class="rio-detail-grid">
-    <div class="rio-detail-main">
-      <section class="rio-card">
-        <h3 class="rio-card__title">{{ t("Role & permissions") }}</h3>
+  <div class="detail-grid">
+    <div class="detail-main">
+      <section class="card">
+        <h3 class="card-title">{{ t("Role & permissions") }}</h3>
         <p>{{ t("You're signed in as") }} <strong>{{ account.role_name }}</strong>. {{ account.role_blurb }}</p>
-        <ul class="rio-perm-list">
+        <ul class="stack-list">
           {% for p in account.perms %}
-            <li class="rio-perm {% if p.allowed %}is-allowed{% else %}is-denied{% endif %}">
-              <span class="rio-perm__icon">{% if p.allowed %}&#10003;{% else %}&#10005;{% endif %}</span>
-              <span class="rio-perm__body"><strong>{{ p.label }}</strong><span>{{ p.detail }}</span></span>
+            <li class="perm {% if p.allowed %}is-allowed{% else %}is-denied{% endif %}">
+              <span class="perm-icon">{% if p.allowed %}&#10003;{% else %}&#10005;{% endif %}</span>
+              <span><strong>{{ p.label }}</strong><span>{{ p.detail }}</span></span>
             </li>
           {% endfor %}
         </ul>
       </section>
 
-      <section class="rio-card rio-stack">
-        <h3 class="rio-card__title">{{ t("Roles in this workspace") }}</h3>
-        <ul class="rio-role-list">
+      <section class="card stack">
+        <h3 class="card-title">{{ t("Roles in this workspace") }}</h3>
+        <ul class="stack-list">
           {% for r in account.roles %}
             <li>
-              <span class="rio-avatar rio-avatar--{{ r.style }}">{{ r.initials }}</span>
+              <span class="avatar avatar-{{ r.style }}">{{ r.initials }}</span>
               <div>
-                <span class="rio-role-badge rio-role-badge--{{ r.style }}">{{ r.name }}</span>
-                {% if r.is_you %}<span class="rio-pill rio-pill-emerald rio-inline-gap">{{ t("You") }}</span>{% endif %}
+                <span class="badge badge-{{ r.style }}">{{ r.name }}</span>
+                {% if r.is_you %}<span class="badge badge-active inline-gap">{{ t("You") }}</span>{% endif %}
                 <p>{{ r.desc }}</p>
               </div>
             </li>
@@ -62,10 +62,10 @@
       </section>
     </div>
 
-    <aside class="rio-detail-side">
-      <section class="rio-card">
-        <h3 class="rio-card__title">{{ t("Account details") }}</h3>
-        <dl class="rio-meta-list rio-stack-sm">
+    <aside class="detail-side">
+      <section class="card">
+        <h3 class="card-title">{{ t("Account details") }}</h3>
+        <dl class="details stack-sm">
           <dt>{{ t("Email") }}</dt><dd>{{ account.email }}</dd>
           <dt>{{ t("Role") }}</dt><dd>{{ account.role_name }}</dd>
           <dt>{{ t("User ID") }}</dt><dd>#{{ account.user_id }}</dd>
@@ -73,17 +73,17 @@
           <dt>{{ t("Language") }}</dt><dd>{{ account.language }}</dd>
         </dl>
       </section>
-      <section class="rio-card rio-stack">
-        <h3 class="rio-card__title">{{ t("Security") }}</h3>
-        <dl class="rio-meta-list rio-stack-sm">
+      <section class="card stack">
+        <h3 class="card-title">{{ t("Security") }}</h3>
+        <dl class="details stack-sm">
           <dt>{{ t("Active sessions") }}</dt><dd>{{ account.sessions }}</dd>
         </dl>
-        <div class="rio-stack rio-tag-row">
-          <a href="/admin/password_change" class="rio-btn rio-btn--primary">{{ t("Change password") }}</a>
+        <div class="stack tag-row">
+          <a href="/admin/password_change" class="button button-primary">{{ t("Change password") }}</a>
           {% if account.sessions > 1 %}
-            <form method="post" action="/admin/sessions/clear" data-confirm="Sign out all your other sessions? You'll stay signed in here." class="rio-flush">
+            <form method="post" action="/admin/sessions/clear" data-confirm="Sign out all your other sessions? You'll stay signed in here." class="flush">
               {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-              <button type="submit" class="rio-btn rio-btn--ghost">{{ t("Sign out other sessions") }}</button>
+              <button type="submit" class="button button-quiet">{{ t("Sign out other sessions") }}</button>
             </form>
           {% endif %}
         </div>

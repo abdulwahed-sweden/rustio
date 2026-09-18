@@ -1,956 +1,493 @@
-/* ============================================================================
- * RustIO admin — "Console" theme  ·  engineered, editorial, professional
- * ----------------------------------------------------------------------------
- * A creative restyle on the EXACT same rio-* markup. Nothing in the templates
- * changes — only the look:
- *   - a deep ink sidebar rail (signature element, kept dark in both themes)
- *   - a cool "blueprint" grid canvas with a soft accent glow
- *   - a confident cobalt accent, reserved for emphasis + primary actions
- *   - monospaced, uppercase technical labels (eyebrows, sections, table heads)
- *   - tight display headings, refined status chips, quiet hairline tables
- * Drop into rustio-core/assets/static/admin.css. Light is default; dark is
- * opt-in via [data-theme="dark"] and the existing theme toggle.
- * ========================================================================== */
-
 :root {
-  /* Type ------------------------------------------------------------------ */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-
-  --text-hero:  34px;
-  --text-stat:  30px;
-  --text-h2:    22px;
-  --text-h3:    17px;
-  --text-body:  15px;
-  --text-meta:  14px;
-  --text-small: 13px;
-  --text-mono:  12.5px;
-  --text-micro: 11.5px;
-
-  /* Space ----------------------------------------------------------------- */
-  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
-  --space-5: 22px; --space-6: 28px; --space-7: 38px; --space-8: 52px;
-
-  /* Radius ---------------------------------------------------------------- */
-  --radius-sm: 5px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-
-  /* Cool slate-paper neutrals (light) ------------------------------------ */
-  --color-canvas:        #E9EDF3;   /* page — cool paper */
-  --color-surface:       #FFFFFF;   /* cards */
-  --color-elevated:      #F6F8FC;   /* raised fills, table head */
-  --color-border:        #DCE2EC;
-  --color-border-strong: #C3CCDA;
-  --color-text-primary:  #151A23;
-  --color-text-secondary:#4E5A6E;
-  --color-text-tertiary: #2A3342;
-  --color-text-muted:    #818D9F;
-
-  /* Cobalt accent --------------------------------------------------------- */
-  --color-accent:      #2B54E0;
-  --color-accent-deep: #1E3FB8;
-  --color-accent-text: #FFFFFF;
-  --color-accent-soft: #E7ECFD;
-
-  /* Semantic chips -------------------------------------------------------- */
-  --ok-text:#0C6B49;  --ok-bg:#E2F4EB;  --ok-bd:#B2E0C8;  --ok-dot:#11936A;
-  --warn-text:#9A5B0B;--warn-bg:#FBF0DA;--warn-bd:#ECCF8E;--warn-dot:#CC8A1C;
-  --bad-text:#B0271A; --bad-bg:#FBEAE7; --bad-bd:#F0BDB4; --bad-dot:#D63B27;
-
-  /* Dark ink sidebar rail (signature — dark in both themes) -------------- */
-  --side-bg:        #12161F;
-  --side-bg-2:      #0E121A;
-  --side-text:      #C4CCDA;
-  --side-text-dim:  #788499;
-  --side-border:    rgba(255,255,255,.075);
-  --side-accent:    #7C97FF;
-  --side-active-bg: rgba(124,151,255,.15);
-  --side-active-text:#DDE5FF;
-
-  /* Atmosphere ------------------------------------------------------------ */
-  --grid:  rgba(21,32,52,.045);
-  --glow:  rgba(43,84,224,.10);
-
-  /* Elevation ------------------------------------------------------------- */
-  --shadow-sm: 0 1px 2px rgba(20,29,45,.06), 0 0 0 1px rgba(20,29,45,.015);
-  --shadow-md: 0 2px 6px -2px rgba(20,29,45,.10), 0 14px 32px -16px rgba(20,29,45,.22);
-  --shadow-pop:0 8px 18px -6px rgba(20,29,45,.16), 0 30px 60px -24px rgba(20,29,45,.34);
-
-  /* Legacy aliases some inline styles read ------------------------------- */
-  --rio-muted: var(--color-text-muted);
-  --accent: var(--color-accent);
-  --accent-deep: var(--color-accent-deep);
-  --bg-canvas: var(--color-canvas);
-  --bg-surface: var(--color-surface);
-  --text-primary: var(--color-text-primary);
-  --text-secondary: var(--color-text-secondary);
-  --border-default: var(--color-border);
+  color-scheme: light;
+  --page: #f1f1ee;
+  --surface: #ffffff;
+  --surface-soft: #f7f9fc;
+  --surface-head: #f1f4f8;
+  --blue: #1f5797;
+  --blue-dark: #174578;
+  --blue-soft: #dfeafb;
+  --blue-line: #b7cdea;
+  /* The focus ring only. Deliberately not --blue; see the :focus-visible note. */
+  --focus: #2f7bd6;
+  --ink: #202733;
+  --ink-soft: #4c5868;
+  --border: #d5dce5;
+  --border-strong: #b9c5d3;
+  --amber: #935b0a;
+  --amber-soft: #fff4df;
+  --green: #19724b;
+  --green-soft: #e8f6ee;
+  --red: #a23f3a;
+  --red-soft: #fff0ee;
+  --shadow: 0 2px 5px rgba(24, 39, 61, .07);
+  --content: 1120px;
+  --radius: 9px;
+  --rail: 260px;
+  --rail-gap: 14px;
+  --rail-bg: #f4f6f9;
+  --rail-line: #d3dbe5;
 }
 
-[data-theme="dark"] {
-  /* Developer-friendly dark — gray-leaning, clearly layered, never murky.
-     Elevation ladder by role (lightest → darkest):
-       elevated #353D47  ·  card/surface #2B313A  ·  canvas #21262D  ·  sidebar #1A1F26
-     Visible borders carry the separation between every layer. */
-  --color-canvas:        #21262D;
-  --color-surface:       #2B313A;
-  --color-elevated:      #353D47;
-  --color-border:        #414A55;
-  --color-border-strong: #545E6B;
-  --color-text-primary:  #D8DEE6;
-  --color-text-secondary:#9AA6B3;
-  --color-text-tertiary: #BFC8D2;
-  --color-text-muted:    #7E8995;
-
-  --color-accent:      #7E9BFF;
-  --color-accent-deep: #99B0FF;
-  --color-accent-text: #10182B;
-  --color-accent-soft: rgba(126,155,255,.16);
-
-  --ok-text:#76E0B0;  --ok-bg:rgba(40,160,116,.18);  --ok-bd:rgba(70,180,132,.42);  --ok-dot:#49D29B;
-  --warn-text:#F1CB86; --warn-bg:rgba(200,146,46,.18); --warn-bd:rgba(214,166,78,.42); --warn-dot:#E7B259;
-  --bad-text:#F4ABA1;  --bad-bg:rgba(216,86,66,.18);   --bad-bd:rgba(222,116,100,.42); --bad-dot:#EA7E70;
-
-  /* Sidebar — the anchored darkest layer, but a slate gray, not black */
-  --side-bg:        #1A1F26;
-  --side-bg-2:      #171C22;
-  --side-text:      #BBC5D1;
-  --side-text-dim:  #7E8995;
-  --side-border:    rgba(255,255,255,.07);
-  --side-accent:    #7E9BFF;
-  --side-active-bg: rgba(126,155,255,.16);
-  --side-active-text:#DCE4FF;
-
-  --grid: rgba(255,255,255,.026);
-  --glow: rgba(126,155,255,.10);
-
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.26), 0 0 0 1px rgba(255,255,255,.022);
-  --shadow-md: 0 2px 8px -2px rgba(0,0,0,.34), 0 16px 34px -18px rgba(0,0,0,.48);
-  --shadow-pop:0 10px 28px -8px rgba(0,0,0,.42), 0 30px 60px -24px rgba(0,0,0,.56);
-}
-
-/* In dark, the sidebar sits just below the canvas — separate it with a soft
-   light seam instead of a hard black edge for a crisp, professional layer. */
-[data-theme="dark"] .rio-sidebar { border-inline-end: 1px solid rgba(255,255,255,.06); }
-[data-theme="dark"] .rio-topbar--inset { border-bottom-color: var(--color-border); }
-
-/* ============================================================================
- * Base
- * ========================================================================== */
-*, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
-html {
-  font-family: var(--font-sans);
-  font-size: 16px;
-  background: var(--color-canvas);
-  color: var(--color-text-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  accent-color: var(--color-accent);
-}
+* { box-sizing: border-box; }
+html { font-size: 16px; }
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--color-canvas);
-  color: var(--color-text-primary);
-  font-size: var(--text-body);
+  background: var(--page);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 1.0625rem;
   font-weight: 450;
-  line-height: 1.6;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
-h1,h2,h3,h4 { margin: 0; font-weight: 700; color: var(--color-text-primary); letter-spacing: -0.02em; line-height: 1.15; }
-h1 { font-size: var(--text-hero); }
-h2 { font-size: var(--text-h2); }
-h3 { font-size: var(--text-h3); letter-spacing: -0.01em; }
-p  { margin: 0; color: var(--color-text-secondary); line-height: 1.65; }
-a  { color: var(--color-accent); text-decoration: none; font-weight: 600; transition: color .14s ease; }
-a:hover { color: var(--color-accent-deep); }
-strong { font-weight: 700; color: var(--color-text-primary); }
-em { color: var(--color-text-secondary); }
-code {
-  font-family: var(--font-mono);
-  font-size: .85em;
-  font-weight: 600;
-  padding: .1em .42em;
-  border-radius: var(--radius-sm);
-  background: var(--color-accent-soft);
-  color: var(--color-accent-deep);
-}
-[data-theme="dark"] code { color: var(--color-accent); }
-::selection { background: var(--color-accent); color: var(--color-accent-text); }
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-sm); }
-::-webkit-scrollbar { width: 12px; height: 12px; }
-::-webkit-scrollbar-thumb { background: var(--color-border-strong); border: 3px solid var(--color-canvas); border-radius: 999px; }
+a { color: var(--blue); text-underline-offset: 3px; }
+a:hover { color: var(--blue-dark); }
+button, input, select { font: inherit; }
+/* The ring is solid, not tinted. A 28% wash of --blue reached only 1.54:1
+   against the backgrounds it lands on, where SC 1.4.11 asks for 3:1. Shape,
+   thickness and offset are unchanged, and the 2px offset is what keeps the
+   ring legible around a blue button: it is drawn on the surface behind, never
+   on the fill, so it is never adjacent to a filled control's own colour.
 
-/* Utilities present in markup */
-noscript { display: none; }
-.bg-canvas { background: var(--color-canvas); }
-.text-primary { color: var(--color-text-primary); }
-.rio-visually-hidden {
-  position: absolute !important; width: 1px; height: 1px;
-  padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
+   --focus is deliberately not --blue. Sharing the primary-button colour made a
+   focused control read as a button. #2f7bd6 is 1.72x lighter than --blue, so
+   the two are told apart at a glance, and it stays above the 3:1 floor on
+   every surface the ring can sit beside: --surface 4.26, --blue-soft 3.51,
+   --surface-soft 4.04, --surface-head 3.87, --rail-bg 3.94, --page 3.77, the
+   notice bar 4.03, --amber-soft 3.91, --green-soft 3.83, --red-soft 3.85, and
+   both quiet button faces 4.08. Worst case 3.51:1, on --blue-soft. */
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* ============================================================================
- * Atmosphere — blueprint grid + accent glow
- * ========================================================================== */
-body.admin-shell, body.admin-auth {
-  background-color: var(--color-canvas);
-  background-image:
-    radial-gradient(120% 60% at 78% -8%, var(--glow) 0%, transparent 60%),
-    linear-gradient(var(--grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: auto, 30px 30px, 30px 30px;
-  background-position: 0 0, -1px -1px, -1px -1px;
-}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+/* A keyboard-only escape hatch: off-screen until focused, gone again after.
+   Styled as an underlined link on a dark chip rather than as a filled control,
+   so the one moment it appears it reads as somewhere to go — not as page
+   chrome, and not as a button offering to dismiss itself.
 
-/* ============================================================================
- * Shell + sidebar (signature dark rail)
- * ========================================================================== */
-.rio-shell { display: grid; grid-template-columns: 264px minmax(0,1fr); min-height: 100vh; }
+   Every state is pinned to white. `a:hover` (0,1,1) outranks a bare
+   `.skip-link` (0,1,0), so hover used to repaint the text --blue-dark on
+   --ink: 1.54:1, against the 4.5:1 SC 1.4.3 asks for. White on --ink is
+   15.01:1, now stated for :link, :visited, :hover, :focus and :active — each
+   (0,2,0), so no generic anchor rule can reach inside it again. */
+.skip-link { position: fixed; z-index: 50; top: 8px; left: 8px; transform: translateY(-150%); padding: 10px 14px; border-radius: 6px; background: var(--ink); box-shadow: 0 6px 20px rgba(24,39,61,.28); color: #fff; font-size: .9375rem; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.skip-link:link, .skip-link:visited, .skip-link:hover, .skip-link:focus, .skip-link:active { color: #fff; }
+.skip-link:focus { transform: none; }
 
-.rio-sidebar {
-  position: sticky; top: 0; align-self: start;
-  height: 100vh; overflow-y: auto;
-  background:
-    linear-gradient(180deg, var(--side-bg) 0%, var(--side-bg-2) 100%);
-  border-inline-end: 1px solid rgba(0,0,0,.4);
-  padding: var(--space-5) var(--space-4) var(--space-5);
-  display: flex; flex-direction: column; gap: var(--space-6);
-}
-.rio-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-color: transparent; }
 
-.rio-sidebar__brand {
-  display: flex; align-items: center; gap: var(--space-3);
-  padding: var(--space-1) var(--space-2) var(--space-5);
-  border-bottom: 1px solid var(--side-border);
-  color: #fff;
-}
-.rio-sidebar__brand:hover { color: #fff; }
-.rio-sidebar__mark {
-  display: grid; place-items: center; width: 38px; height: 38px; flex: none;
-  background: var(--color-accent); color: #fff;
-  border-radius: 10px; font-weight: 800; font-size: 18px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 6px 16px -6px var(--color-accent);
-}
-.rio-sidebar__wordmark { font-weight: 800; font-size: 18px; letter-spacing: -.02em; color: #fff; }
+/* Product notice. The trailing review link exists only in this static contract. */
+.notice-bar { display: flex; min-height: 40px; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 24px; border-bottom: 1px solid #e3c981; background: #fff8e8; color: #644617; font-size: .9375rem; }
+.notice-bar p { flex: 1; min-width: 0; margin: 0; font-weight: 640; }
+.notice-bar p strong { color: #4f3609; font-weight: 800; }
+.notice-icon { width: 18px; height: 18px; flex: 0 0 18px; background: var(--amber); content: ""; mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E"); mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
+.notice-bar a { flex: 0 0 auto; padding: 4px 10px; border: 1px solid #e3c981; border-radius: 6px; color: #654815; font-size: .875rem; font-weight: 720; text-decoration: none; }
+.notice-bar a:hover { background: #f5e8c6; color: #4f3609; }
 
-.rio-sidebar__group { display: flex; flex-direction: column; gap: 2px; }
-.rio-sidebar__section {
-  font-family: var(--font-mono);
-  font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .16em; text-transform: uppercase;
-  color: var(--side-text-dim);
-  padding: 0 var(--space-3) var(--space-3);
-}
-.rio-sidebar__item {
+/* Desktop-application shell: global modules above, contextual subnavigation beside the work area. */
+.shell { min-height: calc(100vh - 40px); }
+.sidebar {
+  display: grid;
   position: relative;
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
-  padding: 9px var(--space-3);
-  border-radius: var(--radius-md);
-  color: var(--side-text); font-size: var(--text-meta); font-weight: 550; line-height: 1.3;
-  transition: background .14s ease, color .14s ease;
+  z-index: 3;
+  height: auto;
+  grid-template-columns: var(--rail) minmax(0, 1fr) auto;
+  grid-template-rows: 72px;
+  align-items: center;
+  padding: 0 24px 0 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
-.rio-sidebar__item:hover { background: rgba(255,255,255,.05); color: #fff; }
-.rio-sidebar__item.is-active,
-.rio-sidebar__item.is-current {
-  background: var(--side-active-bg); color: var(--side-active-text); font-weight: 700;
+.brand { display: inline-flex; grid-column: 1; grid-row: 1; align-self: center; align-items: center; gap: 10px; padding-left: 24px; color: var(--ink); text-decoration: none; }
+.brand-mark { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 7px; background: var(--blue); color: white; font-size: .92rem; font-weight: 850; letter-spacing: -.04em; }
+.brand-name { font-weight: 790; letter-spacing: -.02em; }
+.brand-note { display: block; color: var(--ink-soft); font-size: .875rem; font-weight: 620; }
+/* Primary modules begin after the contextual rail itself, not after fake inner padding. */
+.nav { display: flex; grid-column: 2; grid-row: 1; align-self: stretch; gap: 6px; margin: 0 24px 0 var(--rail-gap); padding: 0; }
+.nav a { display: inline-flex; position: relative; min-height: 72px; align-items: center; gap: 9px; padding: 0 12px; color: #334052; font-size: 1rem; font-weight: 720; text-decoration: none; }
+.nav a:hover { color: var(--blue); }
+.nav a[aria-current="page"] { color: #0f4f8f; font-weight: 810; }
+.nav a[aria-current="page"]::after { position: absolute; right: 12px; bottom: -1px; left: 12px; height: 3px; border-radius: 2px 2px 0 0; background: var(--blue); content: ""; }
+.nav a::before { width: 19px; height: 19px; flex: 0 0 19px; background: currentColor; content: ""; mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
+.nav a[href*="account"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21a8 8 0 0 0-16 0'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"); }
+.nav a[href*="users"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Cpath d='M8 9h8M8 13h5'/%3E%3C/svg%3E"); }
+.sidebar-foot { display: flex; grid-column: 3; grid-row: 1; align-self: center; align-items: center; gap: 12px; margin: 0; padding: 0; border: 0; }
+.signed-in { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: .96rem; font-weight: 760; }
+.role-note { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink-soft); font-size: .875rem; }
+.sidebar-foot form { display: inline-flex; }
+
+.content { display: grid; min-width: 0; grid-template-columns: var(--rail) minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; }
+.topbar { display: none; }
+.main { grid-column: 2; width: min(100% - 56px, var(--content)); margin: 0 auto; padding: 36px 0 62px; }
+.module-sidebar { grid-column: 1; grid-row: 1 / -1; min-height: calc(100vh - 112px); margin-top: 0; padding: 24px 12px 28px; border-right: 1px solid var(--rail-line); background: var(--rail-bg); }
+.module-title { margin: 0 0 12px; padding: 0 12px; color: #596779; font-size: .875rem; font-weight: 810; letter-spacing: .085em; text-transform: uppercase; }
+.module-nav { display: grid; gap: 4px; }
+.module-link { display: flex; min-height: 56px; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid transparent; border-radius: 8px; color: #334052; text-decoration: none; }
+.module-link:hover { border-color: #d6e0ec; background: #fff; color: var(--blue); }
+.module-link[aria-current="page"] { border-color: var(--blue-line); background: #eaf2fd; color: #0f4f8f; box-shadow: 0 1px 2px rgba(24,39,61,.04); }
+.module-link[aria-current="page"] strong { font-weight: 820; }
+.module-link > span:last-child { min-width: 0; }
+.module-link strong { display: block; font-size: 1rem; line-height: 1.3; overflow-wrap: anywhere; }
+.module-link small { display: block; margin-top: 2px; color: #5b6879; font-size: .875rem; line-height: 1.35; overflow-wrap: anywhere; }
+.module-icon { width: 20px; height: 20px; flex: 0 0 20px; background: currentColor; mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
+.module-icon-account { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21a8 8 0 0 0-16 0'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"); }
+.module-icon-users { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E"); }
+.module-icon-create { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
+.module-icon-evidence { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v5h5'/%3E%3Cpath d='M9 12h6M9 16h6M9 8h2'/%3E%3C/svg%3E"); }
+.app-footer { display: flex; grid-column: 2; grid-row: 2; align-items: center; flex-wrap: wrap; gap: 8px 14px; width: min(100% - 56px, var(--content)); margin: 0 auto; padding: 18px 0 24px; border-top: 1px solid var(--border); color: #596779; font-size: .875rem; }
+.app-footer span:first-child { color: var(--ink); font-weight: 760; }
+.app-footer span:nth-child(2)::before { margin-right: 14px; color: #9aa6b5; content: "·"; }
+.app-footer span:last-child { margin-left: auto; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; margin-bottom: 20px; }
+/* Flex and grid children default to `min-width: auto`, which refuses to go
+   below the longest word they contain. A thirty-character account name is
+   one word. */
+.page-head > div { min-width: 0; }
+.eyebrow { margin: 0 0 5px; color: var(--blue); font-size: .875rem; font-weight: 820; letter-spacing: .09em; text-transform: uppercase; }
+h1,h2,h3 { margin-top: 0; color: var(--ink); line-height: 1.2; }
+h1 { margin-bottom: 5px; overflow-wrap: anywhere; font-size: clamp(1.7rem,3vw,2.15rem); letter-spacing: -.035em; }
+h2 { margin-bottom: 5px; font-size: 1.05rem; letter-spacing: -.015em; }
+h3 { margin-bottom: 5px; font-size: 1rem; }
+.lead { max-width: 680px; margin: 0; overflow-wrap: anywhere; color: #445163; font-size: 1.02rem; }
+
+.card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.card-head { padding: 15px 19px; border-bottom: 1px solid var(--border); background: var(--surface-head); }
+.card-head h2 { margin: 0; font-size: .9375rem; letter-spacing: .07em; text-transform: uppercase; }
+.card-head .lead { margin-top: 5px; font-size: .92rem; }
+.card-body { padding: 22px; }
+
+.button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 7px; padding: 9px 15px; border: 1px solid transparent; border-radius: 7px; cursor: pointer; font-size: 1rem; font-weight: 760; line-height: 1.15; text-decoration: none; }
+.button-primary { background: var(--blue); color: white; }
+.button-primary:hover { background: var(--blue-dark); color: white; }
+.button-secondary { border-color: var(--border-strong); background: #f9fafc; color: var(--ink); }
+.button-secondary:hover { border-color: #8799ad; color: var(--blue); }
+.button-danger { border-color: #ce8580; background: var(--red-soft); color: var(--red); }
+.button-danger:hover { border-color: var(--red); background: #ffe4e1; }
+.button-quiet { min-height: 44px; padding: 7px 11px; border-color: var(--border); background: #f8fafc; color: #354154; font-size: .9375rem; }
+.button[disabled] { cursor: not-allowed; opacity: .55; }
+.button[href*="user-create"]::before,
+.button[href*="user-edit"]::before,
+.button[href="users.html"]::before,
+.danger-zone .button::before,
+form[action*="disable"] .button::before {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  background: currentColor;
+  content: "";
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
 }
-.rio-sidebar__item.is-active::before,
-.rio-sidebar__item.is-current::before {
-  content: ""; position: absolute; inset-inline-start: 0; top: 8px; bottom: 8px;
-  width: 3px; border-radius: 0 3px 3px 0;
-  background: var(--side-accent); box-shadow: 0 0 12px var(--side-accent);
+.button[href*="user-create"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E"); }
+.button[href*="user-edit"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20h9'/%3E%3Cpath d='M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z'/%3E%3C/svg%3E"); }
+.button[href="users.html"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E"); }
+/* The prohibition mark means "this disables an account". Cancel is not that,
+   and wearing the same icon made the safe way out look like the destructive
+   one, so it takes the back chevron every other return-to-list control uses. */
+.danger-zone .button::before,
+form[action*="disable"] .button-danger::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='m6 6 12 12'/%3E%3C/svg%3E"); }
+form[action*="disable"] .button-secondary::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m15 18-6-6 6-6'/%3E%3C/svg%3E"); }
+
+.alert { display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 12px; margin-bottom: 18px; padding: 14px 16px; border: 1px solid; border-radius: 8px; font-size: 1rem; }
+.alert strong { display: block; margin-bottom: 1px; }
+.alert p { margin: 0; }
+.alert svg { width: 22px; height: 22px; margin-top: 1px; }
+.alert-error { border-color: #e0a7a2; background: var(--red-soft); color: #782f2b; }
+.alert-success { border-color: #9dceb4; background: var(--green-soft); color: #15583a; }
+.alert-warning { border-color: #e7c27b; background: var(--amber-soft); color: #714707; }
+.alert-info { border-color: var(--blue-line); background: #edf4fd; color: var(--blue-dark); }
+
+.form { display: grid; max-width: 680px; gap: 22px; }
+.field { display: grid; gap: 8px; }
+.label { color: #273345; font-size: 1rem; font-weight: 770; }
+.hint,.error-text { margin: 0; font-size: .9rem; line-height: 1.5; }
+.hint { color: #4b596b; }
+.error-text { color: var(--red); font-weight: 700; }
+input,select { width: 100%; min-height: 49px; padding: 10px 13px; border: 1.5px solid #848f9e; border-radius: 7px; background: #fffdf9; color: var(--ink); font-size: 1rem; box-shadow: inset 0 1px 2px rgba(24,39,61,.035); }
+/* The boundary is what identifies the control, so SC 1.4.11 applies: #aab7c7
+   and #9fb3ca were 2.01-2.15:1 against the surfaces either side of them.
+   Deepened to #848f9e and #7890af, which clear 3:1 against both the card and
+   the field's own fill. Hue, weight, radius, height and both backgrounds are
+   unchanged, so the warm/blue empty-versus-filled cue still carries the
+   distinction. */
+input:not([type="hidden"]):not(:placeholder-shown),select { border-color: #7890af; background: #f4f8fd; }
+input:hover,select:hover { border-color: #71869f; }
+input:focus,select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(31,87,151,.12); outline: none; }
+input[aria-invalid="true"],select[aria-invalid="true"] { border-color: var(--red); background: var(--red-soft); box-shadow: 0 0 0 3px rgba(162,63,58,.1); }
+.form-actions { display: flex; flex-wrap: wrap; gap: 9px; padding-top: 3px; }
+
+/* `position: relative` so the visually-hidden column label inside the table
+   resolves against this scroller rather than the initial containing block.
+   Absolutely positioned and clipped it may be, but it still sat at the
+   table's full intrinsic width and dragged the document's scrollable area
+   out with it. Nothing about the visible layout changes. */
+.table-wrap { position: relative; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th,td { padding: 13px 16px; border-bottom: 1px solid #e1e6ed; vertical-align: middle; }
+th { background: #f3f5f8; color: #455267; font-size: .875rem; letter-spacing: .055em; text-transform: uppercase; }
+tbody tr:hover { background: #f7faff; }
+tbody tr:last-child td { border-bottom: 0; }
+.table-link { color: #22334a; font-weight: 760; text-decoration-color: #aebbd0; }
+.cell-muted { color: var(--ink-soft); }
+.actions { white-space: nowrap; text-align: right; }
+.badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid; border-radius: 6px; font-size: .875rem; font-weight: 760; }
+.badge::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; }
+.badge-active { border-color: #b4dbc5; background: var(--green-soft); color: var(--green); }
+.badge-disabled { border-color: #e3b0ab; background: var(--red-soft); color: var(--red); }
+.badge-admin { border-color: var(--blue-line); background: #eaf2fd; color: var(--blue); }
+.badge-user { border-color: #cfd6df; background: #f2f4f7; color: #4c5868; }
+
+.details { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 0; }
+.details div { padding: 15px 0; border-bottom: 1px solid #e3e7ed; }
+.details div:nth-child(odd) { padding-right: 28px; }
+.details div:nth-last-child(-n+2) { border-bottom: 0; }
+.details dt { margin-bottom: 5px; color: #465366; font-size: .875rem; font-weight: 790; letter-spacing: .055em; text-transform: uppercase; }
+.details dd { margin: 0; font-weight: 680; }
+.danger-zone { margin-top: 20px; border-color: #dfb0ab; box-shadow: none; }
+.danger-zone .card-head { border-color: #e4bbb7; background: #fbf3f2; }
+
+.login-shell { display: grid; min-height: calc(100vh - 98px); place-items: start center; padding: clamp(70px,12vh,122px) 28px 44px; background: var(--page); }
+.login-wrap { width: min(100%,430px); min-width: 0; }
+.login-brand { justify-content: center; margin-bottom: 20px; }
+.login-card { padding: 28px; }
+.login-card h1 { font-size: 1.8rem; }
+.login-card .lead { margin-bottom: 24px; }
+.login-card .form { gap: 17px; }
+.login-card .button { width: 100%; }
+
+/* The account being acted on, lifted out of the heading so a long username
+   wraps on its own line instead of breaking mid-word across the question.
+   `anywhere` because a username may be 32 unbroken characters and the page
+   must still not scroll sideways at 320px. Both this and the heading are in
+   the section's aria-labelledby, so the accessible name still names it. */
+.confirm-subject { margin: -4px 0 14px; overflow-wrap: anywhere; font-size: 1.15rem; font-weight: 780; }
+.confirm-note { margin: 0 0 18px; color: var(--ink-soft); font-size: .9375rem; }
+.login-foot { margin: 17px 0 0; color: #465366; font-size: .875rem; text-align: center; }
+.auth-footer { display: flex; min-height: 58px; align-items: center; flex-wrap: wrap; gap: 8px 14px; width: min(100% - 56px, var(--content)); margin: 0 auto; padding: 15px 0 20px; border-top: 1px solid var(--border); color: #596779; font-size: .875rem; }
+.auth-footer span:first-child { color: var(--ink); font-weight: 760; }
+.auth-footer span:nth-child(2)::before { margin-right: 14px; color: #9aa6b5; content: "·"; }
+.auth-footer span:last-child { margin-left: auto; }
+
+
+@media (max-width:1040px) {
+  .sidebar { grid-template-columns: 1fr auto; grid-template-rows: minmax(56px, auto) 44px; padding: 0 24px; }
+  .brand { padding-left: 0; }
+  .nav { grid-column: 1 / -1; grid-row: 2; gap: 4px; margin: 0 -24px; padding: 0 12px; overflow-x: auto; }
+  .nav a { min-height: 44px; padding: 0 10px; }
+  .nav a[aria-current="page"]::after { right: 6px; left: 6px; }
+  /* Two tight lines instead of a hidden role: name over role, Sign out
+     beside them. The complete identity block stays visible at every width. */
+  .sidebar-foot {
+    display: grid;
+    grid-column: 2;
+    grid-template-areas: "name signout" "role signout";
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 10px;
+  }
+  .sidebar-foot .signed-in { grid-area: name; }
+  .sidebar-foot .role-note { grid-area: role; }
+  .sidebar-foot form { grid-area: signout; }
+  .module-sidebar { min-height: calc(100vh - 140px); }
 }
-.rio-sidebar__count {
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--side-text-dim); background: rgba(255,255,255,.06);
-  border: 1px solid var(--side-border); border-radius: 999px;
-  padding: 1px 8px; min-width: 22px; text-align: center;
+@media (max-width:760px) {
+  .sidebar { grid-template-columns: 1fr auto; grid-template-rows: minmax(54px, auto) 44px; padding: 0 16px; }
+  .brand { align-self: center; margin-bottom: 0; }
+  .brand-note { display: none; }
+  .brand { padding-left: 0; }
+  .nav { grid-column: 1 / -1; grid-row: 2; gap: 4px; margin: 0 -16px; padding: 0 12px; overflow-x: auto; }
+  .nav a { min-height: 44px; align-items: center; padding: 0 10px; }
+  .nav a[aria-current="page"]::after { right: 6px; left: 6px; }
+  .sidebar-foot { grid-column: 2; align-self: center; margin-bottom: 0; }
+  .content { display: block; }
+  .app-footer,.auth-footer { width: min(100% - 28px, var(--content)); }
+  .notice-bar { padding: 8px 16px; }
+  .module-sidebar { min-height: 0; margin-top: 0; padding: 14px; border-right: 0; border-bottom: 1px solid var(--border); background: var(--rail-bg); }
+  .module-title { display: none; }
+  .module-nav { display: flex; gap: 8px; overflow-x: auto; }
+  .module-link { min-width: 178px; min-height: 52px; }
+  .module-link strong,.module-link small { overflow-wrap: normal; }
+  .main { width: min(100% - 28px,var(--content)); padding-top: 26px; }
+  .page-head { display: grid; align-items: start; }
+  .details { grid-template-columns: 1fr; }
+  .details div,.details div:nth-child(odd) { padding-right: 0; }
+  .details div:nth-last-child(2) { border-bottom: 1px solid #e3e7ed; }
 }
-.rio-sidebar__item.is-active .rio-sidebar__count { color: var(--side-active-text); border-color: rgba(124,151,255,.4); }
-.rio-sidebar__lang { margin-top: auto; padding-top: var(--space-4); border-top: 1px solid var(--side-border); }
-
-/* Lang switcher (sidebar = dark context) */
-.rio-lang-switcher { margin: 0; }
-.rio-lang-switcher__label { display: inline-flex; align-items: center; gap: var(--space-2); width: 100%; }
-.rio-lang-switcher__icon { font-size: 14px; opacity: .85; }
-.rio-sidebar__lang .rio-lang-switcher__select {
-  width: 100%; background: rgba(255,255,255,.05); color: var(--side-text);
-  border: 1px solid var(--side-border); border-radius: var(--radius-md);
-  padding: 7px 10px; font-size: var(--text-small); font-weight: 600; cursor: pointer;
+@media (max-width:480px) {
+  .notice-bar a { display: none; }
+  .shell,.login-shell { min-height: 100vh; }
+  /* Below 480px the masthead stacks: brand, then the identity block on its
+     own row, then the module bar. The username gets the full width to wrap
+     into instead of being deleted. DOM order is unchanged, so reading and
+     focus order still match what is on screen. */
+  .sidebar { grid-template-rows: auto auto 44px; padding: 6px 14px 0; }
+  .brand { grid-column: 1 / -1; grid-row: 1; }
+  .sidebar-foot {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    align-self: start;
+    padding-bottom: 8px;
+  }
+  .nav { grid-row: 3; margin: 0 -14px; }
+  .nav { gap: 2px; }
+  .page-head .button,.button-row,.form-actions { width: 100%; }
+  .button-row,.form-actions { display: grid; }
+  .button-row .button,.form-actions .button { width: 100%; }
+  .card-body { padding: 18px; }
+  th,td { padding: 12px 13px; }
+  .login-shell { padding: 16px; }
+  .login-shell { padding-top: 52px; }
+  .login-card { padding: 23px 19px; }
+  .app-footer span:nth-child(2)::before,
+  .auth-footer span:nth-child(2)::before { display: none; }
+  .app-footer span:last-child,.auth-footer span:last-child { margin-left: 0; }
 }
-.rio-sidebar__lang .rio-lang-switcher__select option { color: #1a1f29; }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
 
-/* ============================================================================
- * Main + topbar
- * ========================================================================== */
-.rio-main {
-  display: flex; flex-direction: column; min-width: 0;
-  padding: var(--space-5) var(--space-7) var(--space-7);
-  gap: var(--space-5);
-}
+/* ===================================================================
+   Composed for rustio
+   -------------------------------------------------------------------
+   rustio's admin has surfaces rustio-lite has no page for: a dashboard,
+   pagination, a filter toolbar, a layout switch, a language switcher,
+   a permission matrix, a view editor. Everything below is built from
+   the tokens above — no colour, weight, radius or shadow that is not
+   already in this file.
+   =================================================================== */
 
-.rio-topbar {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-4);
-  padding-bottom: var(--space-4); margin-bottom: var(--space-1);
-  border-bottom: 1px solid var(--color-border);
-}
-.rio-topbar--inset {
-  margin: calc(var(--space-5) * -1) calc(var(--space-7) * -1) 0;
-  padding: var(--space-4) var(--space-7);
-  background: color-mix(in srgb, var(--color-surface) 70%, transparent);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--color-border);
-}
-.rio-topbar__status {
-  display: flex; align-items: center; gap: var(--space-3);
-  font-family: var(--font-mono); font-size: var(--text-small); font-weight: 600;
-  color: var(--color-text-secondary);
-}
-.rio-topbar__dot {
-  width: 8px; height: 8px; border-radius: 999px; background: var(--color-accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
-  animation: rio-pulse 2.6s ease-in-out infinite;
-}
-.rio-topbar__logout-form { margin: 0; }
+/* Body variant for the auth pages, matching .login-shell's centring. */
+.auth-body { background: var(--page); }
 
-.rio-env-chip {
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .12em; text-transform: uppercase;
-  color: var(--color-accent-deep); background: var(--color-accent-soft);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
-  border-radius: 999px; padding: 4px 11px;
-}
-[data-theme="dark"] .rio-env-chip { color: var(--color-accent); }
+/* Page head actions — the right-hand side of .page-head. */
+.page-head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 
-.rio-theme-toggle {
-  display: grid; place-items: center; width: 36px; height: 36px;
-  border: 1px solid var(--color-border); background: var(--color-surface);
-  color: var(--color-text-secondary); border-radius: var(--radius-md);
-  cursor: pointer; font-size: 16px; line-height: 1;
-  transition: border-color .14s, color .14s, background .14s;
-}
-.rio-theme-toggle:hover { border-color: var(--color-border-strong); color: var(--color-accent); background: var(--color-elevated); }
+/* Breadcrumb. Sized like .lead, separated by --border-strong. */
+.breadcrumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 5px; color: var(--ink-soft); font-size: .875rem; font-weight: 620; }
+.breadcrumb a { color: var(--ink-soft); }
+.breadcrumb a:hover { color: var(--blue-dark); }
+.breadcrumb-sep { color: var(--border-strong); }
+.breadcrumb-current { color: var(--ink); font-weight: 760; }
 
-/* topbar lang switcher (light context) */
-.rio-topbar .rio-lang-switcher__select {
-  width: auto; min-width: 120px; background: var(--color-surface);
-  color: var(--color-text-secondary); border: 1px solid var(--color-border);
-  border-radius: var(--radius-md); padding: 7px 10px; font-size: var(--text-small); font-weight: 600; cursor: pointer;
-}
+/* Card title + grid. .card-head already carries the uppercase h2 rule;
+   .card-title is that treatment applied to a bare element. */
+.card-title { margin: 0; font-size: .9375rem; font-weight: 810; letter-spacing: .07em; text-transform: uppercase; }
+.card-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); }
 
-/* ============================================================================
- * Page header / breadcrumb / eyebrow
- * ========================================================================== */
-.rio-page-header {
-  display: grid; grid-template-columns: minmax(0,1fr) auto; grid-template-rows: auto auto;
-  align-items: center; column-gap: var(--space-4); row-gap: var(--space-2);
-}
-.rio-page-header h1 { grid-column: 1; grid-row: 2; }
-.rio-page-header .rio-breadcrumb { grid-column: 1; grid-row: 1; }
-.rio-page-header__actions { grid-column: 2; grid-row: 1 / span 2; display: flex; align-items: center; gap: var(--space-2); justify-self: end; }
+/* Dashboard stats. .card geometry, value at the 1.8rem display size. */
+.stat-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); }
+.stat { padding: 18px 19px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.stat-value { display: block; color: var(--ink); font-size: 1.8rem; font-weight: 820; letter-spacing: -.02em; line-height: 1.1; }
+.stat-label { display: block; margin-top: 5px; color: var(--ink-soft); font-size: .875rem; font-weight: 760; letter-spacing: .085em; text-transform: uppercase; }
+.stat-featured { border-color: var(--blue-line); background: var(--blue-soft); }
 
-.rio-page-head { display: flex; flex-direction: column; gap: var(--space-2); max-width: 70ch; }
-.rio-page-head h1 { font-size: 36px; letter-spacing: -.03em; }
-.rio-page-head p { color: var(--color-text-secondary); font-size: 15.5px; }
-.rio-accent-word { color: var(--color-accent); }
-.rio-stat-grid { margin-top: var(--space-1); }
+/* Toolbar strip — the .card-head surface carrying controls. */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 14px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-head); }
+.toolbar-count { margin-left: auto; color: var(--ink-soft); font-size: .875rem; font-weight: 720; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.filter { display: inline-flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: .875rem; font-weight: 720; }
 
-.rio-breadcrumb {
-  display: flex; align-items: center; gap: var(--space-2);
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .1em; text-transform: uppercase; color: var(--color-text-muted);
-}
-.rio-breadcrumb a { color: var(--color-text-muted); font-weight: 700; }
-.rio-breadcrumb a:hover { color: var(--color-accent); }
-.rio-breadcrumb__sep { color: var(--color-border-strong); }
+/* Layout switch + pagination — .button-quiet faces, current = blue wash. */
+.layout-switch { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 16px; border-top: 1px solid var(--border); background: var(--surface-head); }
+.pagination-pages { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pagination-pages a { min-width: 36px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: #f8fafc; color: #354154; font-size: .9375rem; font-weight: 760; text-align: center; text-decoration: none; }
+.pagination-pages a:hover { border-color: var(--border-strong); }
+.pagination-pages a.is-active { border-color: var(--blue-line); background: var(--blue-soft); color: var(--blue); }
 
-/* Eyebrow pill (dashboard "Workspace overview") */
-.rio-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .1em; text-transform: uppercase; line-height: 1;
-  padding: 6px 11px 6px 10px; border-radius: 999px;
-  border: 1px solid var(--color-border-strong); color: var(--color-text-secondary);
-  background: var(--color-surface); white-space: nowrap;
-}
-.rio-pill::before { content: ""; width: 7px; height: 7px; border-radius: 999px; background: var(--color-text-muted); flex: none; }
-.rio-pill--lift { align-self: flex-start; }
+/* Empty state — .card-body copy, centred. */
+.empty { padding: 44px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); text-align: center; }
+.empty-icon { display: grid; width: 40px; height: 40px; margin: 0 auto 12px; place-items: center; border-radius: 9px; background: var(--blue-soft); color: var(--blue); font-size: 1.15rem; font-weight: 850; }
 
-/* Status chip variants */
-.rio-pill-emerald { color: var(--ok-text);   background: var(--ok-bg);   border-color: var(--ok-bd); }
-.rio-pill-emerald::before { background: var(--ok-dot); }
-.rio-pill-amber   { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); }
-.rio-pill-amber::before   { background: var(--warn-dot); }
-.rio-pill-rose    { color: var(--bad-text);  background: var(--bad-bg);  border-color: var(--bad-bd); }
-.rio-pill-rose::before    { background: var(--bad-dot); }
-.rio-pill-slate   { color: var(--color-text-secondary); background: var(--color-elevated); border-color: var(--color-border-strong); }
-.rio-pill-slate::before   { background: var(--color-text-muted); }
-.rio-pill-indigo  { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); }
-.rio-pill-indigo::before  { background: var(--color-accent); }
+/* Detail views — .details is the 2-column grid; these are its parts. */
+.detail-grid { display: grid; gap: 14px; grid-template-columns: minmax(0,2fr) minmax(0,1fr); align-items: start; }
+.detail-single { display: grid; gap: 14px; }
+.detail-main { display: grid; gap: 14px; min-width: 0; }
+.detail-side { display: grid; gap: 14px; min-width: 0; }
+.detail-row { display: grid; gap: 4px; padding: 11px 0; border-bottom: 1px solid #e1e6ed; min-width: 0; }
+.detail-row:last-child { border-bottom: 0; }
+.detail-label { color: #596779; font-size: .875rem; font-weight: 810; letter-spacing: .085em; text-transform: uppercase; }
+.detail-value { color: var(--ink); overflow-wrap: anywhere; }
 
-/* ============================================================================
- * Buttons (compact, refined)
- * ========================================================================== */
-.rio-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
-  font-family: var(--font-sans); font-size: var(--text-small); font-weight: 650;
-  line-height: 1; color: var(--color-text-primary);
-  background: var(--color-surface); border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-md); padding: 9px 14px; cursor: pointer; white-space: nowrap;
-  transition: background .14s, border-color .14s, color .14s, transform .06s, box-shadow .14s;
-}
-.rio-btn:hover { border-color: var(--color-text-muted); background: var(--color-elevated); color: var(--color-text-primary); }
-.rio-btn:active { transform: translateY(1px); }
-.rio-btn:disabled { opacity: .5; cursor: not-allowed; }
+/* Identity — .brand-mark's geometry at two sizes. */
+.avatar { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 7px; background: var(--blue); color: #fff; font-size: .92rem; font-weight: 850; letter-spacing: -.04em; }
+.avatar-lg { width: 56px; height: 56px; border-radius: 9px; font-size: 1.15rem; }
+.avatar-admin, .avatar-developer { background: var(--blue); }
+.avatar-user, .avatar-customer { border: 1px solid #cfd6df; background: #f2f4f7; color: #4c5868; }
+.profile { display: grid; gap: 16px; }
+.profile-id { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.profile-meta { display: grid; min-width: 0; gap: 2px; }
+.profile-name { margin: 0; font-size: 1.15rem; font-weight: 790; letter-spacing: -.02em; }
+.profile-email { margin: 0; color: var(--ink-soft); font-size: .9375rem; overflow-wrap: anywhere; }
 
-.rio-btn--primary {
-  color: var(--color-accent-text); background: var(--color-accent); border-color: var(--color-accent);
-  box-shadow: 0 6px 16px -8px var(--color-accent), inset 0 1px 0 rgba(255,255,255,.18);
-}
-.rio-btn--primary:hover { background: var(--color-accent-deep); border-color: var(--color-accent-deep); color: var(--color-accent-text); }
-.rio-btn--ghost {
-  background: transparent; border-color: transparent; color: var(--color-text-secondary);
-  padding-inline: var(--space-3);
-}
-.rio-btn--ghost:hover { background: var(--color-accent-soft); border-color: transparent; color: var(--color-accent-deep); }
-[data-theme="dark"] .rio-btn--ghost:hover { color: var(--color-accent); }
-.rio-btn--block { width: 100%; }
+/* Permission matrix — allowed/denied read as .badge colours. */
+.perm { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid #e1e6ed; }
+.perm:last-child { border-bottom: 0; }
+.perm-icon { display: grid; width: 22px; height: 22px; flex: 0 0 22px; place-items: center; margin-top: 1px; border: 1px solid; border-radius: 999px; font-size: .78rem; font-weight: 820; }
+.perm.is-allowed .perm-icon { border-color: #b4dbc5; background: var(--green-soft); color: var(--green); }
+.perm.is-denied .perm-icon { border-color: #cfd6df; background: #f2f4f7; color: #4c5868; }
 
-/* ============================================================================
- * Cards
- * ========================================================================== */
-.rio-card {
-  background: var(--color-surface); border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg); padding: var(--space-5);
-  box-shadow: var(--shadow-sm);
-}
-.rio-card > p:first-child { margin-top: 0; }
-.rio-card:has(> .rio-table) { padding: 0; overflow-x: auto; }
-.rio-card:has(> form > .rio-table) { padding: var(--space-5); }
+/* A vertical stack of cards or rows. */
+.stack-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
 
-/* ============================================================================
- * Stat grid (dashboard)
- * ========================================================================== */
-.rio-stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(216px,1fr)); gap: var(--space-5); }
-.rio-stat {
-  --c: var(--color-accent);
-  position: relative; display: flex; flex-direction: column; gap: var(--space-3);
-  padding: var(--space-6) var(--space-5) var(--space-5);
-  background:
-    radial-gradient(135% 90% at 100% 0%, color-mix(in srgb, var(--c) 10%, transparent), transparent 58%),
-    var(--color-surface);
-  border: 1px solid var(--color-border); border-radius: var(--radius-lg);
-  color: var(--color-text-primary); box-shadow: var(--shadow-sm); overflow: hidden;
-  transition: transform .16s, border-color .16s, box-shadow .16s;
-}
-.rio-stat::after { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--c); opacity: .92; }
-.rio-stat:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--c) 42%, var(--color-border)); box-shadow: 0 16px 34px -18px var(--c), var(--shadow-sm); }
-.rio-stat__value { font-family: var(--font-mono); font-size: var(--text-stat); font-weight: 700; line-height: 1; letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--c); }
-.rio-stat__label { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--color-text-muted); }
-/* Per-card hue rotation — appropriate, harmonious colours for fast scanning */
-.rio-stat:nth-child(8n+1){ --c:#2B54E0; }
-.rio-stat:nth-child(8n+2){ --c:#0F766E; }
-.rio-stat:nth-child(8n+3){ --c:#6D28D9; }
-.rio-stat:nth-child(8n+4){ --c:#B45309; }
-.rio-stat:nth-child(8n+5){ --c:#0B6BB8; }
-.rio-stat:nth-child(8n+6){ --c:#BE2A52; }
-.rio-stat:nth-child(8n+7){ --c:#0E7C57; }
-.rio-stat:nth-child(8n+8){ --c:#4338CA; }
-.rio-stat--featured { background: color-mix(in srgb, var(--c) 9%, var(--color-surface)); border-color: color-mix(in srgb, var(--c) 38%, var(--color-border)); box-shadow: var(--shadow-md); }
-.rio-stat--featured::after { height: 4px; }
-[data-theme="dark"] .rio-stat__value { color: color-mix(in srgb, var(--c) 52%, #FFFFFF); }
-[data-theme="dark"] .rio-stat--featured { background: color-mix(in srgb, var(--c) 16%, var(--color-surface)); }
+/* Language switcher — a bare select in the header. */
+.lang-switcher { display: inline-flex; align-items: center; gap: 7px; }
+.lang-select { min-height: 38px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: #f8fafc; color: #354154; font-size: .9375rem; }
 
-/* ============================================================================
- * Toolbar / filters / layout switch
- * ========================================================================== */
-.rio-toolbar { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
-.rio-toolbar__count { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; color: var(--color-text-muted); margin-inline-start: auto; white-space: nowrap; }
-.rio-filters { color: var(--color-text-secondary); font-size: var(--text-small); font-weight: 600; }
-.rio-filter { color: var(--color-text-secondary); }
+/* Table extras. */
+.table-compact th, .table-compact td { padding: 8px 12px; font-size: .9375rem; }
+.cell-id { color: var(--ink-soft); font-size: .9375rem; font-weight: 720; }
+.cell-num { text-align: right; font-variant-numeric: tabular-nums; }
+.cell-fit { width: 1%; white-space: nowrap; }
+.expand-btn { border: 0; background: none; color: var(--blue); font-weight: 760; cursor: pointer; }
+.expand-panel { background: var(--surface-soft); }
 
-/* segmented layout switch — override the page's inline .is-active rule */
-nav.rio-layout-switch { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-inline-start: auto; padding: 3px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
-nav.rio-layout-switch .rio-btn { border-color: transparent; background: transparent; color: var(--color-text-muted); font-size: var(--text-small); padding: 6px 11px; }
-nav.rio-layout-switch a.is-active { background: var(--color-surface); color: var(--color-accent-deep); font-weight: 700; text-decoration: none; box-shadow: var(--shadow-sm); }
-[data-theme="dark"] nav.rio-layout-switch a.is-active { color: var(--color-accent); }
+/* Form extras. */
+.field-checkbox { display: flex; align-items: center; gap: 9px; }
+.field-optional { color: var(--ink-soft); font-size: .875rem; font-weight: 620; }
+.field-sensitive { color: var(--amber); font-size: .875rem; font-weight: 720; }
+.required-mark { color: var(--red); font-weight: 820; }
+.checkbox { width: 18px; height: 18px; flex: 0 0 18px; accent-color: var(--blue); }
+.input-inline { width: auto; min-width: 0; }
+.input-wide { max-width: 320px; }
+.input-narrow { max-width: 150px; }
+.col-30 { width: 30%; }
+.w-auto { width: auto; }
 
-/* Function colour-cues (subtle): the four view toggles stay neutral; the two
-   action controls are tinted by purpose and split off with a hairline.
-   Note: the inner <form> is dropped by the parser (forms can't nest), so the
-   "Set as default" control is a bare <button> child of the nav. */
-nav.rio-layout-switch > button.rio-btn {
-  margin-inline-start: 4px; padding-inline-start: 12px;
-  border-inline-start: 1px solid var(--color-border-strong);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  color: var(--ok-text); font-weight: 650;
-}
-nav.rio-layout-switch > button.rio-btn:hover { background: var(--ok-bg); color: var(--ok-text); }
-/* "Edit view" — configure / navigate → soft accent blue */
-nav.rio-layout-switch > a[title] { color: var(--color-accent-deep); font-weight: 650; }
-nav.rio-layout-switch > a[title]:hover { background: var(--color-accent-soft); color: var(--color-accent-deep); }
-[data-theme="dark"] nav.rio-layout-switch > a[title] { color: var(--color-accent); }
+/* Badge variants rustio needs beyond rustio-lite's four. */
+/* `role_style` yields admin | developer | customer; the first two read as
+   privileged, the third as ordinary, using rustio-lite's two badge faces. */
+.badge-developer { border-color: var(--blue-line); background: #eaf2fd; color: var(--blue); }
+.badge-customer { border-color: #cfd6df; background: #f2f4f7; color: #4c5868; }
+.badge-warn { border-color: #e7c27b; background: var(--amber-soft); color: var(--amber); }
 
-/* ============================================================================
- * Inputs / forms
- * ========================================================================== */
-.rio-input, .rio-form__input,
-.rio-form input, .rio-form select, .rio-form textarea {
-  width: 100%; font: inherit; font-size: var(--text-meta); font-weight: 500;
-  color: var(--color-text-primary); background: var(--color-surface);
-  border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
-  padding: 10px var(--space-4); line-height: 1.4;
-  transition: border-color .14s, box-shadow .14s;
-}
-.rio-input::placeholder, .rio-form__input::placeholder { color: var(--color-text-muted); font-weight: 500; }
-.rio-input:focus, .rio-form__input:focus,
-.rio-form input:focus, .rio-form select:focus, .rio-form textarea:focus {
-  outline: none; border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 20%, transparent);
-}
-select.rio-input, select.rio-form__input { cursor: pointer; }
-/* Toolbar variant: a control sitting in a row of controls, sized to its
-   content rather than filling the line like a stacked form field. */
-.rio-form__input--inline { width: auto; min-width: 0; flex: none; }
-.rio-form textarea { min-height: 110px; resize: vertical; line-height: 1.55; }
+/* Button sizes. */
+.button-block { width: 100%; justify-content: center; }
+.button-sm { min-height: 36px; padding: 5px 9px; font-size: .875rem; }
 
-.rio-form { display: flex; flex-direction: column; gap: var(--space-4); }
-.rio-form__field, .rio-field { display: flex; flex-direction: column; gap: var(--space-2); }
-.rio-form__label {
-  font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700;
-  letter-spacing: .07em; text-transform: uppercase; color: var(--color-text-muted);
-}
-.rio-form__required { color: var(--color-accent); margin-inline-start: 2px; }
-.rio-form__help { font-size: var(--text-small); color: var(--color-text-muted); line-height: 1.5; }
-.rio-form__help--error { color: var(--bad-text); font-weight: 600; }
-.rio-form__actions {
-  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-3);
-  margin-top: var(--space-2); padding-top: var(--space-4); border-top: 1px solid var(--color-border);
-}
+/* Login page title, sized like the one h1 in the contract. */
+.login-title { margin: 0 0 5px; font-size: 1.8rem; font-weight: 820; letter-spacing: -.02em; }
 
-/* detail wrappers */
-.rio-detail-grid { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: var(--space-5); align-items: start; }
-.rio-detail-main { min-width: 0; }
-.rio-detail-single { max-width: 720px; }
-.rio-detail-side { position: sticky; top: var(--space-5); display: flex; flex-direction: column; gap: var(--space-4); }
+/* Environment chip in the header. */
+.env-chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 9px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: .875rem; font-weight: 760; }
+.accent-word { color: var(--blue); font-weight: 790; }
 
-.rio-detail-list, .rio-meta-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-3) var(--space-5); margin: 0; }
-.rio-detail-list dt, .rio-meta-list dt { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted); align-self: center; }
-.rio-detail-list dd, .rio-meta-list dd { margin: 0; min-width: 0; font-weight: 600; color: var(--color-text-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-
-/* ============================================================================
- * Table
- * ========================================================================== */
-.rio-table-wrap { overflow-x: auto; }
-
-/* ---------------------------------------------------------------
-   Small shared primitives.
-   These replace inline style= attributes that were repeated across
-   templates. Each one carries the declarations the inline rule
-   carried, with magic numbers snapped onto the spacing scale.
-   --------------------------------------------------------------- */
-.rio-stack-sm { margin-top: var(--space-3); }
-.rio-stack    { margin-top: var(--space-4); }
-.rio-stack-lg { margin-top: var(--space-5); }
-.rio-flush    { margin: 0; }
-.rio-inline-form { display: inline; margin: 0; }
-.rio-inline-actions { display: inline-flex; align-items: center; gap: var(--space-1); }
-.rio-inline-actions--wide { display: inline-flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.rio-muted-text { color: var(--color-text-muted); }
-.rio-nowrap { white-space: nowrap; }
-.rio-center { text-align: center; }
-.rio-is-disabled { pointer-events: none; opacity: .4; }
-.rio-col-fit { width: 1%; }
-.rio-col-30 { width: 30%; }
-.rio-w-auto { width: auto; }
-.rio-search-wide { max-width: 320px; }
-.rio-search-narrow { max-width: 150px; }
-.rio-inline-gap { margin-inline-start: var(--space-2); }
-.rio-row { display: flex; align-items: center; gap: var(--space-3); }
-.rio-row--tight { display: flex; align-items: center; gap: var(--space-2); }
-.rio-tag-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.rio-section-title { font-size: var(--text-h3); font-weight: 600; }
-.rio-weight-normal { font-weight: 400; }
-.rio-flush-top { margin-top: 0; }
-.rio-editor-note { margin: var(--space-2) 0 var(--space-4); }
-/* Danger note in the view editor — uses the shipped semantic triplet
-   instead of the hardcoded red it carried. */
-.rio-view-error {
-  border-inline-start: 4px solid var(--bad-dot);
-  color: var(--bad-text);
-  margin-bottom: var(--space-4);
-}
-.rio-table { width: 100%; border-collapse: collapse; font-size: var(--text-meta); }
-.rio-table thead th {
-  text-align: start; padding: var(--space-3) var(--space-4);
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-muted);
-  background: var(--color-elevated); border-bottom: 1px solid var(--color-border-strong);
-  white-space: nowrap;
-}
-.rio-table tbody td { padding: 13px var(--space-4); border-bottom: 1px solid var(--color-border); color: var(--color-text-secondary); font-weight: 500; vertical-align: middle; }
-.rio-table tbody tr:last-child td { border-bottom: 0; }
-.rio-table tbody tr { transition: background .12s; }
-.rio-table tbody tr:hover { background: color-mix(in srgb, var(--color-accent) 5%, transparent); }
-.rio-table tbody tr:hover td { color: var(--color-text-primary); }
-.rio-table a { color: var(--color-accent); font-weight: 650; }
-.rio-table a:hover { color: var(--color-accent-deep); text-decoration: underline; text-underline-offset: 2px; }
-.rio-table td:last-child { white-space: nowrap; text-align: end; }
-.rio-cell-primary { font-family: var(--font-mono); font-weight: 700; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
-.rio-cell-id { font-family: var(--font-mono); font-size: var(--text-mono); font-weight: 600; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
-
-/* ============================================================================
- * Cards / list / compact layouts (list view alternatives)
- * ========================================================================== */
-/* ---- Cards layout (layout=cards) — a polished, GENERIC record card --------
-   Robust for any model: the first field becomes the card's title block, the
-   remaining fields a tidy key/value ledger, and actions pin to a footer.
-   Scoped under .rio-cards / .rio-main so it overrides the page's inline
-   helper <style> (which has lower specificity). */
-.rio-main .rio-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--space-4); align-items: start; }
-
-.rio-cards .rio-card-item {
-  display: flex; flex-direction: column; gap: 0;
-  padding: 0 !important; overflow: hidden; position: relative;
-  border: 1px solid var(--color-border); border-radius: var(--radius-lg);
-  background: var(--color-surface); box-shadow: var(--shadow-sm);
-  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
-}
-.rio-cards .rio-card-item::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--color-accent); opacity: .9; z-index: 1; }
-.rio-cards .rio-card-item:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--color-accent) 40%, var(--color-border)); box-shadow: var(--shadow-md); }
-
-/* Title block = first field (label small over a large value) */
-.rio-cards .rio-card-field { display: flex; }
-.rio-cards .rio-card-field:first-child {
-  flex-direction: column; align-items: flex-start; gap: 4px;
-  padding: var(--space-5) var(--space-5) var(--space-4);
-  border-bottom: 1px solid var(--color-border);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color-accent) 5%, transparent), transparent);
-}
-.rio-cards .rio-card-field:first-child .rio-card-label { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--color-text-muted); }
-.rio-cards .rio-card-field:first-child .rio-card-value { font-size: 19px; font-weight: 700; line-height: 1.25; color: var(--color-text-primary); letter-spacing: -.01em; }
-.rio-cards .rio-card-field:first-child .rio-cell-primary { font-size: 18px; }
-
-/* Key / value rows */
-.rio-cards .rio-card-field:not(:first-child) {
-  justify-content: space-between; align-items: baseline; gap: var(--space-4);
-  padding: 9px var(--space-5); border-bottom: 1px solid var(--color-border);
-}
-.rio-cards .rio-card-field:not(:first-child) .rio-card-label {
-  flex: none; max-width: 45%;
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-muted);
-}
-.rio-cards .rio-card-field:not(:first-child) .rio-card-value {
-  flex: 1; min-width: 0; text-align: end;
-  color: var(--color-text-primary); font-weight: 550; font-size: var(--text-meta);
-  overflow-wrap: anywhere;
-}
-.rio-cards .rio-card-value:empty::after { content: "—"; color: var(--color-text-muted); font-weight: 500; }
-
-/* Footer actions */
-.rio-cards .rio-card-actions {
-  margin-top: auto; padding: var(--space-3) var(--space-4);
-  display: flex; align-items: center; gap: var(--space-2);
-  background: var(--color-elevated); border-top: 1px solid var(--color-border);
-}
-.rio-cards .rio-card-actions form { display: inline; margin: 0; }
-
-/* ---- List layout (layout=list) — clean horizontal label/value rows ---- */
-.rio-list { display: flex; flex-direction: column; gap: var(--space-3); }
-.rio-list .rio-list-item { padding: var(--space-4) var(--space-5) !important; }
-.rio-list .rio-list-field { display: flex; gap: var(--space-4); padding: 5px 0; align-items: baseline; }
-.rio-list .rio-list-label { flex: none; min-width: 11rem; font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--color-text-muted); }
-.rio-list .rio-list-value { color: var(--color-text-primary); font-weight: 550; overflow-wrap: anywhere; }
-.rio-list .rio-list-actions { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); display: flex; gap: var(--space-2); }
-/* Compact layout — the table at a tighter density (0.10.x: headed + aligned). */
-.rio-table--compact { font-size: var(--text-small); }
-.rio-table--compact thead th { padding: 7px var(--space-3); }
-.rio-table--compact tbody td { padding: 7px var(--space-3); font-size: var(--text-small); }
-.rio-row-actions { white-space: nowrap; text-align: end; }
-.rio-row-actions .rio-btn { padding: 4px 10px; }
-
-/* List layout — promote the first field to the record's title. */
-.rio-list .rio-list-item .rio-list-field:first-child { align-items: center; margin-bottom: 2px; }
-.rio-list .rio-list-item .rio-list-field:first-child .rio-list-value { font-size: 17px; font-weight: 700; color: var(--color-text-primary); letter-spacing: -.01em; }
-.rio-list .rio-list-value:empty::after { content: "—"; color: var(--color-text-muted); font-weight: 500; }
-
-/* ============================================================================
- * Auth (login)
- * ========================================================================== */
-body.admin-auth { display: grid; place-items: center; min-height: 100vh; padding: var(--space-5); }
-.rio-auth {
-  width: 100%; max-width: 396px; margin: 0 auto;
-  background: var(--color-surface); border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow-pop);
-  padding: var(--space-7) var(--space-6) var(--space-6);
-  display: flex; flex-direction: column; gap: var(--space-4);
-  position: relative; overflow: hidden;
-}
-.rio-auth::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--color-accent); }
-.rio-auth form { display: flex; flex-direction: column; gap: var(--space-4); margin: 0; }
-.rio-auth__header { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-2); margin-bottom: var(--space-1); }
-.rio-auth__mark {
-  display: grid; place-items: center; width: 54px; height: 54px; margin-bottom: var(--space-2);
-  background: var(--color-accent); color: #fff; border-radius: 14px;
-  font-weight: 800; font-size: 24px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 10px 24px -8px var(--color-accent);
-}
-.rio-auth__title { font-size: var(--text-h2); }
-.rio-auth__subtitle { font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--color-text-muted); }
-
-/* ============================================================================
- * Alerts / empty / pagination (defensive coverage)
- * ========================================================================== */
-.rio-alert { padding: var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-border); border-inline-start-width: 3px; font-size: var(--text-meta); font-weight: 550; color: var(--color-text-primary); background: var(--color-surface); }
-.rio-alert--danger { color: var(--bad-text); background: var(--bad-bg); border-color: var(--bad-bd); border-inline-start-color: var(--bad-dot); }
-.rio-empty { text-align: center; padding: var(--space-8) var(--space-5); border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); background: color-mix(in srgb, var(--color-surface) 60%, transparent); }
-.rio-empty p { color: var(--color-text-muted); max-width: 44ch; margin: var(--space-2) auto 0; }
-.rio-pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; font-family: var(--font-mono); font-size: var(--text-small); font-weight: 700; color: var(--color-text-muted); }
-.rio-pagination__pages { display: flex; gap: 4px; }
-.rio-pagination__pages a { display: grid; place-items: center; min-width: 34px; height: 34px; padding: 0 9px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text-secondary); background: var(--color-surface); font-weight: 700; }
-.rio-pagination__pages a:hover { border-color: var(--color-border-strong); color: var(--color-text-primary); }
-.rio-pagination__pages a.is-active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-text); }
-
-/* ============================================================================
- * Statusbar footer
- * ========================================================================== */
-.rio-statusbar {
-  display: flex; align-items: center; gap: var(--space-2); margin-top: auto;
-  padding-top: var(--space-5); border-top: 1px solid var(--color-border);
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .1em; text-transform: uppercase; color: var(--color-text-muted);
-}
-.rio-statusbar__sep { color: var(--color-border-strong); }
-.rio-statusbar__spacer { flex: 1; }
-
-/* ============================================================================
- * Composition (ViewSpec) editor
- * ========================================================================== */
-/* ============================================================================
- * Composition (ViewSpec) editor — clarity-first, live colour cues
- * ========================================================================== */
-/* Intro turns into a calm info callout */
-.rio-card:has([data-view-editor]) > p:first-of-type {
-  margin: 0 0 var(--space-4); padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
-  background: color-mix(in srgb, var(--color-accent) 6%, var(--color-surface));
-  border: 1px solid var(--color-border); border-inline-start: 3px solid var(--color-accent);
-  border-radius: var(--radius-md); color: var(--color-text-secondary) !important;
-  font-size: var(--text-small); line-height: 1.65;
-}
-.rio-card:has([data-view-editor]) > p:first-of-type strong { color: var(--color-text-primary); }
-
-/* Editing-language strip */
-.rio-lang-bar { display: flex; align-items: center; gap: var(--space-3); margin: 0 0 var(--space-4) !important; padding: 9px var(--space-4); background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: var(--text-small); color: var(--color-text-secondary); }
-.rio-lang-bar label { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
-.rio-lang-bar .rio-input { width: auto; min-width: 76px; }
-
-/* Table shell */
-table[data-view-editor] { border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
-table[data-view-editor] thead th { background: var(--color-elevated); border-bottom: 2px solid var(--color-border-strong); padding: var(--space-3); }
-table[data-view-editor] tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--color-text-muted) 5%, transparent); }
-table[data-view-editor] tbody tr:hover td { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
-table[data-view-editor] td { padding: 10px var(--space-3); border-bottom: 1px solid var(--color-border); vertical-align: middle; }
-table[data-view-editor] tbody tr:last-child td { border-bottom: 0; }
-
-/* Field name + backend id chip */
-table[data-view-editor] td:nth-child(2) { font-weight: 650; color: var(--color-text-primary); white-space: nowrap; }
-table[data-view-editor] .rio-cell-id { display: inline-block; margin-inline-start: 6px; padding: 1px 8px; background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: 999px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--color-text-muted); }
-
-/* Order move buttons — compact paired control */
-table[data-view-editor] td:first-child { white-space: nowrap; }
-table[data-view-editor] [data-move] { padding: 4px 7px; font-size: 10px; line-height: 1; color: var(--color-text-muted); border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-sm); }
-table[data-view-editor] [data-move]:first-of-type { margin-inline-end: 2px; }
-table[data-view-editor] [data-move]:hover { color: var(--color-accent); border-color: var(--color-accent); background: var(--color-accent-soft); }
-
-/* Inputs / selects */
-table[data-view-editor] td .rio-input { padding: 7px 10px; font-size: var(--text-small); }
-table[data-view-editor] td:nth-child(4) { text-align: center; }
-[data-view-editor] input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--color-accent); cursor: pointer; }
-[data-view-editor] input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
-[data-view-editor] select:disabled { opacity: .5; cursor: not-allowed; }
-
-/* Role colour cue — the select adopts the chosen role's colour, live */
-[data-view-editor] select[data-role] { font-weight: 700; }
-[data-view-editor] select[data-role]:has(option[value="title"]:checked)     { color:#2B54E0; background:#EDF1FE; border-color:#BCC8F6; }
-[data-view-editor] select[data-role]:has(option[value="subtitle"]:checked)  { color:#0F766E; background:#E2F4F1; border-color:#A9DED7; }
-[data-view-editor] select[data-role]:has(option[value="badge"]:checked)     { color:#6D28D9; background:#F1EBFB; border-color:#D6C6F5; }
-[data-view-editor] select[data-role]:has(option[value="timestamp"]:checked) { color:#B45309; background:#FBF1DF; border-color:#ECD09A; }
-[data-view-editor] select[data-role]:has(option[value="meta"]:checked)      { color:#475569; background:#EEF1F5; border-color:#D2DAE3; }
-[data-view-editor] select[data-role]:has(option[value="hidden"]:checked)    { color:#7E8995; background:transparent; border-color:var(--color-border); font-weight:600; }
-
-/* Hidden rows recede so the rendered fields stand out */
-[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(2) { color: var(--color-text-muted); font-weight: 500; }
-[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(4),
-[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(5),
-[data-view-editor] tbody tr:has(select[data-role] option[value="hidden"]:checked) td:nth-child(6) { opacity: .45; }
-
-/* Dark — soften role tints onto the gray surfaces */
-[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="title"]:checked)     { color:#A9BBFF; background:rgba(126,155,255,.15); border-color:rgba(126,155,255,.42); }
-[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="subtitle"]:checked)  { color:#7FD8CD; background:rgba(15,118,110,.20); border-color:rgba(15,118,110,.45); }
-[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="badge"]:checked)     { color:#C4A9F5; background:rgba(109,40,217,.22); border-color:rgba(109,40,217,.48); }
-[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="timestamp"]:checked) { color:#E6BE84; background:rgba(180,83,9,.22); border-color:rgba(180,83,9,.48); }
-[data-theme="dark"] [data-view-editor] select[data-role]:has(option[value="meta"]:checked)      { color:#AEB9C6; background:rgba(120,131,148,.20); border-color:rgba(120,131,148,.42); }
-
-/* --- Value labels — per-value display-label editors (one card per field) ----
-   Fix: these blocks are .rio-card nested INSIDE the editor card, so the
-   generic ".rio-card:has(> .rio-table){padding:0}" rule was collapsing them.
-   These higher-specificity rules restore structure and give each field a
-   clean sub-card mapping its stored value (chip) → display label (input). */
-.rio-card:has([data-view-editor]) h2 {
-  margin: var(--space-7) 0 0 !important; padding-top: var(--space-5);
-  border-top: 1px solid var(--color-border);
-  font-size: var(--text-h3) !important; font-weight: 700; letter-spacing: -.01em;
-  color: var(--color-text-primary);
-}
-.rio-card:has([data-view-editor]) h2 + .rio-card { margin-top: var(--space-4) !important; }
-.rio-card:has([data-view-editor]) .rio-card {
-  margin-top: var(--space-4) !important;
-  padding: var(--space-4) var(--space-5) var(--space-5) !important;
-  background: var(--color-surface); border: 1px solid var(--color-border);
-  border-radius: var(--radius-md); box-shadow: var(--shadow-sm); overflow: visible;
-}
-.rio-card:has([data-view-editor]) .rio-card > strong { font-size: var(--text-meta); font-weight: 700; color: var(--color-text-primary); }
-.rio-card:has([data-view-editor]) .rio-card > .rio-cell-id {
-  display: inline-block; margin-inline-start: 6px; padding: 1px 8px;
-  background: var(--color-elevated); border: 1px solid var(--color-border); border-radius: 999px;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--color-text-muted);
-}
-.rio-card:has([data-view-editor]) .rio-card .rio-table {
-  margin-top: var(--space-3) !important; border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm); overflow: hidden;
-}
-.rio-card:has([data-view-editor]) .rio-card .rio-table thead th { padding: 8px var(--space-3); font-size: var(--text-micro); }
-.rio-card:has([data-view-editor]) .rio-card .rio-table td { padding: 8px var(--space-3); }
-.rio-card:has([data-view-editor]) .rio-card .rio-table td:first-child { width: 34%; vertical-align: middle; }
-.rio-card:has([data-view-editor]) .rio-card .rio-table td:first-child .rio-cell-id {
-  display: inline-block; padding: 3px 10px; white-space: normal;
-  background: color-mix(in srgb, var(--color-accent) 9%, var(--color-elevated));
-  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
-  border-radius: var(--radius-sm);
-  font-family: var(--font-mono); font-size: var(--text-mono); font-weight: 600; color: var(--color-text-secondary);
-}
-.rio-card:has([data-view-editor]) .rio-card .rio-table td .rio-input { padding: 7px 10px; font-size: var(--text-small); }
-
-/* ============================================================================
- * Avatar · role badge · profile · permission list  (reusable building blocks)
- * ========================================================================== */
-.rio-avatar { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 700; font-size: 15px; color: #fff; background: var(--color-text-muted); flex: none; letter-spacing: .02em; box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
-.rio-avatar--xl { width: 78px; height: 78px; font-size: 27px; border-radius: 20px; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), var(--shadow-md); }
-.rio-avatar--customer  { background: linear-gradient(135deg, #64748B, #475569); }
-.rio-avatar--admin     { background: linear-gradient(135deg, #3B6FE0, #1E3FB8); }
-.rio-avatar--developer { background: linear-gradient(135deg, #7C3AED, #5B21B6); }
-
-.rio-role-badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 5px 11px 5px 9px; border-radius: 999px; border: 1px solid var(--color-border-strong); color: var(--color-text-secondary); background: var(--color-surface); white-space: nowrap; }
-.rio-role-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-muted); flex: none; }
-.rio-role-badge--customer  { color: #475569; background: #EEF1F5; border-color: #D2DAE3; }
-.rio-role-badge--customer::before { background: #64748B; }
-.rio-role-badge--admin     { color: var(--color-accent-deep); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 30%, transparent); }
-.rio-role-badge--admin::before { background: var(--color-accent); }
-.rio-role-badge--developer { color: #6D28D9; background: #F1EBFB; border-color: #D6C6F5; }
-.rio-role-badge--developer::before { background: #6D28D9; }
-[data-theme="dark"] .rio-role-badge--admin     { color: var(--color-accent); }
-[data-theme="dark"] .rio-role-badge--developer { color: #C4A9F5; background: rgba(109,40,217,.22); border-color: rgba(109,40,217,.45); }
-[data-theme="dark"] .rio-role-badge--customer  { color: #AEB9C6; background: rgba(120,131,148,.18); border-color: rgba(120,131,148,.4); }
-
-.rio-profile { display: flex; flex-direction: column; gap: var(--space-4); }
-.rio-profile__id { display: flex; align-items: center; gap: var(--space-5); flex-wrap: wrap; }
-.rio-profile__meta { display: flex; flex-direction: column; min-width: 0; }
-.rio-profile__name { font-size: var(--text-h2); font-weight: 700; margin: 0; letter-spacing: -.01em; }
-.rio-profile__email { font-family: var(--font-mono); font-size: var(--text-small); color: var(--color-text-muted); margin: 3px 0 0; }
-.rio-profile__tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
-
-.rio-perm-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
-.rio-perm { display: flex; align-items: flex-start; gap: var(--space-3); padding: 12px 0; }
-.rio-perm + .rio-perm { border-top: 1px solid var(--color-border); }
-.rio-perm__icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: 800; flex: none; margin-top: 1px; }
-.rio-perm.is-allowed .rio-perm__icon { color: var(--ok-text); background: var(--ok-bg); border: 1px solid var(--ok-bd); }
-.rio-perm.is-denied  .rio-perm__icon { color: var(--bad-text); background: var(--bad-bg); border: 1px solid var(--bad-bd); }
-.rio-perm__body { display: flex; flex-direction: column; gap: 1px; }
-.rio-perm__body strong { font-size: var(--text-meta); font-weight: 650; color: var(--color-text-primary); }
-.rio-perm__body span { font-size: var(--text-small); color: var(--color-text-muted); }
-.rio-perm.is-denied .rio-perm__body strong { color: var(--color-text-secondary); }
-
-.rio-role-list { list-style: none; margin: var(--space-1) 0 0; padding: 0; }
-.rio-role-list > li { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-4) 0; border-top: 1px solid var(--color-border); }
-.rio-role-list > li:first-child { border-top: 0; }
-.rio-role-list > li > div { display: block; min-width: 0; }
-.rio-role-list p { font-size: var(--text-small); color: var(--color-text-muted); margin: var(--space-2) 0 0; line-height: 1.55; }
-
-/* ============================================================================
- * Production coverage — components other admin templates emit (audit/actions,
- * empty states, alerts, checkbox fields, status badges, topbar brand) so EVERY
- * backend page renders fully styled, not only the eight previewed here.
- * ========================================================================== */
-.rio-card__title { font-size: var(--text-h3); font-weight: 700; margin: 0 0 var(--space-3); color: var(--color-text-primary); }
-
-
-/* Form checkbox / radio rows */
-.rio-form__check { display: flex; align-items: center; gap: var(--space-2); }
-.rio-form__check input { width: auto; accent-color: var(--color-accent); }
-.rio-form__check label { font-size: var(--text-meta); color: var(--color-text-primary); font-weight: 500; }
-
-/* Standalone meta text */
-.rio-meta { font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); }
-
-/* Status badge (generic) — neutral pill; semantic colour via [data-status] value */
-.badge-status, [data-status] {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700;
-  letter-spacing: .06em; text-transform: uppercase; line-height: 1;
-  padding: 5px 10px; border-radius: 999px;
-  border: 1px solid var(--color-border-strong); color: var(--color-text-secondary); background: var(--color-surface); white-space: nowrap;
-}
-[data-status="active"], [data-status="success"], [data-status="done"], [data-status="completed"], [data-status="paid"] { color: var(--ok-text); background: var(--ok-bg); border-color: var(--ok-bd); }
-[data-status="pending"], [data-status="warning"], [data-status="new"], [data-status="draft"] { color: var(--warn-text); background: var(--warn-bg); border-color: var(--warn-bd); }
-[data-status="error"], [data-status="failed"], [data-status="cancelled"], [data-status="danger"] { color: var(--bad-text); background: var(--bad-bg); border-color: var(--bad-bd); }
-
-/* Timeline (recent actions / audit log) */
-
-/* Alerts — extra variants */
-
-/* Topbar brand (shells that render an identity inside the topbar) */
-
-/* ============================================================================
- * Motion
- * ========================================================================== */
-@keyframes rio-rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes rio-pulse { 0%,100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent); } 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 3%, transparent); } }
-.rio-main > * { animation: rio-rise .42s cubic-bezier(.22,.61,.36,1) both; }
-.rio-main > *:nth-child(3) { animation-delay: .04s; }
-.rio-main > *:nth-child(4) { animation-delay: .08s; }
-.rio-main > *:nth-child(5) { animation-delay: .12s; }
-.rio-stat-grid .rio-stat { animation: rio-rise .44s cubic-bezier(.22,.61,.36,1) both; }
-.rio-stat-grid .rio-stat:nth-child(2){animation-delay:.04s}
-.rio-stat-grid .rio-stat:nth-child(3){animation-delay:.08s}
-.rio-stat-grid .rio-stat:nth-child(4){animation-delay:.12s}
-.rio-stat-grid .rio-stat:nth-child(5){animation-delay:.16s}
-.rio-stat-grid .rio-stat:nth-child(6){animation-delay:.20s}
-.rio-stat-grid .rio-stat:nth-child(7){animation-delay:.24s}
-.rio-stat-grid .rio-stat:nth-child(8){animation-delay:.28s}
-.rio-auth { animation: rio-rise .5s cubic-bezier(.22,.61,.36,1) both; }
-
-/* ============================================================================
- * Responsive
- * ========================================================================== */
-@media (max-width: 980px) {
-  .rio-shell { grid-template-columns: 1fr; }
-  .rio-sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-3); border-inline-end: 0; border-bottom: 1px solid rgba(0,0,0,.4); padding: var(--space-3) var(--space-4); }
-  .rio-sidebar__brand { padding: 0; margin-inline-end: var(--space-2); border-bottom: 0; }
-  .rio-sidebar__group { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
-  .rio-sidebar__section { display: none; }
-  .rio-sidebar__lang { margin: 0; padding: 0; border-top: 0; }
-  .rio-main { padding: var(--space-4) var(--space-4) var(--space-6); }
-  .rio-topbar--inset { margin: calc(var(--space-4) * -1) calc(var(--space-4) * -1) 0; padding: var(--space-3) var(--space-4); }
-  .rio-detail-grid { grid-template-columns: 1fr; }
-  .rio-page-header { grid-template-columns: 1fr; }
-  .rio-page-header__actions { grid-column: 1; grid-row: 3; justify-self: start; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .rio-main > *, .rio-stat-grid .rio-stat, .rio-auth { animation: none !important; }
-  .rio-topbar__dot { animation: none !important; }
-}
+/* Small layout helpers, replacing the inline styles the templates used
+   to carry. Spacing values are rustio-lite's own. */
+.stack-sm { margin-top: 12px; }
+.stack { margin-top: 18px; }
+.stack-lg { margin-top: 22px; }
+.flush { margin: 0; }
+.flush-top { margin-top: 0; }
+.row { display: flex; align-items: center; gap: 14px; }
+.row-tight { display: flex; align-items: center; gap: 9px; }
+.inline-actions { display: inline-flex; align-items: center; gap: 6px; }
+.inline-actions-wide { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.inline-form { display: inline; margin: 0; }
+.inline-gap { margin-inline-start: 8px; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.nowrap { white-space: nowrap; }
+.center { text-align: center; }
+.weight-normal { font-weight: 450; }
+.is-disabled { pointer-events: none; opacity: .4; }

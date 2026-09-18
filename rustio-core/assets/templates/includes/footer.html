@@ -1,11 +1,8 @@
-{# Quiet status strip at the bottom of every admin page. Project name
-   + framework version, separated by a middle dot. Sits below the page
-   content inside .rio-main; styled in admin.css as .rio-statusbar. #}
-<footer class="rio-statusbar">
+{# The footer strip in the main column: project name and framework
+   version. Sits in the content grid's second row, like rustio-lite's. #}
+<footer class="app-footer">
   <span>{{ design.project_name | default('RustIO') }}</span>
   {% if rustio_version is defined and rustio_version %}
-    <span class="rio-statusbar__sep">·</span>
     <span>v{{ rustio_version }}</span>
   {% endif %}
-  <span class="rio-statusbar__spacer"></span>
 </footer>

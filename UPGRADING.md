@@ -4,6 +4,26 @@ A per-release migration guide. Items here only cover externally-observable chang
 
 ---
 
+## Unreleased — the admin design is ported from rustio-lite
+
+The admin is restyled from [rustio-lite](https://github.com/abdulwahed-sweden/rustio-lite).
+Three things are externally visible:
+
+- **`/admin/assets/admin.css` is gone** (the file behind it,
+  `rustio-core/assets/admin.css`, is deleted). Every admin page now links
+  `/admin/static/admin.css`. If your project referenced the old URL, point it
+  at the new one.
+- **Dark mode is removed** — no `[data-theme]`, no toggle, no
+  `localStorage.rio-theme`. A stored `dark` preference is ignored; the admin
+  is light.
+- **The admin class names changed wholesale**, from `.rio-*` BEM to
+  rustio-lite's flat vocabulary (`.card`, `.button-primary`, `.badge-active`).
+  A template you override under your project's `templates/admin/…` still
+  renders, but any class names inside it must be re-pointed to match
+  `docs/design-system.md`. Templates you have not overridden need no action.
+
+---
+
 ## Unreleased — `init` creates an empty project
 
 The five domain templates (clinic, blog, shop, crm, tasks), the setup menu that

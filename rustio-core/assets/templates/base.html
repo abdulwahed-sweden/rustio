@@ -1,31 +1,18 @@
 <!DOCTYPE html>
-<html lang="{{ current_user.active_language if (current_user is defined and current_user) else (lang | default('en')) }}" dir="{{ current_user.text_dir if (current_user is defined and current_user) else 'ltr' }}" data-theme="light">
+<html lang="{{ current_user.active_language if (current_user is defined and current_user) else (lang | default('en')) }}" dir="{{ current_user.text_dir if (current_user is defined and current_user) else 'ltr' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  {# No-FOUC theme bootstrap. Runs before any stylesheet link so the
-     attribute is set before the body paints. Default is light; dark is
-     opt-in and persisted via `localStorage.rio-theme`. #}
-  <script>
-    (function () {
-      var saved = localStorage.getItem('rio-theme');
-      var theme = saved === 'dark' ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', theme);
-    })();
-  </script>
   <title>{% block title %}{{ design.project_name | default('RustIO') }}{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/admin/static/favicon.svg">
-  {# Fonts: system stack only. Inter is listed first in admin.css's
-     --font-sans, so a project that opts in (via its own <link> to a
-     self-hosted copy) picks it up automatically; without it the OS
-     picks the best native UI font (SF Pro / Segoe UI / Roboto) and the
-     admin renders identically offline, behind a strict CSP, or on an
-     air-gapped network. Honors the framework's single-binary promise
-     — no CDN @import, no external webfont download at runtime. #}
+  {# Fonts: Inter first, then the OS native UI stack — the same list
+     rustio-lite uses. No CDN @import and no runtime webfont download,
+     so the admin renders identically offline, behind a strict CSP, or
+     on an air-gapped network. #}
   <link rel="stylesheet" href="/admin/static/admin.css">
   {% block head_extra %}{% endblock %}
 </head>
-<body class="bg-canvas text-primary {% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}">
   {% block body %}{% endblock %}
   <script src="/admin/static/app.js" defer></script>
   {% block body_extra %}{% endblock %}

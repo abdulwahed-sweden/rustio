@@ -3,7 +3,7 @@
 {% block title %}Review suggestion · {{ design.project_name | default('RustIO') }}{% endblock %}
 
 {% block admin_content %}
-  <header class="rio-page-head">
+  <header class="page-head">
     <h1>Review: add {{ view.field }} to {{ view.model }}</h1>
     <p>
       <strong>{{ view.model }}</strong> is missing the <code>{{ view.field }}</code> convention{% if view.industry %} for <code>{{ view.industry }}</code>{% endif %}.
@@ -12,10 +12,10 @@
   </header>
 
   {% if view.error %}
-    <div class="rio-alert rio-alert--danger" role="alert">{{ view.error }}</div>
+    <div class="alert alert-error" role="alert">{{ view.error }}</div>
   {% endif %}
 
-  <div class="rio-card">
+  <div class="card">
     <h2>{{ t("Planned changes") }}</h2>
     <ul>
       {% for step in view.step_descriptions %}
@@ -24,12 +24,12 @@
     </ul>
 
     {% if view.schema_diff_html %}
-      <div class="rio-stack">{{ view.schema_diff_html | safe }}</div>
+      <div class="stack">{{ view.schema_diff_html | safe }}</div>
     {% endif %}
 
-    <p class="rio-stack"><strong>{{ t("Explanation.") }}</strong> {{ view.explanation }}</p>
+    <p class="stack"><strong>{{ t("Explanation.") }}</strong> {{ view.explanation }}</p>
 
-    <dl class="rio-detail-list rio-stack">
+    <dl class="details stack">
       <dt>{{ t("Risk") }}</dt>
       <dd>{{ view.risk_label }}</dd>
 
@@ -43,12 +43,12 @@
         {% if view.validation_ok %}
           {{ t("Plan passes validation against the current schema.") }}
         {% else %}
-          <div class="rio-alert rio-alert--danger rio-flush">{{ view.validation_message }}</div>
+          <div class="alert alert-error flush">{{ view.validation_message }}</div>
         {% endif %}
       </dd>
     </dl>
 
-    <h2 class="rio-stack-lg">{{ t("Warnings") }}</h2>
+    <h2 class="stack-lg">{{ t("Warnings") }}</h2>
     {% if view.warnings | length == 0 %}
       <p>{{ t("None") }}</p>
     {% else %}
@@ -57,15 +57,15 @@
       </ul>
     {% endif %}
 
-    <div class="rio-form__actions">
-      <a href="/admin" class="rio-btn rio-btn--ghost">{{ t("Cancel") }}</a>
+    <div class="form-actions">
+      <a href="/admin" class="button button-quiet">{{ t("Cancel") }}</a>
       {% if view.can_apply %}
-        <form method="post" action="{{ view.apply_url }}" class="rio-inline-form">
+        <form method="post" action="{{ view.apply_url }}" class="inline-form">
           {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-          <button type="submit" class="rio-btn rio-btn--primary">{{ t("Approve and apply") }}</button>
+          <button type="submit" class="button button-primary">{{ t("Approve and apply") }}</button>
         </form>
       {% else %}
-        <button type="button" class="rio-btn rio-btn--primary" disabled title="Risk is Critical or plan is invalid — apply is blocked">{{ t("Approve and apply") }}</button>
+        <button type="button" class="button button-primary" disabled title="Risk is Critical or plan is invalid — apply is blocked">{{ t("Approve and apply") }}</button>
       {% endif %}
     </div>
   </div>

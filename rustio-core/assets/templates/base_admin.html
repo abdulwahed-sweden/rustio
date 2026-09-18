@@ -1,14 +1,41 @@
 {% extends "base.html" %}
 
-{% block body_class %}admin-shell{% endblock %}
+{# The admin shell, in rustio-lite's structure: a 72px top bar carrying
+   brand, cross-cutting areas and identity; below it a grid of the 260px
+   module rail and the main region, with the footer in the main column.
+
+   The three includes are the override seams a project can replace:
+   `includes/sidebar.html` (the rail), `includes/header.html` (the
+   identity cluster in the top bar), `includes/footer.html`. #}
+
+{% block body_class %}{% endblock %}
 
 {% block body %}
-<div class="rio-shell">
-  {% include "includes/sidebar.html" %}
-  <main class="rio-main">
+<a class="skip-link" href="#main">{{ t("Skip to main content") }}</a>
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/admin">
+      <span class="brand-mark">{{ design.logo_initial | default('R') }}</span>
+      <span>
+        <span class="brand-name">{{ design.project_name | default('RustIO') }}</span>
+        <span class="brand-note">{{ t("Administration") }}</span>
+      </span>
+    </a>
+    <nav class="nav" aria-label="{{ t('Primary areas') }}">
+      <a href="/admin">{{ t("Dashboard") }}</a>
+      <a href="/admin/actions">{{ t("Recent actions") }}</a>
+      {% if current_user is defined and current_user %}
+        <a href="/admin/profile">{{ t("Your account") }}</a>
+      {% endif %}
+    </nav>
     {% include "includes/header.html" %}
-    {% block admin_content %}{% endblock %}
+  </aside>
+  <div class="content">
+    {% include "includes/sidebar.html" %}
+    <main class="main" id="main">
+      {% block admin_content %}{% endblock %}
+    </main>
     {% include "includes/footer.html" %}
-  </main>
+  </div>
 </div>
 {% endblock %}

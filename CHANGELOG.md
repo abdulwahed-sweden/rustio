@@ -154,6 +154,33 @@ sources, stored values, sorting, links, data are never translated); only the
   merged cell. Without that context, nothing is masked — masking is an explicit
   posture, not a silent default. Hidden fields are always omitted.
 
+#### The admin design is ported from rustio-lite
+
+- **One design system, one stylesheet.** The admin's look now comes from
+  [rustio-lite](https://github.com/abdulwahed-sweden/rustio-lite), where it was
+  designed and tested against thirteen contract pages: white surfaces on a light
+  cool grey page, a navy primary, a 72px top bar over a 260px module rail, Inter
+  with the OS stack behind it. Every colour, size, weight, radius and shadow is
+  that project's; nothing was invented for rustio. Components rustio has and
+  rustio-lite doesn't — dashboard, pagination, filter toolbar, layout switch,
+  language switcher, permission matrix — are composed from the same tokens,
+  introducing no new colour and no new weight.
+- **`rustio-core/assets/admin.css` is deleted, and with it the
+  `/admin/assets/admin.css` route.** That file was described as an unshipped
+  spec; it was in fact `include_str!`'d and served, styling a second admin shell
+  behind `/admin/<model>/create`, `/…/history`, `/…/delete` and `/admin/logout`.
+  Those pages now link the same stylesheet as every other page. A project that
+  linked `/admin/assets/admin.css` itself gets a 404 — use
+  `/admin/static/admin.css`.
+- **Dark mode is removed**: the `[data-theme]` attribute, the toggle, its
+  no-FOUC bootstrap and the `localStorage.rio-theme` key. rustio-lite is
+  `color-scheme: light` and so is rustio now. A project that stored a `dark`
+  preference sees light.
+- The class vocabulary changes wholesale — `.rio-*` BEM becomes rustio-lite's
+  flat names (`.card`, `.button-primary`, `.badge-active`). A project that
+  overrode an admin template against the old class names must re-point it; see
+  `docs/design-system.md`, rewritten as the one page describing the system.
+
 #### `init` creates an empty project
 
 - **The five domain templates are gone** — clinic, blog, shop, crm and tasks,

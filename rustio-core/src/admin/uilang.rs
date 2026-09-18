@@ -217,7 +217,6 @@ fn builtin() -> HashMap<&'static str, &'static [(&'static str, &'static str)]> {
             "Redigera vilken roll varje fält har i denna vy",
         ),
         // Topbar / switcher
-        ("Toggle theme", "Växla tema"),
         ("Set", "Ställ in"),
         // Composition editor — accessibility + controls
         ("Move up", "Flytta upp"),
