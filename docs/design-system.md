@@ -55,15 +55,23 @@ tracking.
 | Table | cells 14px · headers 12px uppercase, mono, .12em |
 | Fields | label 13px/500 · input 36px tall, 14px |
 
-**Buttons — exactly two faces.** `.button-primary` (blue fill, white text)
-and `.button-secondary` (white, 1px border), both 10×18px, radius 8,
-14px/680, `line-height: 1`. One size variant, `.button-sm` (6×12px, 13px),
-for row actions and toolbar tools. No third face: a page carries **one**
+**Buttons — two ordinary faces plus a destructive one.**
+`.button-primary` (blue fill, white text) and `.button-secondary` (white,
+1px border) are the two faces ordinary actions may take: both 10×18px,
+radius 8, 14px/680, `line-height: 1`. One size variant, `.button-sm`
+(6×12px, 13px), for row actions and toolbar tools. A page carries **one**
 blue button, and it is that page's primary action.
 
-The one exception is `.button-danger`, which the delete-confirmation page
-uses so a destructive confirm does not look like an ordinary secondary.
-It appears nowhere else.
+`.button-danger` is not a third style but a **semantic**: it marks an
+action that destroys data, and it is spent only where that meaning is
+load-bearing — the submit on a delete confirmation, and the single
+"Delete record" on a record's own detail page. It never appears on a
+table row. A red button on every row of a dense list stops reading as a
+warning and becomes wallpaper, so row actions are the neutral small
+secondary face and the red waits on the confirmation they lead to.
+
+Safety comes before face-counting: do not remove a destructive treatment
+to make the families tally.
 
 **Focus.** `:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px }`.
 The offset keeps the ring on the surface behind a control, never on its fill.

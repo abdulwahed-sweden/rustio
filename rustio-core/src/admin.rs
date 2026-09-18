@@ -2592,13 +2592,16 @@ fn list_response<T: AdminModel>(
                         .collect();
                     let id = item.id();
                     // Icon + label actions — obvious to non-technical
-                    // users. Delete uses a danger-ghost style so the
-                    // destructive path reads but doesn't scream.
+                    // users. Both are the neutral small secondary face, as
+                    // in the templated list: a red button on every row of a
+                    // dense table stops reading as a warning. The red is
+                    // spent where it means something, on the delete
+                    // confirmation this link leads to.
                     let row_actions = format!(
                         r#"<td class="actions">
 <div class="actions">
-<a class="button button-sm" href="/admin/{name}/{id}/edit">{pencil}<span>Edit</span></a>
-<a class="button button-sm button-danger" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete</span></a>
+<a class="button button-secondary button-sm" href="/admin/{name}/{id}/edit">{pencil}<span>Edit</span></a>
+<a class="button button-secondary button-sm" href="/admin/{name}/{id}/delete" rel="nofollow">{trash}<span>Delete</span></a>
 </div>
 </td>"#,
                         name = escape_html(admin_name),
@@ -2607,7 +2610,7 @@ fn list_response<T: AdminModel>(
                         trash = icon_trash(),
                     );
                     let checkbox = format!(
-                        r#"<td class="cell-fit"><input type="checkbox" class="button-row" value="{id}" aria-label="Select row {id}"></td>"#,
+                        r#"<td class="cell-fit"><input type="checkbox" class="row-select" value="{id}" aria-label="Select row {id}"></td>"#,
                     );
                     if !has_hidden_fields {
                         return format!("<tr>{checkbox}{cells}{row_actions}</tr>");
@@ -2673,7 +2676,7 @@ fn list_response<T: AdminModel>(
 var form=document.querySelector('.inline-form');
 if(form){{
   var all=form.querySelector('.checkbox');
-  var rows=form.querySelectorAll('.button-row');
+  var rows=form.querySelectorAll('.row-select');
   var count=form.querySelector('[data-toolbar-count]');
   var hidden=form.querySelector('input[name="_selected"]');
   function collect(){{var ids=[];rows.forEach(function(cb){{if(cb.checked)ids.push(cb.value);}});return ids;}}
