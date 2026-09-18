@@ -9,12 +9,12 @@
      rustio-lite uses. No CDN @import and no runtime webfont download,
      so the admin renders identically offline, behind a strict CSP, or
      on an air-gapped network. #}
-  <link rel="stylesheet" href="/admin/static/admin.css">
+  <link rel="stylesheet" href="/admin/static/admin.css?v={{ rustio_version | default('dev') }}">
   {% block head_extra %}{% endblock %}
 </head>
 <body{% block body_attrs %}{% endblock %}>
   {% block body %}{% endblock %}
-  <script src="/admin/static/app.js" defer></script>
+  <script src="/admin/static/app.js?v={{ rustio_version | default('dev') }}" defer></script>
   {% block body_extra %}{% endblock %}
 </body>
 </html>

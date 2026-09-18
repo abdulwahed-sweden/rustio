@@ -1622,10 +1622,13 @@ fn env_chip_html() -> String {
 }
 
 /// Generic static-asset response for the 0.10+ `/admin/static/…` bundle.
-/// The bytes are pinned to the compiled binary, so a long-ish cache is
-/// safe — when the binary redeploys, the content-length changes and
-/// the etag changes with it. `nosniff` for the same reason every other
-/// admin asset has it.
+///
+/// The URL path is stable across local rebuilds and same-version deploys, so
+/// it must not be considered fresh for an hour: doing that can pair new HTML
+/// with an old stylesheet (new class names, no matching CSS). Browsers may
+/// store the asset, but they must revalidate it before reuse. The weak etag is
+/// retained for clients/proxies that perform validation. `nosniff` for the
+/// same reason every other admin asset has it.
 fn bundled_asset_response(bytes: &'static [u8], content_type: &'static str) -> Response {
     use hyper::header::HeaderValue;
     let etag = {
@@ -1647,7 +1650,7 @@ fn bundled_asset_response(bytes: &'static [u8], content_type: &'static str) -> R
     let mut resp = hyper::Response::builder()
         .status(200)
         .header("content-type", content_type)
-        .header("cache-control", "public, max-age=3600")
+        .header("cache-control", "no-cache, must-revalidate")
         .header("etag", etag)
         .body(Full::new(Bytes::from_static(bytes)))
         .expect("valid static asset response");
