@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>View Editor · RustIO Admin UX Refresh 0.13</title>
+<style>
+/* --- Reference-page chrome. Deliberately plain: this file is a design
+   reference read from a repository, not a product screen. The RustIO product
+   styles live below, scoped to .rio, and are the actual contract. --- */
+:root{
+  --pg:#f6f7f9;--pg-2:#ffffff;--pg-line:#dfe4ea;--pg-ink:#171B22;--pg-ink-2:#3F4A59;
+  --pg-accent:#1f5797;
+  --g1:4px;--g2:8px;--g3:12px;--g4:16px;--g5:24px;--g6:32px;--g7:48px;
+  --sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--pg);color:var(--pg-ink);font-family:var(--sans);
+  font-size:16px;font-weight:500;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:var(--g7) var(--g5) 96px}
+a{color:var(--pg-accent)}
+:focus-visible{outline:3px solid #2f7bd6;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:var(--g2);margin-bottom:var(--g5);
+  font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#596779}
+.crumbs a{color:var(--pg-accent);text-decoration:none}
+.crumbs a:hover{text-decoration:underline}
+h1{margin:0 0 var(--g3);font-size:34px;font-weight:800;letter-spacing:-.025em;line-height:1.15}
+h2{margin:0;font-size:18px;font-weight:700;line-height:1.3}
+h3{margin:0 0 var(--g2);font-size:16px;font-weight:700;line-height:1.35}
+.lede{max-width:74ch;color:var(--pg-ink-2);font-size:16px;font-weight:500}
+.sec{margin-top:var(--g7)}
+.sec-head{display:flex;align-items:baseline;gap:var(--g3);padding-bottom:var(--g2);
+  margin-bottom:var(--g4);border-bottom:1px solid var(--pg-line)}
+.sec-key{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--pg-accent);letter-spacing:.06em}
+/* `:where()` contributes no specificity, so these documentation colours can
+   never outrank a product rule inside a board render. Without it `.sec p`
+   (0-1-1) silently beats `.rio-card-title` (0-1-0) and mono labels lose their
+   colour. */
+.sec :where(p,li){color:var(--pg-ink-2);max-width:78ch}
+.sec ul{margin:0;padding-left:1.15em;display:grid;gap:var(--g2)}
+.note{padding:var(--g3) var(--g4);border-left:3px solid var(--pg-line);background:#fff;
+  border-radius:0 8px 8px 0;font-size:15px;color:var(--pg-ink-2)}
+code{font-family:var(--mono);font-size:.9em;background:#eef1f5;border:1px solid var(--pg-line);
+  border-radius:4px;padding:1px 5px;color:#174578}
+table.doc{width:100%;border-collapse:collapse;font-size:15px;background:#fff;
+  border:1px solid var(--pg-line);border-radius:10px;overflow:hidden}
+table.doc th{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:#202733;text-align:left;padding:12px 14px;
+  background:#f1f4f8;border-bottom:1px solid var(--pg-line)}
+table.doc :where(td){padding:11px 14px;border-bottom:1px solid var(--pg-line);color:var(--pg-ink-2);vertical-align:top}
+table.doc :where(td:first-child){color:var(--pg-ink);font-weight:600}
+table.doc :where(tr:last-child td){border-bottom:0}
+.scroll{overflow-x:auto}
+.st{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;border:1px solid;
+  font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  white-space:nowrap;line-height:1.7}
+.st::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+.st-existing{color:#4c5868;border-color:#c7cfd9;background:#f1f3f6}
+.st-visual{color:#174578;border-color:#b7cdea;background:#eaf2fd}
+.st-wiring{color:#7a4c08;border-color:#e3c981;background:#fff6e6}
+.st-future{color:#5b3f87;border-color:#c3b1e0;background:#f4f0fb;border-style:dashed}
+.props{display:grid;gap:1px;background:var(--pg-line);border:1px solid var(--pg-line);
+  border-radius:10px;overflow:hidden}
+.prop{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--g4);padding:var(--g4);background:#fff;align-items:start}
+.prop h3{margin-bottom:4px;font-size:15px}
+.prop :where(p){margin:0;font-size:15px;color:var(--pg-ink-2)}
+.prop.is-future{background:repeating-linear-gradient(135deg,#fbfaff,#fbfaff 10px,#f5f2fb 10px,#f5f2fb 20px)}
+.explore{border:2px dashed #c3b1e0;border-radius:12px;padding:var(--g5);background:#faf8fd;margin-top:var(--g5)}
+.explore .hd{display:flex;align-items:center;gap:var(--g3);margin-bottom:var(--g3);flex-wrap:wrap}
+.explore .dim{filter:saturate(.3) opacity(.6);pointer-events:none}
+/* A board render sits in a frame and scrolls inside it, so the page body
+   never scrolls sideways at any width. */
+.frame{border:1px solid var(--pg-line);border-radius:12px;overflow:hidden;contain:paint;
+  background:#fff;max-width:100%}
+.frame-bar{display:flex;align-items:center;gap:var(--g3);padding:10px var(--g4);
+  border-bottom:1px solid var(--pg-line);background:#f1f4f8;font-family:var(--mono);
+  font-size:13px;color:#3F4A59}
+.frame-bar .w{margin-left:auto;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#596779}
+.frame-body{overflow-x:auto;background:#f1f1ee}
+.frame-body>.rio{min-width:1040px}
+.frame.narrow{width:390px}
+.frame.narrow .frame-body>.rio{min-width:0}
+.rowset{display:flex;gap:var(--g5);flex-wrap:wrap;align-items:flex-start}
+.rowset>*{min-width:0;max-width:100%}
+.cap{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:#596779;margin-bottom:var(--g2)}
+.foot{margin-top:var(--g7);padding-top:var(--g4);border-top:1px solid var(--pg-line);
+  font-size:14px;color:#596779}
+@media (max-width:760px){ .wrap{padding:var(--g5) var(--g4) var(--g7)} h1{font-size:26px} }
+
+/* ===================================================================
+   PRODUCT — the locked RustIO admin, scoped to .rio so the chrome's
+   cascade can never touch it. Values are copied verbatim from
+   rustio-core/assets/static/admin.css. Light only, by contract.
+   =================================================================== */
+.rio{
+  --page:#f1f1ee;--surface:#ffffff;--surface-soft:#f7f9fc;--surface-head:#f1f4f8;
+  --blue:#1f5797;--blue-dark:#174578;--blue-soft:#dfeafb;--blue-line:#b7cdea;
+  --focus:#2f7bd6;
+  /* Revised text ramp. Hierarchy comes from size and weight; colour only
+     separates primary from genuinely tertiary. Nothing operational is pale. */
+  --ink:#171B22;          /* primary — titles, table cells, labels, values */
+  --ink-body:#202733;     /* standard body, lead, column heads */
+  --ink-2:#3F4A59;        /* secondary — breadcrumb, counts, in-cell detail */
+  --ink-hint:#4C5868;     /* field hints */
+  --ink-mono:#334052;     /* mono micro-labels and rail section labels */
+  --ink-3:#596779;        /* tertiary technical metadata ONLY */
+  --ink-soft:#3F4A59;     /* legacy alias -> secondary, never paler */
+  --border:#d5dce5;--border-strong:#b9c5d3;
+  --amber:#935b0a;--amber-soft:#fff4df;--green:#19724b;--green-soft:#e8f6ee;
+  --red:#a23f3a;--red-soft:#fff0ee;
+  --shadow:0 1px 0 rgba(255,255,255,.6),0 24px 50px -24px rgba(22,32,56,.45),0 8px 20px -12px rgba(22,32,56,.25);
+  --shadow-sm:0 1px 2px rgba(22,32,56,.06);
+  --content:1120px;--content-wide:1600px;--masthead:56px;
+  --radius:14px;--radius-btn:8px;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  --rail:240px;--rail-bg:#f4f6f9;--rail-line:#d3dbe5;
+  --ctl:38px;           /* input, select, standard button */
+  --ctl-sm:31px;        /* small action button */
+  --th-h:40px;          /* table header */
+  --td-h:48px;          /* table row minimum */
+  --rmono:var(--mono);
+  background:var(--page);color:var(--ink-body);
+  font-family:var(--sans);font-size:16px;font-weight:500;line-height:1.55;
+  text-align:left;
+}
+.rio *{box-sizing:border-box}
+.rio h1{margin:0 0 var(--s1);font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.2;color:var(--ink)}
+.rio h2{margin:0 0 var(--s1);font-size:18px;font-weight:700;line-height:1.3;letter-spacing:-.01em;color:var(--ink)}
+.rio h3{margin:0 0 var(--s1);font-size:16px;font-weight:700;line-height:1.35;letter-spacing:-.01em;color:var(--ink)}
+.rio p{margin:0}
+.rio a{color:var(--blue);text-underline-offset:3px}
+.rio .hero-h1{font-size:33px;font-weight:800;letter-spacing:-.025em;line-height:1.15;color:var(--ink)}
+.rio .lead{max-width:680px;margin:0;color:var(--ink-body);font-size:16px;font-weight:500;line-height:1.55}
+.rio .mono{font-family:var(--rmono)}
+
+/* masthead + rail + content */
+.rio-shell{display:grid;grid-template-rows:auto minmax(0,1fr);min-height:100%}
+.rio-bar{
+  display:grid;grid-template-columns:var(--rail) minmax(0,1fr) auto;grid-template-rows:var(--masthead);
+  align-items:center;padding:0 24px 0 0;border-bottom:1px solid var(--border);background:var(--surface);
+}
+.rio-brand{display:inline-flex;align-items:center;gap:10px;padding-left:24px;color:var(--ink);text-decoration:none}
+.rio-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:7px;background:var(--blue);
+  color:#fff;font-size:14px;font-weight:800;letter-spacing:-.04em}
+.rio-bname{font-weight:700;letter-spacing:-.02em}
+.rio-ident{display:flex;grid-column:3;align-items:center;gap:var(--s3)}
+.rio-env{display:inline-flex;align-items:center;padding:4px 9px;border:1px solid #e3c981;border-radius:6px;
+  background:#fff8e8;color:#5c3f13;font-size:13px;font-weight:700}
+.rio-role{color:var(--ink-2);font-size:14px;font-weight:500;white-space:nowrap}
+.rio-who{color:var(--ink);font-size:14px;font-weight:500;white-space:nowrap}
+.rio-content{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+.rio-rail{grid-column:1;grid-row:1/-1;padding:var(--s5) var(--s3) var(--s6);
+  border-right:1px solid var(--rail-line);background:var(--rail-bg)}
+.rio-rail-title{margin:0 0 var(--s3);padding:0 var(--s3);color:var(--ink-mono);text-transform:uppercase;
+  font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em}
+.rio-rail-title+.rio-rail-title,.rio-nav+.rio-rail-title{margin-top:var(--s5)}
+.rio-nav{display:grid;gap:4px}
+.rio-link{display:flex;min-height:38px;align-items:center;gap:var(--s2);padding:0 var(--s3);
+  border:1px solid transparent;border-radius:6px;color:var(--ink);font-size:15px;font-weight:500;text-decoration:none}
+.rio-link:hover{border-color:#d6e0ec;background:#fff;color:var(--blue)}
+.rio-link[aria-current]{background:var(--blue-soft);color:var(--blue)}
+.rio-link strong{display:block;font-size:15px;font-weight:600;line-height:1.25}
+.rio-link[aria-current] strong{font-weight:600}
+.rio-link .rio-badge{flex:none;margin-left:auto;padding:2px 8px;border-radius:999px;border-color:var(--border);
+  background:var(--surface);color:var(--ink-body);font-family:var(--rmono);font-size:13px;font-weight:700}
+.rio-link .rio-badge::before{display:none}
+.rio-main{grid-column:2;width:min(100% - var(--s6),var(--content));margin:0 auto;padding:var(--s5) 0 var(--s6)}
+.rio-main.wide{width:min(100% - var(--s6),var(--content-wide))}
+.rio-foot{display:flex;grid-column:2;align-items:center;gap:8px 14px;width:min(100% - 56px,var(--content));
+  margin:0 auto;padding:18px 0 24px;border-top:1px solid var(--border);color:var(--ink-2);font-size:14px;font-weight:500}
+.rio-foot span:first-child{color:var(--ink);font-weight:700}
+
+/* page head */
+.rio-crumb{display:flex;align-items:center;gap:var(--s2);margin:0 0 var(--s2);color:var(--ink-2);font-size:13px;font-weight:600}
+.rio-crumb .sep{color:var(--border-strong)}
+.rio-crumb a{color:var(--ink-2)}
+.rio-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s4);margin-bottom:var(--s4)}
+.rio-head-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2)}
+
+/* buttons */
+.rio-btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);min-height:var(--ctl);
+  padding:0 18px;border:1px solid transparent;border-radius:var(--radius-btn);font-size:14px;font-weight:680;
+  line-height:1;white-space:nowrap;text-decoration:none;cursor:pointer;font-family:inherit}
+.rio-btn svg{width:16px;height:16px;display:block;flex:none}
+/* Two classes deep so a button face always beats `.rio a { color: --blue }`.
+   Specificity, not source order — the link rule is 0-1-1 and a bare face
+   class would be 0-1-0, which is how a primary button ends up with blue
+   text on a blue fill. */
+.rio .rio-btn.rio-primary{background:var(--blue);color:#fff;box-shadow:0 3px 10px -3px rgba(31,87,151,.6)}
+.rio .rio-btn.rio-secondary{background:var(--surface);border-color:var(--border-strong);color:var(--ink)}
+.rio .rio-btn.rio-danger{background:var(--red-soft);color:var(--red);border-color:#ce8580}
+.rio .rio-switch a{color:var(--ink-body)}
+.rio .rio-switch a.is-active{color:var(--blue)}
+.rio .rio-link{color:var(--ink)}
+.rio .rio-link[aria-current]{color:var(--blue)}
+.rio-sm{min-height:var(--ctl-sm);padding:0 12px;font-size:13px;font-weight:650;border-radius:6px}
+.rio-sm svg{width:14px;height:14px}
+.rio-btn[disabled],.rio-btn.is-disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+
+/* card + table */
+.rio-card{overflow:hidden;padding:var(--s5);border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);box-shadow:var(--shadow-sm)}
+.rio-card.flush{padding:0}
+.rio-card-title{margin:0;text-transform:uppercase;font-family:var(--rmono);font-size:13px;font-weight:700;
+  letter-spacing:.08em;color:var(--ink-mono)}
+.rio-table{width:100%;border-collapse:collapse}
+.rio-table th,.rio-table td{padding:0 var(--s4);vertical-align:middle;border-bottom:1px solid var(--border)}
+.rio-table td{height:var(--td-h)}
+.rio-table th{height:var(--th-h);background:var(--surface-head);color:var(--ink-body);font-family:var(--rmono);
+  font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;text-align:left}
+.rio-table th.is-sorted{background:#e9eef6;color:var(--ink)}
+.rio-table th .chev{font-size:12px;margin-left:5px}
+.rio-cell-id{font-size:15px;font-weight:680;color:var(--ink)}
+.rio-cell-sub{display:block;font-size:14px;font-weight:500;color:var(--ink-2);line-height:1.35}
+.rio-table td{font-size:15px;font-weight:500;line-height:1.4;color:var(--ink)}
+.rio-table tbody tr:hover{background:var(--surface-soft)}
+.rio-table tbody tr:last-child td{border-bottom:0}
+.rio-table td.actions,.rio-table th.actions{text-align:right;white-space:nowrap}
+.rio-table td.actions>*+*{margin-left:var(--s2)}
+.rio-table tbody td:first-child,.rio-table thead th:first-child{width:1%;white-space:nowrap}
+.rio-tlink{color:var(--blue);font-weight:680;text-decoration:underline;text-underline-offset:3px}
+
+/* badges */
+.rio-badge{display:inline-flex;align-items:center;gap:7px;padding:4px 9px;border:1px solid;border-radius:6px;
+  font-size:13px;font-weight:600;line-height:1.3}
+.rio-badge::before{width:6px;height:6px;border-radius:50%;background:currentColor;content:""}
+.rio-b-green{border-color:#b4dbc5;background:var(--green-soft);color:var(--green)}
+.rio-b-amber{border-color:#e7c27b;background:var(--amber-soft);color:var(--amber)}
+.rio-b-red{border-color:#e3b0ab;background:var(--red-soft);color:var(--red)}
+.rio-b-grey{border-color:#cfd6df;background:#f2f4f7;color:#4c5868}
+.rio-b-blue{border-color:var(--blue-line);background:#eaf2fd;color:var(--blue)}
+
+/* controls */
+.rio-field{display:grid;gap:var(--s1)}
+.rio-label{color:var(--ink);font-size:14px;font-weight:600}
+.rio-req{color:var(--red)}
+.rio-opt{margin-left:var(--s2);color:var(--ink-2);font-size:13px;font-weight:600}
+.rio-input,.rio-select{width:100%;min-height:var(--ctl);height:var(--ctl);padding:0 var(--s3);color:var(--ink);
+  background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-btn);
+  font-size:15px;font-weight:500;font-family:inherit}
+.rio-input.filled,.rio-select{border-color:#7890af;background:#f4f8fd}
+.rio-input::placeholder{color:#6d7b8c;font-weight:500}
+.rio-hint{color:var(--ink-hint);font-size:14px;font-weight:500;line-height:1.45}
+.rio-err{color:var(--red);font-weight:650;font-size:14px;line-height:1.45}
+.rio-input.is-err{border-color:var(--red);background:var(--red-soft);box-shadow:0 0 0 3px rgba(162,63,58,.1)}
+.rio-input.is-focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(31,87,151,.12);outline:none}
+
+/* toolbar */
+.rio-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-bottom:var(--s4);
+  padding:var(--s3) var(--s4);border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);box-shadow:var(--shadow-sm)}
+.rio-trow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s4);width:100%}
+.rio-count{margin-left:auto;color:var(--ink-2);font-size:14px;font-weight:600;white-space:nowrap;
+  font-variant-numeric:tabular-nums}
+.rio-count b{color:var(--ink-body);font-weight:700}
+.rio-switch{display:inline-flex;align-items:stretch;border:1px solid var(--border-strong);
+  border-radius:var(--radius-btn);overflow:hidden;background:var(--surface)}
+.rio-switch a{display:inline-flex;align-items:center;padding:0 14px;height:var(--ctl-sm);color:var(--ink-body);
+  font-size:14px;font-weight:600;text-decoration:none}
+.rio-switch a+a{border-left:1px solid var(--border)}
+.rio-switch a.is-active{background:var(--blue-soft);color:var(--blue)}
+.rio-vsep{width:1px;align-self:stretch;min-height:28px;background:var(--border)}
+.rio-tools{display:inline-flex;align-items:center;gap:var(--s2)}
+
+/* --- Operational bar: two rows, two concerns, one card ----------------
+   Row 1 answers "which records am I looking for?"; row 2 answers "how do I
+   want them presented?". A full-width rule separates them so the two are
+   never scanned as one strip of controls. */
+.rio-ops{margin-bottom:var(--s4);border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);box-shadow:var(--shadow-sm);overflow:hidden}
+.rio-ops-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4)}
+.rio-ops-view{border-top:1px solid var(--border);background:var(--surface-soft)}
+.rio-search{position:relative;flex:0 1 340px;min-width:220px}
+.rio-search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:17px;height:17px}
+.rio-search .rio-input{padding-left:38px;padding-right:34px}
+.rio-clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:24px;height:24px;
+  display:grid;place-items:center;border:0;border-radius:5px;background:none;color:var(--ink-2);
+  font-size:18px;line-height:1;cursor:pointer;font-family:inherit}
+.rio-clear:hover{background:var(--surface-head);color:var(--ink)}
+.rio-filter{display:inline-flex;align-items:center;gap:var(--s2);font-size:14px;font-weight:600;
+  color:var(--ink-body);white-space:nowrap}
+.rio-filter .rio-select{width:auto;min-width:126px}
+/* An active filter states that it is active in border, fill and weight —
+   colour is never the only signal. */
+.rio-filter.is-on .rio-select{border-color:#7890AF;background:#F4F8FD;color:#174578;font-weight:600}
+.rio-sortnote{color:var(--ink-2);font-size:14px;font-weight:500;white-space:nowrap}
+.rio-ops-view .rio-tools{margin-left:auto}
+.rio-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* Sortable header: the label is the control. Same URL the existing sort
+   builds — this is a second presentation, not a second sorting system. */
+.rio-th{display:inline-flex;align-items:center;color:inherit;font:inherit;text-decoration:none}
+.rio-th:hover{color:var(--blue)}
+.rio-table th.is-sorted .rio-th{color:var(--ink)}
+
+/* pagination */
+.rio-pag{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 16px;border-top:1px solid var(--border);background:var(--surface-head);font-size:14px;
+  font-weight:600;color:var(--ink-2)}
+.rio-pag-pages{display:inline-flex;align-items:center;gap:6px}
+.rio-pag-pages a{min-width:38px;min-height:var(--ctl-sm);display:inline-flex;align-items:center;
+  justify-content:center;padding:0 10px;border:1px solid var(--border);border-radius:6px;
+  background:#f8fafc;color:var(--ink);font-size:14px;font-weight:600;text-decoration:none;
+  font-variant-numeric:tabular-nums}
+.rio-pag-pages a.is-active{border-color:var(--blue-line);background:var(--blue-soft);color:var(--blue)}
+.rio-pag-pages a.is-off{opacity:.45;pointer-events:none}
+
+/* empty / alert */
+.rio-empty{padding:44px 22px;border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);box-shadow:var(--shadow);text-align:center}
+.rio-empty-icon{display:grid;width:40px;height:40px;margin:0 auto 12px;place-items:center;border-radius:9px;
+  background:var(--blue-soft);color:var(--blue)}
+.rio-empty p{max-width:52ch;margin:var(--s2) auto 0;color:var(--ink-body);font-size:16px;font-weight:500;line-height:1.55}
+.rio-alert{display:grid;grid-template-columns:24px minmax(0,1fr);gap:12px;margin-bottom:18px;padding:14px 16px;
+  border:1px solid;border-radius:8px;font-size:16px;font-weight:500;line-height:1.5}
+.rio-alert strong{display:block;margin-bottom:2px;font-weight:700}
+.rio-a-err{border-color:#e0a7a2;background:var(--red-soft);color:#782f2b}
+.rio-a-warn{border-color:#e7c27b;background:var(--amber-soft);color:#714707}
+.rio-a-info{border-color:var(--blue-line);background:#edf4fd;color:var(--blue-dark)}
+
+/* stat cards */
+.rio-stats{display:grid;gap:var(--s4);grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.rio-stat{display:block;padding:18px 19px;border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);box-shadow:var(--shadow);text-decoration:none;color:var(--ink)}
+.rio-stat-v{display:block;font-size:33px;font-weight:800;letter-spacing:-.02em;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.rio-stat-l{display:block;margin-top:6px;color:var(--ink-mono);text-transform:uppercase;
+  font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em}
+
+/* auth */
+.rio-auth{display:grid;place-items:center;padding:var(--s6) var(--s5);background:var(--page);min-height:420px}
+.rio-auth-card{width:min(100%,420px);padding:var(--s5);border:1px solid var(--border);
+  border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
+.rio-auth-brand{display:grid;justify-items:start;gap:var(--s2);margin-bottom:var(--s5)}
+.rio-auth-card form{display:grid;gap:var(--s4)}
+
+/* skeleton */
+.sk{background:linear-gradient(90deg,#eef1f5 25%,#e3e8ee 37%,#eef1f5 63%);
+  background-size:400% 100%;border-radius:5px;height:12px;animation:sk 1.4s ease infinite}
+@keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}
+@media (prefers-reduced-motion:reduce){.sk{animation:none;background:#e9edf2}}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="crumbs"><a href="index.html">Index</a><span>·</span><a href="Overview.html">Overview</a> <span>·</span><a href="Records-Table.html">Records — Table</a> <span>·</span><a href="Records-Cards.html">Records — Cards</a> <span>·</span><a href="Record-Form.html">Record Form</a> <span>·</span><strong>View Editor</strong> <span>·</span><a href="Sign-In.html">Sign In</a> <span>·</span><a href="Foundations.html">Foundations</a></nav>
+<p class="cap">RustIO Admin · UX Refresh 0.13</p>
+<h1>View Editor</h1>
+<p class="lede">Where an operator decides what a model's list is. The only screen whose output is another screen, so the one screen that must show its own result.</p>
+<div class="sec"><div class="sec-head"><span class="sec-key">A</span><h2>Purpose</h2></div><p>Primary task: <strong>assign a role to each field and see what that does to the list</strong>. Secondary: rename fields per language and translate stored values. This is the only screen whose output is another screen, so it is the one screen that must show its own result.</p></div>
+<div class="sec"><div class="sec-head"><span class="sec-key">B</span><h2>Structure — composer left, result right</h2></div><div class="frame"><div class="frame-bar"><span>/admin/bookings/view</span><span class="w">1440 · wide workspace</span></div><div class="frame-body"><div class="rio"><div class="rio-shell">
+<div class="rio-bar">
+  <a class="rio-brand"><span class="rio-mark">B</span><span class="rio-bname">Bookflow</span></a>
+  <div class="rio-ident"><span class="rio-env">Dev</span><span class="rio-role">Signed in as</span>
+    <span class="rio-who">admin@bookflow.local</span>
+    <span class="rio-btn rio-secondary rio-sm">Log out</span></div>
+</div>
+<div class="rio-content">
+  <aside class="rio-rail"><p class="rio-rail-title">Workspace</p><nav class="rio-nav"><a class="rio-link"><strong>Assignments</strong><span class="rio-badge">4</span></a><a class="rio-link" aria-current='page'><strong>Bookings</strong><span class="rio-badge">8</span></a><a class="rio-link"><strong>Customers</strong><span class="rio-badge">10</span></a><a class="rio-link"><strong>Resources</strong><span class="rio-badge">7</span></a></nav>
+    <p class="rio-rail-title">System</p><nav class="rio-nav">
+      <a class="rio-link"><strong>Recent actions</strong></a>
+      <a class="rio-link"><strong>Your account</strong></a></nav></aside>
+  <main class="rio-main wide"><div class="rio-head"><div>
+<nav class="rio-crumb"><a>Home</a><span class="sep">/</span><a>Bookings</a><span class="sep">/</span><span>Edit view</span></nav>
+<h1>Edit view — Bookings</h1></div><div class="rio-head-actions">
+<span class="rio-btn rio-secondary rio-sm">Back to list</span>
+<span class="rio-btn rio-secondary rio-sm">Save view</span></div></div>
+<div style="display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:var(--s5);align-items:start">
+<div style="display:grid;gap:var(--s4)"><div class="rio-card" style="padding:0">
+<div style="display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s5);border-bottom:1px solid var(--border);background:var(--surface-head)">
+<p class="rio-card-title">Fields</p>
+<label style="margin-left:auto;display:inline-flex;align-items:center;gap:var(--s2);font-size:14px;font-weight:600;color:var(--ink-body)">
+Labels in <select class="rio-select" style="width:auto;min-width:80px"><option>en</option></select></label></div>
+<div style="display:grid;grid-template-columns:auto minmax(0,1.1fr) auto minmax(0,1fr);gap:var(--s3);padding:var(--s3) var(--s5);border-bottom:1px solid var(--border)">
+<span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">Order</span><span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">Field</span><span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">Role</span><span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">Display label</span></div>
+<div style="display:grid;grid-template-columns:auto minmax(0,1.1fr) auto minmax(0,1fr);gap:var(--s3);padding:var(--s3) var(--s5);border-bottom:1px solid var(--border);align-items:center;background:var(--blue-soft);">
+<span style="display:inline-flex;gap:4px"><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▲</span><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▼</span></span>
+<span style="min-width:0"><strong style="font-weight:680;font-size:15px;color:var(--ink)">Booking number</strong>
+<code style="display:block;font-family:var(--rmono);font-size:13px;font-weight:500;color:var(--ink-3);background:none;border:0;padding:0">booking_number</code></span>
+<select class="rio-select" style="width:auto;min-width:118px"><option>Title</option></select>
+<input class="rio-input filled" value="Booking number" readonly></div>
+<div style="display:grid;grid-template-columns:auto minmax(0,1.1fr) auto minmax(0,1fr);gap:var(--s3);padding:var(--s3) var(--s5);border-bottom:1px solid var(--border);align-items:center;">
+<span style="display:inline-flex;gap:4px"><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▲</span><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▼</span></span>
+<span style="min-width:0"><strong style="font-weight:680;font-size:15px;color:var(--ink)">Customer</strong>
+<code style="display:block;font-family:var(--rmono);font-size:13px;font-weight:500;color:var(--ink-3);background:none;border:0;padding:0">customer_id</code></span>
+<select class="rio-select" style="width:auto;min-width:118px"><option>Subtitle</option></select>
+<input class="rio-input filled" value="Customer" readonly></div>
+<div style="display:grid;grid-template-columns:auto minmax(0,1.1fr) auto minmax(0,1fr);gap:var(--s3);padding:var(--s3) var(--s5);border-bottom:1px solid var(--border);align-items:center;">
+<span style="display:inline-flex;gap:4px"><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▲</span><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▼</span></span>
+<span style="min-width:0"><strong style="font-weight:680;font-size:15px;color:var(--ink)">Status</strong>
+<code style="display:block;font-family:var(--rmono);font-size:13px;font-weight:500;color:var(--ink-3);background:none;border:0;padding:0">status</code></span>
+<select class="rio-select" style="width:auto;min-width:118px"><option>Badge</option></select>
+<input class="rio-input filled" value="Status" readonly></div>
+<div style="display:grid;grid-template-columns:auto minmax(0,1.1fr) auto minmax(0,1fr);gap:var(--s3);padding:var(--s3) var(--s5);border-bottom:1px solid var(--border);align-items:center;opacity:.55;">
+<span style="display:inline-flex;gap:4px"><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▲</span><span class="rio-btn rio-secondary rio-sm" style="padding:0 8px">▼</span></span>
+<span style="min-width:0"><strong style="font-weight:680;font-size:15px;color:var(--ink)">ID</strong>
+<code style="display:block;font-family:var(--rmono);font-size:13px;font-weight:500;color:var(--ink-3);background:none;border:0;padding:0">id</code></span>
+<select class="rio-select" style="width:auto;min-width:118px"><option>Hidden</option></select>
+<input class="rio-input filled" value="ID" readonly></div>
+<div style="padding:var(--s3) var(--s5)"><label style="display:inline-flex;align-items:center;gap:var(--s2);font-size:14px;font-weight:600;color:var(--ink-body)">
+<input type="checkbox" checked style="width:16px;height:16px">Expose Status as a list filter</label></div></div>
+<details class="rio-card" style="padding:0" open>
+<summary style="display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s5);cursor:pointer;background:var(--surface-head);border-bottom:1px solid var(--border)">
+<p class="rio-card-title">Value labels · status</p>
+<span style="margin-left:auto;color:var(--ink-2);font-size:14px;font-weight:600">4 values</span></summary>
+<div style="padding:var(--s4) var(--s5);display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s3);align-items:center">
+<code style="font-family:var(--rmono);font-size:14px;font-weight:600;background:none;border:0;padding:0;color:var(--ink)">new</code>
+<input class="rio-input filled" value="New" readonly>
+<code style="font-family:var(--rmono);font-size:14px;font-weight:600;background:none;border:0;padding:0;color:var(--ink)">cancelled</code>
+<input class="rio-input filled" value="Cancelled" readonly></div></details></div>
+<aside style="display:grid;gap:var(--s3)"><div class="rio-card" style="padding:0">
+<div style="display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:1px solid var(--border);background:var(--surface-head)">
+<p class="rio-card-title">Preview</p>
+<nav class="rio-switch" style="margin-left:auto"><a>Table</a><a class="is-active">List</a><a>Cards</a><a>Compact</a></nav></div>
+<div style="padding:var(--s4);background:var(--page)"><div class="rio-card" style="padding:var(--s4)">
+<h3 style="font-size:16px;font-weight:700;margin:0;color:var(--ink)">BK-2006</h3>
+<p style="color:var(--ink-2);font-size:15px;font-weight:500;margin-top:3px">Johan Nilsson</p>
+<div style="margin-top:var(--s3);display:flex;align-items:center;justify-content:space-between">
+<span class="rio-badge rio-b-red">Cancelled</span>
+<span style="color:var(--ink-2);font-size:14px;font-weight:500">2026-07-05 12:00</span></div></div></div>
+<div style="padding:var(--s3) var(--s4);border-top:1px solid var(--border);color:var(--ink-2);font-size:14px;font-weight:500;line-height:1.45">
+Sample: the most recent booking. Changes here are not saved until you press Save view.</div></div>
+<div class="rio-card" style="padding:var(--s4)"><p class="rio-card-title" style="margin-bottom:var(--s3)">Which roles each layout shows</p>
+<div style="display:grid;grid-template-columns:auto repeat(4,1fr);gap:8px var(--s2);font-size:14px;font-weight:500;align-items:center">
+<span></span><span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">Tbl</span><span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">List</span><span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">Card</span><span style="font-family:var(--rmono);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-mono)">Cmp</span><span style="color:var(--ink)">Title</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--ink)">Subtitle</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--border-strong)">○</span><span style="color:var(--ink)">Badge</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--ink)">Timestamp</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--green)">●</span><span style="color:var(--border-strong)">○</span><span style="color:var(--ink)">Meta</span><span style="color:var(--green)">●</span><span style="color:var(--border-strong)">○</span><span style="color:var(--green)">●</span><span style="color:var(--border-strong)">○</span></div></div></aside></div>
+<div style="display:flex;align-items:center;gap:var(--s2);margin-top:var(--s5)">
+<span class="rio-btn rio-primary">Save view</span><span class="rio-btn rio-secondary">Back to list</span></div></main>
+  <footer class="rio-foot"><span>Bookflow</span><span>·</span><span>v2.0.5</span></footer>
+</div></div></div></div></div><ul style='margin-top:var(--g4)'><li><strong>Two columns, 1.35 : 1</strong>, 24px gutter, on the wide measure. The preview column is <code>position:sticky</code> so it stays in view down a long field list.</li><li><strong>The field list is a stack of rows, not a spreadsheet.</strong> Four columns — Order, Field, Role, Display label. Filter becomes one checkbox under the list; Merge is a per-row control revealed on the row it applies to.</li><li><strong>Field identity is two lines</strong>: the human label at 15px/680 above the backend column name at 13px mono.</li><li><strong>Hidden rows render at 55% opacity</strong> — present, ordered, obviously inert, still reorderable.</li><li><strong>The selected row takes <code>--blue-soft</code></strong>, tying it to what it controls in the preview.</li><li><strong>Value labels collapse into one <code>&lt;details&gt;</code> per field</strong>, first open. They are translation work, not composition work.</li><li><strong>The role matrix</strong> is a reference card: five roles × four layouts, filled dot = shown. It documents the renderer's fixed role sets.</li></ul></div>
+<div class="sec"><div class="sec-head"><span class="sec-key">C · D · F</span><h2>Proposals and product status</h2></div><div class="props">
+<div class="prop"><div><h3>Two-column composer with a sticky result column</h3><p>Pure layout of controls already on the page.</p></div><span class="st st-visual">Visual / UX only</span></div>
+<div class="prop"><div><h3>Row typography: label over backend name</h3><p>Stops “Booking number booking_number” reading as one string.</p></div><span class="st st-visual">Visual / UX only</span></div>
+<div class="prop"><div><h3>Hidden fields dimmed; selected row tinted</h3><p>Opacity and <code>--blue-soft</code>; no new colours.</p></div><span class="st st-visual">Visual / UX only</span></div>
+<div class="prop"><div><h3>Value labels in collapsible sections</h3><p>A model with three enum-ish columns currently renders three full tables below the fold.</p></div><span class="st st-visual">Visual / UX only</span></div>
+<div class="prop"><div><h3>Role × layout matrix</h3><p>Documents the renderer's fixed role sets so an operator can predict the effect of a role change without experimenting. Static content.</p></div><span class="st st-existing">Existing behaviour</span></div>
+<div class="prop"><div><h3>Live preview</h3><p>One real record rendered in the selected layout, updating as roles and labels change, client-side, with no page load and no save. The page must carry <strong>one sample row</strong> plus the role sets the renderer uses; the preview re-renders from form state. No new endpoint, no change to ViewSpec semantics, nothing persisted until Save view. With no records, the preview renders labelled placeholders rather than disappearing.</p></div><span class="st st-wiring">Backend wiring</span></div>
+<div class="prop"><div><h3>Filter checkbox gated by role</h3><p>A filter is only meaningful on a badge-shaped column, which is the rule the derivation already applies. Presenting it per-row invited setting it on a timestamp.</p></div><span class="st st-wiring">Backend wiring</span></div>
+<div class="prop is-future"><div><h3>Drag to reorder</h3><p>Replacing ▲▼ with a drag handle. <strong>▲▼ stay regardless</strong> — they are the keyboard-accessible path. Deferred until pointer, touch and keyboard parity is worth having.</p></div><span class="st st-future">Future</span></div>
+<div class="prop is-future"><div><h3>Per-user saved views</h3><p>“Save as my view” beside “Set as default”. Needs a per-user ViewSpec store and a resolution order.</p></div><span class="st st-future">Future</span></div>
+</div></div>
+<div class="sec"><div class="sec-head"><span class="sec-key">E</span><h2>Interaction contract</h2></div><div class="scroll"><table class="doc"><thead><tr><th>Element</th><th>State</th><th>Treatment</th></tr></thead><tbody><tr><td>Field row</td><td>Default</td><td>White, 1px bottom <code>--border</code></td></tr><tr><td></td><td>Hover</td><td><code>--surface-soft</code></td></tr><tr><td></td><td>Selected</td><td><code>--blue-soft</code>; the preview highlights the element this field produces</td></tr><tr><td></td><td>Hidden role</td><td>Row at 55% opacity; its controls stay operable so the role can be changed back</td></tr><tr><td>▲ / ▼</td><td>Default</td><td>Small secondary, 31px</td></tr><tr><td></td><td>Disabled</td><td>▲ on the first row, ▼ on the last: 50% opacity, <code>aria-disabled</code>, not focusable</td></tr><tr><td></td><td>Activated</td><td>Row moves; focus stays on the button that moved it so a run of presses works</td></tr><tr><td>Role select</td><td>Change</td><td>Preview re-renders immediately. No save, no navigation</td></tr><tr><td>Preview switch</td><td>Current</td><td><code>--blue-soft</code> / <code>--blue</code>, as the list's own switcher</td></tr><tr><td>Preview</td><td>No records</td><td>Placeholder values in secondary italic; layout identical</td></tr><tr><td>Preview</td><td>Loading</td><td>Skeleton inside the preview frame only; the composer stays interactive</td></tr><tr><td>Save view</td><td>Default</td><td>Primary — the only blue button on the page</td></tr><tr><td></td><td>Dirty</td><td>A 14px secondary “Unsaved changes” beside it. The button is never disabled</td></tr><tr><td></td><td>Error</td><td>Alert at the top of the composer column; field state preserved</td></tr><tr><td>Value labels</td><td>Collapsed</td><td><code>&lt;details&gt;</code> summary shows field name and value count; keyboard-operable by default</td></tr><tr><td>Keyboard</td><td>—</td><td>Tab runs down the composer column, then the preview controls. The preview is not a tab stop — it is output.</td></tr></tbody></table></div></div>
+<div class="sec"><div class="sec-head"><span class="sec-key">G</span><h2>Responsive contract</h2></div><div class="scroll"><table class="doc"><thead><tr><th>Width</th><th>Result</th></tr></thead><tbody><tr><td>1920</td><td>Two columns at the 1600px cap. Preview sticky, fully visible beside the field list.</td></tr><tr><td>1440</td><td>Same, 1.35 : 1.</td></tr><tr><td>900</td><td>One column. The preview moves <strong>above</strong> the field list and stops being sticky — seeing the result first is the point, and a sticky panel would eat half a short viewport.</td></tr><tr><td>390</td><td>One column. Field rows restack: Order + Field on the first line, Role + Display label on the second, still one bordered row per field. The role matrix collapses into a <code>&lt;details&gt;</code>. Type sizes unchanged.</td></tr></tbody></table></div></div>
+<div class="sec"><div class="sec-head"><span class="sec-key">H</span><h2>Visual acceptance</h2></div><ul><li>The effect of a role change is visible without leaving the page.</li><li>Field rows no longer read as a spreadsheet: human label and backend name are on separate lines.</li><li>Hidden fields are visibly inert but still reorderable.</li><li>Value-label tables are collapsed by default and do not push the composer below the fold.</li><li>Exactly one blue button on the page, and it is Save view.</li><li>The preview is clearly labelled as a preview and states that nothing is saved until Save view.</li><li>At 900 and below the preview appears above the composer.</li><li>No horizontal overflow at 390.</li></ul></div>
+<p class="foot">Design reference · frozen for UX Refresh 0.13 · baseline <code>5f43014</code>.
+Behaviour is defined by the production code and tests, not by this file.</p>
+</div>
+</body>
+</html>
