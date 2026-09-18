@@ -79,13 +79,25 @@ The offset keeps the ring on the surface behind a control, never on its fill.
 ## Layout
 
 ```text
-.shell
-  aside.sidebar          56px top bar — brand | .sidebar-foot
-  .content               grid: var(--rail) | minmax(0,1fr)
-    aside.module-sidebar 240px rail — .module-title, .module-nav, .module-link
-    main.main            width min(100% - 56px, var(--content))
-    footer.app-footer
+.shell                   grid: auto | minmax(0,1fr)
+  aside.sidebar          var(--masthead) — brand | .sidebar-foot
+  .content[.content--wide]  grid: var(--rail) | minmax(0,1fr)
+    aside.module-sidebar var(--rail) — .module-title, .module-nav, .module-link
+    main.main            width min(100% - var(--s6), measure)
+    footer.app-footer    the same measure
 ```
+
+Nothing subtracts another element's height from `100vh`: `.shell` is a
+two-row grid, so the content row takes whatever the masthead leaves and
+the rail and footer fill a short page because the layout says so.
+
+**Two measures, declared per page.** `--content` (1120px) is the readable
+measure for focused content — forms, profile, confirmations, auth.
+`--content-wide` (1600px) is the data workspace: model lists, the audit
+log, the view editor, the dashboard grid. A page picks one through the
+`shell_width` block in `base_admin.html` (`content--wide`, or empty). The
+modifier sits on `.content`, not `.main`, so the footer takes the same
+measure; there are no per-page width rules anywhere else.
 
 The top bar is one row on one baseline: brand on the left; on the right,
 in order, the environment badge · "Signed in as" · the address (regular

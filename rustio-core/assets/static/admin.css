@@ -108,9 +108,9 @@ button, input, select { font: inherit; }
 .brand-mark { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 7px; background: var(--blue); color: white; font-size: 14px; font-weight: 800; letter-spacing: -.04em; }
 .brand-name { font-weight: 700; letter-spacing: -.02em; }
 /* Primary modules begin after the contextual rail itself, not after fake inner padding. */
-.sidebar-foot { display: flex; grid-column: 3; grid-row: 1; align-self: center; align-items: center; gap: 12px; margin: 0; padding: 0; border: 0; }
-.signed-in { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 15px; font-weight: 700; }
-.role-note { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink-soft); font-size: 14px; }
+.sidebar-foot { display: flex; grid-column: 3; grid-row: 1; align-self: center; align-items: center; gap: var(--s3); margin: 0; padding: 0; border: 0; }
+.signed-in { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 14px; font-weight: 400; white-space: nowrap; }
+.role-note { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink-soft); font-size: 14px; white-space: nowrap; }
 .sidebar-foot form { display: inline-flex; }
 
 .content { display: grid; min-width: 0; grid-template-columns: var(--rail) minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; }
@@ -118,15 +118,15 @@ button, input, select { font: inherit; }
 .module-sidebar { grid-column: 1; grid-row: 1 / -1; margin-top: 0; padding: var(--s5) var(--s3) var(--s6); border-right: 1px solid var(--rail-line); background: var(--rail-bg); }
 .module-title { margin: 0 0 12px; padding: 0 12px; color: #596779; text-transform: uppercase; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .16em; }
 .module-nav { display: grid; gap: 4px; }
-.module-link { display: flex; min-height: 56px; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid transparent; border-radius: 8px; color: #334052; text-decoration: none; }
+.module-link { display: flex; min-height: 36px; align-items: center; gap: var(--s2); padding: 0 var(--s3); border: 1px solid transparent; border-radius: 6px; color: #334052; font-size: 14px; text-decoration: none; }
 .module-link:hover { border-color: #d6e0ec; background: #fff; color: var(--blue); }
 .module-link[aria-current="page"] { background: var(--blue-soft); color: var(--blue); border-color: transparent; box-shadow: none; }
-.module-link[aria-current="page"] strong { font-weight: 700; }
+.module-link[aria-current="page"] strong { font-weight: 600; }
 .module-link > span:first-of-type { min-width: 0; flex: 1; }
 .module-link .badge { flex: none; margin-left: auto; padding: 1px 7px; border-radius: 999px; border-color: var(--border); background: var(--surface); color: var(--ink-soft); font-family: var(--mono); font-size: 11px; font-weight: 700; }
 .module-link .badge::before { display: none; }
-.module-link strong { display: block; font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
-.module-link small { display: block; margin-top: 2px; color: #5b6879; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+.module-link strong { display: block; font-size: 14px; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; }
+.module-link small { display: block; margin-top: 2px; color: #5b6879; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
 .module-icon { width: 20px; height: 20px; flex: 0 0 20px; background: currentColor; mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
 .module-icon-account { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21a8 8 0 0 0-16 0'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"); }
 .module-icon-users { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'/%3E%3Ccircle cx='9' cy='7' r='4'/%3E%3Cpath d='M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75'/%3E%3C/svg%3E"); }
@@ -146,9 +146,13 @@ h1,h2,h3 { margin-top: 0; color: var(--ink); line-height: 1.2; }
 h1 { overflow-wrap: anywhere; margin: 0 0 var(--s1); font-size: 24px; font-weight: 800; letter-spacing: -.02em; line-height: 1.2; }
 h2 { margin: 0 0 var(--s1); font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
 h3 { margin: 0 0 var(--s1); font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
-.lead { max-width: 680px; margin: 0; overflow-wrap: anywhere; color: #445163; font-size: 16px; }
+.lead { max-width: 680px; margin: 0; overflow-wrap: anywhere; color: #445163; font-size: 15px; }
 
-.card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+/* Cards hold their content directly (forms, section lists, profile
+   panels), so the padding belongs to the card itself. A table and a card
+   head are the two things that should still run edge to edge, so they
+   bleed back out through it. */
+.card { overflow: hidden; padding: var(--s5); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .card-head { padding: var(--s3) var(--s4); border-bottom: 1px solid var(--border); background: var(--surface-head); }
 .card-head h2 { margin: 0; font-family: var(--mono); font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .card-head .lead { margin-top: 5px; font-size: 14px; }
@@ -219,7 +223,8 @@ input:not([type="hidden"]):not(:placeholder-shown),select { border-color: #7890a
 input:hover,select:hover { border-color: #71869f; }
 input:focus,select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(31,87,151,.12); outline: none; }
 input[aria-invalid="true"],select[aria-invalid="true"] { border-color: var(--red); background: var(--red-soft); box-shadow: 0 0 0 3px rgba(162,63,58,.1); }
-.form-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: var(--s2); padding-top: var(--s1); }
+/* Keeps one baseline whether or not a child is a <form>. */
+.form-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: var(--s2); padding-top: var(--s1); }
 
 /* `position: relative` so the visually-hidden column label inside the table
    resolves against this scroller rather than the initial containing block.
@@ -236,7 +241,8 @@ td { font-size: 14px; }
 .table-link { color: var(--blue); font-weight: 600; text-decoration-color: var(--blue-line); }
 .cell-muted { color: var(--ink-soft); }
 .actions { width: 1%; white-space: nowrap; text-align: right; }
-.badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px; border: 1px solid; border-radius: 6px; font-size: 14px; font-weight: 700; }
+/* Badges ride the 14px cell type, so they step down one notch. */
+.badge { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid; border-radius: 6px; font-size: 12px; font-weight: 600; }
 .badge::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; }
 .badge-active { border-color: #b4dbc5; background: var(--green-soft); color: var(--green); }
 .badge-disabled { border-color: #e3b0ab; background: var(--red-soft); color: var(--red); }
@@ -252,9 +258,17 @@ td { font-size: 14px; }
 .danger-zone { margin-top: 20px; border-color: #dfb0ab; box-shadow: none; }
 .danger-zone .card-head { border-color: #e4bbb7; background: #fbf3f2; }
 
-.login-shell { display: grid; place-items: start center; min-height: 100vh; padding: clamp(56px, 12vh, 112px) var(--s5) var(--s5); background: var(--page); }
-.login-wrap { width: min(100%, 420px); min-width: 0; }
-.login-brand { justify-content: center; margin-bottom: 20px; }
+.login-shell { display: grid; place-items: center; min-height: 100vh; padding: var(--s6) var(--s5); background: var(--page); }
+.login-wrap {
+  width: min(100%, 420px); min-width: 0; padding: var(--s5);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.login-wrap form { display: grid; gap: var(--s4); max-width: none; }
+.login-wrap .alert { margin-bottom: var(--s4); }
+/* The brand block shares the form's left edge — one alignment per card. */
+.login-brand { display: grid; justify-items: start; justify-content: start; gap: var(--s2); margin-bottom: var(--s5); text-align: left; }
+.login-brand .lead { margin: 0; }
 
 /* The account being acted on, lifted out of the heading so a long username
    wraps on its own line instead of breaking mid-word across the question.
@@ -263,7 +277,7 @@ td { font-size: 14px; }
    the section's aria-labelledby, so the accessible name still names it. */
 .confirm-subject { margin: -4px 0 14px; overflow-wrap: anywhere; font-size: 17px; font-weight: 700; }
 .confirm-note { margin: 0 0 18px; color: var(--ink-soft); font-size: 15px; }
-.login-foot { margin: 17px 0 0; color: #465366; font-size: 14px; text-align: center; }
+.login-foot { margin: var(--s3) 0 0; color: #465366; font-size: 14px; text-align: center; }
 .auth-footer { display: flex; min-height: 58px; align-items: center; flex-wrap: wrap; gap: 8px 14px; width: min(100% - 56px, var(--content)); margin: 0 auto; padding: 15px 0 20px; border-top: 1px solid var(--border); color: #596779; font-size: 14px; }
 .auth-footer span:first-child { color: var(--ink); font-weight: 700; }
 .auth-footer span:nth-child(2)::before { margin-right: 14px; color: #9aa6b5; content: "·"; }
@@ -271,33 +285,18 @@ td { font-size: 14px; }
 
 
 @media (max-width:1040px) {
-  .sidebar { grid-template-columns: 1fr auto; grid-template-rows: minmax(56px, auto) 44px; padding: 0 24px; }
+  .sidebar { grid-template-columns: 1fr auto; padding: 0 24px; }
   .brand { padding-left: 0; }
-  /* Two tight lines instead of a hidden role: name over role, Sign out
-     beside them. The complete identity block stays visible at every width. */
-  .sidebar-foot {
-    display: grid;
-    grid-column: 2;
-    grid-template-areas: "name signout" "role signout";
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0 10px;
-  }
-  .sidebar-foot .signed-in { grid-area: name; }
-  .sidebar-foot .role-note { grid-area: role; }
-  .sidebar-foot form { grid-area: signout; }
 }
 @media (max-width:760px) {
-  .sidebar { grid-template-columns: 1fr auto; grid-template-rows: minmax(54px, auto) 44px; padding: 0 16px; }
-  .brand { align-self: center; margin-bottom: 0; }
-  .brand { padding-left: 0; }
+  .sidebar { padding: 0 16px; }
+  .brand { align-self: center; margin-bottom: 0; padding-left: 0; }
   .sidebar-foot { grid-column: 2; align-self: center; margin-bottom: 0; }
   .content { display: block; }
   .app-footer,.auth-footer { width: min(100% - 28px, var(--content)); }
   .module-sidebar { min-height: 0; margin-top: 0; padding: 14px; border-right: 0; border-bottom: 1px solid var(--border); background: var(--rail-bg); }
   .module-title { display: none; }
   .module-nav { display: flex; gap: 8px; overflow-x: auto; }
-  .module-link { min-width: 178px; min-height: 52px; }
   .module-link strong,.module-link small { overflow-wrap: normal; }
   .main { width: min(100% - 28px,var(--content)); padding-top: 26px; }
   .page-head { display: grid; align-items: start; }
@@ -306,26 +305,19 @@ td { font-size: 14px; }
   .details div:nth-last-child(2) { border-bottom: 1px solid #e3e7ed; }
 }
 @media (max-width:480px) {
-  .shell,.login-shell { min-height: 100vh; }
   /* Below 480px the masthead stacks: brand, then the identity block on its
      own row, then the module bar. The username gets the full width to wrap
      into instead of being deleted. DOM order is unchanged, so reading and
      focus order still match what is on screen. */
-  .sidebar { grid-template-rows: auto auto 44px; padding: 6px 14px 0; }
+  .sidebar { padding: 6px 14px 0; }
   .brand { grid-column: 1 / -1; grid-row: 1; }
-  .sidebar-foot {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    align-self: start;
-    padding-bottom: 8px;
-  }
+  .sidebar-foot { align-self: start; padding-bottom: 8px; }
   .page-head .button,.button-row,.form-actions { width: 100%; }
   .button-row,.form-actions { display: grid; }
   .button-row .button,.form-actions .button { width: 100%; }
   .card-body { padding: 18px; }
   th,td { padding: 12px 13px; }
-  .login-shell { padding: 16px; }
-  .login-shell { padding-top: 52px; }
+  .login-shell { padding: 52px 16px 16px; }
   .app-footer span:nth-child(2)::before,
   .auth-footer span:nth-child(2)::before { display: none; }
   .app-footer span:last-child,.auth-footer span:last-child { margin-left: 0; }
@@ -374,8 +366,9 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 .card-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit,minmax(260px,1fr)); }
 
 /* Dashboard stats. .card geometry, value at the 1.8rem display size. */
-.stat-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); }
-.stat { padding: 18px 19px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.stat-grid { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); }
+/* A stat card is itself the link; it should not read as underlined body text. */
+.stat { padding: 18px 19px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); text-decoration: none; }
 .stat-value { display: block; color: var(--ink); font-size: 33px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; }
 .stat-label { display: block; margin-top: 5px; color: var(--ink-soft); text-transform: uppercase; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
 .stat-featured { border-color: var(--blue-line); background: var(--blue-soft); }
@@ -400,10 +393,12 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 .empty-icon { display: grid; width: 40px; height: 40px; margin: 0 auto 12px; place-items: center; border-radius: 9px; background: var(--blue-soft); color: var(--blue); font-size: 17px; font-weight: 800; }
 
 /* Detail views — .details is the 2-column grid; these are its parts. */
-.detail-grid { display: grid; gap: 14px; grid-template-columns: minmax(0,2fr) minmax(0,1fr); align-items: start; }
-.detail-single { display: grid; gap: 14px; }
-.detail-main { display: grid; gap: 14px; min-width: 0; }
-.detail-side { display: grid; gap: 14px; min-width: 0; }
+.detail-grid { display: grid; gap: var(--s4); margin-top: var(--s4); grid-template-columns: minmax(0,2fr) minmax(0,1fr); align-items: start; }
+/* A form card hugs the form's measure rather than stretching to the full
+   content width with 400px of empty card beside the fields. */
+.detail-single { display: grid; gap: 14px; max-width: calc(680px + 2 * var(--s5)); }
+.detail-main { display: grid; gap: var(--s4); min-width: 0; }
+.detail-side { display: grid; gap: var(--s4); min-width: 0; }
 .detail-row { display: grid; gap: 4px; padding: 11px 0; border-bottom: 1px solid #e1e6ed; min-width: 0; }
 .detail-row:last-child { border-bottom: 0; }
 .detail-label { color: #596779; text-transform: uppercase; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .12em; }
@@ -437,7 +432,6 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 
 /* Language switcher — a bare select in the header. */
 .lang-switcher { display: inline-flex; align-items: center; gap: 7px; }
-.lang-select { min-height: 38px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: #f8fafc; color: #354154; font-size: 15px; }
 
 /* Table extras. */
 .table-compact th, .table-compact td { padding: 8px 12px; font-size: 15px; }
@@ -449,8 +443,10 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 
 /* Form extras. */
 .field-checkbox { display: flex; align-items: center; gap: 9px; }
-.field-optional { color: var(--ink-soft); font-size: 14px; font-weight: 600; }
-.field-sensitive { color: var(--amber); font-size: 14px; font-weight: 680; }
+/* The optional / sensitive markers are asides to the field label, not a
+   continuation of its word. */
+.field-optional { margin-left: var(--s2); color: var(--ink-soft); font-size: 12px; font-weight: 500; }
+.field-sensitive { margin-left: var(--s2); color: var(--amber); font-size: 12px; font-weight: 500; }
 .required-mark { color: var(--red); font-weight: 800; }
 .checkbox { width: 18px; height: 18px; flex: 0 0 18px; accent-color: var(--blue); }
 .input-inline { width: auto; min-width: 0; }
@@ -475,7 +471,8 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 .login-title { margin: 0 0 var(--s1); font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
 
 /* Environment chip in the header. */
-.env-chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 9px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: 14px; font-weight: 700; }
+.env-chip { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: 12px; font-weight: 600; }
+.env-chip::before { display: none; }
 .accent-word { color: var(--blue); font-weight: 700; }
 .page-head--hero h1 { font-size: 33px; letter-spacing: -.025em; line-height: 1.06; }
 
@@ -517,18 +514,11 @@ td.actions .inline-form { display: inline-flex; margin-left: var(--s2); }
 th.actions { text-align: right; }
 /* The identifier column is as narrow as its content. */
 tbody td:first-child, thead th:first-child { width: 1%; white-space: nowrap; }
-/* Badges ride the 14px cell type, so they step down one notch. */
-.badge { padding: 3px 8px; font-size: 12px; font-weight: 600; }
 
 /* --- Top-bar identity + module rail ---------------------------------- */
 /* One row, one baseline: badge · "Signed in as" · address · language ·
    log out. The address is the same weight as the label beside it — it is
    information, not emphasis. */
-.sidebar-foot { gap: var(--s3); }
-.signed-in { font-size: 14px; font-weight: 400; white-space: nowrap; }
-.role-note { font-size: 14px; white-space: nowrap; }
-.env-chip { padding: 3px 8px; font-size: 12px; font-weight: 600; }
-.env-chip::before { display: none; }
 
 /* The globe sits *inside* the control, left of the label, with the chevron
    at the right edge — so the native arrow has to go. */
@@ -543,33 +533,12 @@ tbody td:first-child, thead th:first-child { width: 1%; white-space: nowrap; }
   background-size: 14px 14px, 12px 12px;
 }
 
-/* Rail items: 36px tall, 4px apart, 14px text, count inline on the right. */
-.module-link { min-height: 36px; padding: 0 var(--s3); gap: var(--s2); border-radius: 6px; font-size: 14px; }
-.module-link strong { font-size: 14px; font-weight: 600; line-height: 1.2; }
-.module-link small { font-size: 12px; }
-.module-link[aria-current="page"] strong { font-weight: 600; }
 
-/* --- Card padding and page rhythm ------------------------------------ */
-/* Cards hold their content directly (forms, section lists, profile
-   panels), so the padding belongs to the card itself. A table is the one
-   thing that should still run edge to edge, so it bleeds back out. */
-.card { padding: var(--s5); }
-.card > .table-wrap { margin: calc(-1 * var(--s5)); }
-.card > .card-body { padding: 0; }
-.card > * + * { margin-top: var(--s4); }
-.card > .card-title + * { margin-top: var(--s3); }
-.detail-grid { gap: var(--s4); margin-top: var(--s4); }
-.detail-main, .detail-side { gap: var(--s4); }
-.stat-grid { gap: var(--s4); }
 
 /* The dashboard hero reads like the landing hero: headline, then the
    sentence under it — not beside it. */
 .page-head--hero { display: block; }
 .page-head--hero p { max-width: 680px; margin: var(--s2) 0 0; color: var(--ink-soft); font-size: 15px; }
-.lead { font-size: 15px; }
-
-/* Stat cards are links; they should not read as underlined body text. */
-.stat { text-decoration: none; }
 
 /* A permission row is a label with its explanation beneath it. */
 .perm > span:last-child { display: grid; gap: 2px; min-width: 0; }
@@ -590,21 +559,6 @@ input[type="checkbox"]:not(:placeholder-shown), input[type="radio"]:not(:placeho
 .checkbox-line { display: block; color: var(--ink-soft); font-size: 14px; }
 .checkbox-line input { display: inline-block; margin-right: var(--s2); vertical-align: -2px; }
 
-/* --- Auth pages ------------------------------------------------------- */
-/* One card, the landing "Suggested next" box: white, 1px border, the same
-   radius and shadow — 420px wide and centred in the viewport. */
-.login-shell { place-items: center; padding: var(--s6) var(--s5); }
-.login-wrap {
-  width: min(100%, 420px);
-  padding: var(--s5);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface); box-shadow: var(--shadow);
-}
-.login-brand { display: grid; justify-items: start; gap: var(--s2); margin-bottom: var(--s5); }
-.login-brand .lead { margin: 0; }
-.login-wrap form { display: grid; gap: var(--s4); max-width: none; }
-.login-wrap .alert { margin-bottom: var(--s4); }
-.button-block { width: 100%; }
 
 /* The legacy shell marks the current rail item with `.is-active`; the
    templated pages use `aria-current`. Same item, same treatment. */
@@ -618,15 +572,7 @@ a.signed-in { display: inline-flex; align-items: center; gap: var(--s2); color: 
 a.signed-in:hover { color: var(--blue); }
 .signed-in .avatar { width: 24px; height: 24px; border-radius: 6px; font-size: 11px; }
 
-/* The optional / sensitive markers are asides to the field label, not a
-   continuation of its word. */
-.field-optional, .field-sensitive { margin-left: var(--s2); font-size: 12px; font-weight: 500; }
 
-/* A card head is a band across the top of its card, so it bleeds out
-   through the card's padding the way a table does. */
-.card > .card-head { margin: calc(-1 * var(--s5)) calc(-1 * var(--s5)) 0; }
-.card > .card-head + * { margin-top: var(--s5); }
-.card > .card-head { padding: var(--s3) var(--s5); }
 
 /* Legacy-shell forms are not `.form` grids, so their fields need the
    rhythm spelled out. */
@@ -637,20 +583,37 @@ a.signed-in:hover { color: var(--blue); }
 .stack-list > li > div { display: grid; gap: var(--s1); justify-items: start; min-width: 0; }
 .stack-list > li > div p { margin: 0; color: var(--ink-soft); font-size: 14px; }
 
-/* The brand block shares the form's left edge — one alignment per card. */
-.login-brand { justify-items: start; justify-content: start; text-align: left; }
+/* --- In-card rhythm --------------------------------------------------- */
+/* Deliberately below every component rule: `.card > * + *` and a component's
+   own `margin: 0` have equal specificity, so this only wins from here. A
+   table and a card head bleed back out through the card's padding. */
+.card > .table-wrap { margin: calc(-1 * var(--s5)); }
+.card > .card-body { padding: 0; }
+.card > * + * { margin-top: var(--s4); }
+.card > .card-title + * { margin-top: var(--s3); }
+.card > .card-head { margin: calc(-1 * var(--s5)) calc(-1 * var(--s5)) 0; padding: var(--s3) var(--s5); }
+.card > .card-head + * { margin-top: var(--s5); }
 
-/* --- Top bar at narrow widths ----------------------------------------- */
+/* --- Narrow widths ---------------------------------------------------- */
 /* The identity cluster stays one wrapping row in reading order; nothing
    stretches and nothing stacks into a column of its own. */
-@media (max-width: 760px) {
-  .sidebar { grid-template-columns: 1fr auto; grid-template-rows: auto; }
+@media (max-width: 1040px) {
   .sidebar-foot {
     display: flex; flex-wrap: wrap; grid-column: 2; grid-row: 1;
     align-items: center; justify-content: flex-end; gap: var(--s2);
     padding: var(--s2) 0;
   }
   .sidebar-foot > * { flex: none; }
+}
+@media (max-width: 760px) {
+  /* In the narrow strip the rail items are as wide as their content, so
+     the count badge stays beside its name instead of being pushed to the
+     far edge of a fixed-width item. */
+  .module-link { min-width: 0; flex: none; }
+  .module-link > span:first-of-type { flex: none; }
+  .module-link .badge { margin-left: var(--s2); }
+  /* One column, or the side panels run off the right of the viewport. */
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 480px) {
   .sidebar { grid-template-columns: 1fr; grid-template-rows: auto auto; }
@@ -663,39 +626,13 @@ a.signed-in:hover { color: var(--blue); }
 /* Empty-state copy is a paragraph, not a banner — it keeps a measure. */
 .empty p { max-width: 52ch; margin-right: auto; margin-left: auto; }
 
-/* A button row keeps one baseline whether or not a child is a <form>. */
-.button-row, .form-actions { align-items: center; }
-
-/* A form card hugs the form's measure rather than stretching to the full
-   content width with 400px of empty card beside the fields. */
-.detail-single { max-width: calc(680px + 2 * var(--s5)); }
-
-/* In the narrow strip the rail items are as wide as their content, so the
-   count badge stays beside its name instead of being pushed to the far
-   edge of a fixed-width item. */
-@media (max-width: 760px) {
-  .module-link { min-width: 0; flex: none; }
-  .module-link > span:first-of-type { flex: none; }
-  .module-link .badge { margin-left: var(--s2); }
-}
-
 /* `span:last-child { margin-left: auto }` pushes the version to the right
    edge — but the legacy footer has only the project name, and a lone span
    is both first and last. */
 .app-footer span:only-child, .auth-footer span:only-child { margin-left: 0; }
 
-/* The auth card's secondary action sits under the primary as its pair,
-   not as a stray text link. */
-.login-foot { margin: var(--s3) 0 0; }
-
 /* A fixed-size avatar is not a shrinkable flex item. */
 .stack-list > li > .avatar { flex: none; }
-
-/* Below the rail's breakpoint the two-column detail layout is one column;
-   without this the side panels ran off the right of the viewport. */
-@media (max-width: 760px) {
-  .detail-grid { grid-template-columns: minmax(0, 1fr); }
-}
 
 /* --- Page width: two measures, chosen per page ------------------------ */
 /* `--content` (1120px) is the readable measure for focused content —
