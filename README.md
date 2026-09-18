@@ -38,7 +38,7 @@ The goal is simple: **you write the domain; RustIO handles the repetitive system
 
 You need [Rust](https://rustup.rs/) installed. Nothing else.
 
-```rust
+```bash
 # 1. Install the CLI
 cargo install rustio-cli
 
@@ -49,7 +49,7 @@ rustio init booklend
 `init` creates an empty project and tells you what comes next — no menu,
 no questions. You add models one at a time:
 
-```rust
+```bash
 cd booklend
 
 # 3. Add your models — one folder per model
@@ -133,7 +133,7 @@ whichever layout your project has.)
 
 Describe a change:
 
-```rust
+```bash
 rustio change "add date_of_birth as DateTime to notes"
 ```
 
@@ -207,7 +207,7 @@ rustio user create [...]        # add a user (interactive when args missing)
 
 Advanced schema-change workflow:
 
-```rust
+```bash
 rustio ai plan "<change>" [--save PATH]
 rustio ai review <plan>
 rustio ai apply  <plan> [--yes] [--dry-run] [--force]
