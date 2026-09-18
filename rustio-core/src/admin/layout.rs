@@ -4696,7 +4696,7 @@ mod tests {
         let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
         // Anchor's sv label heads the merged column …
         assert!(
-            html.contains(">Namn</th>"),
+            html.contains(">Namn<"),
             "merged column uses anchor label:\n{html}"
         );
         // … and the merged cell still joins both values.
@@ -5054,8 +5054,8 @@ mod tests {
         let with_identity = render_gadget_list_as(&base, &db, Some(&identity)).await;
         let anon = render_gadget_list_as(&base, &db, None).await;
         // Same headers either way (no pref → default_language "en" → humaniser).
-        assert!(with_identity.contains(">Status</th>"));
-        assert!(anon.contains(">Status</th>"));
+        assert!(with_identity.contains(">Status<"));
+        assert!(anon.contains(">Status<"));
         std::fs::remove_dir_all(&base).ok();
     }
 
@@ -6627,12 +6627,30 @@ mod tests {
 
         let html = render_gadget_layout_in(&base, Some("table"), &HashMap::new()).await;
         // The first data column header should be Status (id/password_hash are
-        // Hidden, so the first *visible* column is status).
+        // Hidden, so the first *visible* column is status). A sortable header
+        // wraps its label in the sort link, so read the first header cell's
+        // text rather than assuming the label is its only child.
         let first_th = html
-            .split("<th scope=\"col\">")
+            .split("<th scope=\"col\"")
             .nth(1)
             .and_then(|s| s.split("</th>").next())
-            .unwrap_or("");
+            .map(|s| {
+                // Strip the markup a sortable header wraps its label in, and
+                // the aria-hidden sort chevron, leaving the label text.
+                let mut out = String::new();
+                let mut depth = 0u32;
+                for ch in s.chars() {
+                    match ch {
+                        '<' => depth += 1,
+                        '>' => depth = depth.saturating_sub(1),
+                        '\u{25b2}' | '\u{25bc}' => {}
+                        c if depth == 0 => out.push(c),
+                        _ => {}
+                    }
+                }
+                out.trim().to_string()
+            })
+            .unwrap_or_default();
         assert_eq!(
             first_th, "Status",
             "reordered column should lead the table: {html}"

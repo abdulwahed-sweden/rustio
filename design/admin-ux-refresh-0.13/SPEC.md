@@ -45,7 +45,7 @@ code.** No conflict is known at the time of freezing.
 
 | Item | Status | Note |
 |---|---|---|
-| Sortable column headers | **REQUIRES EXISTING BACKEND WIRING** | Uses the **existing `sort` / `dir` contract** and `ColumnView.sortable`. The header builds the same URL the current control builds. A second presentation of the existing sort — **not a second sorting system**. Columns with `sortable = false`, including every merged column, render as plain text. |
+| Sortable column headers | **REQUIRES EXISTING BACKEND WIRING** · *implemented* | Uses the **existing `sort` / `dir` contract** and `ColumnView.sortable`. The header builds the same URL the current control builds. A second presentation of the existing sort — **not a second sorting system**. Columns with `sortable = false`, including every merged column, render as plain text. |
 | Individually removable active filters | **REQUIRES EXISTING BACKEND WIRING** | Where needed. The active filter state and `clear_filters_href` already exist; each constraint needs one href that drops a single parameter and keeps the rest, from the same query-string builder that produces the layout links. |
 | Dashboard activity panel | **REQUIRES EXISTING BACKEND WIRING** | Audit log, its query and `/admin/actions` already exist; the dashboard context needs the latest N entries. |
 | Form field grouping | **REQUIRES EXISTING BACKEND WIRING** | Derived from the readonly flag, the primary key, and declared `belongs_to`. A group key per field; the template renders the bands. |
@@ -82,8 +82,11 @@ The approved hierarchy. Five stages, never mixed.
 
 ### 1 · Page identity
 
-Breadcrumb 13/600, 24px title, then a 16px description line. The right side
-holds the **primary record action and nothing else** — no layout control, no
+Breadcrumb 13/600, 24px title, and — **optionally** — a 16px description line.
+The runtime has no per-model description today, so the implementation renders
+breadcrumb, title and the Add action; the board's description line is shown as
+the slot, not as a requirement. The right side holds the **primary record
+action and nothing else** — no layout control, no
 filter, no view-editor action stands beside Add. It is the only strong blue on
 the page.
 
@@ -120,9 +123,16 @@ context → state → time → actions.
 
 For Assignment: **BOOKING · RESOURCE · STATUS · ACCEPTED AT · ACTIONS**.
 
-**Identity leads the row. A technical database id does not.** Service type and
-duration ride under the resource as in-cell detail at 14/500 `#3F4A59`, keeping
-five columns instead of seven.
+**Identity leads the row. A technical database id does not.** This is what an
+**automatically derived** ViewSpec now produces: derivation orders fields by
+role (Title, Subtitle, Badge, Timestamp, Meta, Hidden), keeping declaration
+order within each role. A **hand-authored** `<model>.view.json` keeps the order
+its author chose and is never re-ranked.
+
+The board shows service type and duration riding under the resource as in-cell
+detail at 14/500 `#3F4A59`. That is illustrative of the existing
+`ViewSpec.merge` feature: **secondary detail is shown when the active ViewSpec
+provides it**, and is never synthesised, inferred or seeded.
 
 - Header 40px, 13/700 mono uppercase `#202733`. Sorted header: background
   `#e9eef6`, label `#171B22`, solid 12px chevron, `aria-sort` set.

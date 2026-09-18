@@ -44,6 +44,8 @@ Verify every screen at **1920 · 1440 · 900 · 390**.
 
 - [ ] The page reads top-to-bottom as **identity → find → present → data →
       pagination**, and the five stages are visually separable at a glance.
+- [ ] Page identity is breadcrumb, title and the Add action. The description
+      line is optional and absent while the runtime has no source for it.
 - [ ] Add stands alone in the header. No filter, layout control or view-editor
       action sits beside it.
 - [ ] Search and filters read as one operational group.
@@ -52,10 +54,15 @@ Verify every screen at **1920 · 1440 · 900 · 390**.
       on a quieter ground, divided by a full-width rule.
 - [ ] The first column anchors the record's identity — a booking number, not a
       database id.
-- [ ] Column order is Booking · Resource · Status · Accepted at · Actions.
+- [ ] Column order is Booking · Resource · Status · Accepted at · Actions —
+      which is what a **derived** ViewSpec produces. A hand-authored
+      `<model>.view.json` keeps its own order and must not be overridden to
+      match this board.
 - [ ] Table header is 40px; rows are at least 48px; cells have 16px horizontal
       padding.
-- [ ] Cells are 15px/500 `#171B22`; in-cell detail is 14px/500 `#3F4A59`.
+- [ ] Cells are 15px/500 `#171B22`. In-cell secondary detail is 14px/500
+      `#3F4A59` **when the active ViewSpec provides it** via `merge`; it is
+      never synthesised.
 - [ ] The sorted column is visibly the sorted column, with a 12px chevron.
 - [ ] Inactive column heads are readable, not washed out.
 - [ ] Row actions are right-aligned and visually subordinate to record content.

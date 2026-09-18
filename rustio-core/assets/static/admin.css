@@ -248,6 +248,15 @@ input[aria-invalid="true"],select[aria-invalid="true"] { border-color: var(--red
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th,td { padding: 0 var(--s4); vertical-align: middle; border-bottom: 1px solid var(--border); }
 th { height: var(--th-h); background: var(--surface-head); color: var(--ink-body); font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+th.is-sorted { background: #e9eef6; color: var(--ink); }
+.th-sort { display: inline-flex; align-items: center; color: inherit; font: inherit; letter-spacing: inherit; text-decoration: none; }
+.th-sort:hover { color: var(--blue); }
+/* The chevron is the sort's state, so it shows on the sorted column and
+   appears at 45% on hover to say the header is clickable. Reserving its
+   width at all times stops the header shifting when it appears. */
+.th-sort .chev { margin-left: 5px; font-size: 12px; opacity: 0; }
+.th-sort:hover .chev, .th-sort:focus-visible .chev { opacity: .45; }
+th.is-sorted .th-sort .chev, th.is-sorted .th-sort:hover .chev { opacity: 1; }
 tbody tr:hover { background: var(--surface-soft); }
 tbody tr:last-child td { border-bottom: 0; }
 td { height: var(--td-h); color: var(--ink); font-size: 15px; font-weight: 500; line-height: 1.4; }
@@ -389,17 +398,40 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 /* Toolbar strip — the .card-head surface carrying controls. */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); margin-bottom: var(--s4); padding: var(--s3) var(--s4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .toolbar-count { margin-left: auto; color: var(--ink-2); font-size: 14px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.filters { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s3); }
 .filter { display: inline-flex; align-items: center; gap: var(--s2); color: var(--ink-body); font-size: 14px; font-weight: 600; white-space: nowrap; }
 
 /* Layout switch + pagination — secondary faces, current = blue wash. */
-.toolbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s4); width: 100%; }
+/* UX Refresh 0.13 — the list's operational bar. Row 1 answers "which
+   records am I looking for?", row 2 "how do I want them presented?". One
+   card, one full-width rule between them, and a quieter ground under the
+   presentation row so the two are never scanned as one strip of controls. */
+.ops { margin-bottom: var(--s4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); overflow: hidden; }
+.ops-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); }
+.ops-view { border-top: 1px solid var(--border); background: var(--surface-soft); }
+.ops-search { position: relative; display: block; flex: 0 1 340px; min-width: 220px; }
+.ops-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; color: var(--ink-hint); pointer-events: none; }
+.ops-search input { padding-left: 38px; }
+/* `type="search"` brings the platform's own clear control, which is the
+   affordance the design asks for — sized so it is a real target and does not
+   collide with the field's padding. */
+.ops-search input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-right: 2px; cursor: pointer; background: var(--ink-hint); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E"); mask-size: contain; mask-repeat: no-repeat; }
+.ops-count { margin-left: auto; color: var(--ink-2); font-size: 14px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* A statement of the sort the column headers set, never a control. */
+.ops-sortnote { color: var(--ink-2); font-size: 14px; font-weight: 500; white-space: nowrap; }
+.ops-view .view-tools { margin-left: auto; }
+/* An active filter says so three ways — border, fill and weight — so colour
+   is never the only signal. */
+.filter.is-on select, .filter.is-on input { border-color: #7890AF; background: #F4F8FD; color: #174578; font-weight: 600; }
 .layout-switch { display: inline-flex; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--radius-btn); overflow: hidden; background: var(--surface); }
 .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); padding: 14px var(--s4); border-top: 1px solid var(--border); background: var(--surface-head); color: var(--ink-2); font-size: 14px; font-weight: 600; }
 .pagination-pages { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pagination-pages a { display: inline-flex; align-items: center; justify-content: center; min-width: 38px; min-height: var(--ctl-sm); padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: #f8fafc; color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; font-variant-numeric: tabular-nums; }
 .pagination-pages a:hover { border-color: var(--border-strong); }
 .pagination-pages a.is-active { border-color: var(--blue-line); background: var(--blue-soft); color: var(--blue); }
+/* Disabled arrows stay visible and stay the same width, so the control does
+   not jump between pages. */
+.pagination-pages a.is-disabled { opacity: .45; pointer-events: none; }
+.card + .pagination { margin-top: -1px; border: 1px solid var(--border); border-radius: 0 0 var(--radius) var(--radius); }
 
 /* Empty state — .card-body copy, centred. */
 .empty { padding: 44px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); text-align: center; }
@@ -463,7 +495,6 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 .required-mark { color: var(--red); font-weight: 800; }
 .checkbox { width: 18px; height: 18px; flex: 0 0 18px; accent-color: var(--blue); }
 .input-inline { width: auto; min-width: 0; }
-.input-wide { max-width: 280px; }
 .input-narrow { max-width: 150px; }
 .filter select, .filter input { width: auto; min-width: 120px; }
 .col-30 { width: 30%; }
