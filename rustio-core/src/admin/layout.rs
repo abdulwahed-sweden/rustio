@@ -1541,6 +1541,18 @@ struct ColumnView {
     name: String,
     label: String,
     sortable: bool,
+    /// Canonical URL that sorts the list by this column, or `None` when the
+    /// column is not sortable. Built by [`list_layout_href`] — the same
+    /// builder the layout switcher and the "Set as default" return path use
+    /// — so `q`, the active filters, the current layout and URL-encoding all
+    /// come from one place and a sort link can never drift from them. The
+    /// href toggles direction when this column is already the sorted one and
+    /// otherwise starts ascending. No new query parameter, no new sorting
+    /// semantics: the backend honours `sort` / `dir` exactly as before.
+    sort_href: Option<String>,
+    /// `"ascending"` / `"descending"` when this column is the sorted one,
+    /// `None` otherwise. Feeds `aria-sort` directly.
+    sort_state: Option<&'static str>,
     /// Phase 9d — when this column is a merged cell, the full list of merge
     /// sources (anchor first). Empty for a normal single-source column. The
     /// row renderer joins these sources' values with " · ".
@@ -2347,6 +2359,46 @@ pub(crate) async fn resolve_active_language(
     "en".to_string()
 }
 
+/// The request state a sort link has to preserve: everything the list URL
+/// already carries. Grouped so `view_columns` keeps a readable signature.
+struct SortContext<'a> {
+    slug: &'a str,
+    layout_key: &'a str,
+    query: Option<&'a str>,
+    sort: Option<&'a str>,
+    dir: Option<&'a str>,
+    filters: &'a HashMap<String, String>,
+}
+
+impl SortContext<'_> {
+    /// `(href, aria-sort)` for a sortable column. Clicking the column that is
+    /// already sorted flips the direction; clicking any other column starts
+    /// ascending.
+    fn link_for(&self, column: &str) -> (Option<String>, Option<&'static str>) {
+        let active = self.sort == Some(column);
+        let current_desc = active && self.dir == Some("desc");
+        let next_dir = if active && !current_desc {
+            "desc"
+        } else {
+            "asc"
+        };
+        let href = list_layout_href(
+            self.slug,
+            self.layout_key,
+            self.query,
+            Some(column),
+            Some(next_dir),
+            self.filters,
+        );
+        let state = active.then_some(if current_desc {
+            "descending"
+        } else {
+            "ascending"
+        });
+        (Some(href), state)
+    }
+}
+
 fn view_columns(
     spec: &crate::viewspec::ViewSpec,
     layout: crate::viewspec::ViewLayout,
@@ -2355,6 +2407,9 @@ fn view_columns(
     // default_language → "en"). L2/L3 callers pass `&spec.default_language`,
     // preserving their behaviour exactly.
     active_lang: &str,
+    // Present on the list page; `None` wherever columns are needed without a
+    // request behind them, in which case no column gets a sort link.
+    sorting: Option<&SortContext<'_>>,
 ) -> Vec<ColumnView> {
     // Selection is independent of row data — probe with a single empty row
     // and read which sources the requested layout surfaces, in order. The
@@ -2372,6 +2427,11 @@ fn view_columns(
             let anchor = c.sources.first()?;
             let f = fields.iter().find(|f| f.name == anchor)?;
             let merged = c.sources.len() > 1;
+            // A non-sortable or merged column never receives a sort href.
+            let sort_link = match sorting {
+                Some(ctx) if f.sortable && !merged => ctx.link_for(f.name),
+                _ => (None, None),
+            };
             Some(ColumnView {
                 name: f.name.to_string(),
                 // i18n L2/L4 — header TEXT resolves through the view's display
@@ -2385,6 +2445,8 @@ fn view_columns(
                     .unwrap_or_else(|| humanize_field_label(f.label)),
                 // A merged column has no single sortable source.
                 sortable: f.sortable && !merged,
+                sort_href: sort_link.0,
+                sort_state: sort_link.1,
                 merge: if merged {
                     c.sources.clone()
                 } else {
@@ -2706,7 +2768,19 @@ pub async fn list_render(
     // This CHANGES Phase 6's "always Table": a saved layout now wins over
     // Table when no `?layout=` is present. The renderer still picks the
     // cell set per layout; the template arranges those same cells.
-    let columns: Vec<ColumnView> = view_columns(&spec, active_layout, &fields, &active_lang);
+    // Sort links preserve everything the list URL already carries: the
+    // active layout, the search, and the filters in effect.
+    let slug = model.slug();
+    let sort_ctx = SortContext {
+        slug,
+        layout_key: layout_key(active_layout),
+        query,
+        sort,
+        dir,
+        filters,
+    };
+    let columns: Vec<ColumnView> =
+        view_columns(&spec, active_layout, &fields, &active_lang, Some(&sort_ctx));
 
     // One batch `SELECT … WHERE id IN (…)` per FK column visible on
     // this page of rows. Cells for matching FK values are rewritten
@@ -2716,7 +2790,6 @@ pub async fn list_render(
     let fk_lookups = build_fk_lookups(db, legacy_source, &columns, &rows_raw, legacy_entries).await;
 
     let pk = model.primary_key();
-    let slug = model.slug();
     // §4.8 — the first non-id column is the "primary" cell (bold name).
     let primary_col = columns
         .iter()
@@ -4237,6 +4310,210 @@ mod tests {
         ]
     }
 
+    /// Sortable Widget fields. `AdminUiField::base` defaults `sortable` to
+    /// false, so a sort test has to opt in explicitly — which is also what a
+    /// real model does.
+    fn sortable_widget_fields() -> Vec<AdminUiField> {
+        vec![
+            AdminUiField {
+                sortable: true,
+                ..AdminUiField::text("name", "name")
+            },
+            AdminUiField {
+                sortable: true,
+                ..AdminUiField::text("email", "email")
+            },
+            AdminUiField {
+                sortable: true,
+                ..AdminUiField::text("status", "status")
+            },
+        ]
+    }
+
+    /// Build a `SortContext` over the sortable Widget fixture with the given
+    /// request state, and return its columns.
+    fn widget_cols(
+        sort: Option<&str>,
+        dir: Option<&str>,
+        query: Option<&str>,
+        filters: &HashMap<String, String>,
+    ) -> Vec<ColumnView> {
+        let fields = sortable_widget_fields();
+        let model = schema_model_from_ui("Widget", &fields);
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&model);
+        let ctx = SortContext {
+            slug: "widgets",
+            layout_key: "table",
+            query,
+            sort,
+            dir,
+            filters,
+        };
+        view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+            Some(&ctx),
+        )
+    }
+
+    fn col<'a>(cols: &'a [ColumnView], name: &str) -> &'a ColumnView {
+        cols.iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("column {name} missing"))
+    }
+
+    /// DECISION A — a sortable column receives a canonical href built by the
+    /// same `list_layout_href` the layout switcher uses, and an unsorted
+    /// column starts ascending.
+    #[test]
+    fn sortable_columns_get_canonical_hrefs() {
+        let cols = widget_cols(None, None, None, &HashMap::new());
+        let name = col(&cols, "name");
+        assert!(name.sortable);
+        assert_eq!(
+            name.sort_href.as_deref(),
+            Some("/admin/widgets?layout=table&sort=name&dir=asc"),
+            "an unsorted column sorts ascending first"
+        );
+        assert_eq!(
+            name.sort_state, None,
+            "no aria-sort when not the sorted column"
+        );
+        // Byte-identical to the canonical builder — not a second URL system.
+        assert_eq!(
+            name.sort_href.as_deref().unwrap(),
+            list_layout_href(
+                "widgets",
+                "table",
+                None,
+                Some("name"),
+                Some("asc"),
+                &HashMap::new()
+            )
+        );
+    }
+
+    /// Clicking the column that is already ascending flips it to descending;
+    /// clicking the one already descending flips it back.
+    #[test]
+    fn sort_direction_toggles_on_the_active_column() {
+        let asc = widget_cols(Some("name"), Some("asc"), None, &HashMap::new());
+        let name = col(&asc, "name");
+        assert_eq!(
+            name.sort_href.as_deref(),
+            Some("/admin/widgets?layout=table&sort=name&dir=desc"),
+            "ascending -> next click is descending"
+        );
+        assert_eq!(name.sort_state, Some("ascending"));
+
+        let desc = widget_cols(Some("name"), Some("desc"), None, &HashMap::new());
+        let name = col(&desc, "name");
+        assert_eq!(
+            name.sort_href.as_deref(),
+            Some("/admin/widgets?layout=table&sort=name&dir=asc"),
+            "descending -> next click is ascending"
+        );
+        assert_eq!(name.sort_state, Some("descending"));
+
+        // A different column always starts ascending, whatever is sorted now.
+        assert_eq!(
+            col(&desc, "email").sort_href.as_deref(),
+            Some("/admin/widgets?layout=table&sort=email&dir=asc")
+        );
+        assert_eq!(col(&desc, "email").sort_state, None);
+    }
+
+    /// The search term and every active filter survive a sort click, and the
+    /// encoding comes from the canonical builder.
+    #[test]
+    fn sort_links_preserve_query_and_filters() {
+        let mut filters = HashMap::new();
+        filters.insert("status".to_string(), "on hold".to_string());
+        filters.insert("kind".to_string(), "a&b".to_string());
+        let cols = widget_cols(Some("email"), Some("asc"), Some("göteborg 1"), &filters);
+        let href = col(&cols, "name").sort_href.clone().expect("sortable");
+
+        assert_eq!(
+            href,
+            list_layout_href(
+                "widgets",
+                "table",
+                Some("göteborg 1"),
+                Some("name"),
+                Some("asc"),
+                &filters
+            ),
+            "the href is exactly what the canonical builder produces"
+        );
+        // And concretely: q survives, both filters survive, encoding is the
+        // builder's, and filter keys are emitted in sorted order.
+        assert_eq!(
+            href,
+            "/admin/widgets?layout=table&q=g%C3%B6teborg%201&sort=name&dir=asc&kind=a%26b&status=on%20hold"
+        );
+    }
+
+    /// A column the model does not mark sortable — and every merged column —
+    /// gets no href at all, so the header renders as plain text.
+    #[test]
+    fn non_sortable_columns_have_no_sort_href() {
+        let fields = vec![
+            AdminUiField {
+                sortable: true,
+                ..AdminUiField::text("name", "name")
+            },
+            AdminUiField {
+                sortable: false,
+                ..AdminUiField::text("note", "note")
+            },
+        ];
+        let model = schema_model_from_ui("Widget", &fields);
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&model);
+        let filters = HashMap::new();
+        let ctx = SortContext {
+            slug: "widgets",
+            layout_key: "table",
+            query: None,
+            sort: None,
+            dir: None,
+            filters: &filters,
+        };
+        let cols = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+            Some(&ctx),
+        );
+        let note = col(&cols, "note");
+        assert!(!note.sortable);
+        assert_eq!(note.sort_href, None);
+        assert_eq!(note.sort_state, None);
+        // …while its sortable neighbour on the same page does get one.
+        assert!(col(&cols, "name").sort_href.is_some());
+    }
+
+    /// Columns built without a request behind them carry no sort links, so
+    /// nothing outside the list page grows a dependency on request state.
+    #[test]
+    fn columns_without_a_request_have_no_sort_links() {
+        let fields = sortable_widget_fields();
+        let model = schema_model_from_ui("Widget", &fields);
+        let spec = crate::viewspec::ViewSpec::from_schema_model(&model);
+        let cols = view_columns(
+            &spec,
+            crate::viewspec::ViewLayout::Table,
+            &fields,
+            &spec.default_language,
+            None,
+        );
+        assert!(cols
+            .iter()
+            .all(|c| c.sort_href.is_none() && c.sort_state.is_none()));
+    }
+
     #[test]
     fn view_columns_omits_hidden_in_schema_order() {
         // No saved view → derived default. id + password_hash are Hidden;
@@ -4249,6 +4526,7 @@ mod tests {
             crate::viewspec::ViewLayout::Table,
             &fields,
             &spec.default_language,
+            None,
         );
         let names: Vec<&str> = cols.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, vec!["name", "email", "status"]);
@@ -4286,6 +4564,7 @@ mod tests {
             crate::viewspec::ViewLayout::Table,
             &fields,
             &spec.default_language,
+            None,
         );
         assert_eq!(header_of(&cols, "name"), "Namn"); // sv label
         assert_eq!(header_of(&cols, "status"), "Status"); // sv label
@@ -4302,6 +4581,7 @@ mod tests {
             crate::viewspec::ViewLayout::Table,
             &fields,
             &spec.default_language,
+            None,
         );
         for c in &cols {
             let f = fields.iter().find(|f| f.name == c.name).unwrap();
@@ -4325,6 +4605,7 @@ mod tests {
             crate::viewspec::ViewLayout::Table,
             &fields,
             &spec.default_language,
+            None,
         );
         assert_eq!(header_of(&cols, "email"), "E-mail address"); // en label wins
         assert_eq!(header_of(&cols, "name"), "Name"); // unlabelled → humanised
@@ -4343,6 +4624,7 @@ mod tests {
             crate::viewspec::ViewLayout::Table,
             &fields,
             &spec.default_language,
+            None,
         );
         assert_eq!(header_of(&cols, "name"), "Name"); // humanised, de ignored
     }
@@ -4357,12 +4639,14 @@ mod tests {
             crate::viewspec::ViewLayout::Table,
             &fields,
             &spec.default_language,
+            None,
         );
         let b = view_columns(
             &spec,
             crate::viewspec::ViewLayout::Table,
             &fields,
             &spec.default_language,
+            None,
         );
         let la: Vec<&str> = a.iter().map(|c| c.label.as_str()).collect();
         let lb: Vec<&str> = b.iter().map(|c| c.label.as_str()).collect();
