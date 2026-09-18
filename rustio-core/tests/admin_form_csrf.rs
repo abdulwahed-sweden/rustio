@@ -482,11 +482,18 @@ async fn set_language_csrf_and_validation() {
     );
 }
 
-/// i18n L4b — the language switcher renders endonyms (not codes) in BOTH the
-/// topbar and the sidebar from one reusable component, posting ISO codes to
-/// the L4a action.
+/// i18n L4b — the authenticated shell carries **exactly one** language
+/// switcher, in the top bar, rendering endonyms (not codes) and posting ISO
+/// codes to the CSRF-protected L4a action.
+///
+/// This replaces an earlier two-placement assertion. The second placement was
+/// a copy in the rail wrapped in `.sr-only` + `aria-hidden="true"` — which is
+/// not a second control so much as a defect: an `aria-hidden` container may
+/// not hold a focusable `<select>`, and the duplicate re-emitted
+/// `id="lang-label"`, putting two identical ids in one document. Nothing in
+/// the product needs two switchers, so the contract is now one.
 #[tokio::test]
-async fn language_switcher_renders_in_topbar_and_sidebar() {
+async fn language_switcher_renders_once_in_the_topbar() {
     let addr = spawn_server().await;
     let cookie = login(addr).await;
     let page = send(addr, &get_with_cookie("/admin/notes", &cookie)).await;
@@ -503,16 +510,44 @@ async fn language_switcher_renders_in_topbar_and_sidebar() {
         page.contains(r#"<option value="en""#),
         "en is the stored value"
     );
-    // ONE reusable component placed in TWO locations → it appears twice.
+    // Exactly one switcher in the authenticated shell.
     assert_eq!(
         page.matches("data-lang-switcher").count(),
-        2,
-        "switcher must render in both topbar and sidebar"
+        1,
+        "exactly one language switcher renders:\n{page}"
     );
-    // Posts to the L4a action.
+    // It lives in the top bar's identity cluster, not the rail.
+    let bar = page
+        .split_once(r#"<div class="content"#)
+        .map(|(head, _)| head)
+        .unwrap_or(&page);
+    assert!(
+        bar.contains("data-lang-switcher"),
+        "the switcher is in the top bar, above the content grid:\n{bar}"
+    );
+    // No hidden copy survives anywhere on the page.
+    assert!(
+        !page.contains(
+            r#"aria-hidden="true">
+      <form method="post" action="/admin/language""#
+        ),
+        "no hidden duplicate switcher"
+    );
+    // Posts to the L4a action, and carries the CSRF token that action
+    // requires (see `set_language_csrf_and_validation`, which proves a POST
+    // without it is rejected with 403).
     assert!(
         page.contains(r#"action="/admin/language""#),
         "posts to /admin/language"
+    );
+    let form = page
+        .split_once(r#"action="/admin/language""#)
+        .and_then(|(_, rest)| rest.split_once("</form>"))
+        .map(|(body, _)| body)
+        .expect("the switcher form has a body");
+    assert!(
+        form.contains(r#"name="_csrf""#),
+        "the switcher submits a CSRF token:\n{form}"
     );
     // No preference yet → the "Default" option is the selected one.
     assert!(

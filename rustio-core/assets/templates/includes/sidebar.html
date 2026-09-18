@@ -25,13 +25,4 @@
       <a class="module-link" href="/admin/profile"><span><strong>{{ t("Your account") }}</strong></span></a>
     {% endif %}
   </nav>
-
-  {# i18n L4b — the switcher lives in the top bar. A hidden copy stays here
-     so the two-placement contract (admin_form_csrf.rs) still holds without a
-     second visible control competing with it. #}
-  {% if current_user is defined and current_user %}
-    <div class="sr-only" aria-hidden="true">
-      {% include "includes/lang_switcher.html" %}
-    </div>
-  {% endif %}
 </aside>
