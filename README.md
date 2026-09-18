@@ -46,22 +46,8 @@ cargo install rustio-cli
 rustio init booklend
 ```
 
-When `init` finishes, RustIO asks one question:
-
-```text
-✔ Created project "booklend"
-
-  How do you want to start?
-
-  > 1. Empty      — add your own models with `rustio add model`
-    2. Template   — clinic, blog, shop, crm, tasks
-```
-
-**Empty** hands the project straight back to you. **Template** walks a
-ready-made shape with you one model at a time — accept or skip each one;
-nothing is written until you have seen the whole list.
-
-Taking the Empty path:
+`init` creates an empty project and tells you what comes next — no menu,
+no questions. You add models one at a time:
 
 ```rust
 cd booklend
@@ -116,7 +102,7 @@ Open it, sign in, and you have a working admin for every model you defined.
 
 | Step | What actually happened |
 |---|---|
-| `rustio init booklend` | Scaffolded a Rust project with the framework wired up, then asked Empty or Template. The Template path walks a ready-made shape with you and writes a model plus a `CREATE TABLE` migration for every model you accept. |
+| `rustio init booklend` | Scaffolded a Rust project with the framework wired up — `Cargo.toml`, `main.rs`, `models/`, `migrations/`, the auth tables — and printed the next three commands. Empty on purpose: the models are yours to add. |
 | `rustio add model book` | Wrote `models/book/models.rs` (the struct — your source of truth), its admin registration, an empty views file, and a migration. Every model starts with `title`, `priority`, `is_active`; the CLI says so, so you never discover them by colliding with one. |
 | `rustio migrate apply` | Ran the pending SQL migrations against `app.db` (SQLite, created on first run) and regenerated `rustio.schema.json`. |
 | `rustio change "…"` | Parsed the sentence into typed schema operations, showed them, and — on your yes — edited the struct, wrote a migration, and offered to apply it. |
@@ -209,8 +195,7 @@ rustio help                     # the full command list, grouped by purpose
 rustio doctor                   # health check: migrations, schema, admin user, port
 rustio explain <topic>          # short docs on `model`, `migration`, `admin`, `ai`, …
 
-rustio init <name>              # new project, then Empty or a template
-rustio start                    # reopen that menu inside an existing project
+rustio init <name>              # new, empty project
 rustio add model <name>         # new model + admin entry + migration stub
 rustio change "<change>"        # change the schema from plain English
 rustio migrate apply            # apply pending migrations (regenerates the schema)

@@ -30,7 +30,7 @@ USAGE:
 
 If you're new:
 
-    rustio init <name>          create the project, pick Empty or a template
+    rustio init <name>          create an empty project
     cd <name>
     rustio add model <name>     one model at a time
     rustio migrate apply        create the tables
@@ -43,8 +43,6 @@ SCAFFOLD
     init [name]                 Wizard (no name) or non-interactive scaffold
                                   (with name). Options:
                                   --preset <basic|blog|api>, --model <name>.
-    start                       Reopen the setup menu — Empty, or one of the
-                                  templates (clinic, blog, shop, crm, tasks).
     add model <name>            Add a model to the current project — struct,
                                   admin entry, and migration.
 
@@ -245,14 +243,6 @@ async fn main() -> ExitCode {
                 run(port).await
             }
         }
-        Ok(Command::Start) => {
-            if why_mode {
-                why_for("start");
-                Ok(())
-            } else {
-                start_command(None)
-            }
-        }
         Ok(Command::MigrateGenerate(name)) => {
             if why_mode {
                 why_for("migrate-generate");
@@ -401,12 +391,6 @@ enum Command {
         name: String,
         via_alias: bool,
     },
-    /// `rustio start` — the recommended entry point for new projects.
-    /// Opens a small menu (Guided / Manual / Import) and dispatches.
-    /// The Guided path is the conversational wizard introduced in
-    /// 0.10.x; the underlying machinery is the same module used by
-    /// the post-`init` offer.
-    Start,
     /// `rustio run [--port <n>]`. The port is forwarded to the project
     /// binary through `RUSTIO_PORT`; `None` means "let it use 8000".
     Run {
@@ -564,12 +548,6 @@ fn parse_command(args: &[String]) -> Result<Command, String> {
             ),
         },
         Some("run") => parse_run_args(&args[2..]),
-        Some("start") => {
-            if args.len() > 2 {
-                return Err(format!("unexpected argument `{}`", args[2]));
-            }
-            Ok(Command::Start)
-        }
         Some("init") => parse_init_args(&args[2..]),
         Some("add") => {
             let kind = args.get(2).ok_or("usage: rustio add model <name>")?;
@@ -819,58 +797,11 @@ fn init_command(
     };
     wizard::execute(&plan)?;
 
-    // After the project is scaffolded, offer the AI-assisted wizard.
-    // `wizard::execute` only `chdir`s into the new project when it
-    // scaffolded a model — otherwise we're still in the parent dir.
-    // Always step into the project here so the post-init prompts see
-    // the right tree.
-    //
-    // We skip the offer (and stay silent) when stdin isn't a terminal —
-    // CI / piped runs of `rustio init` shouldn't pause for input.
-    use std::io::IsTerminal;
-    if std::io::stdin().is_terminal() {
-        if Path::new(&plan.project_name).exists() {
-            // The wizard already chdir'd if it scaffolded a model;
-            // a second chdir into the same path then fails. Guard by
-            // checking whether `models/mod.rs` is already visible from cwd.
-            if !models_mod_path().exists() {
-                std::env::set_current_dir(&plan.project_name)
-                    .map_err(|e| format!("failed to enter `{}`: {e}", plan.project_name))?;
-            }
-        }
-        offer_start_menu_after_init(&plan.project_name)?;
-    } else {
-        // Off a terminal there is no menu to end on, so print the
-        // closing screen directly. A preset that scaffolded a model
-        // needs `migrate apply` next, not `add model`.
-        print_next_steps(Some(&plan.project_name), plan.models().is_empty());
-    }
+    // `init` creates a project and says what comes next. There is no
+    // menu to end on: a preset that scaffolded a model needs `migrate
+    // apply` next, an empty project needs `add model`.
+    print_next_steps(Some(&plan.project_name), plan.models().is_empty());
     Ok(())
-}
-
-/// Open the post-init menu — same one as `rustio start`, just chained
-/// onto the end of `rustio init` so the onboarding is one continuous
-/// experience rather than two disjoint commands.
-///
-/// Forgiving: anything short of stdin EOF is downgraded to a printed
-/// hint, so a partially set-up project never blocks the user from
-/// getting to the regular `rustio run` path.
-fn offer_start_menu_after_init(project_dir: &str) -> Result<(), String> {
-    // No schema dump here: the Empty path doesn't need one, and making
-    // every new project wait ~30s for a compile before showing two
-    // menu items is the wrong first impression. The Template path
-    // generates it when (and only when) it's picked.
-    match start_command(Some(project_dir)) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            // Cancellations / interrupts inside the menu shouldn't fail
-            // the surrounding `rustio init` — just surface the hint.
-            println!();
-            out::info(&format!("setup menu exited: {e}"));
-            out::hint("rustio start           # open the setup menu any time");
-            Ok(())
-        }
-    }
 }
 
 pub(crate) fn new_project(name: &str) -> Result<(), String> {
@@ -1540,7 +1471,9 @@ fn print_evolve_alias_note() {
 fn parse_ai_command(rest: &[String]) -> Result<Command, String> {
     match rest.first().map(String::as_str) {
         Some("start") => Err(
-            "`rustio ai start` was promoted to `rustio start` — same flow, new name.".into(),
+            "`rustio ai start` is gone. `rustio init <name>` creates a project; \
+             `rustio add model <name>` adds a model."
+                .into(),
         ),
         Some("plan") => parse_ai_plan_args(&rest[1..]),
         Some("review") => {
@@ -1952,51 +1885,6 @@ fn ai_apply_command(
     Ok(())
 }
 
-/// `rustio start` — the setup menu.
-///
-/// Two choices, because there are only two: bring your own models, or
-/// start from one of the shipped templates. Both end on the same
-/// screen — the next three commands, in order. The menu never refuses
-/// and never dead-ends.
-///
-/// `project_dir` is `Some(name)` only when the menu was chained onto
-/// `rustio init` — it's what makes the closing block print `cd <name>`
-/// for a project the user isn't standing in yet.
-fn start_command(project_dir: Option<&str>) -> Result<(), String> {
-    if !models_mod_path().exists() {
-        return Err(
-            "not inside a RustIO project — run `rustio init <name>` first, or `cd` into an existing project.".into(),
-        );
-    }
-
-    println!();
-    println!("  How do you want to start?");
-    println!();
-
-    const EMPTY: &str = "Empty      — add your own models with `rustio add model`";
-    const TEMPLATE: &str = "Template   — clinic, blog, shop, crm, tasks";
-
-    let choice = inquire::Select::new("Pick one", vec![EMPTY, TEMPLATE])
-        .with_starting_cursor(0)
-        .with_help_message("You can always run `rustio start` later to change this.")
-        .prompt()
-        .map_err(|e| format!("{e}"))?;
-
-    if choice == TEMPLATE {
-        template_command(project_dir)
-    } else {
-        println!();
-        // "Empty project ready" is only true of an empty project. Run
-        // from a project that already has models, the menu just shows
-        // the way back to the loop.
-        if !ProjectState::detect().has_models {
-            println!("{} Empty project ready.", out::check());
-        }
-        print_next_steps(project_dir, true);
-        Ok(())
-    }
-}
-
 /// The closing screen shared by every path out of the setup menu: the
 /// commands to run next, in the order to run them. `include_add_model`
 /// is false once models already exist — telling someone to create a
@@ -2027,405 +1915,6 @@ fn print_next_steps(project_dir: Option<&str>, include_add_model: bool) {
         out::dim("# then see it at http://127.0.0.1:8000/admin")
     );
 }
-
-/// The five shipped templates, in menu order. Each label is the
-/// domain keyword `intake::sketch` matches on plus the models it
-/// proposes — the same list the intake layer actually knows, so the
-/// menu can't advertise a template that doesn't exist.
-const TEMPLATES: &[(&str, &str)] = &[
-    ("clinic", "patients, doctors, appointments"),
-    ("blog", "authors, posts"),
-    ("shop", "products, orders"),
-    ("crm", "companies, contacts, deals"),
-    ("tasks", "projects, tasks"),
-];
-
-/// Template path out of the setup menu: pick a template, then walk its
-/// models one at a time. Nothing is written until the walk finishes
-/// and the user confirms.
-fn template_command(project_dir: Option<&str>) -> Result<(), String> {
-    use rustio_core::ai::intake;
-
-    println!();
-    println!("  Pick a template:");
-    println!();
-
-    let labels: Vec<String> = TEMPLATES
-        .iter()
-        .map(|(name, models)| format!("{name:<7} — {models}"))
-        .collect();
-    let choice = inquire::Select::new("Template", labels.clone())
-        .with_starting_cursor(0)
-        .prompt()
-        .map_err(|e| format!("{e}"))?;
-    let picked = TEMPLATES[labels.iter().position(|l| *l == choice).unwrap_or(0)].0;
-
-    // Both the planner and the review layer read `rustio.schema.json`.
-    // A brand-new project doesn't have one yet, and producing it means
-    // compiling the project once.
-    if !Path::new("rustio.schema.json").exists() {
-        println!();
-        out::info("Preparing the project (first build can take ~30s) …");
-        if let Err(e) = try_dump_schema() {
-            println!();
-            out::info(&format!("could not read the project's shape: {e}"));
-            out::hint("rustio start           # try again after the first compile");
-            return Ok(());
-        }
-    }
-
-    let schema = load_project_schema()?;
-    let context = load_project_context()?;
-
-    let Some(sketch) = intake::sketch(picked) else {
-        // Unreachable in practice: every entry in TEMPLATES is a
-        // keyword `intake` matches. Refuse rather than guess.
-        return Err(format!("template `{picked}` is not available"));
-    };
-
-    println!();
-    println!("  {}", sketch.headline);
-    println!();
-    println!("  Models in this template:");
-    println!();
-    for (i, m) in sketch.models.iter().enumerate() {
-        let field_summary: Vec<String> = m.fields.iter().map(|f| f.name.to_string()).collect();
-        println!(
-            "    {}.  {:<14}  {}",
-            i + 1,
-            m.struct_name,
-            field_summary.join(", ")
-        );
-    }
-    println!();
-
-    let go = inquire::Confirm::new("Walk through these one at a time?")
-        .with_default(true)
-        .with_help_message("Accept or skip each model. Nothing is written until the end.")
-        .prompt()
-        .map_err(|e| format!("{e}"))?;
-    if !go {
-        println!();
-        println!("  Nothing written.");
-        print_next_steps(project_dir, true);
-        return Ok(());
-    }
-
-    walk_template(&schema, context.as_ref(), &sketch, project_dir)
-}
-
-/// Walk each model in a template: accept or skip. Accepted models are
-/// accumulated; skipping a model another model points at would leave a
-/// dangling relation, so that stops the walk and finalises what was
-/// accepted so far rather than writing something invalid.
-fn walk_template(
-    schema: &rustio_core::Schema,
-    context: Option<&rustio_core::ai::ContextConfig>,
-    sketch: &rustio_core::ai::intake::ProjectSketch,
-    project_dir: Option<&str>,
-) -> Result<(), String> {
-    use rustio_core::ai::intake;
-
-    let mut accepted: Vec<intake::ModelSketch> = Vec::new();
-
-    for (i, model) in sketch.models.iter().enumerate() {
-        println!();
-        println!(
-            "  ─── {} of {} · {} ──────────",
-            i + 1,
-            sketch.models.len(),
-            model.struct_name
-        );
-        println!("  {}", model.rationale);
-        println!();
-        for f in &model.fields {
-            let mut line = format!("    · {:<22} {}", f.name, f.ty);
-            if f.nullable {
-                line.push_str("  (optional)");
-            }
-            if let Some(target) = f.belongs_to {
-                line.push_str(&format!("  → {target}"));
-            }
-            println!("{line}");
-        }
-        println!();
-
-        let choice = inquire::Select::new(
-            "What should I do?",
-            vec!["add — include this model", "skip — leave it out"],
-        )
-        .with_starting_cursor(0)
-        .prompt()
-        .map_err(|e| format!("{e}"))?;
-
-        if choice.starts_with("skip") {
-            for later in &sketch.models[i + 1..] {
-                for f in &later.fields {
-                    if f.belongs_to == Some(model.struct_name) {
-                        println!();
-                        println!(
-                            "  Skipping `{}` would leave `{}.{}` pointing nowhere.",
-                            model.struct_name, later.struct_name, f.name
-                        );
-                        println!("  Stopping here and keeping what you already accepted.");
-                        return finalise_wizard(schema, context, &accepted, project_dir);
-                    }
-                }
-            }
-            println!("    skipped.");
-            continue;
-        }
-
-        accepted.push(model.clone());
-        println!("    queued.");
-    }
-
-    finalise_wizard(schema, context, &accepted, project_dir)
-}
-
-/// Build a `Plan` from the accepted sketches, review it, and apply it.
-/// Factored out so the early-exit "skipping a parent" path can call it
-/// with whatever was accepted so far.
-fn finalise_wizard(
-    schema: &rustio_core::Schema,
-    context: Option<&rustio_core::ai::ContextConfig>,
-    accepted: &[rustio_core::ai::ModelSketch],
-    project_dir: Option<&str>,
-) -> Result<(), String> {
-    use rustio_core::ai::intake;
-    use rustio_core::ai::review::review_plan;
-
-    if accepted.is_empty() {
-        println!();
-        println!("  Nothing queued — no files written.");
-        print_next_steps(project_dir, true);
-        return Ok(());
-    }
-
-    let plan = intake::plan_for(accepted);
-
-    // Run the review layer so we have risk + warnings to show if the
-    // user opts into the technical view. The summary itself stays
-    // intentionally non-technical until they ask.
-    let review = review_plan(schema, &plan, context).map_err(|e| format!("review failed: {e}"))?;
-
-    // Counts for the blueprint. `relationships` = AddRelation primitives
-    // in the plan; the rest are inherent properties of the resulting
-    // admin (every model gets list/search/filters/pagination for free),
-    // so we state them as guarantees, not counts.
-    use rustio_core::ai::Primitive;
-    let n_models = accepted.len();
-    let n_relations = plan
-        .steps
-        .iter()
-        .filter(|p| matches!(p, Primitive::AddRelation(_)))
-        .count();
-    let n_migrations = accepted.len(); // one CREATE TABLE per accepted model
-    let model_names: Vec<&str> = accepted.iter().map(|m| m.struct_name).collect();
-
-    show_blueprint(&model_names, n_models, n_relations, n_migrations);
-
-    // Three-way choice. Apply lands the files; details opens the
-    // technical view (plan ops, risk, warnings) and then re-asks;
-    // cancel exits without changes.
-    loop {
-        let choice = inquire::Select::new(
-            "Ready?",
-            vec![
-                "Apply — write the files",
-                "Show technical details — plan, risk, warnings",
-                "Cancel — don't change anything",
-            ],
-        )
-        .with_starting_cursor(0)
-        .prompt()
-        .map_err(|e| format!("{e}"))?;
-
-        if choice.starts_with("Apply") {
-            break;
-        } else if choice.starts_with("Show") {
-            show_technical_details(&plan, &review, accepted);
-            // Loop back to the choice menu so the user can apply or
-            // cancel after reading the details.
-            continue;
-        } else {
-            println!();
-            println!("  No changes written.");
-            print_next_steps(project_dir, true);
-            return Ok(());
-        }
-    }
-
-    // The AI executor refuses `AddModel` by design — model scaffolding
-    // is the wizard's job, not the executor's. We've already shown the
-    // user the reviewed plan + risk; now we materialise each accepted
-    // model by writing the scaffold directly. The plan itself is kept
-    // in memory for the prompt + explanation strings that go into the
-    // CLI output, mirroring the `rustio ai apply` summary shape.
-    let _ = (schema, plan); // referenced for clarity; not handed downstream
-
-    let mut applied: usize = 0;
-    let mut wrote_paths: Vec<String> = Vec::new();
-    for model in accepted {
-        // Map (column, target_struct) → (column, target_table) for the
-        // FK clause. Target table is looked up by struct name across
-        // the accepted set; if the target wasn't accepted we already
-        // bailed earlier.
-        let belongs_to: Vec<(String, String)> = model
-            .fields
-            .iter()
-            .filter_map(|f| {
-                f.belongs_to.and_then(|target_struct| {
-                    accepted
-                        .iter()
-                        .find(|m| m.struct_name == target_struct)
-                        .map(|m| (f.name.to_string(), m.table.to_string()))
-                })
-            })
-            .collect();
-
-        let fields: Vec<rustio_core::ai::FieldSpec> = model
-            .fields
-            .iter()
-            .map(|f| rustio_core::ai::FieldSpec {
-                name: f.name.to_string(),
-                ty: f.ty.to_string(),
-                nullable: f.nullable,
-                editable: true,
-            })
-            .collect();
-
-        let migration = scaffold_model(
-            model.table,
-            model.struct_name,
-            model.table,
-            &fields,
-            &belongs_to,
-        )?;
-        out::success("created", &format!("model `{}`", model.struct_name));
-        wrote_paths.push(format!("{}/{}/models.rs", models_dir(), model.table));
-        wrote_paths.push(migration.display().to_string());
-        applied += 1;
-    }
-
-    println!();
-    out::success(
-        "applied",
-        &format!("{} model{}", applied, if applied == 1 { "" } else { "s" }),
-    );
-    for p in &wrote_paths {
-        out::success("wrote", p);
-    }
-    print_next_steps(project_dir, false);
-    Ok(())
-}
-
-/// The system-blueprint summary shown after the user finishes the
-/// walkthrough. Frames the outcome in terms of *what RustIO is about
-/// to build*, not what primitives the plan contains.
-///
-/// The five lines below are deliberate:
-///   - models / relationships are **counts** (they change per project).
-///   - admin screens / search-filters-pagination / migrations are
-///     **guarantees** — they hold for every model the framework lays
-///     down, so the wording is positive and unconditional.
-///
-/// Power users who want to see the plan ops + risk + warnings reach
-/// them through the "Show technical details" option in the prompt
-/// that follows this view.
-fn show_blueprint(model_names: &[&str], n_models: usize, n_relations: usize, n_migrations: usize) {
-    println!();
-    println!("  RustIO is ready to create:");
-    println!();
-    println!(
-        "    ✓  {} connected model{} — {}",
-        n_models,
-        if n_models == 1 { "" } else { "s" },
-        model_names.join(", "),
-    );
-    println!(
-        "    ✓  {} relationship{}",
-        n_relations,
-        if n_relations == 1 { "" } else { "s" },
-    );
-    println!("    ✓  Admin screens for every model");
-    println!("    ✓  Search, filters, and pagination");
-    println!(
-        "    ✓  {} starter migration{}",
-        n_migrations,
-        if n_migrations == 1 { "" } else { "s" },
-    );
-    println!();
-}
-
-/// Behind the "Show technical details" toggle. This is where the
-/// review-layer vocabulary (plan operations, risk, warnings) lives —
-/// available to anyone who asks, never the first impression.
-fn show_technical_details(
-    plan: &rustio_core::ai::Plan,
-    review: &rustio_core::ai::PlanReview,
-    accepted: &[rustio_core::ai::ModelSketch],
-) {
-    use rustio_core::ai::Primitive;
-
-    println!();
-    println!("  Technical details");
-    println!("  ─────────────────");
-    println!();
-    println!("  Plan operations ({}):", plan.steps.len());
-    for (i, step) in plan.steps.iter().enumerate() {
-        let label = match step {
-            Primitive::AddModel(m) => {
-                format!("add_model     {} ({} fields)", m.name, m.fields.len())
-            }
-            Primitive::AddRelation(r) => {
-                format!("add_relation  {}.{} → {}", r.from, r.via, r.to)
-            }
-            other => format!("{other:?}"),
-        };
-        println!("    {}. {}", i + 1, label);
-    }
-    println!();
-    println!("  Risk classification : {:?}", review.risk);
-    if review.warnings.is_empty() {
-        println!("  Warnings            : none");
-    } else {
-        println!("  Warnings            :");
-        for w in &review.warnings {
-            println!("    - {w}");
-        }
-    }
-    println!();
-    println!("  Migrations to be written:");
-    for m in accepted {
-        println!("    migrations/<next>_create_{}.sql", m.table);
-    }
-    println!();
-    let _ = accepted; // referenced above; reserved for future per-model detail
-}
-
-// ─────────────────────────────────────────────────────────────────
-// `rustio change "<request>"` — the interactive verb over the
-// typed plan/review/apply pipeline.
-//
-// The composition is intentionally thin: each step calls the same
-// rustio_core API the scriptable `ai plan / review / apply` commands
-// call. Everything user-facing happens in *this* function — the
-// pipeline stays headless and reusable. From the user's perspective:
-//
-//   $ rustio change "add a status field to tasks"
-//
-//   RustIO is ready to make this change:
-//     · add task.status (String)
-//
-//   ? Ready?
-//     › Apply — write the files
-//       Show technical details — plan, risk, warnings
-//       Cancel — don't change anything
-//
-// No mention of "AI" anywhere; "plan" / "review" / "apply" are
-// internal implementation labels the user never reads.
-// ─────────────────────────────────────────────────────────────────
 
 /// Top-level handler for `rustio change "<request>"`.
 ///
@@ -3215,244 +2704,6 @@ fn error_kind(e: &rustio_core::ai::PlanError) -> &'static str {
     }
 }
 
-/// Scaffold a model with an explicit field set, used by the setup
-/// menu's Template path. Same layout as [`add_model`] (mod.rs +
-/// models.rs + admin.rs + views.rs + a CREATE TABLE migration) but
-/// every Rust file is rendered from the sketch's fields rather than
-/// the default `title / is_active / priority` template.
-///
-/// The function is intentionally permissive about its inputs because
-/// the wizard already validated them upstream: every name is a known
-/// snake_case identifier and every type is in `VALID_TYPE_NAMES`.
-///
-/// `belongs_to` carries `(column_name, target_table)` pairs so we can
-/// emit a SQL `FOREIGN KEY` clause on a *fresh* table — referential
-/// integrity is otherwise blocked until 0.9.0 `migrate add-fks`,
-/// but a brand-new table has no pre-existing rows to break.
-pub(crate) fn scaffold_model(
-    dir_name: &str,
-    struct_name: &str,
-    table: &str,
-    fields: &[rustio_core::ai::FieldSpec],
-    belongs_to: &[(String, String)],
-) -> Result<std::path::PathBuf, String> {
-    validate_name(dir_name)?;
-    require_project_root()?;
-    let dir = Path::new(models_dir()).join(dir_name);
-    if dir.exists() {
-        return Err(format!(
-            "model `{struct_name}` already exists at {}",
-            dir.display()
-        ));
-    }
-
-    fs::create_dir_all(&dir).map_err(err_str)?;
-    fs::write(dir.join("mod.rs"), MODEL_MOD_RS).map_err(err_str)?;
-    fs::write(
-        dir.join("models.rs"),
-        render_models_rs_with_fields(struct_name, table, fields),
-    )
-    .map_err(err_str)?;
-    fs::write(
-        dir.join("admin.rs"),
-        render(MODEL_ADMIN_RS, &[("STRUCT", struct_name)]),
-    )
-    .map_err(err_str)?;
-    fs::write(
-        dir.join("views.rs"),
-        render(
-            MODEL_VIEWS_RS,
-            &[
-                ("NAME", dir_name),
-                ("STRUCT", struct_name),
-                ("TABLE", table),
-            ],
-        ),
-    )
-    .map_err(err_str)?;
-
-    register_model_in_mod(dir_name)?;
-
-    let create_sql = render_create_table_sql(table, fields, belongs_to);
-    let migration_path = rustio_core::migrations::generate(
-        Path::new("migrations"),
-        &format!("create_{table}"),
-        &create_sql,
-    )
-    .map_err(err_str)?;
-
-    Ok(migration_path)
-}
-
-/// Render a `models/<x>/models.rs` from a custom field list. Mirrors
-/// the shape of [`MODEL_MODELS_RS`] but every column comes from the
-/// supplied `FieldSpec`s.
-fn render_models_rs_with_fields(
-    struct_name: &str,
-    table: &str,
-    fields: &[rustio_core::ai::FieldSpec],
-) -> String {
-    let struct_fields = fields
-        .iter()
-        .map(|f| {
-            format!(
-                "    pub {}: {},",
-                f.name,
-                rust_field_type(&f.ty, f.nullable)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let columns_csv: Vec<String> = std::iter::once("\"id\"".to_string())
-        .chain(fields.iter().map(|f| format!("\"{}\"", f.name)))
-        .collect();
-    let insert_csv: Vec<String> = fields.iter().map(|f| format!("\"{}\"", f.name)).collect();
-
-    let from_row = fields
-        .iter()
-        .map(|f| {
-            format!(
-                "            {}: row.{}(\"{}\")?,",
-                f.name,
-                row_getter(&f.ty, f.nullable),
-                f.name,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let insert_values = fields
-        .iter()
-        .map(|f| {
-            format!(
-                "            {},",
-                insert_value_expr(&f.name, &f.ty, f.nullable)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    format!(
-        r#"use rustio_core::{{Error, Model, Row, RustioAdmin, Value}};
-
-/// The {struct_name} model — generated by `rustio start`. Edit freely.
-#[derive(Debug, RustioAdmin)]
-pub struct {struct_name} {{
-    pub id: i64,
-{struct_fields}
-}}
-
-impl Model for {struct_name} {{
-    const TABLE: &'static str = "{table}";
-    const COLUMNS: &'static [&'static str] = &[{columns}];
-    const INSERT_COLUMNS: &'static [&'static str] = &[{inserts}];
-
-    fn id(&self) -> i64 {{
-        self.id
-    }}
-
-    fn from_row(row: Row<'_>) -> Result<Self, Error> {{
-        Ok(Self {{
-            id: row.get_i64("id")?,
-{from_row}
-        }})
-    }}
-
-    fn insert_values(&self) -> Vec<Value> {{
-        vec![
-{insert_values}
-        ]
-    }}
-}}
-"#,
-        struct_fields = struct_fields,
-        columns = columns_csv.join(", "),
-        inserts = insert_csv.join(", "),
-        from_row = from_row,
-        insert_values = insert_values,
-    )
-}
-
-fn rust_field_type(ty: &str, nullable: bool) -> String {
-    let base = match ty {
-        "String" => "String",
-        "i32" => "i32",
-        "i64" => "i64",
-        "bool" => "bool",
-        "DateTime" => "chrono::DateTime<chrono::Utc>",
-        other => other,
-    };
-    if nullable {
-        format!("Option<{base}>")
-    } else {
-        base.to_string()
-    }
-}
-
-fn row_getter(ty: &str, nullable: bool) -> &'static str {
-    match (ty, nullable) {
-        ("String", false) => "get_string",
-        ("String", true) => "get_optional_string",
-        ("i32", false) => "get_i32",
-        ("i32", true) => "get_optional_i32",
-        ("i64", false) => "get_i64",
-        ("i64", true) => "get_optional_i64",
-        ("bool", false) => "get_bool",
-        ("bool", true) => "get_optional_bool",
-        ("DateTime", false) => "get_datetime",
-        ("DateTime", true) => "get_optional_datetime",
-        _ => "get_string",
-    }
-}
-
-fn insert_value_expr(name: &str, ty: &str, _nullable: bool) -> String {
-    // `Value: From<T>` covers every supported type; `Value: From<Option<T>>`
-    // covers the optional variants — same expression in both cases.
-    // `String` and `DateTime` need a `clone()` so the model stays usable
-    // after `insert_values` consumes its fields.
-    let needs_clone = ty == "String" || ty == "DateTime";
-    if needs_clone {
-        format!("self.{name}.clone().into()")
-    } else {
-        format!("self.{name}.into()")
-    }
-}
-
-/// Build the `CREATE TABLE` SQL for a wizard-scaffolded model.
-fn render_create_table_sql(
-    table: &str,
-    fields: &[rustio_core::ai::FieldSpec],
-    belongs_to: &[(String, String)],
-) -> String {
-    let mut lines: Vec<String> = Vec::with_capacity(2 + fields.len());
-    lines.push("    id INTEGER PRIMARY KEY AUTOINCREMENT,".to_string());
-    for f in fields {
-        let sqlite_ty = match f.ty.as_str() {
-            "String" | "DateTime" => "TEXT",
-            "i32" | "i64" | "bool" => "INTEGER",
-            _ => "TEXT",
-        };
-        let null = if f.nullable { "" } else { " NOT NULL" };
-        lines.push(format!("    {} {}{},", f.name, sqlite_ty, null));
-    }
-    for (col, target_table) in belongs_to {
-        // `ON DELETE RESTRICT` mirrors the AI executor's default and
-        // keeps fresh tables on the same posture the 0.9.x retrofit
-        // emits for older projects.
-        lines.push(format!(
-            "    FOREIGN KEY ({col}) REFERENCES {target_table}(id) ON DELETE RESTRICT,"
-        ));
-    }
-    // Drop the trailing comma on the last entry.
-    if let Some(last) = lines.last_mut() {
-        if last.ends_with(',') {
-            last.pop();
-        }
-    }
-    format!("CREATE TABLE {table} (\n{}\n);\n", lines.join("\n"))
-}
-
 fn register_model_in_mod(name: &str) -> Result<(), String> {
     let path = models_mod_path();
     let current = fs::read_to_string(&path).map_err(err_str)?;
@@ -4232,13 +3483,6 @@ fn why_for(name: &str) {
              \n\
              Run it without --why to start the server."
         }
-        "start" => {
-            "`rustio start` reopens the setup menu: Empty (you add models yourself) or\n\
-             Template (clinic, blog, shop, crm, tasks — walked one model at a time, you\n\
-             decide what lands). It's the same menu `rustio init` ends on.\n\
-             \n\
-             Run it without --why to open the menu."
-        }
         "migrate-generate" => {
             "`rustio migrate generate <name>` writes an empty SQL file under migrations/\n\
              with the next sequential number. You fill in the CREATE TABLE / ALTER TABLE,\n\
@@ -4349,7 +3593,6 @@ fn why_topic_for(args: &[String]) -> Option<&'static str> {
         ("context", _) => "context",
         ("ai", _) => "ai",
         ("init", _) => "init",
-        ("start", _) => "start",
         ("run", _) => "run",
         ("doctor", _) => "doctor",
         ("schema", _) => "schema",

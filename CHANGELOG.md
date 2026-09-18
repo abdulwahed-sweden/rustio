@@ -154,6 +154,25 @@ sources, stored values, sorting, links, data are never translated); only the
   merged cell. Without that context, nothing is masked — masking is an explicit
   posture, not a silent default. Hidden fields are always omitted.
 
+#### `init` creates an empty project
+
+- **The five domain templates are gone** — clinic, blog, shop, crm and tasks,
+  along with the setup menu that offered them. `rustio init <name>` scaffolds
+  the project and prints the next commands; what goes inside it is yours to
+  add with `rustio add model <name>`. A curated shape that has to be walked,
+  accepted model by model, and then rewritten anyway was a detour on the way
+  to the thing the user came to build.
+- **`rustio start` is removed.** With no menu to reopen it started nothing,
+  and the bare `rustio` command already prints where you are plus the likely
+  next commands — better, because it reads the project first.
+- **`rustio_core::ai` drops four public items**: `sketch`, `FieldSketch`,
+  `ModelSketch` and `ProjectSketch`, with the whole `ai::intake` module. They
+  existed only to describe the domain templates. Nothing else in the framework
+  referenced them. See `UPGRADING.md` if you depended on them directly.
+- The typed plan pipeline is untouched: `rustio change`, `rustio ai plan` /
+  `review` / `apply`, the planner grammar and the executor all behave exactly
+  as before.
+
 #### `evolve` is now `change`
 
 - **`rustio change "<what you want>"` replaces `rustio evolve`.** The command
@@ -194,13 +213,9 @@ sources, stored values, sorting, links, data are never translated); only the
 #### The first-run journey (CLI)
 
 - **`rustio init <name>` ends on one question, not five.** The interactive
-  wizard now asks only for the project name; what goes *inside* the project is
-  the setup menu's job. That menu is two choices — **Empty** (add your own
-  models with `rustio add model`) or **Template** (clinic, blog, shop, crm,
-  tasks, walked one model at a time) — and every path out of it ends on the
-  same closing screen: the next commands, in the order to run them. The menu
-  no longer compiles the project before it can be shown; only the Template
-  path needs a schema, and it generates one when picked.
+  wizard asks only for the project name; the project it creates is empty, and
+  `init` closes on the next commands in the order to run them. It no longer
+  compiles the project before it can finish.
 - **`rustio run [--port <n>]`.** The port is forwarded to the project binary
   through `RUSTIO_PORT`. `run` checks the port is free *before* the build (a
   bind error a minute later reads like a crash), builds, then prints where the

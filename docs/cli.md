@@ -13,7 +13,6 @@ cargo install rustio-cli
 | Command                          | What it does                                            |
 |----------------------------------|---------------------------------------------------------|
 | `init [name]`                    | Scaffold a project (wizard with no name, non-interactive with one) |
-| `start`                          | Reopen the setup menu (Empty / Template) in a project   |
 | `new project <name>`             | Create a new project at `./<name>`                      |
 | `add model <name>`               | Create one model inside the current project             |
 | `change "<change>"`              | Change the schema from plain English, then offer to migrate |

@@ -4,6 +4,17 @@ A per-release migration guide. Items here only cover externally-observable chang
 
 ---
 
+## Unreleased — `init` creates an empty project
+
+The five domain templates (clinic, blog, shop, crm, tasks), the setup menu that
+offered them, and `rustio start` are removed: `rustio init <name>` now creates
+an empty project and prints the next commands — run `rustio add model <name>`
+to add models. Code calling `rustio_core::ai::{sketch, FieldSketch, ModelSketch,
+ProjectSketch}` (the `ai::intake` module) no longer compiles; those types only
+described the templates and have no replacement.
+
+---
+
 ## Unreleased — `evolve` is now `change`
 
 **No action required.** The old spelling still works for one release.
