@@ -1655,6 +1655,32 @@ pub(crate) fn schema_model_from_ui(
     fields: &[AdminUiField],
 ) -> crate::schema::SchemaModel {
     use crate::schema::{SchemaField, SchemaModel};
+
+    // `AdminUiField` carries presentation, not relationships — a
+    // `#[rustio(belongs_to = …)]` declaration reaches the runtime through
+    // `rustio.schema.json`, not through the UI field list. Without this
+    // lookup every synthesised field would claim `relation: None`, and the
+    // ViewSpec derivation would conclude that a join model has no
+    // identity-bearing field even though the project declared two.
+    //
+    // A missing or unreadable schema file leaves every relation `None`,
+    // which is the pre-0.8 shape and degrades exactly as before.
+    let declared = crate::admin::schema_cache::snapshot().and_then(|c| {
+        c.schema
+            .models
+            .iter()
+            .find(|m| m.name == model_name)
+            .cloned()
+    });
+    let relation_of = |name: &str| {
+        declared.as_ref().and_then(|m| {
+            m.fields
+                .iter()
+                .find(|f| f.name == name)
+                .and_then(|f| f.relation.clone())
+        })
+    };
+
     let schema_fields = fields
         .iter()
         .map(|f| SchemaField {
@@ -1662,7 +1688,7 @@ pub(crate) fn schema_model_from_ui(
             ty: ui_data_type_to_schema(f.data_type).to_string(),
             nullable: !f.required,
             editable: !f.readonly,
-            relation: None,
+            relation: relation_of(f.name),
         })
         .collect();
     SchemaModel {
@@ -4157,6 +4183,47 @@ mod tests {
         assert!(
             html.contains(r#"href="/admin/customers/1""#),
             "FK link missing: {html}"
+        );
+    }
+
+    /// `AdminUiField` carries no relationship information, so a synthesised
+    /// `SchemaModel` can only learn about `#[rustio(belongs_to = …)]` from
+    /// the schema cache. When it does not, a join model derives with no
+    /// identity-bearing field and `List` / `Compact` render rows that are
+    /// only a timestamp and a status pill.
+    ///
+    /// The cache is process-local and usually empty in a unit test, so this
+    /// pins the contract from the other side: with no cached schema every
+    /// relation is `None`, which is the pre-0.8 shape and must stay a clean
+    /// degrade rather than a panic or a wrong guess.
+    #[test]
+    fn schema_model_from_ui_carries_declared_relations_or_none() {
+        let fields = vec![
+            AdminUiField::integer("id", "id"),
+            AdminUiField::integer("booking_id", "booking_id"),
+            AdminUiField::text("status", "status"),
+        ];
+        let model = schema_model_from_ui("Assignment", &fields);
+        assert_eq!(model.fields.len(), 3);
+        for f in &model.fields {
+            // Whatever the cache holds, a field never invents a relation.
+            if let Some(r) = &f.relation {
+                assert_eq!(
+                    r.kind,
+                    crate::schema::RelationKind::BelongsTo,
+                    "only belongs_to is ever carried across"
+                );
+            }
+        }
+        // The `_id` suffix alone must never become a relation.
+        let bare = model
+            .fields
+            .iter()
+            .find(|f| f.name == "booking_id")
+            .expect("booking_id present");
+        assert!(
+            bare.relation.is_none() || bare.relation.as_ref().unwrap().model == "Booking",
+            "a relation is copied from the schema, never inferred from the name"
         );
     }
 
