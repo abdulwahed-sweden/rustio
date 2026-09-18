@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <title>RustIO Admin — Sign in</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
 <style>
-body { margin: 0; background: #f1f1ee; color: #202733; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 15px; font-weight: 400; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: #f1f1ee; color: #202733; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 16px; font-weight: 500; line-height: 1.6; -webkit-font-smoothing: antialiased; }
 a { color: #1f5797; text-underline-offset: 3px; }
 a:hover { color: #174578; }
 </style>
 </head>
 <body>
-<div style="width: 960px; height: 760px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; background: #f1f1ee;">
+<div style="width: 960px; height: 800px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px; background: #f1f1ee;">
 
   <div style="width: 420px;">
 
@@ -19,56 +19,56 @@ a:hover { color: #174578; }
 
       <div style="display: grid; justify-items: start; gap: 8px; margin-bottom: 24px;">
         <span style="display: flex; align-items: center; gap: 10px;">
-          <span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; background: #1f5797; color: #ffffff; font-size: 14px; font-weight: 800; letter-spacing: -0.04em;">B</span>
-          <span style="font-size: 15px; font-weight: 700; letter-spacing: -0.02em; color: #202733;">Bookflow</span>
+          <span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; background: #1f5797; color: #ffffff; font-size: 15px; font-weight: 800; letter-spacing: -0.04em;">B</span>
+          <span style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em; color: #202733;">Bookflow</span>
         </span>
         <h1 style="margin: 0 0 4px; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #202733;">Sign in</h1>
-        <p style="margin: 0; font-size: 15px; color: #4c5868;">Use the account your workspace administrator created for you.</p>
+        <p style="margin: 0; font-size: 16px; font-weight: 500; color: #4c5868;">Use the account your workspace administrator created for you.</p>
       </div>
 
       <div style="display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; margin-bottom: 16px; padding: 14px 16px; border: 1px solid #e0a7a2; border-radius: 8px; background: #fff0ee;">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a23f3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a23f3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 1px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg>
         <div>
-          <strong style="display: block; margin-bottom: 1px; font-size: 15px; font-weight: 700; color: #782f2b;">That password did not match</strong>
-          <p style="margin: 0; font-size: 14px; color: #782f2b;">Two attempts left before this account is locked for 15 minutes.</p>
+          <strong style="display: block; margin-bottom: 1px; font-size: 16px; font-weight: 700; color: #782f2b;">That password did not match</strong>
+          <p style="margin: 0; font-size: 15px; font-weight: 500; color: #782f2b;">Two attempts left before this account is locked for 15 minutes.</p>
         </div>
       </div>
 
       <div style="display: grid; gap: 16px;">
 
         <div style="display: grid; gap: 4px;">
-          <label for="email" style="font-size: 13px; font-weight: 500; color: #202733;">Email</label>
-          <input id="email" type="email" value="admin@bookflow.local" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 14px;">
+          <label for="email" style="font-size: 14px; font-weight: 600; color: #202733;">Email</label>
+          <input id="email" type="email" value="admin@bookflow.local" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 15px; font-weight: 500;">
         </div>
 
         <div style="display: grid; gap: 4px;">
           <span style="display: flex; align-items: baseline; gap: 12px;">
-            <label for="password" style="font-size: 13px; font-weight: 500; color: #202733;">Password</label>
+            <label for="password" style="font-size: 14px; font-weight: 600; color: #202733;">Password</label>
             <span style="flex-grow: 1;"></span>
-            <a href="Sign-In.html" style="font-size: 13px; font-weight: 600;">Forgot it?</a>
+            <a href="Sign-In.html" style="font-size: 14px; font-weight: 600;">Forgot it?</a>
           </span>
-          <input id="password" type="password" value="passwordvalue" aria-invalid="true" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #a23f3a; border-radius: 8px; background: #fff0ee; color: #202733; font-family: inherit; font-size: 14px;">
-          <p style="margin: 0; font-size: 14px; font-weight: 700; color: #a23f3a;">Check the password and try again.</p>
+          <input id="password" type="password" value="passwordvalue" aria-invalid="true" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #a23f3a; border-radius: 8px; background: #fff0ee; color: #202733; font-family: inherit; font-size: 15px; font-weight: 500;">
+          <p style="margin: 0; font-size: 15px; font-weight: 600; color: #a23f3a;">Check the password and try again.</p>
         </div>
 
-        <label style="display: block; font-size: 14px; color: #4c5868; cursor: pointer;">
-          <input type="checkbox" checked style="display: inline-block; width: 16px; height: 16px; margin-right: 8px; vertical-align: -2px; accent-color: #1f5797;">
+        <label style="display: block; font-size: 15px; font-weight: 500; color: #4c5868; cursor: pointer;">
+          <input type="checkbox" checked="" style="display: inline-block; width: 16px; height: 16px; margin-right: 8px; vertical-align: -2px; accent-color: #1f5797;">
           Keep me signed in on this machine
         </label>
 
-        <button type="submit" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 36px; border: 1px solid transparent; border-radius: 8px; background: #1f5797; color: #ffffff; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px -3px rgba(31,87,151,.6);">Sign in</button>
+        <button type="submit" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 36px; border: 1px solid transparent; border-radius: 8px; background: #1f5797; color: #ffffff; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; box-shadow: 0 3px 10px -3px rgba(31,87,151,.6);">Sign in</button>
 
       </div>
 
-      <p style="margin: 12px 0 0; font-size: 14px; color: #465366; text-align: center;">Trouble signing in? Ask a workspace administrator to reset your password.</p>
+      <p style="margin: 12px 0 0; font-size: 14px; font-weight: 500; color: #4c5868; text-align: center;">Trouble signing in? Ask a workspace administrator to reset your password.</p>
 
     </form>
 
     <div style="display: flex; align-items: center; gap: 10px; margin-top: 17px;">
-      <span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: 12px; font-weight: 600;">Dev</span>
-      <p style="margin: 0; font-size: 14px; color: #465366;">Development build · sessions expire after 8 hours.</p>
+      <span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: 13px; font-weight: 600;">Dev</span>
+      <p style="margin: 0; font-size: 14px; font-weight: 500; color: #4c5868;">Development build · sessions expire after 8 hours.</p>
       <span style="flex-grow: 1;"></span>
-      <span style="font-size: 14px; color: #596779;">rustio 0.12</span>
+      <span style="font-size: 14px; font-weight: 500; color: #4c5868;">rustio 0.12</span>
     </div>
 
   </div>

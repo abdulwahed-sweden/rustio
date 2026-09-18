@@ -1,9 +1,11 @@
 # RustIO Admin — UX Refresh 0.13
 
 A design handoff for the RustIO admin. **Seven screens, redrawn inside the existing
-visual system.** Nothing here proposes a new look: every colour, font, size, radius
-and control height is read straight out of `rustio-core/assets/static/admin.css`.
-What changed is layout, interaction and information architecture.
+visual system.** Nothing here proposes a new look: the palette, font stack, radii,
+rail width and control density are read straight out of
+`rustio-core/assets/static/admin.css`. What changed is layout, interaction and
+information architecture — plus one deliberate amendment to the type scale, made on
+2026-09-18 for legibility and written down in `TOKENS.md`.
 
 Source of truth for the drawings: `boards/` — open `boards/index.html` in a browser.
 Live canvas (owner only): <https://claude.ai/artifact/NdGYxF8v2kK439p3vDRwW8>
@@ -16,15 +18,20 @@ Read this before touching anything. It is the whole contract of this handoff.
 
 | Layer | Status | What it covers |
 |---|---|---|
-| **Foundation** | 🔒 **Locked** | Palette, font stack, type and heading scale, radii, 240px rail, control density, status colours. Inherited from `admin.css`, not up for discussion. See `TOKENS.md`. |
+| **Foundation** | 🔒 Locked, **one amendment** | Palette, font stack, radii, 240px rail, control density and status colours are inherited from `admin.css` and not up for discussion. The **type scale** was amended on 2026-09-18 for legibility — it is the single intentional divergence, and implementing it is part of the work. See `TOKENS.md`. |
 | **Component** | Inherited | Buttons, fields, badges, cards, tables, pagination stay as they are. Four additions, assembled from existing parts: selection bar, sortable column head, row skeleton, role option card. |
 | **Layout** | ✅ Redesigned | Toolbar in two rows / three zones; pagination gains rows-per-page; cards carry Title / Subtitle / Badge / Timestamp; the edit form groups fields and pins its actions. |
 | **Interaction** | ✅ Redesigned | Active filters render as filled fields; sorting moves into the column head; multi-select with bulk actions; live preview in the view composer. |
 | **Architecture** | ✅ Redesigned | The view composer becomes a two-pane editor instead of a grid of selects. |
 
-**Do not** introduce a new font, a new accent colour, a new neutral, a larger type
-scale, a wider rail, or taller rows. If a change seems to need one of those, it is
-out of scope — raise it instead of shipping it.
+**Do not** introduce a new font, a new accent colour, a new neutral, a wider rail or
+taller rows. The type scale is the one thing that moved, and it moved exactly as far
+as `TOKENS.md` says — no further. If a change seems to need anything else, it is out
+of scope: raise it instead of shipping it.
+
+**The floor rule** that drove the amendment: *no functional text in RustIO is smaller
+than 13px.* A status badge, a column head, a record count and a rail label are all
+functional text. 11px survives only for a marginal technical annotation.
 
 ---
 
@@ -34,7 +41,7 @@ out of scope — raise it instead of shipping it.
 design/admin-ux-refresh-0.13/
 ├── README.md          ← this file: scope, handoff prompt, implementation map
 ├── SPEC.md            ← screen by screen, what to build and where
-├── TOKENS.md          ← the locked visual contract, with the admin.css line it comes from
+├── TOKENS.md          ← the visual contract: what is inherited, and the one amendment
 └── boards/
     ├── index.html     ← contact sheet — start here
     ├── Main.html            Overview (dashboard)
@@ -125,6 +132,7 @@ A screen is done when:
 
 - It matches its board in structure, spacing and copy at 1440px.
 - Every colour, size and radius in the diff appears in `TOKENS.md`.
+- No functional text in the diff is under 13px.
 - `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`
   and `cargo test --workspace --all-targets` are clean.
 - The RBAC rules still hold: a missing permission hides the control, and entering

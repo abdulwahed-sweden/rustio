@@ -1,5 +1,8 @@
 # Screen specifications
 
+> Sizes quoted below follow the amended type scale in `TOKENS.md`
+> (Typography Legibility Amendment, 2026-09-18). Nothing functional is under 13px.
+
 Each section: what the board shows, what changes against today's admin, and where it
 lands in the codebase. Open the board beside the section as you read.
 
@@ -28,7 +31,7 @@ row, so *find me a record* and *change how records are drawn* sit side by side.
 
 - **Row one — narrowing the result set.** Search field (300px, 36px tall, search
   icon inset at 11px), a vertical `#e1e6ed` hairline, then one labelled `<select>`
-  per filter, then a `Clear` link. The result count is pushed right, 13px
+  per filter, then a `Clear` link. The result count is pushed right, 14px 500
   `--ink-soft`, with the number in `--ink` 700.
 - **Full-width hairline** between the rows: `height:1px; margin:12px -16px; background:#e1e6ed`.
 - **Row two — changing how the set is drawn.** The layout switch on the left, the
@@ -51,14 +54,14 @@ Every sortable head is a button; only the active one is darkened.
 A 44px checkbox column at the head of each row (16px box, `accent-color: var(--blue)`).
 When anything is selected, a bar appears directly above the column heads:
 `--blue-soft` fill, `--blue-line` bottom border, 44px tall, holding the count in
-`--blue-dark` 700, the bulk actions as 28px buttons, and a `Clear selection` link
+`--blue-dark` 700, the bulk actions as 30px buttons, and a `Clear selection` link
 pushed right. Selected rows take `--surface-soft`.
 
 Bulk actions are state-changing, so they are POST + CSRF like the logout form.
 
 ### Row actions
 
-Unchanged in language — `Edit` and `Delete` as 28px secondary buttons, right
+Unchanged in language — `Edit` and `Delete` as 30px secondary buttons, right
 aligned, delete in `--red` text on the white face. Do not swap them for icon-only
 buttons; the text labels are what the rest of the admin uses.
 
@@ -80,13 +83,13 @@ the grid reads as a wall. The board gives each card the field **roles**:
 
 ```
 ┌─────────────────────────────────────┐
-│ Lastbil Volvo FH16        ● Offered │  ← Title (link, 15/700) + Badge
-│ Booking BK-2002 · Nordfrakt AB      │  ← Subtitle (14, --ink-soft)
+│ Lastbil Volvo FH16        ● Offered │  ← Title (link, 17/700) + Badge
+│ Booking BK-2002 · Nordfrakt AB      │  ← Subtitle (15/500, --ink-soft)
 │ ─────────────────────────────────── │
-│ WINDOW              LOCATION        │  ← Meta pairs, mono 11 label
+│ WINDOW              LOCATION        │  ← Meta pairs, mono 13 label
 │ 19 Jun, 16:00–20:00 Göteborg hamn   │
 │                                     │
-│ 🕐 Offered 19 Jun 17:00 · no reply  │  ← Timestamp, 13, --ink-soft
+│ 🕐 Offered 19 Jun 17:00 · no reply  │  ← Timestamp, 14/500, --ink-soft
 ├─────────────────────────────────────┤
 │ [Edit] [Delete]               #2002 │  ← --surface-soft footer
 └─────────────────────────────────────┘
@@ -119,7 +122,7 @@ Template: `rustio-core/assets/templates/admin/form.html`
   choices are faster to hit than a dropdown, and it reuses `.layout-switch`
   geometry exactly (34px tall inside a 1px `--border-strong` box, current choice on
   `--blue-soft`).
-- **Sensitive fields keep their marker** (`.field-sensitive`, amber, 12px) beside
+- **Sensitive fields keep their marker** (`.field-sensitive`, amber, 13px) beside
   the label, with the reason in the hint — this is `rustio.context.json` surfacing,
   not decoration.
 - **The action bar is pinned** to the bottom of the card on a `--surface-soft`
@@ -136,7 +139,7 @@ Keeps the established hero treatment — the neutral badge, the 33px headline wi
 the accent word, the sentence under it. Then:
 
 - **Stat grid**, four across, unchanged geometry. Each stat gains one line of
-  movement under the label (`+18 this week`, `7 unpaid`) in 13px 600, green or
+  movement under the label (`+18 this week`, `7 unpaid`) in 14px 600, green or
   amber. The largest model keeps the `--blue-soft` featured face.
 - **Recent actions** — a real table (When / Actor / Action / Result) from
   `admin::audit`, with the outcome as a badge. This replaces having no audit

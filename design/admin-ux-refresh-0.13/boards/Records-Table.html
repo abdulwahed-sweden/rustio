@@ -3,74 +3,74 @@
 <head>
 <meta charset="utf-8">
 <title>RustIO Admin — Assignments, table layout</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
 <style>
-body { margin: 0; background: #f1f1ee; color: #202733; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 15px; font-weight: 400; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: #f1f1ee; color: #202733; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 16px; font-weight: 500; line-height: 1.6; -webkit-font-smoothing: antialiased; }
 a { color: #1f5797; text-underline-offset: 3px; }
 a:hover { color: #174578; }
 </style>
 </head>
 <body>
-<div style="width: 1440px; height: 1040px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; background: #f1f1ee;">
+<div style="width: 1440px; height: 1120px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; background: #f1f1ee;">
 
   <header style="flex: none; height: 72px; display: flex; align-items: center; gap: 12px; padding: 0 24px; background: #ffffff; border-bottom: 1px solid #d5dce5;">
     <a href="Main.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #202733;">
-      <span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; background: #1f5797; color: #ffffff; font-size: 14px; font-weight: 800; letter-spacing: -0.04em;">B</span>
-      <span style="font-size: 15px; font-weight: 700; letter-spacing: -0.02em;">Bookflow</span>
+      <span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; background: #1f5797; color: #ffffff; font-size: 15px; font-weight: 800; letter-spacing: -0.04em;">B</span>
+      <span style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;">Bookflow</span>
     </a>
     <span style="flex-grow: 1;"></span>
-    <span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: 12px; font-weight: 600;">Dev</span>
-    <span style="font-size: 14px; color: #4c5868;">Signed in as</span>
-    <span style="font-size: 14px; color: #202733;">admin@bookflow.local</span>
-    <select aria-label="Interface language" style="height: 32px; padding: 0 10px; border: 1px solid #d5dce5; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px;">
+    <span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: 13px; font-weight: 600;">Dev</span>
+    <span style="font-size: 15px; font-weight: 500; color: #4c5868;">Signed in as</span>
+    <span style="font-size: 15px; font-weight: 500; color: #202733;">admin@bookflow.local</span>
+    <select aria-label="Interface language" style="height: 32px; padding: 0 10px; border: 1px solid #d5dce5; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 500;">
       <option>English</option>
       <option>العربية</option>
       <option>Svenska</option>
     </select>
-    <button type="button" style="height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Log out</button>
+    <button type="button" style="height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Log out</button>
   </header>
 
   <div style="flex-grow: 1; min-height: 0; display: flex;">
 
     <nav aria-label="Modules" style="flex: none; width: 240px; box-sizing: border-box; padding: 24px 12px 28px; background: #f4f6f9; border-right: 1px solid #d3dbe5; display: flex; flex-direction: column; gap: 4px; overflow: hidden;">
-      <p style="margin: 0 0 12px; padding: 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Workspace</p>
+      <p style="margin: 0 0 12px; padding: 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #334052;">Workspace</p>
       <a href="Main.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Overview</strong>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Overview</strong>
       </a>
       <a href="Records-Table.html" aria-current="page" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; background: #dfeafb; color: #1f5797;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Assignments</strong>
-        <span style="padding: 1px 7px; border: 1px solid #b7cdea; border-radius: 999px; background: #ffffff; color: #1f5797; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">8</span>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Assignments</strong>
+        <span style="padding: 1px 7px; border: 1px solid #b7cdea; border-radius: 999px; background: #ffffff; color: #1f5797; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700;">8</span>
       </a>
       <a href="Records-Cards.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Bookings</strong>
-        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">428</span>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Bookings</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #334052; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700;">428</span>
       </a>
       <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Customers</strong>
-        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">316</span>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Customers</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #334052; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700;">316</span>
       </a>
       <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Invoices</strong>
-        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">192</span>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Invoices</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #334052; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700;">192</span>
       </a>
       <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Locations</strong>
-        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">12</span>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Locations</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #334052; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700;">12</span>
       </a>
       <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Resources</strong>
-        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">24</span>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Resources</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #334052; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700;">24</span>
       </a>
       <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Schedules</strong>
-        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">63</span>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Schedules</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #334052; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700;">63</span>
       </a>
-      <p style="margin: 18px 0 12px; padding: 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">System</p>
+      <p style="margin: 18px 0 12px; padding: 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #334052;">System</p>
       <a href="Main.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Recent actions</strong>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Recent actions</strong>
       </a>
       <a href="Sign-In.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
-        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Your account</strong>
+        <strong style="flex-grow: 1; font-size: 15px; font-weight: 600;">Your account</strong>
       </a>
     </nav>
 
@@ -79,21 +79,21 @@ a:hover { color: #174578; }
 
         <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
           <div style="min-width: 0;">
-            <nav aria-label="Breadcrumb" style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; color: #4c5868;">
+            <nav aria-label="Breadcrumb" style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 14px; font-weight: 500; color: #4c5868;">
               <a href="Main.html" style="color: #4c5868;">Home</a>
               <span style="color: #b9c5d3;">/</span>
               <span style="color: #202733; font-weight: 700;">Assignments</span>
             </nav>
             <h1 style="margin: 0 0 4px; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #202733;">Assignments</h1>
-            <p style="margin: 0; max-width: 680px; font-size: 15px; color: #4c5868;">Which resource is committed to which booking, and whether the driver accepted.</p>
+            <p style="margin: 0; max-width: 680px; font-size: 16px; font-weight: 500; color: #4c5868;">Which resource is committed to which booking, and whether the driver accepted.</p>
           </div>
           <div style="flex: none; display: flex; align-items: center; gap: 9px;">
-            <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 10.5 12 15l4.5-4.5M4 19h16"/></svg>
+            <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 10.5 12 15l4.5-4.5M4 19h16"></path></svg>
               Export CSV
             </button>
-            <a href="Record-Form.html" style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 18px; border: 1px solid transparent; border-radius: 8px; background: #1f5797; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; box-shadow: 0 3px 10px -3px rgba(31,87,151,.6);">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <a href="Record-Form.html" style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 18px; border: 1px solid transparent; border-radius: 8px; background: #1f5797; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none; box-shadow: 0 3px 10px -3px rgba(31,87,151,.6);">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
               Add assignment
             </a>
           </div>
@@ -104,50 +104,50 @@ a:hover { color: #174578; }
           <div style="display: flex; align-items: center; gap: 12px;">
             <div style="position: relative; display: flex; align-items: center; width: 300px;">
               <span style="position: absolute; left: 11px; display: flex; color: #4c5868;">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/></svg>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.6-3.6"></path></svg>
               </span>
               <label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">Search assignments</label>
-              <input id="q" type="search" value="volvo" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px 0 33px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 14px;">
+              <input id="q" type="search" value="volvo" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px 0 33px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 15px; font-weight: 500;">
             </div>
 
             <span style="width: 1px; height: 24px; background: #e1e6ed;"></span>
 
-            <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #4c5868; white-space: nowrap;">Status
-              <select style="height: 36px; min-width: 120px; padding: 0 10px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #1f5797; font-family: inherit; font-size: 14px; font-weight: 600;">
+            <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: #4c5868; white-space: nowrap;">Status
+              <select style="height: 36px; min-width: 120px; padding: 0 10px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #1f5797; font-family: inherit; font-size: 15px; font-weight: 600;">
                 <option>Accepted</option>
                 <option>Offered</option>
                 <option>All</option>
               </select>
             </label>
-            <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #4c5868; white-space: nowrap;">Resource
-              <select style="height: 36px; min-width: 120px; padding: 0 10px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px;">
+            <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: #4c5868; white-space: nowrap;">Resource
+              <select style="height: 36px; min-width: 120px; padding: 0 10px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 15px; font-weight: 500;">
                 <option>All</option>
                 <option>Lastbil Volvo FH16</option>
                 <option>Cargo Van 02</option>
               </select>
             </label>
-            <a href="Records-Table.html" style="font-size: 13px; font-weight: 600;">Clear</a>
+            <a href="Records-Table.html" style="font-size: 14px; font-weight: 600;">Clear</a>
 
             <span style="flex-grow: 1;"></span>
-            <span style="font-size: 13px; color: #4c5868; white-space: nowrap;"><strong style="color: #202733; font-weight: 700;">8</strong> results · 2 filters active</span>
+            <span style="font-size: 14px; font-weight: 500; color: #4c5868; white-space: nowrap;"><strong style="color: #202733; font-weight: 700;">8</strong> results · 2 filters active</span>
           </div>
 
           <div style="height: 1px; margin: 12px -16px; background: #e1e6ed;"></div>
 
           <div style="display: flex; align-items: center; gap: 12px;">
             <nav aria-label="Layout" style="display: inline-flex; align-items: stretch; overflow: hidden; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff;">
-              <a href="Records-Table.html" aria-current="true" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; background: #dfeafb; color: #1f5797; font-size: 13px; font-weight: 600; text-decoration: none;">Table</a>
-              <a href="Records-Cards.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 13px; font-weight: 600; text-decoration: none;">List</a>
-              <a href="Records-Cards.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 13px; font-weight: 600; text-decoration: none;">Cards</a>
-              <a href="Records-Cards.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 13px; font-weight: 600; text-decoration: none;">Compact</a>
+              <a href="Records-Table.html" aria-current="true" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; background: #dfeafb; color: #1f5797; font-size: 14px; font-weight: 600; text-decoration: none;">Table</a>
+              <a href="Records-Cards.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 14px; font-weight: 600; text-decoration: none;">List</a>
+              <a href="Records-Cards.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 14px; font-weight: 600; text-decoration: none;">Cards</a>
+              <a href="Records-Cards.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 14px; font-weight: 600; text-decoration: none;">Compact</a>
             </nav>
-            <span style="font-size: 13px; color: #4c5868;">Sorted by <strong style="color: #202733; font-weight: 700;">Accepted at</strong>, newest first</span>
+            <span style="font-size: 14px; font-weight: 500; color: #4c5868;">Sorted by <strong style="color: #202733; font-weight: 700;">Accepted at</strong>, newest first</span>
 
             <span style="flex-grow: 1;"></span>
 
-            <button type="button" style="height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Set as default</button>
-            <a href="View-Editor.html" style="display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h8M17 6h3M4 12h3M12 12h8M4 18h11M20 18h0"/><circle cx="14.5" cy="6" r="2.2"/><circle cx="9.5" cy="12" r="2.2"/><circle cx="17.5" cy="18" r="2.2"/></svg>
+            <button type="button" style="height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Set as default</button>
+            <a href="View-Editor.html" style="display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h8M17 6h3M4 12h3M12 12h8M4 18h11M20 18h0"></path><circle cx="14.5" cy="6" r="2.2"></circle><circle cx="9.5" cy="12" r="2.2"></circle><circle cx="17.5" cy="18" r="2.2"></circle></svg>
               Edit view
             </a>
           </div>
@@ -156,11 +156,11 @@ a:hover { color: #174578; }
         <section style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
 
           <div style="flex: none; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 16px; background: #dfeafb; border-bottom: 1px solid #b7cdea;">
-            <span style="font-size: 13px; font-weight: 700; color: #174578;">2 rows selected</span>
-            <button type="button" style="height: 28px; padding: 0 10px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Mark accepted</button>
-            <button type="button" style="height: 28px; padding: 0 10px; border: 1px solid #ce8580; border-radius: 6px; background: #fff0ee; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Delete</button>
+            <span style="font-size: 14px; font-weight: 700; color: #174578;">2 rows selected</span>
+            <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Mark accepted</button>
+            <button type="button" style="height: 30px; padding: 0 10px; border: 1px solid #ce8580; border-radius: 6px; background: #fff0ee; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Delete</button>
             <span style="flex-grow: 1;"></span>
-            <a href="Records-Table.html" style="font-size: 13px; font-weight: 600;">Clear selection</a>
+            <a href="Records-Table.html" style="font-size: 14px; font-weight: 600;">Clear selection</a>
           </div>
 
           <div style="flex-grow: 1; min-height: 0; overflow: hidden;">
@@ -170,122 +170,122 @@ a:hover { color: #174578; }
                   <th scope="col" style="width: 44px; height: 36px; padding: 0 0 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
                     <input type="checkbox" aria-label="Select all rows" style="width: 16px; height: 16px; accent-color: #1f5797;">
                   </th>
-                  <th scope="col" style="width: 118px; height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #4c5868; white-space: nowrap;">Booking</th>
-                  <th scope="col" style="height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #4c5868; white-space: nowrap;">Resource</th>
-                  <th scope="col" style="width: 188px; height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #4c5868; white-space: nowrap;">Customer</th>
+                  <th scope="col" style="width: 118px; height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733; white-space: nowrap;">Booking</th>
+                  <th scope="col" style="height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733; white-space: nowrap;">Resource</th>
+                  <th scope="col" style="width: 188px; height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733; white-space: nowrap;">Customer</th>
                   <th scope="col" aria-sort="descending" style="width: 170px; height: 36px; padding: 0 16px; background: #e9eef5; border-bottom: 1px solid #d5dce5; white-space: nowrap;">
-                    <button type="button" style="display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733; cursor: pointer;">
+                    <button type="button" style="display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733; cursor: pointer;">
                       Accepted at
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"></path></svg>
                     </button>
                   </th>
-                  <th scope="col" style="width: 122px; height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #4c5868; white-space: nowrap;">Status</th>
-                  <th scope="col" style="width: 146px; height: 36px; padding: 0 16px 0 0; text-align: right; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #4c5868; white-space: nowrap;">Row</th>
+                  <th scope="col" style="width: 122px; height: 36px; padding: 0 16px; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733; white-space: nowrap;">Status</th>
+                  <th scope="col" style="width: 146px; height: 36px; padding: 0 16px 0 0; text-align: right; background: #f1f4f8; border-bottom: 1px solid #d5dce5; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733; white-space: nowrap;">Row</th>
                 </tr>
               </thead>
               <tbody>
 
                 <tr style="background: #f7f9fc;">
-                  <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" checked aria-label="Select BK-2002" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-2002</a></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Nordfrakt AB</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">19 Jun 17:00</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e7c27b; border-radius: 6px; background: #fff4df; color: #935b0a; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Offered</span></td>
+                  <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" checked="" aria-label="Select BK-2002" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-2002</a></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Nordfrakt AB</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">19 Jun 17:00</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e7c27b; border-radius: 6px; background: #fff4df; color: #935b0a; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Offered</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; border-bottom: 1px solid #d5dce5; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
                 <tr style="background: #f7f9fc;">
-                  <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" checked aria-label="Select BK-2003" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-2003</a></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Skåpbil Mercedes Sprinter</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Kajsa Lind</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">21 Jun 09:10</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
+                  <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" checked="" aria-label="Select BK-2003" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-2003</a></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Skåpbil Mercedes Sprinter</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Kajsa Lind</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">21 Jun 09:10</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; border-bottom: 1px solid #d5dce5; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
                 <tr>
                   <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" aria-label="Select BK-2001" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-2001</a></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Nordfrakt AB</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">18 Jun 11:15</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-2001</a></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Nordfrakt AB</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">18 Jun 11:15</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; border-bottom: 1px solid #d5dce5; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
                 <tr>
                   <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" aria-label="Select BK-1001" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1001</a></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Cargo Van 02</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sjöberg Bygg</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">20 Jun 11:15</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1001</a></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Cargo Van 02</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sjöberg Bygg</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">20 Jun 11:15</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; border-bottom: 1px solid #d5dce5; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
                 <tr>
                   <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" aria-label="Select BK-1994" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1994</a></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Hamnlogistik i Väst</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">17 Jun 07:40</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1994</a></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Hamnlogistik i Väst</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">17 Jun 07:40</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; border-bottom: 1px solid #d5dce5; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
                 <tr>
                   <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" aria-label="Select BK-1990" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1990</a></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Cargo Van 02</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Kajsa Lind</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">16 Jun 14:05</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e3b0ab; border-radius: 6px; background: #fff0ee; color: #a23f3a; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Declined</span></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1990</a></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Cargo Van 02</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Kajsa Lind</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">16 Jun 14:05</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e3b0ab; border-radius: 6px; background: #fff0ee; color: #a23f3a; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Declined</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; border-bottom: 1px solid #d5dce5; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
                 <tr>
                   <td style="height: 44px; padding: 0 0 0 16px; border-bottom: 1px solid #d5dce5;"><input type="checkbox" aria-label="Select BK-1987" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1987</a></td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Skåpbil Mercedes Sprinter</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sjöberg Bygg</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">15 Jun 08:30</td>
-                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1987</a></td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Skåpbil Mercedes Sprinter</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sjöberg Bygg</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">15 Jun 08:30</td>
+                  <td style="height: 44px; padding: 0 16px; border-bottom: 1px solid #d5dce5;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; border-bottom: 1px solid #d5dce5; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
                 <tr>
                   <td style="height: 44px; padding: 0 0 0 16px;"><input type="checkbox" aria-label="Select BK-1981" style="width: 16px; height: 16px; accent-color: #1f5797;"></td>
-                  <td style="height: 44px; padding: 0 16px; font-size: 14px;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1981</a></td>
-                  <td style="height: 44px; padding: 0 16px; font-size: 14px; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
-                  <td style="height: 44px; padding: 0 16px; font-size: 14px; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Nordfrakt AB</td>
-                  <td style="height: 44px; padding: 0 16px; font-size: 14px; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">14 Jun 16:20</td>
-                  <td style="height: 44px; padding: 0 16px;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e7c27b; border-radius: 6px; background: #fff4df; color: #935b0a; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Offered</span></td>
+                  <td style="height: 44px; padding: 0 16px; font-size: 15px; font-weight: 500;"><a href="Record-Form.html" style="font-weight: 600; text-decoration-color: #b7cdea;">BK-1981</a></td>
+                  <td style="height: 44px; padding: 0 16px; font-size: 15px; font-weight: 500; color: #202733; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Lastbil Volvo FH16</td>
+                  <td style="height: 44px; padding: 0 16px; font-size: 15px; font-weight: 500; color: #4c5868; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Nordfrakt AB</td>
+                  <td style="height: 44px; padding: 0 16px; font-size: 15px; font-weight: 500; color: #202733; white-space: nowrap; font-variant-numeric: tabular-nums;">14 Jun 16:20</td>
+                  <td style="height: 44px; padding: 0 16px;"><span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e7c27b; border-radius: 6px; background: #fff4df; color: #935b0a; font-size: 13px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Offered</span></td>
                   <td style="height: 44px; padding: 0 16px 0 0; text-align: right; white-space: nowrap;">
-                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 13px; font-weight: 700; text-decoration: none;">Edit</a>
-                    <button type="button" style="height: 28px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; vertical-align: middle;">Delete</button>
+                    <a href="Record-Form.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 600; text-decoration: none;">Edit</a>
+                    <button type="button" style="height: 30px; margin-left: 8px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; vertical-align: middle;">Delete</button>
                   </td>
                 </tr>
 
@@ -294,30 +294,30 @@ a:hover { color: #174578; }
           </div>
 
           <div style="flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 13px 16px; border-top: 1px solid #d5dce5; background: #f1f4f8;">
-            <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #4c5868;">Rows
-              <select style="height: 32px; padding: 0 8px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px; font-weight: 600;">
+            <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: #4c5868;">Rows
+              <select style="height: 32px; padding: 0 8px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 600;">
                 <option>25</option>
                 <option>50</option>
                 <option>100</option>
               </select>
             </label>
-            <span style="font-size: 13px; color: #4c5868;">Showing <strong style="color: #202733; font-weight: 700;">1–8</strong> of <strong style="color: #202733; font-weight: 700;">8</strong></span>
+            <span style="font-size: 14px; font-weight: 500; color: #4c5868;">Showing <strong style="color: #202733; font-weight: 700;">1–8</strong> of <strong style="color: #202733; font-weight: 700;">8</strong></span>
             <span style="flex-grow: 1;"></span>
             <div style="display: inline-flex; align-items: center; gap: 6px;">
-              <button type="button" disabled aria-label="Previous page" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #b9c5d3;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              <button type="button" disabled="" aria-label="Previous page" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #b9c5d3;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
               </button>
-              <a href="Records-Table.html" aria-current="page" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #b7cdea; border-radius: 6px; background: #dfeafb; color: #1f5797; font-size: 14px; font-weight: 700; text-decoration: none;">1</a>
-              <a href="Records-Table.html" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #354154; font-size: 14px; font-weight: 700; text-decoration: none;">2</a>
-              <a href="Records-Table.html" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #354154; font-size: 14px; font-weight: 700; text-decoration: none;">3</a>
+              <a href="Records-Table.html" aria-current="page" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #b7cdea; border-radius: 6px; background: #dfeafb; color: #1f5797; font-size: 15px; font-weight: 600; text-decoration: none;">1</a>
+              <a href="Records-Table.html" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #354154; font-size: 15px; font-weight: 600; text-decoration: none;">2</a>
+              <a href="Records-Table.html" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #354154; font-size: 15px; font-weight: 600; text-decoration: none;">3</a>
               <button type="button" aria-label="Next page" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #354154; cursor: pointer;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg>
               </button>
             </div>
           </div>
         </section>
 
-        <footer style="flex: none; display: flex; align-items: center; gap: 14px; height: 58px; border-top: 1px solid #d5dce5; font-size: 14px; color: #596779;">
+        <footer style="flex: none; display: flex; align-items: center; gap: 14px; height: 58px; border-top: 1px solid #d5dce5; font-size: 14px; font-weight: 500; color: #4c5868;">
           <span style="color: #202733; font-weight: 700;">Bookflow</span>
           <span>v2.0.5</span>
           <span style="flex-grow: 1;"></span>
