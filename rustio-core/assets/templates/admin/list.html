@@ -2,6 +2,8 @@
 
 {% block title %}{{ model.display_name }} · {{ design.project_name | default('RustIO') }}{% endblock %}
 
+{% block shell_width %}content--wide{% endblock %}
+
 {% block admin_content %}
   {# Page header — breadcrumb + title on the left, actions on the right.
      The grid layout (.page-head) keeps the actions vertically

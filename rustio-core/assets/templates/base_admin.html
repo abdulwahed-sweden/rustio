@@ -21,7 +21,13 @@
     </a>
     {% include "includes/header.html" %}
   </aside>
-  <div class="content">
+  {# `shell_width` is the page's one width declaration. A data-heavy
+     workspace — a model list, the audit log, the view editor — fills
+     `main--wide`; focused content (forms, profile, confirmations) leaves
+     it empty and keeps the readable measure. It sits on `.content` rather
+     than on `.main` so the footer, a sibling in the same grid, tracks the
+     same width instead of misaligning under a wide page. #}
+  <div class="content {% block shell_width %}{% endblock %}">
     {% include "includes/sidebar.html" %}
     <main class="main" id="main">
       {% block admin_content %}{% endblock %}

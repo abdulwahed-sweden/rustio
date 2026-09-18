@@ -2,6 +2,8 @@
 
 {% block title %}Overview · {{ design.project_name | default('RustIO') }}{% endblock %}
 
+{% block shell_width %}content--wide{% endblock %}
+
 {% block admin_content %}
   {% set total = namespace(records=0, max=0) %}
   {% for card in dashboard_cards | default([]) %}

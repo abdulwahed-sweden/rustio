@@ -23,6 +23,7 @@
   --shadow: 0 1px 0 rgba(255,255,255,.6), 0 24px 50px -24px rgba(22,32,56,.45), 0 8px 20px -12px rgba(22,32,56,.25);
   --shadow-sm: 0 1px 2px rgba(22,32,56,.06);
   --content: 1120px;
+  --content-wide: 1600px;
   --radius: 14px;          /* cards, from the landing panel */
   --radius-btn: 8px;       /* buttons and controls */
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
@@ -698,4 +699,20 @@ a.signed-in:hover { color: var(--blue); }
    without this the side panels ran off the right of the viewport. */
 @media (max-width: 760px) {
   .detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* --- Page width: two measures, chosen per page ------------------------ */
+/* `--content` (1120px) is the readable measure for focused content —
+   forms, profile, confirmations, auth. `--content-wide` (1600px) is the
+   data workspace: model lists, the audit log, the view editor, the
+   dashboard grid. A page declares which it is through `shell_width` in
+   `base_admin.html` (`content--wide` or nothing); there are no per-page
+   width rules anywhere else.
+   The footer is a sibling of `.main` in the same grid, so it takes the
+   width from the same declaration and cannot drift out of alignment. */
+/* Scoped above the breakpoint where the rail collapses, so every
+   narrow-width rule below keeps the behaviour it already had. */
+@media (min-width: 761px) {
+  .content--wide > .main,
+  .content--wide > .app-footer { width: min(100% - var(--s6), var(--content-wide)); }
 }
