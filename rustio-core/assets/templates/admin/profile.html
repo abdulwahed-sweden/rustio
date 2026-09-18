@@ -4,12 +4,14 @@
 
 {% block admin_content %}
   <div class="page-head">
-    <nav class="breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">{{ t("Home") }}</a>
-      <span class="breadcrumb-sep">/</span>
-      <span>{{ t("Your account") }}</span>
-    </nav>
-    <h1>{{ t("Your account") }}</h1>
+    <div>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/admin">{{ t("Home") }}</a>
+        <span class="breadcrumb-sep">/</span>
+        <span>{{ t("Your account") }}</span>
+      </nav>
+      <h1>{{ t("Your account") }}</h1>
+    </div>
     <div class="page-head-actions">
       <a href="/admin/password_change" class="button button-quiet">{{ t("Change password") }}</a>
       <a href="/admin/logout" class="button button-quiet">{{ t("Sign out") }}</a>

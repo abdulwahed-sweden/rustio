@@ -4,10 +4,8 @@
 {% if current_user is defined and current_user %}
 <div class="sidebar-foot">
   <span class="env-chip">{{ env_label | default('Dev') }}</span>
-  <span>
-    <span class="signed-in">{{ current_user.email }}</span>
-    <span class="role-note">{{ t("Signed in") }}</span>
-  </span>
+  <span class="signed-in">{{ current_user.email }}</span>
+  <span class="role-note">{{ t("Signed in as") }}</span>
   {% include "includes/lang_switcher.html" %}
   <form method="post" action="/admin/logout" class="inline-form">
     {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}

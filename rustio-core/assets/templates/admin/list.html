@@ -7,12 +7,14 @@
      The grid layout (.page-head) keeps the actions vertically
      centred regardless of breadcrumb-vs-no-breadcrumb height. #}
   <div class="page-head">
-    <nav class="breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">{{ t("Home") }}</a>
-      <span class="breadcrumb-sep">/</span>
-      <span>{{ model.display_name }}</span>
-    </nav>
-    <h1>{{ model.display_name }}</h1>
+    <div>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/admin">{{ t("Home") }}</a>
+        <span class="breadcrumb-sep">/</span>
+        <span>{{ model.display_name }}</span>
+      </nav>
+      <h1>{{ model.display_name }}</h1>
+    </div>
     <div class="page-head-actions">
       {% if permissions.create %}
         <a href="{{ model.new_url }}" class="button button-primary">+ {{ t("Add") }} {{ model.singular_name | lower }}</a>

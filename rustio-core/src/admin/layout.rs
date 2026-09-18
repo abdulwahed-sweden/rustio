@@ -884,7 +884,7 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
             ));
         }
         return format!(
-            r#"<select class="" id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
+            r#"<select id="{id}" name="{name}"{readonly}{required}>{options}</select>"#,
         );
     }
     if field.is_relation {
@@ -893,7 +893,7 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
         // form still submits. This matches the 0.9 relation-layer
         // rule: "never guess, never hide".
         return format!(
-            r#"<input type="number" step="1" class="" id="{id}" name="{name}" value="{val}"{readonly}{required} placeholder="id">"#,
+            r#"<input type="number" step="1" id="{id}" name="{name}" value="{val}"{readonly}{required} placeholder="id">"#,
         );
     }
 
@@ -902,13 +902,13 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
             r#"<textarea class=" " id="{id}" name="{name}"{readonly}{required} rows="4">{val}</textarea>"#,
         ),
         AdminDataType::Email => format!(
-            r#"<input type="email" class="" id="{id}" name="{name}" value="{val}"{readonly}{required} autocomplete="off">"#,
+            r#"<input type="email" id="{id}" name="{name}" value="{val}"{readonly}{required} autocomplete="off">"#,
         ),
         AdminDataType::Integer => format!(
-            r#"<input type="number" step="1" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="number" step="1" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::Float => format!(
-            r#"<input type="number" step="any" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="number" step="any" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::Boolean => {
             let checked = if value == "1" || value.eq_ignore_ascii_case("true") {
@@ -924,10 +924,10 @@ fn render_field_control(field: &AdminUiField, value: &str) -> String {
             )
         }
         AdminDataType::DateTime => format!(
-            r#"<input type="datetime-local" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="datetime-local" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
         AdminDataType::String => format!(
-            r#"<input type="text" class="" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
+            r#"<input type="text" id="{id}" name="{name}" value="{val}"{readonly}{required}>"#,
         ),
     }
 }

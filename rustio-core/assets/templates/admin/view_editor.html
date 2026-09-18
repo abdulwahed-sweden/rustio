@@ -4,14 +4,16 @@
 
 {% block admin_content %}
   <div class="page-head">
-    <nav class="breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">{{ t("Home") }}</a>
-      <span class="breadcrumb-sep">/</span>
-      <a href="{{ model.list_url }}">{{ model.display_name }}</a>
-      <span class="breadcrumb-sep">/</span>
-      <span>{{ t("Edit view") }}</span>
-    </nav>
-    <h1>{{ t("Edit view") }} — {{ model.display_name }}</h1>
+    <div>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/admin">{{ t("Home") }}</a>
+        <span class="breadcrumb-sep">/</span>
+        <a href="{{ model.list_url }}">{{ model.display_name }}</a>
+        <span class="breadcrumb-sep">/</span>
+        <span>{{ t("Edit view") }}</span>
+      </nav>
+      <h1>{{ t("Edit view") }} — {{ model.display_name }}</h1>
+    </div>
   </div>
 
   {% if error %}

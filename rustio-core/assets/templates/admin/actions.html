@@ -4,12 +4,14 @@
 
 {% block admin_content %}
   <div class="page-head">
-    <nav class="breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">{{ t("Home") }}</a>
-      <span class="breadcrumb-sep">/</span>
-      <span>{{ t("Recent actions") }}</span>
-    </nav>
-    <h1>{{ t("Recent actions") }}</h1>
+    <div>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/admin">{{ t("Home") }}</a>
+        <span class="breadcrumb-sep">/</span>
+        <span>{{ t("Recent actions") }}</span>
+      </nav>
+      <h1>{{ t("Recent actions") }}</h1>
+    </div>
   </div>
 
   <form class="toolbar" method="get" action="/admin/actions" aria-label="{{ t('Filter actions') }}">

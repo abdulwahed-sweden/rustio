@@ -313,24 +313,6 @@ fn icon_activity() -> String {
     )
 }
 
-fn icon_home() -> String {
-    svg(
-        r#"<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>"#,
-    )
-}
-
-fn icon_bell() -> String {
-    svg(
-        r#"<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>"#,
-    )
-}
-
-fn icon_mail() -> String {
-    svg(
-        r#"<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>"#,
-    )
-}
-
 // ---------------------------------------------------------------------------
 // Admin builder + route registration
 // ---------------------------------------------------------------------------
@@ -1804,14 +1786,55 @@ fn humanise_model_label(name: &str) -> String {
     out
 }
 
+/// The identity cluster for the top bar: avatar + address, then the
+/// sign-out form. Placed by `.sidebar`'s grid via `.sidebar-foot`.
+fn render_identity(shell: &Shell<'_>) -> String {
+    let logout_form = if shell.csrf.is_some() {
+        format!(
+            r#"<form class="inline-form" method="post" action="/admin/logout">
+{csrf}
+<button class="button button-quiet" type="submit">{icon}<span>Sign out</span></button>
+</form>"#,
+            csrf = csrf_input(shell.csrf),
+            icon = icon_logout(),
+        )
+    } else {
+        String::new()
+    };
+
+    let email = shell.user_email.unwrap_or("");
+    let avatar_initial = email
+        .chars()
+        .next()
+        .map(|c| c.to_ascii_uppercase().to_string())
+        .unwrap_or_else(|| String::from("-"));
+
+    let user_block = if shell.user_email.is_some() {
+        format!(
+            r#"<a class="signed-in" href="/admin/profile" title="Your profile">
+<span class="avatar">{avatar}</span>
+<span>{email}</span>
+</a>"#,
+            avatar = escape_html(&avatar_initial),
+            email = escape_html(email),
+        )
+    } else {
+        String::new()
+    };
+
+    format!(
+        r#"<div class="sidebar-foot">{env}{user_block}{logout_form}</div>"#,
+        env = env_chip_html(),
+    )
+}
+
 fn render_sidebar(shell: &Shell<'_>) -> String {
-    let design = design::Design::global();
     let user_facing: Vec<&AdminEntry> = shell.entries.iter().filter(|e| !e.core).collect();
 
     let mut models_html = String::new();
     if !user_facing.is_empty() {
         models_html.push_str(r#"<div class="module-nav">"#);
-        models_html.push_str(r#"<div class="module-title">Models</div>"#);
+        models_html.push_str(r#"<p class="module-title">Models</p>"#);
         for e in &user_facing {
             let active_cls = if shell.active == Some(e.admin_name) {
                 "module-link is-active"
@@ -1819,7 +1842,7 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
                 "module-link"
             };
             models_html.push_str(&format!(
-                r#"<a class="{cls}" href="/admin/{name}">{icon}<span>{label}</span></a>"#,
+                r#"<a class="{cls}" href="/admin/{name}">{icon}<span><strong>{label}</strong></span></a>"#,
                 cls = active_cls,
                 name = escape_html(e.admin_name),
                 icon = icon_layers(),
@@ -1844,72 +1867,20 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
         "module-link"
     };
 
-    let logout_form = if shell.csrf.is_some() {
-        format!(
-            r#"<form class="sidebar-foot" method="post" action="/admin/logout">
-{csrf}
-<button type="submit">{icon}<span>Sign out</span></button>
-</form>"#,
-            csrf = csrf_input(shell.csrf),
-            icon = icon_logout(),
-        )
-    } else {
-        String::new()
-    };
-
-    let email = shell.user_email.unwrap_or("");
-    let avatar_initial = email
-        .chars()
-        .next()
-        .map(|c| c.to_ascii_uppercase().to_string())
-        .unwrap_or_else(|| String::from("·"));
-
-    let user_block = if shell.user_email.is_some() {
-        // The user chip is clickable → /admin/profile. Matches
-        // Django's "Welcome, name" dropdown in the header, but fits
-        // our sidebar footer.
-        format!(
-            r#"<a class="signed-in" href="/admin/profile" title="Your profile">
-<span class="avatar">{avatar}</span>
-<span class="signed-in">{email}</span>
-</a>"#,
-            avatar = escape_html(&avatar_initial),
-            email = escape_html(email),
-        )
-    } else {
-        String::new()
-    };
-
     format!(
-        r#"<aside class="module-sidebar">
-<div class="module-nav">
-<a class="brand" href="/admin">
-<span class="brand-mark">{logo}</span>
-<span class="brand-note">
-<span class="brand-name">{project}</span>
-<span class="brand-name">Admin</span>
-</span>
-</a>
-<nav class="module-nav">
-<a class="{dash}" href="/admin">{dash_icon}<span>Dashboard</span></a>
-<a class="{actions}" href="/admin/actions">{actions_icon}<span>Recent actions</span></a>
+        r#"<aside class="module-sidebar" aria-label="Modules">
+<p class="module-title">Workspace</p>
+<nav class="module-nav" aria-label="Areas">
+<a class="{dash}" href="/admin">{dash_icon}<span><strong>Dashboard</strong></span></a>
+<a class="{actions}" href="/admin/actions">{actions_icon}<span><strong>Recent actions</strong></span></a>
 </nav>
 {models}
-<div class="sidebar-foot">
-{user}
-{logout}
-</div>
-</div>
 </aside>"#,
-        logo = escape_html(&design.logo_initial),
-        project = escape_html(&design.project_name),
         dash = dashboard_active,
         dash_icon = icon_dashboard(),
         actions = actions_active,
         actions_icon = icon_activity(),
         models = models_html,
-        user = user_block,
-        logout = logout_form,
     )
 }
 
@@ -1931,34 +1902,12 @@ fn render_shell_page(
     let sidebar = render_sidebar(shell);
     let crumbs = render_breadcrumbs(breadcrumbs);
 
-    let env_chip = env_chip_html();
-
     // Topbar action cluster: env-chip + Home + Notifications bell +
     // Messages + Logout button with a visible "Logout" label.
     // Rendered only when we have an identity (i.e. a CSRF token to
     // back the logout form). On unauthenticated error pages the
     // cluster collapses to just the env-chip.
-    let topbar_actions = match shell.csrf {
-        Some(csrf) => format!(
-            r#"<div class="sidebar-foot">
-{env}
-<a class="button button-quiet" href="/admin" title="Home" aria-label="Home">{home}</a>
-<button class="button button-quiet" type="button" title="Notifications" aria-label="Notifications">{bell}<span class="notice-icon"></span></button>
-<button class="button button-quiet" type="button" title="Messages" aria-label="Messages">{mail}</button>
-<form class="inline-form" method="post" action="/admin/logout">
-<input type="hidden" name="_csrf" value="{csrf_val}">
-<button type="submit" title="Sign out">{logout}<span>Logout</span></button>
-</form>
-</div>"#,
-            env = env_chip,
-            home = icon_home(),
-            bell = icon_bell(),
-            mail = icon_mail(),
-            logout = icon_logout(),
-            csrf_val = escape_html(csrf),
-        ),
-        None => format!(r#"<div class="sidebar-foot">{env}</div>"#, env = env_chip),
-    };
+    let topbar_actions = render_identity(shell);
 
     let subtitle_html = page_subtitle
         .map(|s| format!(r#"<p class="lead">{}</p>"#, escape_html(s)))
@@ -1971,20 +1920,14 @@ fn render_shell_page(
     };
 
     let theme_style = format!(
-        "\n:root {{\n  --: {p};\n  --: {ph};\n  --: {a};\n  --: {ah};\n}}\n",
+        "\n:root {{\n  --blue: {p};\n  --blue-dark: {ph};\n  --focus: {a};\n}}\n",
         p = escape_css_color(&design.primary_color),
         ph = escape_css_color(&design.primary_color),
         a = escape_css_color(&design.accent_color),
-        ah = escape_css_color(&design.accent_color),
     );
 
-    let density_class = match design.density {
-        design::Density::Comfortable => "",
-        design::Density::Compact => " ",
-    };
-
     let body_html = format!(
-        r#"<!doctype html>
+        r##"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1994,31 +1937,37 @@ fn render_shell_page(
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
-<body class="{density}">
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
 <div class="shell">
-{sidebar}
-<main class="main">
-<div class="main">
-<header class="sidebar">
-{crumbs}
+<aside class="sidebar">
+<a class="brand" href="/admin">
+<span class="brand-mark">{logo}</span>
+<span class="brand-name">{project}</span>
+</a>
 {topbar_actions}
-</header>
+</aside>
+<div class="content">
+{sidebar}
+<main class="main" id="main">
+{crumbs}
 <div class="page-head">
 <div>
-<h1 class="">{page_title}</h1>
+<h1>{page_title}</h1>
 {subtitle}
 </div>
 {actions}
 </div>
 {body}
-</div>
 </main>
+<footer class="app-footer"><span>{project}</span><span></span></footer>
+</div>
 </div>
 <script>
 // Admin Intelligence Layer (0.7.0) — minimal JS for PII toggle.
 // Click a .button button-quiet to reveal / hide the adjacent masked value.
 document.addEventListener("click", function(e){{
-  var btn = e.target.closest ? e.target.closest(".button button-quiet") : null;
+  var btn = e.target.closest ? e.target.closest("[data-pii-toggle]") : null;
   if(!btn) return;
   // The masked <span> is the button's previous sibling by construction.
   var span = btn.previousElementSibling;
@@ -2035,11 +1984,11 @@ document.addEventListener("click", function(e){{
 }});
 </script>
 </body>
-</html>"#,
+</html>"##,
         doc_title = escape_html(document_title),
         project = escape_html(&design.project_name),
         theme = theme_style,
-        density = density_class,
+        logo = escape_html(&design.logo_initial),
         sidebar = sidebar,
         crumbs = crumbs,
         topbar_actions = topbar_actions,
@@ -2708,7 +2657,7 @@ fn list_response<T: AdminModel>(
                         fields = detail_fields,
                     );
                     format!(
-                        r#"<tr class="" data-row-id="{id}">{expand_cell}{checkbox}{cells}{row_actions}</tr>{expand_row}"#,
+                        r#"<tr data-row-id="{id}">{expand_cell}{checkbox}{cells}{row_actions}</tr>{expand_row}"#,
                     )
                 })
                 .collect();
@@ -2716,8 +2665,8 @@ fn list_response<T: AdminModel>(
             let csrf = csrf_input(shell.csrf);
             let bulk_bar = format!(
                 r#"<div class="toolbar">
-<label class="label" for="button button-quiet">Action</label>
-<select class="" id="button button-quiet" name="action">
+<label class="label" for="bulk-action">Action</label>
+<select id="bulk-action" name="action">
 <option value="">-- Select an action --</option>
 <option value="delete">Delete selected {plural_lower}</option>
 </select>
@@ -2735,7 +2684,7 @@ fn list_response<T: AdminModel>(
 {csrf}
 <input type="hidden" name="_selected" value="">
 {bulk_bar}
-<table class="">
+<table>
 <thead><tr>{expand_header}<th class="cell-fit"><input type="checkbox" class="checkbox" aria-label="Select all"></th>{headers}<th aria-label="Actions"></th></tr></thead>
 <tbody>{rows}</tbody>
 </table>
@@ -2872,7 +2821,7 @@ fn render_relation_filter_control(state: &RelationFilterState) -> String {
             }))
             .collect();
             format!(
-                r#"<select class="" name="{field}" aria-label="Filter by {label}">{options_html}</select>"#,
+                r#"<select name="{field}" aria-label="Filter by {label}">{options_html}</select>"#,
             )
         }
         RelationFilterMode::Numeric { too_many } => {
@@ -2897,7 +2846,7 @@ fn render_relation_filter_control(state: &RelationFilterState) -> String {
             format!(
                 r#"<label class="field" style="display:inline-flex; gap:var(--); align-items:center; margin:0">\
 <span class="label">{label} ID</span>\
-<input class="" type="number" name="{field}" value="{current}" style="width:140px" aria-label="Filter by {label} id">\
+<input class="input-narrow" type="number" name="{field}" value="{current}" aria-label="Filter by {label} id">\
 {hint}\
 </label>"#,
                 label = label,
@@ -2950,7 +2899,7 @@ fn render_columns_control<T: AdminModel>(filters: &ListFilters<'_>) -> String {
         .collect();
 
     format!(
-        r#"<details class="button button-quiet"><summary class="button">Columns</summary><div class="card">{rows}</div></details>"#,
+        r#"<details class="column-picker"><summary class="button button-quiet">Columns</summary><div class="card"><div class="card-body">{rows}</div></div></details>"#,
     )
 }
 
@@ -3123,9 +3072,7 @@ fn render_list_toolbar<T: AdminModel>(
                     )
                 }))
                 .collect();
-        format!(
-            r#"<select class="" name="status" aria-label="Filter by status">{options}</select>"#,
-        )
+        format!(r#"<select name="status" aria-label="Filter by status">{options}</select>"#,)
     } else {
         String::new()
     };
@@ -3157,9 +3104,7 @@ fn render_list_toolbar<T: AdminModel>(
                     )
                 }))
                 .collect();
-        format!(
-            r#"<select class="" name="priority" aria-label="Filter by priority">{options}</select>"#,
-        )
+        format!(r#"<select name="priority" aria-label="Filter by priority">{options}</select>"#,)
     } else {
         String::new()
     };
@@ -3234,7 +3179,7 @@ fn render_list_toolbar<T: AdminModel>(
                 )
             })
             .collect();
-        format!(r#"<select class=" " name="sort" aria-label="Sort records">{options}</select>"#,)
+        format!(r#"<select name="sort" aria-label="Sort records">{options}</select>"#,)
     };
 
     let count_label = if filters.is_active() {
@@ -3270,7 +3215,7 @@ fn render_list_toolbar<T: AdminModel>(
 
     format!(
         r#"<form class="toolbar" method="get" action="/admin/{name}" role="search" aria-label="Search {plural}">
-<div class="">
+<div>
 {search_icon}
 <input type="search" name="q" value="{q}" placeholder="Search {plural_lower}…" aria-label="Search text">
 {intent}
@@ -3442,7 +3387,7 @@ fn render_cell<T: AdminModel>(f: &AdminField, item: &T, ctx: &CellCtx<'_>) -> St
         return format!(
             r#"<td class="cell-muted">\
 <span class="cell-muted" data-value="{real}" data-mask="{mask}" data-hidden="1">{mask}</span>\
-<button class="button button-quiet" type="button" aria-label="Reveal value">show</button>\
+<button class="button button-sm" type="button" data-pii-toggle aria-label="Reveal value">show</button>\
 </td>"#,
             real = escape_html(&value),
             mask = escape_html(&masked),
@@ -3592,19 +3537,19 @@ fn form_response<T: AdminModel>(
 
     let body = format!(
         r#"{meta}
-<form class="card form" method="post" action="{action}" autocomplete="off">
+<form class="form" method="post" action="{action}" autocomplete="off">
 {csrf}
-<div class="card">
-<h2 class="card-title">Details</h2>
+<section class="card">
+<div class="card-head"><h2>Details</h2></div>
+<div class="card-body">
 <p class="hint">Fields marked optional accept an empty value.</p>
 {fields}
 </div>
+</section>
 <div class="form-actions">
 <a class="button button-quiet" href="/admin/{name}">{back_icon}<span>{back_label}</span></a>
-<div class="form-actions">
-<a class="button" href="/admin/{name}">Cancel</a>
+<a class="button button-secondary" href="/admin/{name}">Cancel</a>
 <button class="button button-primary" type="submit">Save</button>
-</div>
 </div>
 </form>
 {inverse}
@@ -3844,7 +3789,7 @@ fn render_delete_blocked_page<T: AdminModel>(
 <h2 class="card-title">Cannot delete {subject}</h2>
 <p class="lead">Other records reference this one. Remove or reassign them first, then retry the delete.</p>
 </div>
-<ul class="" style="list-style:none; margin:0; padding:var(--card-body)">
+<ul class="stack-list">
 {rows}
 </ul>
 <div class="form-actions">
@@ -3910,7 +3855,7 @@ fn render_inverse_panel<T: AdminModel>(
                 target_id,
             );
             format!(
-                r#"<li><a href="{url}" class="card"><div><strong>{label}</strong> <span class="cell-id">({count})</span></div><div class="cell-muted">via {field}</div></a></li>"#,
+                r#"<li><a href="{url}" class="card card-link"><div><strong>{label}</strong> <span class="cell-id">({count})</span></div><div class="cell-muted">via {field}</div></a></li>"#,
                 url = escape_html(&filter_url),
                 label = escape_html(&label),
                 count = count,
@@ -4219,7 +4164,7 @@ fn render_field<T: AdminModel>(
                 none_opt
             };
             return format!(
-                r#"<select class=" " id="_{n}" name="{n}"{required}>{none}{opts}</select>"#,
+                r#"<select id="_{n}" name="{n}"{required}>{none}{opts}</select>"#,
                 n = n,
                 required = required,
                 none = none_opt,
@@ -4235,17 +4180,17 @@ fn render_field<T: AdminModel>(
         ),
         FieldType::I32 | FieldType::I64 => {
             format!(
-                r#"<input class="" id="_{n}" type="number" name="{n}" value="{v}"{required}{placeholder_attr}>"#
+                r#"<input id="_{n}" type="number" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
         FieldType::String => {
             format!(
-                r#"<input class="" id="_{n}" type="text" name="{n}" value="{v}"{required}{placeholder_attr}>"#
+                r#"<input id="_{n}" type="text" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
         FieldType::DateTime => {
             format!(
-                r#"<input class="" id="_{n}" type="datetime-local" name="{n}" value="{v}"{required}{placeholder_attr}>"#
+                r#"<input id="_{n}" type="datetime-local" name="{n}" value="{v}"{required}{placeholder_attr}>"#
             )
         }
     }
@@ -5342,7 +5287,7 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
     let d = design::Design::global();
 
     let theme_style = format!(
-        "\n:root {{\n  --: {p};\n  --: {a};\n}}\n",
+        "\n:root {{\n  --blue: {p};\n  --focus: {a};\n}}\n",
         p = escape_css_color(&d.primary_color),
         a = escape_css_color(&d.accent_color),
     );
@@ -5378,18 +5323,17 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
 <link rel="icon" type="image/svg+xml" href="/admin/assets/favicon.svg">
 <style>{theme}</style>
 </head>
-<body>
+<body class="auth-body">
 <div class="login-shell">
-<div class="login-card">
-<div class="brand-mark">
+<main class="login-wrap" id="main">
+<div class="login-brand">
 <span class="brand-mark">{logo}</span>
-<span class="brand-note">
 <span class="brand-name">{project}</span>
-<span class="brand-name">Admin</span>
-</span>
 </div>
+<div class="login-card">
 {card_body}
 </div>
+</main>
 </div>
 </body>
 </html>"#,

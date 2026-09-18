@@ -8,7 +8,7 @@
       {% for entry in sidebar_entries %}
         {% if entry.visible %}
           <a class="module-link" href="{{ entry.href }}"{% if entry.active %} aria-current="page"{% endif %}>
-            <span>{{ entry.label }}</span>
+            <span><strong>{{ entry.label }}</strong></span>
             {% if entry.count is defined and entry.count >= 0 %}
               <span class="badge badge-user">{{ entry.count }}</span>
             {% endif %}
@@ -20,9 +20,9 @@
 
   <p class="module-title stack">{{ t("System") }}</p>
   <nav class="module-nav" aria-label="{{ t('System') }}">
-    <a class="module-link" href="/admin/actions"><span>{{ t("Recent actions") }}</span></a>
+    <a class="module-link" href="/admin/actions"><span><strong>{{ t("Recent actions") }}</strong></span></a>
     {% if current_user is defined and current_user %}
-      <a class="module-link" href="/admin/profile"><span>{{ t("Your account") }}</span></a>
+      <a class="module-link" href="/admin/profile"><span><strong>{{ t("Your account") }}</strong></span></a>
     {% endif %}
   </nav>
 

@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/admin/static/admin.css">
   {% block head_extra %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body{% block body_attrs %}{% endblock %}>
   {% block body %}{% endblock %}
   <script src="/admin/static/app.js" defer></script>
   {% block body_extra %}{% endblock %}

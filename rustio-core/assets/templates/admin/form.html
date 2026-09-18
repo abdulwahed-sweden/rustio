@@ -7,14 +7,16 @@
      work out its URL, otherwise just back to the dashboard. The list
      URL is the form action minus the trailing /new or /<id>/edit. #}
   <div class="page-head">
-    <nav class="breadcrumb" aria-label="Breadcrumb">
-      <a href="/admin">{{ t("Home") }}</a>
-      <span class="breadcrumb-sep">/</span>
-      <a href="{{ form.cancel_url }}">{{ t("Back") }}</a>
-      <span class="breadcrumb-sep">/</span>
-      <span>{{ form.title }}</span>
-    </nav>
-    <h1>{{ form.title }}</h1>
+    <div>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/admin">{{ t("Home") }}</a>
+        <span class="breadcrumb-sep">/</span>
+        <a href="{{ form.cancel_url }}">{{ t("Back") }}</a>
+        <span class="breadcrumb-sep">/</span>
+        <span>{{ form.title }}</span>
+      </nav>
+      <h1>{{ form.title }}</h1>
+    </div>
     <div class="page-head-actions">
       <a href="{{ form.cancel_url }}" class="button button-quiet">{{ t("Cancel") }}</a>
       <button type="submit" form="rio-detail-form" class="button button-primary">{{ form.submit_label | default('Save changes') }}</button>
@@ -27,7 +29,7 @@
 
   {% set is_edit = form.editing_id is defined and form.editing_id %}
 
-  <div class="{% if is_edit %}detail-grid{% endif %}">
+  <div{% if is_edit %} class="detail-grid"{% endif %}>
     <div class="{% if is_edit %}detail-main{% else %}detail-single{% endif %}">
       <section class="card">
         <form method="post" action="{{ form.action }}" class="form" id="rio-detail-form" novalidate>
