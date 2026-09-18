@@ -961,9 +961,14 @@ pub async fn form_render(
     let sidebar = sidebar_merged(&dashboard_entries, legacy_entries, Some(model.slug()));
 
     let is_edit = editing_id.is_some();
+    // A missing row prefills nothing. The *status* for a missing row is the
+    // handler's call (it answers 404 before reaching here); this path also
+    // serves the re-render-with-error case, which must still draw the form.
     let prefill = if let Some(id) = editing_id {
         persistence::get_record_by_id(db, model.table_name(), id)
             .await
+            .ok()
+            .flatten()
             .unwrap_or_default()
     } else {
         HashMap::new()

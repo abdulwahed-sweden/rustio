@@ -120,10 +120,10 @@ fn quote_ident(s: &str) -> String {
 }
 
 /// Fetch a single row by id and return its columns as a flat
-/// `column → string` map. NULL becomes an empty string. Returns an
-/// **empty** map when no row matches — the GET handler treats that
-/// case as "fall back to the create-mode demo form" rather than
-/// surfacing an error.
+/// `column → string` map. NULL becomes an empty string. Returns
+/// `Ok(None)` when no row matches — distinct from `Ok(Some(empty))`,
+/// which cannot arise here but which the old `HashMap`-only return type
+/// made indistinguishable from "missing".
 ///
 /// SQLite columns can be INTEGER / REAL / TEXT (the demo table uses
 /// INTEGER id + TEXT for everything else). Each value is decoded by
@@ -135,7 +135,7 @@ pub async fn get_record_by_id(
     db: &Db,
     table: &str,
     id: &str,
-) -> Result<HashMap<String, String>, Error> {
+) -> Result<Option<HashMap<String, String>>, Error> {
     let sql = format!("SELECT * FROM {} WHERE \"id\" = ?", quote_ident(table));
     let row_opt = sqlx::query(&sql)
         .bind(id)
@@ -143,12 +143,29 @@ pub async fn get_record_by_id(
         .await
         .map_err(Error::from)?;
 
-    let row = match row_opt {
-        Some(r) => r,
-        None => return Ok(HashMap::new()),
-    };
+    Ok(row_opt.as_ref().map(row_to_map))
+}
 
-    Ok(row_to_map(&row))
+/// Whether `table` holds a row with this `id`.
+///
+/// Callers that render an edit form need to answer "does this record
+/// exist?" *before* they render, because the answer is an HTTP status, not
+/// a field value. `get_record_by_id` returning an empty map used to be the
+/// only signal, and an empty map is indistinguishable from a row whose
+/// columns are all empty — so a missing record rendered a blank form with
+/// 200 instead of 404. `id` is bound, never interpolated, so a
+/// non-numeric id is simply a value that matches nothing.
+pub async fn record_exists(db: &Db, table: &str, id: &str) -> Result<bool, Error> {
+    let sql = format!(
+        "SELECT 1 FROM {} WHERE \"id\" = ? LIMIT 1",
+        quote_ident(table)
+    );
+    let row = sqlx::query(&sql)
+        .bind(id)
+        .fetch_optional(db.pool())
+        .await
+        .map_err(Error::from)?;
+    Ok(row.is_some())
 }
 
 /// List rows from `table`, newest first, with a hard `LIMIT` /

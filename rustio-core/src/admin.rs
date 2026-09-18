@@ -4658,6 +4658,23 @@ async fn admin_model_form_get(
         return Err(Error::NotFound);
     };
 
+    // An edit URL for a row that does not exist is a 404, not a blank
+    // form. `get_record_by_id` used to answer "missing" with an empty
+    // prefill map, which rendered as a create-shaped form under a 200 —
+    // so a stale bookmark, a deleted record or a non-numeric id all
+    // looked like a working Edit page.
+    if let Some(id) = editing_id {
+        let table = match &resolved {
+            ResolvedModel::New(model) => model.table_name().to_string(),
+            ResolvedModel::Legacy(model) => {
+                crate::admin::admin_form_bridge::AdminUiModel::table_name(model).to_string()
+            }
+        };
+        if !crate::admin::persistence::record_exists(db, &table, id).await? {
+            return Err(Error::NotFound);
+        }
+    }
+
     // A model that refuses creation refuses it by URL too — hiding the
     // button is presentation, this is the gate.
     if editing_id.is_none() {
@@ -4849,6 +4866,15 @@ async fn admin_model_update_post(
         return Err(Error::BadRequest("missing id".into()));
     }
     let resolved = resolve_form_model(registry, legacy_entries, &model_slug)?;
+
+    // Same rule as the GET side: an UPDATE against a row that is not there
+    // affects zero rows and returns `Ok`, so without this the handler would
+    // answer 303 "saved" for a record that does not exist.
+    if !crate::admin::persistence::record_exists(db, resolved.as_ui_model().table_name(), &id)
+        .await?
+    {
+        return Err(Error::NotFound);
+    }
 
     let (_, body, ctx) = req.into_parts();
     let form = read_form_from_parts(body).await?;
