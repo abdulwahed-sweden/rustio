@@ -1,9 +1,14 @@
 # Design system
 
-The admin's design is ported from **[rustio-lite](https://github.com/abdulwahed-sweden/rustio-lite)**,
-where it was designed and tested against thirteen contract pages. Nothing
-here was invented for rustio: every colour, size, weight, radius and shadow
-below comes from that project's stylesheet.
+The admin's design has two sources, and neither is invented here.
+
+**Colour, layout and components** are ported from
+**[rustio-lite](https://github.com/abdulwahed-sweden/rustio-lite)**, where
+they were designed and tested against thirteen contract pages.
+
+**Typography and buttons** come from the developer landing page at `/`
+(`rustio-core/assets/home.html`) — a tighter type scale, four weights, and
+a button shape that reads better at admin density.
 
 One file ships: **`rustio-core/assets/static/admin.css`**. `build.rs` runs it
 through Tailwind (as a minifier — the file uses no Tailwind directives),
@@ -29,13 +34,31 @@ Declared once on `:root`. Use the variable, never the literal.
 | Rail | `--rail 260px` · `--rail-gap 14px` · `--rail-bg #f4f6f9` · `--rail-line #d3dbe5` |
 | Shape | `--radius 9px` · `--content 1120px` · `--shadow 0 2px 5px rgba(24,39,61,.07)` |
 
-**Type.** Inter first, then the OS native UI stack — no CDN, no webfont
-download at runtime. Body 1.0625rem / 1.5 at weight 450. Sizes in use:
-.875 · .9 · .9375 · .96 · .98 · 1 · 1.02 · 1.05 · 1.15 · 1.8rem.
+**Type comes from the landing page** (`rustio-core/assets/home.html`),
+not from rustio-lite: it runs a tighter scale and four weights instead of
+fourteen, and it is the reference for anything typographic.
 
-**Weight** carries hierarchy, not size: 450 body · 620–720 secondary ·
-760–790 emphasis · 800–850 display and labels. Adding a weight outside
-that set is a change to the design system, not a use of it.
+Inter first, then the OS native UI stack — no CDN, no webfont download at
+runtime. `--mono` is the landing page's monospace stack, used for the
+uppercase micro-labels (`.module-title`, `.detail-label`, `.stat-label`,
+`.card-title`, `.card-head h2`, `.eyebrow`) at 11–11.5px with .12–.16em
+tracking.
+
+| | |
+|---|---|
+| Body | 16px / 1.6, weight 400 |
+| Scale | 11 · 11.5 · 12 · 13 · 14 · 15 · 16 · 17 · 33 px |
+| Weights | **400** body · **600** secondary · **680** buttons · **700** emphasis and labels · **800** display |
+| Headings | h1 33px/800/-.025em/1.06 · h2 17px/700 · h3 16px/700 |
+
+Five weights, nine sizes. Adding one is a change to the design system,
+not a use of it.
+
+**Buttons** are the landing page's, verbatim: 12×20px, radius 10px,
+15px/680, `line-height: 1`, a 9px gap for an icon, and a 1px transparent
+border so a bordered variant doesn't shift. Hover lifts the control 1px;
+`.button-primary` carries a blue-tinted drop shadow. `.button-sm` is the
+same shape at 13px / 8×14px / radius 8.
 
 **Focus.** `:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px }`.
 The offset keeps the ring on the surface behind a control, never on its fill.
