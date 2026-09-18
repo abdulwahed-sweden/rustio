@@ -69,8 +69,8 @@
               <td class="nowrap">
                 {# Position is explicit, not DOM-order — see build_edited_spec. #}
                 <input type="hidden" name="order[{{ field.source }}]" value="{{ loop.index0 }}" data-order>
-                <button type="button" class="button button-secondary" data-move="up" aria-label="Move {{ field.label }} up" title="{{ t('Move up') }}">&#9650;</button>
-                <button type="button" class="button button-secondary" data-move="down" aria-label="Move {{ field.label }} down" title="{{ t('Move down') }}">&#9660;</button>
+                <button type="button" class="button button-secondary button-sm" data-move="up" aria-label="Move {{ field.label }} up" title="{{ t('Move up') }}">&#9650;</button>
+                <button type="button" class="button button-secondary button-sm" data-move="down" aria-label="Move {{ field.label }} down" title="{{ t('Move down') }}">&#9660;</button>
               </td>
               <td>{{ field.label }} <span class="cell-id">{{ field.source }}</span></td>
               <td>
@@ -113,7 +113,7 @@
       {# Explicit, separate control: make the editing language the view's stored
          default (what the list headers render in). Kept distinct from the
          editing-language switch above so the two never conflate. #}
-      <label class="inline-actions stack-sm">
+      <label class="checkbox-line stack-sm">
         <input type="checkbox" name="set_as_default" value="1">
         Set <code>{{ editing_lang }}</code> as this view's default display language
         (currently <code>{{ view_default_language }}</code>)

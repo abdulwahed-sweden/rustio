@@ -243,18 +243,6 @@ fn svg(path: &str) -> String {
     )
 }
 
-fn icon_layers() -> String {
-    svg(
-        r#"<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>"#,
-    )
-}
-
-fn icon_dashboard() -> String {
-    svg(
-        r#"<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>"#,
-    )
-}
-
 fn icon_plus() -> String {
     svg(r#"<path d="M5 12h14"/><path d="M12 5v14"/>"#)
 }
@@ -305,12 +293,6 @@ fn icon_inbox() -> String {
 
 fn icon_arrow_left() -> String {
     svg(r#"<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>"#)
-}
-
-fn icon_activity() -> String {
-    svg(
-        r#"<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.5.5 0 0 1-.95 0L9.24 2.18a.5.5 0 0 0-.95 0L5.94 10.54A2 2 0 0 1 4.01 12H2"/>"#,
-    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1842,10 +1824,9 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
                 "module-link"
             };
             models_html.push_str(&format!(
-                r#"<a class="{cls}" href="/admin/{name}">{icon}<span><strong>{label}</strong></span></a>"#,
+                r#"<a class="{cls}" href="/admin/{name}"><span><strong>{label}</strong></span></a>"#,
                 cls = active_cls,
                 name = escape_html(e.admin_name),
-                icon = icon_layers(),
                 label = escape_html(&humanise_model_label(e.display_name)),
             ));
         }
@@ -1871,15 +1852,13 @@ fn render_sidebar(shell: &Shell<'_>) -> String {
         r#"<aside class="module-sidebar" aria-label="Modules">
 <p class="module-title">Workspace</p>
 <nav class="module-nav" aria-label="Areas">
-<a class="{dash}" href="/admin">{dash_icon}<span><strong>Dashboard</strong></span></a>
-<a class="{actions}" href="/admin/actions">{actions_icon}<span><strong>Recent actions</strong></span></a>
+<a class="{dash}" href="/admin"><span><strong>Dashboard</strong></span></a>
+<a class="{actions}" href="/admin/actions"><span><strong>Recent actions</strong></span></a>
 </nav>
 {models}
 </aside>"#,
         dash = dashboard_active,
-        dash_icon = icon_dashboard(),
         actions = actions_active,
-        actions_icon = icon_activity(),
         models = models_html,
     )
 }
@@ -2545,7 +2524,7 @@ fn list_response<T: AdminModel>(
 <h3>No records match these filters</h3>
 <p>Try a different search term, clear the filters, or add a new {singular_lower}.</p>
 <div class="button-row">
-<a class="button" href="/admin/{name}">{reset}<span>Clear filters</span></a>
+<a class="button button-secondary" href="/admin/{name}">{reset}<span>Clear filters</span></a>
 <a class="button button-primary" href="/admin/{name}/create">{plus}<span>Add {singular_lower}</span></a>
 </div>
 </div>
@@ -2670,7 +2649,7 @@ fn list_response<T: AdminModel>(
 <option value="">-- Select an action --</option>
 <option value="delete">Delete selected {plural_lower}</option>
 </select>
-<button type="submit" class="button">Go</button>
+<button type="submit" class="button button-secondary">Go</button>
 <span class="toolbar-count" data-toolbar-count>0 selected</span>
 </div>"#,
                 plural_lower = escape_html(&plural.to_lowercase()),
@@ -3149,7 +3128,7 @@ fn render_list_toolbar<T: AdminModel>(
             format!("More filters ({secondary_active_count})")
         };
         format!(
-            r#"<button type="button" class="button" data-more-filters-toggle aria-controls="more-filters-panel" aria-expanded="false">{label}</button>"#,
+            r#"<button type="button" class="button button-secondary" data-more-filters-toggle aria-controls="more-filters-panel" aria-expanded="false">{label}</button>"#,
         )
     };
 
@@ -3588,7 +3567,7 @@ fn form_response<T: AdminModel>(
     let page_actions = match &mode {
         FormMode::Create => String::new(),
         FormMode::Edit { id, .. } => format!(
-            r#"<a class="button" href="/admin/{name}/{id}/history">History</a>"#,
+            r#"<a class="button button-secondary" href="/admin/{name}/{id}/history">History</a>"#,
             name = escape_html(admin_name),
             id = id,
         ),
@@ -3676,7 +3655,7 @@ fn render_field_block<T: AdminModel>(
 
     format!(
         r#"<div class="field">
-<label for="_{name}">{label}{optional}{sensitive}</label>
+<label class="label" for="_{name}">{label}{optional}{sensitive}</label>
 {input}
 {rel}
 {hint}
@@ -3793,7 +3772,7 @@ fn render_delete_blocked_page<T: AdminModel>(
 {rows}
 </ul>
 <div class="form-actions">
-<a class="button" href="{back}">Back to {plural_lower}</a>
+<a class="button button-secondary" href="{back}">Back to {plural_lower}</a>
 </div>
 </section>"#,
         subject = escape_html(&subject),
@@ -4265,7 +4244,7 @@ Deleting this record removes it permanently. Rows that reference it via a foreig
 <div class="form-actions">
 <a class="button button-secondary" href="/admin/{name}">{back}<span>Back to {plural_lower}</span></a>
 <div class="form-actions">
-<a class="button" href="/admin/{name}/{id}/edit">Cancel</a>
+<a class="button button-secondary" href="/admin/{name}/{id}/edit">Cancel</a>
 <form class="inline-form" method="post" action="/admin/{name}/{id}/delete">
 {csrf}
 <button class="button button-danger" type="submit">{trash}<span>Delete {singular}</span></button>
@@ -4495,7 +4474,7 @@ The admin could not complete your request. The detail has been logged server-sid
 </div>
 </div>
 <div class="button-row">
-<a class="button" href="/admin">{back}<span>Back to dashboard</span></a>
+<a class="button button-secondary" href="/admin">{back}<span>Back to dashboard</span></a>
 </div>
 </div>
 </div>"#,
@@ -5397,7 +5376,7 @@ fn object_history_response<T: AdminModel>(
 <h2 class="card-title">Change history — {singular_hdr} {summary}</h2>
 <p class="lead">Every add / change / delete that happened to this record, newest first.</p>
 </div>
-<a class="button" href="/admin/{name}/{id}/edit">Back to record</a>
+<a class="button button-secondary" href="/admin/{name}/{id}/edit">Back to record</a>
 </div>
 {inner}
 </div>"#,

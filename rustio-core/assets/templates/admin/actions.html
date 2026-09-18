@@ -26,7 +26,7 @@
         <option value="{{ a.value }}"{% if a.selected %} selected{% endif %}>{{ a.label }}</option>
       {% endfor %}
     </select>
-    <button type="submit" class="button">{{ t("Apply") }}</button>
+    <button type="submit" class="button button-secondary">{{ t("Apply") }}</button>
     {% if filters_active %}
       <a class="button button-secondary" href="/admin/actions">{{ t("Reset") }}</a>
     {% endif %}

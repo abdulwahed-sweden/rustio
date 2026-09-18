@@ -106,16 +106,7 @@ button, input, select { font: inherit; }
 .brand { display: inline-flex; grid-column: 1; grid-row: 1; align-self: center; align-items: center; gap: 10px; padding-left: 24px; color: var(--ink); text-decoration: none; }
 .brand-mark { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 7px; background: var(--blue); color: white; font-size: 14px; font-weight: 800; letter-spacing: -.04em; }
 .brand-name { font-weight: 700; letter-spacing: -.02em; }
-.brand-note { display: block; color: var(--ink-soft); font-size: 14px; font-weight: 600; }
 /* Primary modules begin after the contextual rail itself, not after fake inner padding. */
-.nav { display: flex; grid-column: 2; grid-row: 1; align-self: stretch; gap: 6px; margin: 0 24px 0 var(--rail-gap); padding: 0; }
-.nav a { display: inline-flex; position: relative; min-height: 72px; align-items: center; gap: 9px; padding: 0 12px; color: #334052; font-size: 16px; font-weight: 680; text-decoration: none; }
-.nav a:hover { color: var(--blue); }
-.nav a[aria-current="page"] { color: #0f4f8f; font-weight: 800; }
-.nav a[aria-current="page"]::after { position: absolute; right: 12px; bottom: -1px; left: 12px; height: 3px; border-radius: 2px 2px 0 0; background: var(--blue); content: ""; }
-.nav a::before { width: 19px; height: 19px; flex: 0 0 19px; background: currentColor; content: ""; mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
-.nav a[href*="account"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21a8 8 0 0 0-16 0'/%3E%3Ccircle cx='12' cy='7' r='4'/%3E%3C/svg%3E"); }
-.nav a[href*="users"]::before { mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='16' rx='2'/%3E%3Cpath d='M8 9h8M8 13h5'/%3E%3C/svg%3E"); }
 .sidebar-foot { display: flex; grid-column: 3; grid-row: 1; align-self: center; align-items: center; gap: 12px; margin: 0; padding: 0; border: 0; }
 .signed-in { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 15px; font-weight: 700; }
 .role-note { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--ink-soft); font-size: 14px; }
@@ -264,11 +255,6 @@ td { font-size: 14px; }
 .login-shell { display: grid; place-items: start center; min-height: 100vh; padding: clamp(56px, 12vh, 112px) var(--s5) var(--s5); background: var(--page); }
 .login-wrap { width: min(100%, 420px); min-width: 0; }
 .login-brand { justify-content: center; margin-bottom: 20px; }
-.login-card { padding: var(--s5); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
-.login-card h1 { font-size: 33px; }
-.login-card .lead { margin-bottom: 24px; }
-.login-card .form { gap: 17px; }
-.login-card .button { width: 100%; }
 
 /* The account being acted on, lifted out of the heading so a long username
    wraps on its own line instead of breaking mid-word across the question.
@@ -287,9 +273,6 @@ td { font-size: 14px; }
 @media (max-width:1040px) {
   .sidebar { grid-template-columns: 1fr auto; grid-template-rows: minmax(56px, auto) 44px; padding: 0 24px; }
   .brand { padding-left: 0; }
-  .nav { grid-column: 1 / -1; grid-row: 2; gap: 4px; margin: 0 -24px; padding: 0 12px; overflow-x: auto; }
-  .nav a { min-height: 44px; padding: 0 10px; }
-  .nav a[aria-current="page"]::after { right: 6px; left: 6px; }
   /* Two tight lines instead of a hidden role: name over role, Sign out
      beside them. The complete identity block stays visible at every width. */
   .sidebar-foot {
@@ -308,11 +291,7 @@ td { font-size: 14px; }
 @media (max-width:760px) {
   .sidebar { grid-template-columns: 1fr auto; grid-template-rows: minmax(54px, auto) 44px; padding: 0 16px; }
   .brand { align-self: center; margin-bottom: 0; }
-  .brand-note { display: none; }
   .brand { padding-left: 0; }
-  .nav { grid-column: 1 / -1; grid-row: 2; gap: 4px; margin: 0 -16px; padding: 0 12px; overflow-x: auto; }
-  .nav a { min-height: 44px; align-items: center; padding: 0 10px; }
-  .nav a[aria-current="page"]::after { right: 6px; left: 6px; }
   .sidebar-foot { grid-column: 2; align-self: center; margin-bottom: 0; }
   .content { display: block; }
   .app-footer,.auth-footer { width: min(100% - 28px, var(--content)); }
@@ -343,8 +322,6 @@ td { font-size: 14px; }
     align-self: start;
     padding-bottom: 8px;
   }
-  .nav { grid-row: 3; margin: 0 -14px; }
-  .nav { gap: 2px; }
   .page-head .button,.button-row,.form-actions { width: 100%; }
   .button-row,.form-actions { display: grid; }
   .button-row .button,.form-actions .button { width: 100%; }
@@ -352,7 +329,6 @@ td { font-size: 14px; }
   th,td { padding: 12px 13px; }
   .login-shell { padding: 16px; }
   .login-shell { padding-top: 52px; }
-  .login-card { padding: 23px 19px; }
   .app-footer span:nth-child(2)::before,
   .auth-footer span:nth-child(2)::before { display: none; }
   .app-footer span:last-child,.auth-footer span:last-child { margin-left: 0; }
@@ -575,3 +551,114 @@ tbody td:first-child, thead th:first-child { width: 1%; white-space: nowrap; }
 .module-link strong { font-size: 14px; font-weight: 600; line-height: 1.2; }
 .module-link small { font-size: 12px; }
 .module-link[aria-current="page"] strong { font-weight: 600; }
+
+/* --- Card padding and page rhythm ------------------------------------ */
+/* Cards hold their content directly (forms, section lists, profile
+   panels), so the padding belongs to the card itself. A table is the one
+   thing that should still run edge to edge, so it bleeds back out. */
+.card { padding: var(--s5); }
+.card > .table-wrap { margin: calc(-1 * var(--s5)); }
+.card > .card-body { padding: 0; }
+.card > * + * { margin-top: var(--s4); }
+.card > .card-title + * { margin-top: var(--s3); }
+.detail-grid { gap: var(--s4); margin-top: var(--s4); }
+.detail-main, .detail-side { gap: var(--s4); }
+.stat-grid { gap: var(--s4); }
+
+/* The dashboard hero reads like the landing hero: headline, then the
+   sentence under it — not beside it. */
+.page-head--hero { display: block; }
+.page-head--hero p { max-width: 680px; margin: var(--s2) 0 0; color: var(--ink-soft); font-size: 15px; }
+.lead { font-size: 15px; }
+
+/* Stat cards are links; they should not read as underlined body text. */
+.stat { text-decoration: none; }
+
+/* A permission row is a label with its explanation beneath it. */
+.perm > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.perm > span:last-child > span { color: var(--ink-soft); font-size: 14px; }
+
+/* --- Checkboxes, radios and checkbox sentences ------------------------ */
+/* The field height above is for text-like controls; a tick box keeps its
+   own 16px square. */
+input[type="checkbox"], input[type="radio"] {
+  width: 16px; height: 16px; min-height: 0; flex: none; margin: 0; padding: 0;
+  accent-color: var(--blue);
+}
+input[type="checkbox"]:not(:placeholder-shown), input[type="radio"]:not(:placeholder-shown) {
+  border-color: var(--border-strong); background: var(--surface);
+}
+/* A tick box followed by a sentence — the sentence stays a sentence, so it
+   must not become a row of flex columns. */
+.checkbox-line { display: block; color: var(--ink-soft); font-size: 14px; }
+.checkbox-line input { display: inline-block; margin-right: var(--s2); vertical-align: -2px; }
+
+/* --- Auth pages ------------------------------------------------------- */
+/* One card, the landing "Suggested next" box: white, 1px border, the same
+   radius and shadow — 420px wide and centred in the viewport. */
+.login-shell { place-items: center; padding: var(--s6) var(--s5); }
+.login-wrap {
+  width: min(100%, 420px);
+  padding: var(--s5);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.login-brand { display: grid; justify-items: start; gap: var(--s2); margin-bottom: var(--s5); }
+.login-brand .lead { margin: 0; }
+.login-wrap form { display: grid; gap: var(--s4); max-width: none; }
+.login-wrap .alert { margin-bottom: var(--s4); }
+.button-block { width: 100%; }
+
+/* The legacy shell marks the current rail item with `.is-active`; the
+   templated pages use `aria-current`. Same item, same treatment. */
+.module-link.is-active { background: var(--blue-soft); color: var(--blue); border-color: transparent; box-shadow: none; }
+.module-link.is-active strong { font-weight: 600; }
+
+/* The identity cluster in the legacy shell is a link wrapping an avatar
+   and the address — it sits on the bar's one baseline like everything
+   else, not stacked. */
+a.signed-in { display: inline-flex; align-items: center; gap: var(--s2); color: var(--ink); text-decoration: none; }
+a.signed-in:hover { color: var(--blue); }
+.signed-in .avatar { width: 24px; height: 24px; border-radius: 6px; font-size: 11px; }
+
+/* The optional / sensitive markers are asides to the field label, not a
+   continuation of its word. */
+.field-optional, .field-sensitive { margin-left: var(--s2); font-size: 12px; font-weight: 500; }
+
+/* A card head is a band across the top of its card, so it bleeds out
+   through the card's padding the way a table does. */
+.card > .card-head { margin: calc(-1 * var(--s5)) calc(-1 * var(--s5)) 0; }
+.card > .card-head + * { margin-top: var(--s5); }
+.card > .card-head { padding: var(--s3) var(--s5); }
+
+/* Legacy-shell forms are not `.form` grids, so their fields need the
+   rhythm spelled out. */
+.field + .field, .field + .form-actions { margin-top: var(--s4); }
+
+/* A role entry is an avatar beside its description, not above it. */
+.stack-list > li { display: flex; align-items: flex-start; gap: var(--s3); }
+.stack-list > li > div { display: grid; gap: var(--s1); min-width: 0; }
+.stack-list > li > div p { margin: 0; color: var(--ink-soft); font-size: 14px; }
+
+/* The brand block shares the form's left edge — one alignment per card. */
+.login-brand { justify-items: start; justify-content: start; text-align: left; }
+
+/* --- Top bar at narrow widths ----------------------------------------- */
+/* The identity cluster stays one wrapping row in reading order; nothing
+   stretches and nothing stacks into a column of its own. */
+@media (max-width: 760px) {
+  .sidebar { grid-template-columns: 1fr auto; grid-template-rows: auto; }
+  .sidebar-foot {
+    display: flex; flex-wrap: wrap; grid-column: 2; grid-row: 1;
+    align-items: center; justify-content: flex-end; gap: var(--s2);
+    padding: var(--s2) 0;
+  }
+  .sidebar-foot > * { flex: none; }
+}
+@media (max-width: 480px) {
+  .sidebar { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+  .brand { grid-column: 1; grid-row: 1; }
+  .sidebar-foot { grid-column: 1; grid-row: 2; justify-content: flex-start; }
+  .role-note { order: -1; }
+  .env-chip { order: -2; }
+}
