@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 
-{# The admin shell, in rustio-lite's structure: a 72px top bar carrying
-   brand, cross-cutting areas and identity; below it a grid of the 260px
-   module rail and the main region, with the footer in the main column.
+{# The admin shell: a 56px masthead carrying the brand and the identity
+   cluster; below it a grid of the 240px module rail and the main region,
+   with the footer in the main column. Both measures are `admin.css`
+   tokens (`--masthead`, `--rail`) — this comment describes them, it does
+   not define them.
 
    Navigation lives in the rail, not the top bar: rustio's areas are its
    models, and duplicating them above would be two menus for one thing.

@@ -24,6 +24,7 @@
   --shadow-sm: 0 1px 2px rgba(22,32,56,.06);
   --content: 1120px;
   --content-wide: 1600px;
+  --masthead: 56px;
   --radius: 14px;          /* cards, from the landing panel */
   --radius-btn: 8px;       /* buttons and controls */
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
@@ -82,22 +83,21 @@ button, input, select { font: inherit; }
 
 
 /* Product notice. The trailing review link exists only in this static contract. */
-.notice-bar { display: flex; min-height: 40px; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 8px 24px; border-bottom: 1px solid #e3c981; background: #fff8e8; color: #644617; font-size: 15px; }
-.notice-bar p { flex: 1; min-width: 0; margin: 0; font-weight: 600; }
-.notice-bar p strong { color: #4f3609; font-weight: 800; }
 .notice-icon { width: 18px; height: 18px; flex: 0 0 18px; background: var(--amber); content: ""; mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E"); mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
-.notice-bar a { flex: 0 0 auto; padding: 4px 10px; border: 1px solid #e3c981; border-radius: 6px; color: #654815; font-size: 14px; font-weight: 680; text-decoration: none; }
-.notice-bar a:hover { background: #f5e8c6; color: #4f3609; }
 
-/* Desktop-application shell: global modules above, contextual subnavigation beside the work area. */
-.shell { min-height: calc(100vh - 40px); }
+/* Desktop-application shell: the masthead above, contextual subnavigation
+   beside the work area. Two grid rows — an auto-height masthead and a
+   content row that takes the rest — so the rail and the footer fill the
+   viewport on a short page without any element subtracting another's
+   height from `100vh`. */
+.shell { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 100vh; }
 .sidebar {
   display: grid;
   position: relative;
   z-index: 3;
   height: auto;
   grid-template-columns: var(--rail) minmax(0, 1fr) auto;
-  grid-template-rows: 72px;
+  grid-template-rows: var(--masthead);
   align-items: center;
   padding: 0 24px 0 0;
   border-right: 0;
@@ -114,9 +114,8 @@ button, input, select { font: inherit; }
 .sidebar-foot form { display: inline-flex; }
 
 .content { display: grid; min-width: 0; grid-template-columns: var(--rail) minmax(0,1fr); grid-template-rows: minmax(0,1fr) auto; }
-.topbar { display: none; }
 .main { grid-column: 2; width: min(100% - var(--s6), var(--content)); margin: 0 auto; padding: var(--s5) 0 var(--s6); }
-.module-sidebar { grid-column: 1; grid-row: 1 / -1; min-height: calc(100vh - 112px); margin-top: 0; padding: 24px 12px 28px; border-right: 1px solid var(--rail-line); background: var(--rail-bg); }
+.module-sidebar { grid-column: 1; grid-row: 1 / -1; margin-top: 0; padding: var(--s5) var(--s3) var(--s6); border-right: 1px solid var(--rail-line); background: var(--rail-bg); }
 .module-title { margin: 0 0 12px; padding: 0 12px; color: #596779; text-transform: uppercase; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: .16em; }
 .module-nav { display: grid; gap: 4px; }
 .module-link { display: flex; min-height: 56px; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid transparent; border-radius: 8px; color: #334052; text-decoration: none; }
@@ -287,7 +286,6 @@ td { font-size: 14px; }
   .sidebar-foot .signed-in { grid-area: name; }
   .sidebar-foot .role-note { grid-area: role; }
   .sidebar-foot form { grid-area: signout; }
-  .module-sidebar { min-height: calc(100vh - 140px); }
 }
 @media (max-width:760px) {
   .sidebar { grid-template-columns: 1fr auto; grid-template-rows: minmax(54px, auto) 44px; padding: 0 16px; }
@@ -296,7 +294,6 @@ td { font-size: 14px; }
   .sidebar-foot { grid-column: 2; align-self: center; margin-bottom: 0; }
   .content { display: block; }
   .app-footer,.auth-footer { width: min(100% - 28px, var(--content)); }
-  .notice-bar { padding: 8px 16px; }
   .module-sidebar { min-height: 0; margin-top: 0; padding: 14px; border-right: 0; border-bottom: 1px solid var(--border); background: var(--rail-bg); }
   .module-title { display: none; }
   .module-nav { display: flex; gap: 8px; overflow-x: auto; }
@@ -309,7 +306,6 @@ td { font-size: 14px; }
   .details div:nth-last-child(2) { border-bottom: 1px solid #e3e7ed; }
 }
 @media (max-width:480px) {
-  .notice-bar a { display: none; }
   .shell,.login-shell { min-height: 100vh; }
   /* Below 480px the masthead stacks: brand, then the identity block on its
      own row, then the module bar. The username gets the full width to wrap
