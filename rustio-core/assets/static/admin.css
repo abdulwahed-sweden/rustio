@@ -672,3 +672,21 @@ a.signed-in:hover { color: var(--blue); }
 /* A form card hugs the form's measure rather than stretching to the full
    content width with 400px of empty card beside the fields. */
 .detail-single { max-width: calc(680px + 2 * var(--s5)); }
+
+/* In the narrow strip the rail items are as wide as their content, so the
+   count badge stays beside its name instead of being pushed to the far
+   edge of a fixed-width item. */
+@media (max-width: 760px) {
+  .module-link { min-width: 0; flex: none; }
+  .module-link > span:first-of-type { flex: none; }
+  .module-link .badge { margin-left: var(--s2); }
+}
+
+/* `span:last-child { margin-left: auto }` pushes the version to the right
+   edge — but the legacy footer has only the project name, and a lone span
+   is both first and last. */
+.app-footer span:only-child, .auth-footer span:only-child { margin-left: 0; }
+
+/* The auth card's secondary action sits under the primary as its pair,
+   not as a stray text link. */
+.login-foot { margin: var(--s3) 0 0; }

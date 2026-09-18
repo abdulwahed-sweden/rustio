@@ -5280,7 +5280,7 @@ fn logout_confirmation_response(signed_in: bool, csrf: Option<&str>) -> Response
 {csrf}
 <button class="button button-primary button-block" type="submit">Sign out</button>
 </form>
-<p class="login-foot"><a href="/admin">Cancel and return to the admin</a></p>"#,
+<p class="login-foot"><a class="button button-secondary button-block" href="/admin">Cancel and return to the admin</a></p>"#,
             csrf = csrf_hidden,
         )
     } else {
