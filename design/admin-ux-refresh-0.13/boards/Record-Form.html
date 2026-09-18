@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RustIO Admin — Edit assignment</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body { margin: 0; background: #f1f1ee; color: #202733; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 15px; font-weight: 400; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+a { color: #1f5797; text-underline-offset: 3px; }
+a:hover { color: #174578; }
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1040px; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; background: #f1f1ee;">
+
+  <header style="flex: none; height: 72px; display: flex; align-items: center; gap: 12px; padding: 0 24px; background: #ffffff; border-bottom: 1px solid #d5dce5;">
+    <a href="Main.html" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #202733;">
+      <span style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 7px; background: #1f5797; color: #ffffff; font-size: 14px; font-weight: 800; letter-spacing: -0.04em;">B</span>
+      <span style="font-size: 15px; font-weight: 700; letter-spacing: -0.02em;">Bookflow</span>
+    </a>
+    <span style="flex-grow: 1;"></span>
+    <span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #e3c981; border-radius: 6px; background: #fff8e8; color: #644617; font-size: 12px; font-weight: 600;">Dev</span>
+    <span style="font-size: 14px; color: #4c5868;">Signed in as</span>
+    <span style="font-size: 14px; color: #202733;">admin@bookflow.local</span>
+    <select aria-label="Interface language" style="height: 32px; padding: 0 10px; border: 1px solid #d5dce5; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px;">
+      <option>English</option>
+      <option>العربية</option>
+      <option>Svenska</option>
+    </select>
+    <button type="button" style="height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Log out</button>
+  </header>
+
+  <div style="flex-grow: 1; min-height: 0; display: flex;">
+
+    <nav aria-label="Modules" style="flex: none; width: 240px; box-sizing: border-box; padding: 24px 12px 28px; background: #f4f6f9; border-right: 1px solid #d3dbe5; display: flex; flex-direction: column; gap: 4px; overflow: hidden;">
+      <p style="margin: 0 0 12px; padding: 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Workspace</p>
+      <a href="Main.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Overview</strong>
+      </a>
+      <a href="Records-Table.html" aria-current="page" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; background: #dfeafb; color: #1f5797;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Assignments</strong>
+        <span style="padding: 1px 7px; border: 1px solid #b7cdea; border-radius: 999px; background: #ffffff; color: #1f5797; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">8</span>
+      </a>
+      <a href="Records-Cards.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Bookings</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">428</span>
+      </a>
+      <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Customers</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">316</span>
+      </a>
+      <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Invoices</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">192</span>
+      </a>
+      <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Locations</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">12</span>
+      </a>
+      <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Resources</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">24</span>
+      </a>
+      <a href="Records-Table.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Schedules</strong>
+        <span style="padding: 1px 7px; border: 1px solid #d5dce5; border-radius: 999px; background: #ffffff; color: #4c5868; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700;">63</span>
+      </a>
+      <p style="margin: 18px 0 12px; padding: 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">System</p>
+      <a href="Main.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Recent actions</strong>
+      </a>
+      <a href="Sign-In.html" style="display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 6px; text-decoration: none; color: #334052;">
+        <strong style="flex-grow: 1; font-size: 14px; font-weight: 600;">Your account</strong>
+      </a>
+    </nav>
+
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">
+      <main style="flex-grow: 1; min-height: 0; width: calc(100% - 32px); max-width: 1120px; margin: 0 auto; padding: 24px 0 0; display: flex; flex-direction: column; gap: 16px; overflow: hidden;">
+
+        <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
+          <div style="min-width: 0;">
+            <nav aria-label="Breadcrumb" style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; color: #4c5868;">
+              <a href="Main.html" style="color: #4c5868;">Home</a>
+              <span style="color: #b9c5d3;">/</span>
+              <a href="Records-Table.html" style="color: #4c5868;">Assignments</a>
+              <span style="color: #b9c5d3;">/</span>
+              <span style="color: #202733; font-weight: 700;">BK-2002</span>
+            </nav>
+            <h1 style="margin: 0 0 4px; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #202733;">Edit assignment</h1>
+            <p style="margin: 0; font-size: 15px; color: #4c5868;">Record <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px; color: #202733;">#2002</span> · last saved 2 minutes ago by admin</p>
+          </div>
+          <div style="flex: none; display: flex; align-items: center; gap: 9px;">
+            <a href="Records-Table.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-size: 14px; font-weight: 700; text-decoration: none;">Back to list</a>
+          </div>
+        </div>
+
+        <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; overflow: hidden;">
+
+          <form style="display: flex; flex-direction: column; min-width: 0; border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+
+            <div style="flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+              <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Assignment</h2>
+              <span style="flex-grow: 1;"></span>
+              <span style="font-size: 13px; color: #4c5868;">6 fields · 2 required</span>
+            </div>
+
+            <div style="flex-grow: 1; min-height: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; overflow: hidden;">
+
+              <div style="display: flex; gap: 12px; padding: 14px 16px; border: 1px solid #e0a7a2; border-radius: 8px; background: #fff0ee;">
+                <span style="flex: none; display: flex; color: #a23f3a; margin-top: 1px;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+                </span>
+                <div>
+                  <strong style="display: block; margin-bottom: 1px; font-size: 15px; font-weight: 700; color: #782f2b;">One field was rejected</strong>
+                  <p style="margin: 0; font-size: 14px; color: #782f2b;">Nothing was written. Fix the highlighted field and save again.</p>
+                </div>
+              </div>
+
+              <div>
+                <p style="margin: 0 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #596779;">Links</p>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+                  <div>
+                    <label for="booking" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #202733;">Booking <span style="color: #a23f3a; font-weight: 800;">*</span></label>
+                    <select id="booking" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 14px;">
+                      <option>BK-2002 — Nordfrakt AB, 19 Jun</option>
+                      <option>BK-2003 — Kajsa Lind, 21 Jun</option>
+                    </select>
+                    <p style="margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #4b596b;">Foreign key to <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px;">booking.id</span></p>
+                  </div>
+                  <div>
+                    <label for="resource" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #202733;">Resource <span style="color: #a23f3a; font-weight: 800;">*</span></label>
+                    <select id="resource" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 14px;">
+                      <option>Lastbil Volvo FH16</option>
+                      <option>Skåpbil Mercedes Sprinter</option>
+                      <option>Cargo Van 02</option>
+                    </select>
+                    <p style="margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #4b596b;">Foreign key to <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px;">resource.id</span></p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p style="margin: 0 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #596779;">State and timing</p>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+                  <fieldset style="margin: 0; padding: 0; border: 0; min-width: 0;">
+                    <legend style="padding: 0; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #202733;">Status</legend>
+                    <div style="display: inline-flex; align-items: stretch; overflow: hidden; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff;">
+                      <label style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; background: #dfeafb; color: #1f5797; font-size: 13px; font-weight: 600; cursor: pointer;">
+                        <input type="radio" name="status" checked style="width: 14px; height: 14px; accent-color: #1f5797;">Offered
+                      </label>
+                      <label style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 13px; font-weight: 600; cursor: pointer;">
+                        <input type="radio" name="status" style="width: 14px; height: 14px; accent-color: #1f5797;">Accepted
+                      </label>
+                      <label style="display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 13px; font-weight: 600; cursor: pointer;">
+                        <input type="radio" name="status" style="width: 14px; height: 14px; accent-color: #1f5797;">Declined
+                      </label>
+                    </div>
+                    <p style="margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #4b596b;">Enum declared in the model — never free text.</p>
+                  </fieldset>
+                  <div style="min-width: 0;">
+                    <label for="accepted" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #202733;">Accepted at</label>
+                    <input id="accepted" type="text" value="2026-06-19 17:00" aria-invalid="true" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #a23f3a; border-radius: 8px; background: #fff0ee; color: #202733; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px;">
+                    <p style="margin: 4px 0 0; font-size: 14px; line-height: 1.5; font-weight: 700; color: #a23f3a;">A status of “Offered” cannot carry an acceptance time.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p style="margin: 0 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #596779;">Contact and notes</p>
+                <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+                  <div style="min-width: 0;">
+                    <label for="driver" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #202733;">Driver phone<span style="margin-left: 8px; font-size: 12px; font-weight: 500; color: #935b0a;">personal data</span></label>
+                    <input id="driver" type="text" value="+46 70 ••• •• 41" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px;">
+                    <p style="margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #4b596b;">Masked in lists and exports — <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 13px;">rustio.context.json</span> declares GDPR.</p>
+                  </div>
+                  <div style="min-width: 0;">
+                    <label for="ref" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #202733;">External reference<span style="margin-left: 8px; font-size: 12px; font-weight: 500; color: #4c5868;">optional</span></label>
+                    <input id="ref" type="text" placeholder="e.g. TMS-8841" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px;">
+                    <p style="margin: 4px 0 0; font-size: 14px; line-height: 1.5; color: #4b596b;">Free text, not validated.</p>
+                  </div>
+                </div>
+                <div style="margin-top: 16px;">
+                  <label for="note" style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #202733;">Dispatcher note<span style="margin-left: 8px; font-size: 12px; font-weight: 500; color: #4c5868;">optional</span></label>
+                  <textarea id="note" rows="3" style="width: 100%; box-sizing: border-box; min-height: 76px; padding: 8px 12px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 14px; line-height: 1.5; resize: none;">Driver asked to confirm the loading dock number before 16:00.</textarea>
+                </div>
+              </div>
+
+            </div>
+
+            <div style="flex: none; display: flex; align-items: center; gap: 9px; padding: 14px 24px; border-top: 1px solid #d5dce5; background: #f7f9fc;">
+              <button type="submit" style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 18px; border: 1px solid transparent; border-radius: 8px; background: #1f5797; color: #ffffff; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px -3px rgba(31,87,151,.6);">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4 10-10"/></svg>
+                Save changes
+              </button>
+              <button type="button" style="height: 36px; padding: 0 16px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;">Save and add another</button>
+              <a href="Records-Table.html" style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; font-size: 14px; font-weight: 700;">Cancel</a>
+              <span style="flex-grow: 1;"></span>
+              <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: #935b0a;">
+                <span style="width: 7px; height: 7px; border-radius: 50%; background: currentColor;"></span>
+                Unsaved changes
+              </span>
+            </div>
+          </form>
+
+          <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0; overflow: hidden;">
+
+            <section style="border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+              <div style="padding: 12px 20px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+                <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Record</h2>
+              </div>
+              <dl style="margin: 0; padding: 4px 20px 12px;">
+                <div style="padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+                  <dt style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #596779;">Primary key</dt>
+                  <dd style="margin: 2px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px; font-weight: 700; color: #202733;">2002</dd>
+                </div>
+                <div style="padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+                  <dt style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #596779;">Created</dt>
+                  <dd style="margin: 2px 0 0; font-size: 14px; color: #202733;">14 Jun 2026, 09:02 · dispatch</dd>
+                </div>
+                <div style="padding: 11px 0;">
+                  <dt style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #596779;">Last change</dt>
+                  <dd style="margin: 2px 0 0; font-size: 14px; color: #202733;">2 minutes ago · admin</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section style="border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+              <div style="padding: 12px 20px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+                <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Your permissions</h2>
+              </div>
+              <ul style="margin: 0; padding: 8px 20px 14px; list-style: none;">
+                <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 14px; color: #202733;">
+                  <span style="display: grid; place-items: center; width: 22px; height: 22px; flex: none; border: 1px solid #b4dbc5; border-radius: 999px; background: #e8f6ee; color: #19724b;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4 10-10"/></svg></span>
+                  Edit this record
+                </li>
+                <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 14px; color: #202733;">
+                  <span style="display: grid; place-items: center; width: 22px; height: 22px; flex: none; border: 1px solid #b4dbc5; border-radius: 999px; background: #e8f6ee; color: #19724b;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4 10-10"/></svg></span>
+                  Delete this record
+                </li>
+                <li style="display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 14px; color: #4c5868;">
+                  <span style="display: grid; place-items: center; width: 22px; height: 22px; flex: none; border: 1px solid #cfd6df; border-radius: 999px; background: #f2f4f7; color: #4c5868;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></span>
+                  Change the model schema
+                </li>
+              </ul>
+            </section>
+
+            <section style="flex-grow: 1; min-height: 0; border: 1px solid #dfb0ab; border-radius: 14px; background: #ffffff; overflow: hidden;">
+              <div style="padding: 12px 20px; background: #fbf3f2; border-bottom: 1px solid #e4bbb7;">
+                <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #a23f3a;">Danger zone</h2>
+              </div>
+              <div style="padding: 16px 20px;">
+                <p style="margin: 0 0 12px; font-size: 14px; line-height: 1.5; color: #202733;">Deleting this assignment frees the resource for its window. The booking and the customer are untouched.</p>
+                <button type="button" style="display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 16px; border: 1px solid #ce8580; border-radius: 8px; background: #fff0ee; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+                  Delete assignment
+                </button>
+              </div>
+            </section>
+
+          </div>
+        </div>
+
+        <footer style="flex: none; display: flex; align-items: center; gap: 14px; height: 58px; border-top: 1px solid #d5dce5; font-size: 14px; color: #596779;">
+          <span style="color: #202733; font-weight: 700;">Bookflow</span>
+          <span>v2.0.5</span>
+          <span style="flex-grow: 1;"></span>
+          <span>rustio 0.12</span>
+        </footer>
+
+      </main>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

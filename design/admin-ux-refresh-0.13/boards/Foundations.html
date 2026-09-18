@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RustIO Admin — Foundations</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap">
+<style>
+body { margin: 0; background: #f1f1ee; color: #202733; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 15px; font-weight: 400; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+a { color: #1f5797; text-underline-offset: 3px; }
+a:hover { color: #174578; }
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 1640px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 40px 48px; overflow: hidden; background: #f1f1ee;">
+
+  <div style="display: flex; align-items: flex-end; gap: 24px;">
+    <div style="flex-grow: 1; min-width: 0;">
+      <span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #cfd6df; border-radius: 6px; background: #f2f4f7; color: #4c5868; font-size: 12px; font-weight: 600;">Inherited — locked</span>
+      <h1 style="margin: 12px 0 4px; font-size: 33px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.06; color: #202733;">RustIO admin <span style="color: #1f5797; font-weight: 700;">foundations</span></h1>
+      <p style="margin: 8px 0 0; max-width: 780px; font-size: 15px; color: #4c5868;">Every value on this board already exists in <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px; color: #202733;">rustio-core/assets/static/admin.css</span>. The six screens on this canvas are drawn from nothing else — what changed there is layout, interaction and information architecture, never the visual system.</p>
+    </div>
+    <div style="flex: none; display: grid; gap: 6px; justify-items: start;">
+      <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Font stack</span>
+      <span style="font-size: 14px; color: #202733;">Inter, ui-sans-serif, system-ui, “Segoe UI”</span>
+      <span style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 14px; color: #202733;">ui-monospace, SFMono-Regular, Menlo</span>
+    </div>
+  </div>
+
+  <section style="flex: none; border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+      <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Colour tokens</h2>
+      <span style="flex-grow: 1;"></span>
+      <span style="font-size: 13px; color: #4c5868;">unchanged — the whole palette the screens may use</span>
+    </div>
+    <div style="padding: 20px 24px; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 12px;">
+
+      <div><div style="height: 44px; border: 1px solid #d5dce5; border-radius: 8px; background: #f1f1ee;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#f1f1ee</p><p style="margin: 0; font-size: 13px; color: #4c5868;">page</p></div>
+      <div><div style="height: 44px; border: 1px solid #d5dce5; border-radius: 8px; background: #ffffff;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#ffffff</p><p style="margin: 0; font-size: 13px; color: #4c5868;">surface</p></div>
+      <div><div style="height: 44px; border: 1px solid #d5dce5; border-radius: 8px; background: #f7f9fc;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#f7f9fc</p><p style="margin: 0; font-size: 13px; color: #4c5868;">surface-soft</p></div>
+      <div><div style="height: 44px; border: 1px solid #d5dce5; border-radius: 8px; background: #f1f4f8;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#f1f4f8</p><p style="margin: 0; font-size: 13px; color: #4c5868;">surface-head</p></div>
+      <div><div style="height: 44px; border: 1px solid #d3dbe5; border-radius: 8px; background: #f4f6f9;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#f4f6f9</p><p style="margin: 0; font-size: 13px; color: #4c5868;">rail-bg</p></div>
+      <div><div style="height: 44px; border-radius: 8px; background: #1f5797;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#1f5797</p><p style="margin: 0; font-size: 13px; color: #4c5868;">blue</p></div>
+      <div><div style="height: 44px; border-radius: 8px; background: #174578;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#174578</p><p style="margin: 0; font-size: 13px; color: #4c5868;">blue-dark</p></div>
+      <div><div style="height: 44px; border: 1px solid #b7cdea; border-radius: 8px; background: #dfeafb;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#dfeafb</p><p style="margin: 0; font-size: 13px; color: #4c5868;">blue-soft</p></div>
+
+      <div><div style="height: 44px; border-radius: 8px; background: #202733;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#202733</p><p style="margin: 0; font-size: 13px; color: #4c5868;">ink</p></div>
+      <div><div style="height: 44px; border-radius: 8px; background: #4c5868;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#4c5868</p><p style="margin: 0; font-size: 13px; color: #4c5868;">ink-soft</p></div>
+      <div><div style="height: 44px; border: 1px solid #b9c5d3; border-radius: 8px; background: #d5dce5;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#d5dce5</p><p style="margin: 0; font-size: 13px; color: #4c5868;">border</p></div>
+      <div><div style="height: 44px; border: 1px solid #9fb0c2; border-radius: 8px; background: #b9c5d3;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #202733;">#b9c5d3</p><p style="margin: 0; font-size: 13px; color: #4c5868;">border-strong</p></div>
+      <div><div style="height: 44px; border: 1px solid #b4dbc5; border-radius: 8px; background: #e8f6ee;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #19724b;">#19724b</p><p style="margin: 0; font-size: 13px; color: #4c5868;">green + soft</p></div>
+      <div><div style="height: 44px; border: 1px solid #e7c27b; border-radius: 8px; background: #fff4df;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #935b0a;">#935b0a</p><p style="margin: 0; font-size: 13px; color: #4c5868;">amber + soft</p></div>
+      <div><div style="height: 44px; border: 1px solid #e3b0ab; border-radius: 8px; background: #fff0ee;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #a23f3a;">#a23f3a</p><p style="margin: 0; font-size: 13px; color: #4c5868;">red + soft</p></div>
+      <div><div style="height: 44px; border: 1px solid #e3c981; border-radius: 8px; background: #fff8e8;"></div><p style="margin: 6px 0 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #644617;">#644617</p><p style="margin: 0; font-size: 13px; color: #4c5868;">env chip</p></div>
+
+    </div>
+  </section>
+
+  <div style="flex: none; display: grid; grid-template-columns: minmax(0, 1fr) 560px; gap: 16px;">
+
+    <section style="border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+        <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Type scale</h2>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 13px; color: #4c5868;">size / weight / colour — unchanged</span>
+      </div>
+      <div style="padding: 6px 24px 18px;">
+
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 33px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.06; color: #202733;">Dashboard hero</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">33 / 800 / ink</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; color: #202733;">Page title — h1</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">24 / 800 / ink</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: #202733;">Section heading — h2</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">17 / 700 / ink</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 15px; color: #202733;">Body and lead copy. Fifteen pixels, regular weight, 1.6 line height.</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">15 / 400 / ink</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 14px; color: #202733;">Table cell — 14px, the densest reading size in the admin.</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">14 / 400 / ink</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #4c5868;">Column head — mono</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">12 / 700 / ink-soft</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Rail and card label</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">11 / 700 / #596779</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 14px; color: #4b596b;">Field hint and helper text.</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">14 / 400 / #4b596b</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0; border-bottom: 1px solid #e1e6ed;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 13px; font-weight: 500; color: #202733;">Form label — 13px, medium.</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">13 / 500 / ink</span>
+        </div>
+        <div style="display: flex; align-items: baseline; gap: 20px; padding: 11px 0;">
+          <span style="flex-grow: 1; min-width: 0; font-size: 33px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: #202733;">428</span>
+          <span style="flex: none; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12px; color: #4c5868;">33 / 800 / stat value</span>
+        </div>
+
+      </div>
+    </section>
+
+    <section style="border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+        <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Controls</h2>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 13px; color: #4c5868;">36px controls · 8px radius</span>
+      </div>
+      <div style="padding: 18px 24px; display: flex; flex-direction: column; gap: 16px;">
+
+        <div>
+          <p style="margin: 0 0 8px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Buttons</p>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 9px;">
+            <button type="button" style="height: 36px; padding: 0 18px; border: 1px solid transparent; border-radius: 8px; background: #1f5797; color: #ffffff; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px -3px rgba(31,87,151,.6);">Primary</button>
+            <button type="button" style="height: 36px; padding: 0 18px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;">Secondary</button>
+            <button type="button" style="height: 36px; padding: 0 18px; border: 1px solid #ce8580; border-radius: 8px; background: #fff0ee; color: #a23f3a; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;">Danger</button>
+            <button type="button" disabled="" style="height: 36px; padding: 0 18px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px; font-weight: 700; opacity: .55;">Disabled</button>
+            <button type="button" style="height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Small</button>
+          </div>
+        </div>
+
+        <div>
+          <p style="margin: 0 0 8px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Fields</p>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px;">
+            <input type="text" placeholder="Empty" aria-label="Empty field" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff; color: #202733; font-family: inherit; font-size: 14px;">
+            <input type="text" value="Filled" aria-label="Filled field" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #7890af; border-radius: 8px; background: #f4f8fd; color: #202733; font-family: inherit; font-size: 14px;">
+            <input type="text" value="Rejected" aria-invalid="true" aria-label="Invalid field" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #a23f3a; border-radius: 8px; background: #fff0ee; color: #202733; font-family: inherit; font-size: 14px;">
+            <input type="text" value="Read only" disabled="" aria-label="Disabled field" style="width: 100%; box-sizing: border-box; height: 36px; padding: 0 12px; border: 1px solid #d5dce5; border-radius: 8px; background: #f2f4f7; color: #4c5868; font-family: inherit; font-size: 14px;">
+          </div>
+        </div>
+
+        <div>
+          <p style="margin: 0 0 8px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Badges</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b4dbc5; border-radius: 6px; background: #e8f6ee; color: #19724b; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Accepted</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e7c27b; border-radius: 6px; background: #fff4df; color: #935b0a; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Offered</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #e3b0ab; border-radius: 6px; background: #fff0ee; color: #a23f3a; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Declined</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #b7cdea; border-radius: 6px; background: #eaf2fd; color: #1f5797; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Admin</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid #cfd6df; border-radius: 6px; background: #f2f4f7; color: #4c5868; font-size: 12px; font-weight: 600;"><span style="width: 6px; height: 6px; border-radius: 50%; background: currentColor;"></span>Draft</span>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+          <div>
+            <p style="margin: 0 0 8px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Segmented</p>
+            <nav aria-label="Layout example" style="display: inline-flex; align-items: stretch; overflow: hidden; border: 1px solid #b9c5d3; border-radius: 8px; background: #ffffff;">
+              <a href="Foundations.html" aria-current="true" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; background: #dfeafb; color: #1f5797; font-size: 13px; font-weight: 600; text-decoration: none;">Table</a>
+              <a href="Foundations.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 13px; font-weight: 600; text-decoration: none;">List</a>
+              <a href="Foundations.html" style="display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border-left: 1px solid #d5dce5; color: #4c5868; font-size: 13px; font-weight: 600; text-decoration: none;">Cards</a>
+            </nav>
+          </div>
+          <div>
+            <p style="margin: 0 0 8px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Pagination</p>
+            <div style="display: inline-flex; align-items: center; gap: 6px;">
+              <a href="Foundations.html" aria-current="page" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #b7cdea; border-radius: 6px; background: #dfeafb; color: #1f5797; font-size: 14px; font-weight: 700; text-decoration: none;">1</a>
+              <a href="Foundations.html" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #354154; font-size: 14px; font-weight: 700; text-decoration: none;">2</a>
+              <a href="Foundations.html" style="display: inline-grid; place-items: center; min-width: 36px; height: 32px; padding: 0 9px; border: 1px solid #d5dce5; border-radius: 6px; background: #f8fafc; color: #354154; font-size: 14px; font-weight: 700; text-decoration: none;">3</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </div>
+
+  <section style="flex: none; border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+    <div style="display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+      <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">States</h2>
+      <span style="flex-grow: 1;"></span>
+      <span style="font-size: 13px; color: #4c5868;">new patterns — built only from the tokens above</span>
+    </div>
+    <div style="padding: 18px 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+
+      <div style="padding: 24px 18px; border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; text-align: center;">
+        <span style="display: grid; width: 40px; height: 40px; margin: 0 auto 12px; place-items: center; border-radius: 9px; background: #dfeafb; color: #1f5797; font-size: 17px; font-weight: 800;">0</span>
+        <h3 style="margin: 0 0 4px; font-size: 15px; font-weight: 700; color: #202733;">No assignments yet</h3>
+        <p style="margin: 0 auto 12px; max-width: 34ch; font-size: 14px; color: #4b596b;">Create the first one — it takes a moment.</p>
+        <button type="button" style="height: 36px; padding: 0 18px; border: 1px solid transparent; border-radius: 8px; background: #1f5797; color: #ffffff; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;">Add assignment</button>
+      </div>
+
+      <div style="padding: 16px; border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff;">
+        <p style="margin: 0 0 12px; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: #596779;">Loading</p>
+        <div style="display: flex; align-items: center; gap: 12px; height: 32px;"><span style="width: 74px; height: 10px; border-radius: 4px; background: #e1e6ed;"></span><span style="flex-grow: 1; height: 10px; border-radius: 4px; background: #eef1f5;"></span><span style="width: 56px; height: 10px; border-radius: 4px; background: #e1e6ed;"></span></div>
+        <div style="display: flex; align-items: center; gap: 12px; height: 32px;"><span style="width: 74px; height: 10px; border-radius: 4px; background: #e1e6ed;"></span><span style="flex-grow: 1; height: 10px; border-radius: 4px; background: #eef1f5;"></span><span style="width: 56px; height: 10px; border-radius: 4px; background: #e1e6ed;"></span></div>
+        <div style="display: flex; align-items: center; gap: 12px; height: 32px;"><span style="width: 74px; height: 10px; border-radius: 4px; background: #eef1f5;"></span><span style="flex-grow: 1; height: 10px; border-radius: 4px; background: #f2f4f7;"></span><span style="width: 56px; height: 10px; border-radius: 4px; background: #eef1f5;"></span></div>
+        <p style="margin: 8px 0 0; font-size: 14px; color: #4b596b;">Row skeletons keep the header and toolbar in place, so nothing jumps when data lands.</p>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; padding: 14px 16px; border: 1px solid #e0a7a2; border-radius: 8px; background: #fff0ee; align-content: start;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#a23f3a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 1px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg>
+        <div>
+          <strong style="display: block; margin-bottom: 1px; font-size: 15px; font-weight: 700; color: #782f2b;">Save failed</strong>
+          <p style="margin: 0 0 10px; font-size: 14px; color: #782f2b;">The database rejected the write. Nothing was changed.</p>
+          <button type="button" style="height: 30px; padding: 0 12px; border: 1px solid #ce8580; border-radius: 6px; background: #ffffff; color: #a23f3a; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;">Try again</button>
+        </div>
+      </div>
+
+      <div style="padding: 16px; border: 1px solid #e7c27b; border-radius: 8px; background: #fff4df;">
+        <strong style="display: block; margin-bottom: 1px; font-size: 15px; font-weight: 700; color: #714707;">You cannot delete here</strong>
+        <p style="margin: 0 0 10px; font-size: 14px; color: #714707;">Your role is <span style="font-weight: 700;">Editor</span>. Deleting assignments needs Admin. The button stays visible and disabled so the rule is legible, not invisible.</p>
+        <button type="button" disabled="" style="height: 30px; padding: 0 12px; border: 1px solid #b9c5d3; border-radius: 6px; background: #ffffff; color: #202733; font-family: inherit; font-size: 13px; font-weight: 700; opacity: .55;">Delete</button>
+      </div>
+
+    </div>
+  </section>
+
+  <div style="flex-grow: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 560px; gap: 16px;">
+
+    <section style="border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+        <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Responsive behaviour</h2>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 13px; color: #4c5868;">breakpoints already in admin.css: 1040 · 760 · 480</span>
+      </div>
+      <div style="padding: 18px 24px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;">
+
+        <div>
+          <div style="border: 1px solid #d5dce5; border-radius: 8px; overflow: hidden; background: #f1f1ee;">
+            <div style="height: 20px; background: #ffffff; border-bottom: 1px solid #d5dce5;"></div>
+            <div style="display: flex; height: 132px;">
+              <div style="width: 58px; background: #f4f6f9; border-right: 1px solid #d3dbe5;"></div>
+              <div style="flex-grow: 1; padding: 8px;">
+                <div style="height: 12px; margin-bottom: 8px; border-radius: 3px; background: #ffffff; border: 1px solid #d5dce5;"></div>
+                <div style="height: 92px; border-radius: 3px; background: #ffffff; border: 1px solid #d5dce5;"></div>
+              </div>
+            </div>
+          </div>
+          <p style="margin: 8px 0 0; font-size: 14px; font-weight: 700; color: #202733;">≥ 1041px</p>
+          <p style="margin: 0; font-size: 14px; color: #4b596b;">240px rail beside the work area. Toolbar keeps both of its rows.</p>
+        </div>
+
+        <div>
+          <div style="border: 1px solid #d5dce5; border-radius: 8px; overflow: hidden; background: #f1f1ee;">
+            <div style="height: 28px; background: #ffffff; border-bottom: 1px solid #d5dce5;"></div>
+            <div style="display: flex; height: 124px;">
+              <div style="width: 46px; background: #f4f6f9; border-right: 1px solid #d3dbe5;"></div>
+              <div style="flex-grow: 1; padding: 8px;">
+                <div style="height: 12px; margin-bottom: 8px; border-radius: 3px; background: #ffffff; border: 1px solid #d5dce5;"></div>
+                <div style="height: 84px; border-radius: 3px; background: #ffffff; border: 1px solid #d5dce5;"></div>
+              </div>
+            </div>
+          </div>
+          <p style="margin: 8px 0 0; font-size: 14px; font-weight: 700; color: #202733;">≤ 1040px</p>
+          <p style="margin: 0; font-size: 14px; color: #4b596b;">Identity stacks to two lines in the top bar. Filters wrap under the search field.</p>
+        </div>
+
+        <div>
+          <div style="border: 1px solid #d5dce5; border-radius: 8px; overflow: hidden; background: #f1f1ee;">
+            <div style="height: 22px; background: #ffffff; border-bottom: 1px solid #d5dce5;"></div>
+            <div style="height: 20px; background: #f4f6f9; border-bottom: 1px solid #d3dbe5;"></div>
+            <div style="padding: 8px; height: 102px;">
+              <div style="height: 12px; margin-bottom: 8px; border-radius: 3px; background: #ffffff; border: 1px solid #d5dce5;"></div>
+              <div style="height: 28px; margin-bottom: 6px; border-radius: 3px; background: #ffffff; border: 1px solid #d5dce5;"></div>
+              <div style="height: 28px; border-radius: 3px; background: #ffffff; border: 1px solid #d5dce5;"></div>
+            </div>
+          </div>
+          <p style="margin: 8px 0 0; font-size: 14px; font-weight: 700; color: #202733;">≤ 760px</p>
+          <p style="margin: 0; font-size: 14px; color: #4b596b;">Rail becomes a scrolling strip above the content; the table falls back to the Cards layout instead of scrolling sideways.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <section style="border: 1px solid #d5dce5; border-radius: 14px; background: #ffffff; box-shadow: 0 1px 2px rgba(22,32,56,.06); overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: #f1f4f8; border-bottom: 1px solid #d5dce5;">
+        <h2 style="margin: 0; font-family: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #202733;">Scope of this proposal</h2>
+      </div>
+      <dl style="margin: 0; padding: 8px 24px 18px;">
+        <div style="display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e1e6ed;">
+          <dt style="flex: none; width: 116px;"><span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #cfd6df; border-radius: 6px; background: #f2f4f7; color: #4c5868; font-size: 12px; font-weight: 600;">Foundation</span></dt>
+          <dd style="margin: 0; font-size: 14px; line-height: 1.5; color: #202733;"><strong style="font-weight: 700;">Locked.</strong> Palette, font stack, type and heading scale, radii, 240px rail, control density, status colours — all inherited, none touched.</dd>
+        </div>
+        <div style="display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e1e6ed;">
+          <dt style="flex: none; width: 116px;"><span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #cfd6df; border-radius: 6px; background: #f2f4f7; color: #4c5868; font-size: 12px; font-weight: 600;">Component</span></dt>
+          <dd style="margin: 0; font-size: 14px; line-height: 1.5; color: #202733;">Inherited. Four additions assembled from existing parts: a selection bar, a sortable column head, a row skeleton, and a role option card.</dd>
+        </div>
+        <div style="display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e1e6ed;">
+          <dt style="flex: none; width: 116px;"><span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #b7cdea; border-radius: 6px; background: #eaf2fd; color: #1f5797; font-size: 12px; font-weight: 600;">Layout</span></dt>
+          <dd style="margin: 0; font-size: 14px; line-height: 1.5; color: #202733;">Redesigned. Toolbar in two rows and three zones; pagination gains rows-per-page; cards carry Title / Subtitle / Badge / Timestamp; the edit form groups fields and pins its actions.</dd>
+        </div>
+        <div style="display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid #e1e6ed;">
+          <dt style="flex: none; width: 116px;"><span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #b7cdea; border-radius: 6px; background: #eaf2fd; color: #1f5797; font-size: 12px; font-weight: 600;">Interaction</span></dt>
+          <dd style="margin: 0; font-size: 14px; line-height: 1.5; color: #202733;">Redesigned. Active filters read as filled fields; sorting moves into the column head; multi-select with bulk actions; the composer previews the row it is composing.</dd>
+        </div>
+        <div style="display: flex; gap: 14px; padding: 12px 0;">
+          <dt style="flex: none; width: 116px;"><span style="display: inline-flex; align-items: center; padding: 3px 8px; border: 1px solid #b7cdea; border-radius: 6px; background: #eaf2fd; color: #1f5797; font-size: 12px; font-weight: 600;">Architecture</span></dt>
+          <dd style="margin: 0; font-size: 14px; line-height: 1.5; color: #202733;">Redesigned. The view composer becomes a two-pane editor — field list on the left, one field’s settings on the right — so it scales past six fields instead of widening a grid of selects.</dd>
+        </div>
+      </dl>
+    </section>
+
+  </div>
+
+</div>
+
+</body>
+</html>
