@@ -422,7 +422,7 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 /* An active filter says so three ways — border, fill and weight — so colour
    is never the only signal. */
 .filter.is-on select, .filter.is-on input { border-color: #7890AF; background: #F4F8FD; color: #174578; font-weight: 600; }
-.layout-switch { display: inline-flex; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--radius-btn); overflow: hidden; background: var(--surface); }
+.layout-switch { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 36px; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--radius-btn); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-sm); }
 .pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3); padding: 14px var(--s4); border-top: 1px solid var(--border); background: var(--surface-head); color: var(--ink-2); font-size: 14px; font-weight: 600; }
 .pagination-pages { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pagination-pages a { display: inline-flex; align-items: center; justify-content: center; min-width: 38px; min-height: var(--ctl-sm); padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: #f8fafc; color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: none; font-variant-numeric: tabular-nums; }
@@ -468,10 +468,16 @@ textarea[aria-invalid="true"] { border-color: var(--red); background: var(--red-
 .perm.is-denied .perm-icon { border-color: #cfd6df; background: #f2f4f7; color: #4c5868; }
 
 /* A vertical stack of cards or rows. */
-.layout-switch > a { display: inline-flex; align-items: center; padding: 0 14px; height: var(--ctl-sm); border: 0; border-radius: 0; background: transparent; color: var(--ink-body); font-size: 14px; font-weight: 600; text-decoration: none; }
+.layout-switch > a { position: relative; display: grid; width: 36px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-2); text-decoration: none; }
 .layout-switch > a + a { border-left: 1px solid var(--border); }
 .layout-switch > a:hover { background: var(--surface-soft); color: var(--blue); }
-.layout-switch > a.is-active { background: var(--blue-soft); color: var(--blue); }
+.layout-switch > a.is-active { background: var(--blue-soft); color: var(--blue-dark); box-shadow: inset 0 0 0 1px var(--blue-line); }
+.layout-switch > a:focus-visible { outline-offset: -3px; }
+.layout-icon { display: block; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.layout-option[aria-label="List view"] .layout-icon rect { fill: currentColor; stroke: none; }
+.layout-option[aria-label="Cards view"] .layout-icon rect,
+.layout-option[aria-label="Table view"] .layout-icon rect,
+.layout-option[aria-label="Compact view"] .layout-icon rect { fill: none; }
 .view-tools { display: inline-flex; align-items: center; gap: var(--s2); }
 .stack-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
 
