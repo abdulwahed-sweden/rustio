@@ -6,9 +6,10 @@ The admin's design has two sources, and neither is invented here.
 **[rustio-lite](https://github.com/abdulwahed-sweden/rustio-lite)**, where
 they were designed and tested against thirteen contract pages.
 
-**Typography and buttons** come from the developer landing page at `/`
-(`rustio-core/assets/home.html`) — a tighter type scale, four weights, and
-a button shape that reads better at admin density.
+**Typography, buttons and spacing** come from the developer landing page
+at `/` (`rustio-core/assets/home.html`). The admin is held to the landing
+page's discipline: one type scale, one spacing scale, two button faces.
+Anything that reads as a third face or an off-scale step is a defect.
 
 One file ships: **`rustio-core/assets/static/admin.css`**. `build.rs` runs it
 through Tailwind (as a minifier — the file uses no Tailwind directives),
@@ -31,8 +32,9 @@ Declared once on `:root`. Use the variable, never the literal.
 | Ink | `--ink #202733` · `--ink-soft #4c5868` |
 | Lines | `--border #d5dce5` · `--border-strong #b9c5d3` |
 | Status | `--green #19724b` / `--green-soft #e8f6ee` · `--amber #935b0a` / `--amber-soft #fff4df` · `--red #a23f3a` / `--red-soft #fff0ee` |
-| Rail | `--rail 260px` · `--rail-gap 14px` · `--rail-bg #f4f6f9` · `--rail-line #d3dbe5` |
-| Shape | `--radius 9px` · `--content 1120px` · `--shadow 0 2px 5px rgba(24,39,61,.07)` |
+| Rail | `--rail 240px` · `--rail-gap 14px` · `--rail-bg #f4f6f9` · `--rail-line #d3dbe5` |
+| Shape | `--radius 14px` · `--radius-btn 8px` · `--content 1120px` · `--shadow` (landing panel) · `--shadow-sm 0 1px 2px rgba(22,32,56,.06)` |
+| Spacing | `--s1 4px` · `--s2 8px` · `--s3 12px` · `--s4 16px` · `--s5 24px` · `--s6 32px` — one scale, no other gap or padding value |
 
 **Type comes from the landing page** (`rustio-core/assets/home.html`),
 not from rustio-lite: it runs a tighter scale and four weights instead of
@@ -46,19 +48,22 @@ tracking.
 
 | | |
 |---|---|
-| Body | 16px / 1.6, weight 400 |
-| Scale | 11 · 11.5 · 12 · 13 · 14 · 15 · 16 · 17 · 33 px |
-| Weights | **400** body · **600** secondary · **680** buttons · **700** emphasis and labels · **800** display |
-| Headings | h1 33px/800/-.025em/1.06 · h2 17px/700 · h3 16px/700 |
+| Body | 15px / 1.6, weight 400 — the landing subtitle's size |
+| Scale | 11 · 11.5 · 12 · 13 · 14 · 15 · 17 · 24 · 33 px |
+| Weights | **400** body · **500** field labels · **600** secondary · **680** buttons · **700** emphasis · **800** display |
+| Headings | h1 24px/800/-.02em · `.page-head--hero h1` 33px/-.025em/1.06 (the dashboard only) · h2 17px/700 |
+| Table | cells 14px · headers 12px uppercase, mono, .12em |
+| Fields | label 13px/500 · input 36px tall, 14px |
 
-Five weights, nine sizes. Adding one is a change to the design system,
-not a use of it.
+**Buttons — exactly two faces.** `.button-primary` (blue fill, white text)
+and `.button-secondary` (white, 1px border), both 10×18px, radius 8,
+14px/680, `line-height: 1`. One size variant, `.button-sm` (6×12px, 13px),
+for row actions and toolbar tools. No third face: a page carries **one**
+blue button, and it is that page's primary action.
 
-**Buttons** are the landing page's, verbatim: 12×20px, radius 10px,
-15px/680, `line-height: 1`, a 9px gap for an icon, and a 1px transparent
-border so a bordered variant doesn't shift. Hover lifts the control 1px;
-`.button-primary` carries a blue-tinted drop shadow. `.button-sm` is the
-same shape at 13px / 8×14px / radius 8.
+The one exception is `.button-danger`, which the delete-confirmation page
+uses so a destructive confirm does not look like an ordinary secondary.
+It appears nowhere else.
 
 **Focus.** `:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px }`.
 The offset keeps the ring on the surface behind a control, never on its fill.
@@ -67,12 +72,18 @@ The offset keeps the ring on the surface behind a control, never on its fill.
 
 ```text
 .shell
-  aside.sidebar          72px top bar — brand | nav.nav | .sidebar-foot
+  aside.sidebar          56px top bar — brand | .sidebar-foot
   .content               grid: var(--rail) | minmax(0,1fr)
-    aside.module-sidebar 260px rail — .module-title, .module-nav, .module-link
+    aside.module-sidebar 240px rail — .module-title, .module-nav, .module-link
     main.main            width min(100% - 56px, var(--content))
     footer.app-footer
 ```
+
+The top bar is one row on one baseline: brand on the left; on the right,
+in order, the environment badge · "Signed in as" · the address (regular
+weight) · the language select (globe drawn inside it) · log out. Rail
+items are 36px tall, 4px apart, 14px, with the count badge inline on the
+right; the current item takes a soft-blue fill and blue text, no border.
 
 Breakpoints at 1040px, 760px and 480px collapse the rail and then the top
 bar. `prefers-reduced-motion` disables transitions.

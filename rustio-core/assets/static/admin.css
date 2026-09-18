@@ -637,7 +637,7 @@ a.signed-in:hover { color: var(--blue); }
 
 /* A role entry is an avatar beside its description, not above it. */
 .stack-list > li { display: flex; align-items: flex-start; gap: var(--s3); }
-.stack-list > li > div { display: grid; gap: var(--s1); min-width: 0; }
+.stack-list > li > div { display: grid; gap: var(--s1); justify-items: start; min-width: 0; }
 .stack-list > li > div p { margin: 0; color: var(--ink-soft); font-size: 14px; }
 
 /* The brand block shares the form's left edge — one alignment per card. */
@@ -690,3 +690,12 @@ a.signed-in:hover { color: var(--blue); }
 /* The auth card's secondary action sits under the primary as its pair,
    not as a stray text link. */
 .login-foot { margin: var(--s3) 0 0; }
+
+/* A fixed-size avatar is not a shrinkable flex item. */
+.stack-list > li > .avatar { flex: none; }
+
+/* Below the rail's breakpoint the two-column detail layout is one column;
+   without this the side panels ran off the right of the viewport. */
+@media (max-width: 760px) {
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
+}
