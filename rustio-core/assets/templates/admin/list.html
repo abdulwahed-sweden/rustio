@@ -173,27 +173,17 @@
             <div class="record-avatar" aria-hidden="true">{{ row.avatar_initials }}</div>
 
             <div class="record-list-main">
-              <div class="record-list-heading">
-                <div class="record-list-identity">
-                  {% for cell in row.cells %}
-                    {% if columns[loop.index0].role == 'title' %}
-                      <div class="record-title">{{ cell | safe }}</div>
-                    {% endif %}
-                  {% endfor %}
-                  {% for cell in row.cells %}
-                    {% if columns[loop.index0].role == 'subtitle' %}
-                      <div class="record-subtitle">{{ cell | safe }}</div>
-                    {% endif %}
-                  {% endfor %}
-                </div>
-
-                <div class="record-list-status">
-                  {% for cell in row.cells %}
-                    {% if columns[loop.index0].role == 'badge' %}
-                      {{ cell | safe }}
-                    {% endif %}
-                  {% endfor %}
-                </div>
+              <div class="record-list-identity">
+                {% for cell in row.cells %}
+                  {% if columns[loop.index0].role == 'title' %}
+                    <div class="record-title">{{ cell | safe }}</div>
+                  {% endif %}
+                {% endfor %}
+                {% for cell in row.cells %}
+                  {% if columns[loop.index0].role == 'subtitle' %}
+                    <div class="record-subtitle">{{ cell | safe }}</div>
+                  {% endif %}
+                {% endfor %}
               </div>
 
               <div class="record-list-meta">
@@ -208,17 +198,27 @@
               </div>
             </div>
 
-            {% if permissions.edit or permissions.delete %}
-              <div class="record-list-actions">
-                {% if permissions.edit %}<a class="button button-secondary button-sm" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
-                {% if permissions.delete %}
-                  <form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">
-                    {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
-                    <button type="submit" class="button button-danger button-sm">{{ t("Delete") }}</button>
-                  </form>
-                {% endif %}
+            <div class="record-list-side">
+              <div class="record-list-status">
+                {% for cell in row.cells %}
+                  {% if columns[loop.index0].role == 'badge' %}
+                    {{ cell | safe }}
+                  {% endif %}
+                {% endfor %}
               </div>
-            {% endif %}
+
+              {% if permissions.edit or permissions.delete %}
+                <div class="record-list-actions">
+                  {% if permissions.edit %}<a class="button button-secondary button-sm" href="{{ row.edit_url }}">{{ t("Edit") }}</a>{% endif %}
+                  {% if permissions.delete %}
+                    <form method="post" action="{{ row.delete_url }}" data-confirm="{{ t('Delete') }} {{ model.singular_name | lower }}?" class="inline-form">
+                      {% if csrf_token %}<input type="hidden" name="_csrf" value="{{ csrf_token }}">{% endif %}
+                      <button type="submit" class="button button-danger button-sm">{{ t("Delete") }}</button>
+                    </form>
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
           </article>
         {% endfor %}
       </div>
