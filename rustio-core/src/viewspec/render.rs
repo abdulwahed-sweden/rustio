@@ -454,6 +454,209 @@ mod tests {
         }
     }
 
+    /// "Assignment"-shaped join model: no `String` field to headline with,
+    /// two foreign keys, a timestamp and a status. The shape that used to
+    /// lose its identity in `List` and `Compact`.
+    fn assignment_model() -> SchemaModel {
+        SchemaModel {
+            name: "Assignment".to_string(),
+            table: "assignments".to_string(),
+            admin_name: "assignments".to_string(),
+            display_name: "Assignments".to_string(),
+            singular_name: "Assignment".to_string(),
+            fields: vec![
+                sf("id", "i64"),
+                sf("booking_id", "i64"),
+                sf("resource_id", "i64"),
+                sf("accepted_at", "DateTime"),
+                sf("status", "String"),
+            ],
+            relations: Vec::new(),
+            core: false,
+        }
+    }
+
+    fn assignment_rows() -> Vec<Row> {
+        vec![row(&[
+            ("id", RowValue::Int(1)),
+            ("booking_id", RowValue::Int(7)),
+            ("resource_id", RowValue::Int(3)),
+            ("accepted_at", RowValue::Text("2026-06-20T11:15:00Z".into())),
+            ("status", RowValue::Text("accepted".into())),
+        ])]
+    }
+
+    /// The identity invariant: a row rendered in any layout carries an
+    /// identity-bearing cell whenever the spec has an identity candidate.
+    /// `Timestamp` and `Badge` are explicitly not identity — a date is not a
+    /// name, and a status is shared across rows.
+    fn has_identity(rv: &RenderedView) -> bool {
+        rv.rows[0]
+            .cells
+            .iter()
+            .any(|c| matches!(c.role, FieldRole::Title | FieldRole::Subtitle))
+    }
+
+    #[test]
+    fn relation_heavy_model_keeps_its_identity_in_every_layout() {
+        let spec = ViewSpec::from_schema_model(&assignment_model());
+        let rows = assignment_rows();
+
+        // Derivation promotes the first FK to Title, the second to Subtitle.
+        let table = RenderedView::render_with_layout(&spec, ViewLayout::Table, &rows);
+        assert_eq!(
+            first_row_sources(&table),
+            vec![
+                vec!["booking_id".to_string()],
+                vec!["resource_id".to_string()],
+                vec!["accepted_at".to_string()],
+                vec!["status".to_string()],
+            ],
+            "Table still shows every visible field"
+        );
+        assert_eq!(
+            first_row_roles(&table),
+            vec![
+                FieldRole::Title,
+                FieldRole::Subtitle,
+                FieldRole::Timestamp,
+                FieldRole::Badge,
+            ]
+        );
+
+        // Cards: same membership as Table.
+        let cards = RenderedView::render_with_layout(&spec, ViewLayout::Cards, &rows);
+        assert_eq!(first_row_sources(&cards), first_row_sources(&table));
+
+        // List used to be timestamp + status only.
+        let list = RenderedView::render_with_layout(&spec, ViewLayout::List, &rows);
+        assert_eq!(
+            first_row_sources(&list),
+            vec![
+                vec!["booking_id".to_string()],
+                vec!["resource_id".to_string()],
+                vec!["accepted_at".to_string()],
+                vec!["status".to_string()],
+            ],
+            "List identifies the record, not just when it happened"
+        );
+
+        // Compact used to be a lone status pill on every row.
+        let compact = RenderedView::render_with_layout(&spec, ViewLayout::Compact, &rows);
+        assert_eq!(
+            first_row_sources(&compact),
+            vec![vec!["booking_id".to_string()], vec!["status".to_string()]],
+            "Compact carries identity plus status"
+        );
+
+        for (layout, rv) in [
+            (ViewLayout::Table, &table),
+            (ViewLayout::List, &list),
+            (ViewLayout::Cards, &cards),
+            (ViewLayout::Compact, &compact),
+        ] {
+            assert!(has_identity(rv), "{layout:?} lost the record's identity");
+        }
+    }
+
+    #[test]
+    fn explicit_title_and_subtitle_are_unchanged_by_the_relation_fallback() {
+        // A model with a real name field must derive exactly as before: the
+        // name headlines, the contact line is the Subtitle, and the FK stays
+        // Meta. The relation fallback is a last resort, not a preference.
+        let mut model = customer_model();
+        model.fields.push(sf("account_id", "i64"));
+        let spec = ViewSpec::from_schema_model(&model);
+
+        let role_of = |source: &str| {
+            spec.fields
+                .iter()
+                .find(|f| f.source == source)
+                .map(|f| f.role)
+        };
+        assert_eq!(role_of("name"), Some(FieldRole::Title));
+        assert_eq!(role_of("email"), Some(FieldRole::Subtitle));
+        assert_eq!(
+            role_of("account_id"),
+            Some(FieldRole::Meta),
+            "a foreign key is not promoted when a real title exists"
+        );
+    }
+
+    #[test]
+    fn relation_fallback_never_promotes_a_hidden_shaped_key() {
+        // `patient_id` is opaque PII and `ssn` is too: neither may be
+        // promoted into the headline, even with no other candidate.
+        let model = SchemaModel {
+            name: "Visit".to_string(),
+            table: "visits".to_string(),
+            admin_name: "visits".to_string(),
+            display_name: "Visits".to_string(),
+            singular_name: "Visit".to_string(),
+            fields: vec![
+                sf("id", "i64"),
+                sf("patient_id", "i64"),
+                sf("clinic_id", "i64"),
+                sf("status", "String"),
+            ],
+            relations: Vec::new(),
+            core: false,
+        };
+        let spec = ViewSpec::from_schema_model(&model);
+        let role_of = |source: &str| {
+            spec.fields
+                .iter()
+                .find(|f| f.source == source)
+                .map(|f| f.role)
+        };
+        assert_eq!(
+            role_of("patient_id"),
+            Some(FieldRole::Hidden),
+            "opaque PII stays hidden and is never promoted"
+        );
+        assert_eq!(
+            role_of("clinic_id"),
+            Some(FieldRole::Title),
+            "the next eligible relation headlines instead"
+        );
+    }
+
+    #[test]
+    fn a_hand_authored_spec_is_never_rewritten_at_render_time() {
+        // Deriving is where identity is decided. A developer who writes a
+        // spec with no Title gets exactly what they asked for (subject only
+        // to the pre-existing never-empty-row fallback).
+        let spec = ViewSpec {
+            version: crate::viewspec::VIEWSPEC_VERSION,
+            model: "Assignment".to_string(),
+            layout: ViewLayout::Compact,
+            fields: vec![
+                FieldSpec {
+                    source: "booking_id".to_string(),
+                    role: FieldRole::Meta,
+                    merge: None,
+                    filterable: false,
+                },
+                FieldSpec {
+                    source: "status".to_string(),
+                    role: FieldRole::Badge,
+                    merge: None,
+                    filterable: false,
+                },
+            ],
+            filters: Vec::new(),
+            default_language: "en".to_string(),
+            labels: Default::default(),
+            value_labels: Default::default(),
+        };
+        let rv = RenderedView::render_with_layout(&spec, ViewLayout::Compact, &assignment_rows());
+        assert_eq!(
+            first_row_sources(&rv),
+            vec![vec!["status".to_string()]],
+            "the authored roles are honoured verbatim"
+        );
+    }
+
     #[test]
     fn hidden_value_never_reaches_output_in_any_layout() {
         // `password_hash` is Hidden in the derived spec; its value must not

@@ -566,17 +566,22 @@ impl ViewSpec {
     ///   auto-filtered, to keep the filter bar quiet.
     /// - No field is ever merged automatically; `merge` is always `None`.
     pub fn from_schema_model(model: &SchemaModel) -> Self {
-        // Pass 1: choose which field is the row's Title, by name-like
-        // preference then first-plain-text fallback. Done up front so the
-        // role pass can simply ask "is this the title source?".
-        let title_source = pick_title_source(&model.fields);
+        // Pass 1: choose which fields carry the row's identity, by name-like
+        // preference, then first-plain-text, then relation fallback. Done up
+        // front so the role pass can simply ask "is this an identity source?".
+        let (title_source, subtitle_source) = pick_identity_sources(&model.fields);
 
         // Pass 2: assign a role (and filterability) to every field, in the
         // schema's declared order — which becomes the view's display order.
         let mut fields: Vec<FieldSpec> = Vec::with_capacity(model.fields.len());
         let mut filters: Vec<String> = Vec::new();
         for f in &model.fields {
-            let (role, filterable) = classify_view_field(&f.name, &f.ty, title_source.as_deref());
+            let (role, filterable) = classify_view_field(
+                &f.name,
+                &f.ty,
+                title_source.as_deref(),
+                subtitle_source.as_deref(),
+            );
             if filterable {
                 filters.push(f.name.clone());
             }
@@ -603,18 +608,43 @@ impl ViewSpec {
     }
 }
 
-/// Choose the field that should play [`FieldRole::Title`] in a default
-/// view, or `None` if the model has no text field eligible to be a
-/// headline. Two ordered passes, both deterministic:
+/// Choose the fields that carry a row's **identity** in a default view:
+/// the [`FieldRole::Title`], and — only in the relation fallback below — a
+/// [`FieldRole::Subtitle`] beside it. Returns `(title, subtitle)`; either
+/// may be `None` when the model offers no candidate.
+///
+/// Three ordered passes, all deterministic:
 ///
 /// 1. The first `String` field whose name is a conventional headline name
 ///    (`name`, `title`, `full_name`, `display_name`, `label`, `username`).
 /// 2. Failing that, the first "plain" `String` field — one that no
 ///    higher-precedence rule in [`classify_view_field`] would claim
 ///    (not a secret, opaque id, `email`/`phone`, `status`, or `id`).
+/// 3. Failing *that*, the first foreign key (`*_id`, integer) becomes the
+///    Title and the second becomes the Subtitle.
 ///
-/// Both passes walk `fields` in declared order, so the choice is stable.
-fn pick_title_source(fields: &[SchemaField]) -> Option<String> {
+/// ## Why pass 3 exists
+///
+/// A join model — `Assignment { booking_id, resource_id, accepted_at,
+/// status }` — has no `String` field at all, so passes 1 and 2 find
+/// nothing. Without pass 3 every field lands on `Meta`/`Timestamp`/`Badge`,
+/// and the layouts that drop `Meta` lose the record's identity entirely:
+/// `List` renders a bare timestamp and a pill, `Compact` renders a pill on
+/// its own. Every row reads "Accepted" and nothing else.
+///
+/// A foreign key is the right promotion because it is the one remaining
+/// *identifying* field: `belongs_to` renders it as its related row's
+/// display value (a booking number, a resource name), not as a raw
+/// integer. Status, timestamps and the primary key are all explicitly
+/// **not** candidates — a status is shared across rows, a timestamp is not
+/// a name, and `id` is hidden by rule 3 of [`classify_view_field`].
+///
+/// Passes 1 and 2 keep their existing behaviour exactly, and never return a
+/// subtitle: a model with a real name field gets its Subtitle from the
+/// `email`/`phone` rule as before.
+///
+/// All three passes walk `fields` in declared order, so the choice is stable.
+fn pick_identity_sources(fields: &[SchemaField]) -> (Option<String>, Option<String>) {
     const NAME_LIKE: &[&str] = &[
         "name",
         "title",
@@ -625,15 +655,31 @@ fn pick_title_source(fields: &[SchemaField]) -> Option<String> {
     ];
     for f in fields {
         if f.ty == "String" && NAME_LIKE.contains(&f.name.as_str()) && is_plain_text_name(&f.name) {
-            return Some(f.name.clone());
+            return (Some(f.name.clone()), None);
         }
     }
     for f in fields {
         if f.ty == "String" && is_plain_text_name(&f.name) {
-            return Some(f.name.clone());
+            return (Some(f.name.clone()), None);
         }
     }
-    None
+    // Pass 3 — relation fallback. `is_plain_text_name` still gates it, so a
+    // secret- or opaque-PII-shaped key is never promoted into the headline.
+    let mut relations = fields
+        .iter()
+        .filter(|f| is_relation_name(&f.name) && matches!(f.ty.as_str(), "i32" | "i64"))
+        .filter(|f| is_plain_text_name(&f.name))
+        .map(|f| f.name.clone());
+    match relations.next() {
+        Some(title) => (Some(title), relations.next()),
+        None => (None, None),
+    }
+}
+
+/// `true` for a foreign-key-shaped column name: `*_id`, but not the bare
+/// primary key `id`, which rule 3 of [`classify_view_field`] hides.
+fn is_relation_name(name: &str) -> bool {
+    name != "id" && name.ends_with("_id")
 }
 
 /// Assign a view [`FieldRole`] and a default `filterable` flag to one
@@ -653,10 +699,21 @@ fn pick_title_source(fields: &[SchemaField]) -> Option<String> {
 ///    makes a noisy filter bar; only `status` earns an auto-filter).
 /// 7. `email` / `phone` → `Subtitle` (sensitive means masked at render,
 ///    not omitted — the view still needs a contact line).
-/// 8. integer `*_id` → `Meta` (foreign key, until relations render).
-/// 9. the chosen `title_source` → `Title`.
-/// 10. everything else → `Meta`.
-fn classify_view_field(name: &str, ty: &str, title_source: Option<&str>) -> (FieldRole, bool) {
+/// 8. the chosen `title_source` → `Title`.
+/// 9. the chosen `subtitle_source` → `Subtitle`.
+/// 10. integer `*_id` → `Meta` (a foreign key not chosen above).
+/// 11. everything else → `Meta`.
+///
+/// Rules 8 and 9 sit **above** the foreign-key rule so
+/// [`pick_identity_sources`]' relation fallback can actually take effect;
+/// for a model with a `String` headline the ordering is unobservable,
+/// because such a title source is never `*_id`-shaped.
+fn classify_view_field(
+    name: &str,
+    ty: &str,
+    title_source: Option<&str>,
+    subtitle_source: Option<&str>,
+) -> (FieldRole, bool) {
     if is_secret_name(name) {
         return (FieldRole::Hidden, false);
     }
@@ -678,11 +735,14 @@ fn classify_view_field(name: &str, ty: &str, title_source: Option<&str>) -> (Fie
     if name == "email" || name == "phone" {
         return (FieldRole::Subtitle, false);
     }
-    if name.ends_with("_id") && (ty == "i32" || ty == "i64") {
-        return (FieldRole::Meta, false);
-    }
     if Some(name) == title_source {
         return (FieldRole::Title, false);
+    }
+    if Some(name) == subtitle_source {
+        return (FieldRole::Subtitle, false);
+    }
+    if name.ends_with("_id") && (ty == "i32" || ty == "i64") {
+        return (FieldRole::Meta, false);
     }
     (FieldRole::Meta, false)
 }
