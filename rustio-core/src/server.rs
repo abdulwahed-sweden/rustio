@@ -11,6 +11,7 @@ use std::sync::Arc;
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpListener;
 
 use crate::http::{Request, Response};
@@ -72,6 +73,38 @@ impl Server {
         .await
     }
 
+    /// Serve one already-accepted byte stream through a shared [`Router`].
+    ///
+    /// The caller owns connection establishment. That makes this suitable for
+    /// transports that wrap a socket before HTTP begins, such as TLS, while
+    /// RustIO continues to own request construction and router dispatch.
+    ///
+    /// `peer` is the underlying socket peer when known. It remains ordinary
+    /// transport metadata and does not imply application identity.
+    pub async fn serve_router_on_stream<I>(
+        stream: I,
+        peer: Option<SocketAddr>,
+        router: Arc<Router>,
+    ) -> Result<(), hyper::Error>
+    where
+        I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let io = TokioIo::new(stream);
+
+        let service =
+            service_fn(move |raw: hyper::Request<hyper::body::Incoming>| {
+                let router = router.clone();
+                async move {
+                    let req = Request::new(raw, peer);
+                    Ok::<Response, Infallible>(router.dispatch(req).await)
+                }
+            });
+
+        http1::Builder::new()
+            .serve_connection(io, service)
+            .await
+    }
+
     /// Serve a router on an already-bound `TcpListener`.
     ///
     /// Use when the caller needs to own the socket — for example to
@@ -80,23 +113,167 @@ impl Server {
     /// servers that drop privileges after binding).
     pub async fn serve_router_on(listener: TcpListener, router: Router) -> std::io::Result<()> {
         let router = Arc::new(router);
+
         loop {
             let (stream, peer) = listener.accept().await?;
-            let io = TokioIo::new(stream);
             let router = router.clone();
 
             tokio::spawn(async move {
-                let service = service_fn(move |raw: hyper::Request<hyper::body::Incoming>| {
-                    let router = router.clone();
-                    async move {
-                        let req = Request::new(raw, Some(peer));
-                        Ok::<Response, Infallible>(router.dispatch(req).await)
-                    }
-                });
-                if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
+                if let Err(err) =
+                    Self::serve_router_on_stream(
+                        stream,
+                        Some(peer),
+                        router,
+                    )
+                    .await
+                {
                     eprintln!("rustio-core: connection error: {err}");
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tokio::net::TcpStream;
+
+    use crate::error::Error;
+    use crate::http::text;
+
+    #[tokio::test]
+    async fn serves_router_on_caller_owned_stream() {
+        let listener =
+            TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
+
+        let address =
+            listener
+                .local_addr()
+                .unwrap();
+
+        let router =
+            Arc::new(
+                Router::new()
+                    .get(
+                        "/probe",
+                        |_request, _params| async {
+                            Ok::<Response, Error>(
+                                text("stream-ok"),
+                            )
+                        },
+                    ),
+            );
+
+        let server =
+            tokio::spawn({
+                let router = router.clone();
+
+                async move {
+                    let (stream, peer) =
+                        listener
+                            .accept()
+                            .await
+                            .unwrap();
+
+                    Server::serve_router_on_stream(
+                        stream,
+                        Some(peer),
+                        router,
+                    )
+                    .await
+                    .unwrap();
+                }
+            });
+
+        let stream =
+            TcpStream::connect(address)
+                .await
+                .unwrap();
+
+        let request =
+            b"GET /probe HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+
+        let mut written =
+            0;
+
+        while written < request.len() {
+            stream
+                .writable()
+                .await
+                .unwrap();
+
+            match stream.try_write(&request[written..]) {
+                Ok(0) => panic!("test client socket closed while writing"),
+                Ok(count) => {
+                    written += count;
+                }
+                Err(error)
+                    if error.kind()
+                        == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("test client write failed: {error}"),
+            }
+        }
+
+        let mut response =
+            Vec::new();
+
+        loop {
+            stream
+                .readable()
+                .await
+                .unwrap();
+
+            let mut buffer =
+                [0u8; 1024];
+
+            match stream.try_read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    response
+                        .extend_from_slice(
+                            &buffer[..count],
+                        );
+
+                    if response
+                        .windows(
+                            b"stream-ok".len(),
+                        )
+                        .any(|window| {
+                            window == b"stream-ok"
+                        })
+                    {
+                        break;
+                    }
+                }
+                Err(error)
+                    if error.kind()
+                        == std::io::ErrorKind::WouldBlock => {}
+                Err(error) => panic!("test client read failed: {error}"),
+            }
+        }
+
+        drop(stream);
+
+        let response =
+            String::from_utf8(response)
+                .unwrap();
+
+        assert!(
+            response.contains("200 OK"),
+            "unexpected HTTP response: {response}",
+        );
+
+        assert!(
+            response.contains("stream-ok"),
+            "unexpected HTTP response: {response}",
+        );
+
+        server
+            .await
+            .unwrap();
     }
 }
